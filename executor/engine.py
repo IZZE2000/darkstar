@@ -522,11 +522,12 @@ class ExecutorEngine:
 
         try:
             self.dispatcher._send_notification(message, title=title)
-            # If data is provided, we might need a more direct HA call since _send_notification is simplified  # noqa: E501
+            # If data is provided, we might need a more direct HA call
+            # since _send_notification is simplified
             if data:
                 self.ha_client.send_notification(
                     self.config.notifications.service, title, message, data=data
-                )  # noqa: E501
+                )
             return True
         except Exception as e:
             logger.error("Failed to send notification: %s", e)
@@ -783,11 +784,14 @@ class ExecutorEngine:
         }
 
         try:
-            # 0. Check pause state first - if paused, apply idle mode and check reminder
+            # 0. Check pause state first
             if self.is_paused:
-                logger.info("Executor is PAUSED - applying idle mode")
+                # Rev update: Do NOT re-apply idle mode here.
+                # Only apply it once when pause() is called.
+                # This allows the user to manually control devices while paused.
+                logger.debug("Executor is PAUSED - skipping tick")
                 self._check_pause_reminder()
-                self._apply_idle_mode()
+
                 self.status.last_run_status = "skipped"
                 self.status.last_skip_reason = "paused_idle_mode"
                 result["success"] = True
@@ -812,7 +816,10 @@ class ExecutorEngine:
                             {
                                 "type": "skip",
                                 "reason": "automation_disabled",
-                                "message": f"Toggle {self.config.automation_toggle_entity} is {toggle_state}",  # noqa: E501
+                                "message": (
+                                    f"Toggle {self.config.automation_toggle_entity} "
+                                    f"is {toggle_state}"
+                                ),
                             }
                         ],
                     }
@@ -854,8 +861,10 @@ class ExecutorEngine:
             state.slot_exists = slot is not None
             state.slot_valid = slot is not None
 
-            # 4. Check for active quick action first (user-initiated override)
+            # 4. Check for active Quick Action OR Water Boost
             quick_action = self._get_quick_action_status()
+            water_boost = self.get_water_boost_status()
+
             if quick_action:
                 # Quick action takes priority
                 from .override import OverrideResult, OverrideType
@@ -894,6 +903,19 @@ class ExecutorEngine:
                     priority=9.5,  # High priority, just below emergency
                     reason=quick_action.get("reason", f"User quick action: {action_type}"),
                     actions=actions,
+                )
+            elif water_boost:
+                # Water Boost Logic (Rev Fix)
+                from .override import OverrideResult, OverrideType
+
+                override = OverrideResult(
+                    override_needed=True,
+                    override_type=OverrideType.FORCE_HEAT,
+                    priority=8.0,  # High priority
+                    reason=f"Water Boost active until {water_boost['expires_at']}",
+                    actions={
+                        "water_temp": self.config.water_heater.temp_boost,
+                    },
                 )
             else:
                 # Normal override evaluation

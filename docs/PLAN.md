@@ -167,3 +167,21 @@ Currently, the charts can become cluttered when mixing planned and actual data. 
 * [x] Update `backend/health.py` to check `system.has_battery`, `system.has_water_heater`, etc.
 * [x] Skip entity validation for disabled features.
 * [x] Verified with simulation script.
+
+---
+
+### [DONE] REV // F21 — Fix Button Logic (Pause & Water Boost)
+
+**Goal:** Resolve issues where Pause re-applies idle mode aggressively and Water Boost is overridden by the scheduler.
+
+**Plan:**
+
+#### Phase 1: Backend Logic [DONE]
+* [x] **Pause Fix:** Modify `_tick` in `executor/engine.py` to return early if paused, preventing "Idle Mode" spam.
+* [x] **Water Boost Fix:** Add high-priority override in `_tick` to respect active water boost status.
+* [x] **Verification:** Confirmed singleton pattern in `backend/main.py`.
+
+#### Phase 2: Frontend Synchronization [DONE]
+* [x] Update `QuickActions.tsx` to accept explicit `executorPaused` prop.
+* [x] Update `Dashboard.tsx` to pass the backend's true pause state.
+* [x] Linting: Ran `pnpm lint --fix` and `ruff check`.

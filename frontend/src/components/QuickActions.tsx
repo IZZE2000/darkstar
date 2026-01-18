@@ -1,22 +1,19 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState } from 'react'
 import { Play, Pause, Loader2, Rocket } from 'lucide-react'
 import { Api } from '../lib/api'
 
 interface QuickActionsProps {
-    status: string | null
-    onRefresh?: () => void
+    executorPaused: boolean
+    onRefresh: () => void
 }
 
-export default function QuickActions({ status, onRefresh }: QuickActionsProps) {
-    const [loading, setLoading] = useState<'pause' | null>(null)
+export default function QuickActions({ executorPaused, onRefresh }: QuickActionsProps) {
+    const [loading, setLoading] = useState<string | null>(null)
     const [plannerPhase, setPlannerPhase] = useState<'idle' | 'planning' | 'executing' | 'done'>('idle')
     const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
-    const [isPaused, setIsPaused] = useState(false)
 
-    // Sync paused state with status prop if needed
-    useEffect(() => {
-        setIsPaused(status === 'paused' || status === 'idle')
-    }, [status])
+    // Use prop directly
+    const isPaused = executorPaused
 
     const handleRunPlanner = async () => {
         setPlannerPhase('planning')
@@ -44,12 +41,10 @@ export default function QuickActions({ status, onRefresh }: QuickActionsProps) {
         try {
             if (isPaused) {
                 await Api.executor.resume()
-                setIsPaused(false)
                 setFeedback({ type: 'success', message: 'Executor resumed' })
                 onRefresh?.()
             } else {
                 await Api.executor.pause()
-                setIsPaused(true)
                 setFeedback({ type: 'success', message: 'Executor paused - idle mode' })
                 onRefresh?.()
             }

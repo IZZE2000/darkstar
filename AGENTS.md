@@ -50,6 +50,7 @@ import yaml
 *   **Mandatory Checks**: At the end of **every revision** (before marking as done), you MUST run the standard linting suite.
     *   **Frontend**: `pnpm lint` (must be error-free) and `pnpm format`.
     *   **Backend**: `ruff check .` (if Python files were touched).
+    *   **Scripts**: If `sys.path` manipulation is required before imports, use `# noqa: E402`.
 *   **Zero-Error Policy**: Do not leave known lint errors. If a rule cannot be satisfied, use a specific suppression comment with a justification, but prefer fixing the code.
 
 from inputs import get_all_input_data
@@ -117,6 +118,7 @@ from inputs import get_all_input_data
   - `data/planner_learning.db` (SQLite telemetry)
   - `data/scheduler_status.json`
   - `schedule.json`
+- **Local Exclusions**: Use `.git/info/exclude` for personal or generated files (e.g., `docs/reports/`) to avoid polluting the global `.gitignore`.
 - When deploying to a server, prefer `git stash` / `git restore` to keep local DB and schedules, then `git checkout` the desired branch.
 
 ### Releasing a New Version

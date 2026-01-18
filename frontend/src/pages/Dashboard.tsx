@@ -80,8 +80,6 @@ export default function Dashboard() {
     const [vacationModeHA, setVacationModeHA] = useState<boolean>(false)
     const [vacationEntityId, setVacationEntityId] = useState<string>('')
     const [riskAppetite, setRiskAppetite] = useState<number>(1.0)
-    const [plannerStatus, setPlannerStatus] = useState<string | null>(null)
-
     // Live power metrics for PowerFlowCard
     const [livePower, setLivePower] = useState<{
         pv_kw?: number
@@ -184,7 +182,6 @@ export default function Dashboard() {
                 const data = bundle.status
                 if (data.soc_percent != null) setSoc(data.soc_percent)
                 else if (data.current_soc?.value != null) setSoc(data.current_soc.value)
-                setPlannerStatus(data.status || null)
             }
 
             // Process critical data: Config
@@ -799,7 +796,7 @@ export default function Dashboard() {
                 <motion.div className="h-full" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
                     <div className="flex h-full flex-col gap-6">
                         <Card className="flex-1 p-4 md:p-5">
-                            <QuickActions status={plannerStatus} onRefresh={fetchAllData} />
+                            <QuickActions executorPaused={executorStatus?.paused != null} onRefresh={fetchAllData} />
                         </Card>
                         <Card className="flex-1 p-4 md:p-5">
                             <div className="flex items-baseline justify-between mb-4">
