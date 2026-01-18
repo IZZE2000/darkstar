@@ -19,19 +19,19 @@ RECORDER_PID=""
 
 cleanup() {
     log "Received shutdown signal, stopping services..."
-    
+
     # Stop FastAPI server (graceful shutdown handles scheduler + executor)
     if [ -n "$API_PID" ] && kill -0 "$API_PID" 2>/dev/null; then
         log "Stopping FastAPI Server..."
         kill -TERM "$API_PID" 2>/dev/null || true
     fi
-    
+
     # Stop recorder
     if [ -n "$RECORDER_PID" ] && kill -0 "$RECORDER_PID" 2>/dev/null; then
         log "Stopping Recorder..."
         kill -TERM "$RECORDER_PID" 2>/dev/null || true
     fi
-    
+
     # Wait for all to exit (max 10 seconds)
     wait 2>/dev/null || true
     log "Shutdown complete."
@@ -109,7 +109,7 @@ while true; do
         cleanup
         exit 1
     fi
-    
+
     # Check Recorder (important but not critical)
     if ! kill -0 "$RECORDER_PID" 2>/dev/null; then
         log "WARNING: Recorder exited. Restarting..."
@@ -117,6 +117,6 @@ while true; do
         RECORDER_PID=$!
         log "Recorder restarted (PID: $RECORDER_PID)"
     fi
-    
+
     sleep 30
 done

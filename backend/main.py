@@ -62,26 +62,27 @@ async def lifespan(app: FastAPI):
 
     # Run database migrations (REV ARC9)
     try:
-        import subprocess
         import os
+        import subprocess
         import sys
+
         logger.info("📦 Checking database schema...")
-        
+
         # Ensure data directory exists
         db_path = os.getenv("DB_PATH", "data/planner_learning.db")
-        os.makedirs(os.path.dirname(db_path), exist_ok=True)
-        
+        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+
         # Inherit env to ensure credentials/paths are preserved
         run_env = os.environ.copy()
-        
+
         result = subprocess.run(
             [sys.executable, "-m", "alembic", "upgrade", "head"],
             capture_output=True,
             text=True,
             timeout=60,
-            env=run_env
+            env=run_env,
         )
-        
+
         if result.returncode == 0:
             if "Running upgrade" in result.stdout or "Running upgrade" in result.stderr:
                 logger.info("✅ Database migrations applied successfully.")
@@ -95,7 +96,7 @@ async def lifespan(app: FastAPI):
                 logger.error(f"Alembic error: {result.stderr.strip()}")
             if result.stdout:
                 logger.error(f"Alembic output: {result.stdout.strip()}")
-            # In production, we might want to exit here, but for now we'll allow 
+            # In production, we might want to exit here, but for now we'll allow
             # partial startup to let the user see logs via the Debug page.
     except Exception as e:
         logger.error(f"❌ Failed to run database migrations: {e}")

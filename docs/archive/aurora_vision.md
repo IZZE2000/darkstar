@@ -292,7 +292,7 @@ In “full AI mode”, we use **Primary + Advisory**:
 ## 5. Layer 2 – Policy & Parameter Learner (θ)
 
 A central idea is to treat Darkstar’s behavior as driven by a vector of policy
-parameters **θ**. The learner’s job is:  
+parameters **θ**. The learner’s job is:
 **Given context, choose θ to maximize long‑term reward under constraints.**
 
 ### 5.1 What Is θ? (Policy Parameters)
@@ -975,4 +975,3 @@ This vision can be implemented incrementally:
 This roadmap preserves safety and transparency at each step, while steadily
 moving Darkstar towards the full intelligent agent described in this
 document.
-

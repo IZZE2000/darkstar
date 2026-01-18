@@ -30,7 +30,7 @@ jobs:
             platform: linux/amd64
           - arch: aarch64
             platform: linux/arm64
-    
+
     steps:
       - name: Checkout
         if: github.ref != 'refs/heads/dev' || matrix.arch == 'amd64'
@@ -117,11 +117,11 @@ jobs:
           # Extract notes for this version from docs/RELEASE_NOTES.md
           # Starts at "## [$VERSION]", ends at next "---" or "## ["
           awk "/^## \[$VERSION\]/{flag=1; next} /^---/{flag=0} /^## \[/{flag=0} flag" docs/RELEASE_NOTES.md > release_body.md
-          
+
           # Clean up empty lines at start/end
           sed -i '/./,$!d' release_body.md
           sed -i -e :a -e '/^\n*$/{$d;N;ba' -e '}' release_body.md
-          
+
           echo "Extracted notes for $VERSION:"
           cat release_body.md
           if [ -s release_body.md ]; then
@@ -135,4 +135,3 @@ jobs:
           body_path: release_body.md
           draft: false
           prerelease: ${{ contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
-

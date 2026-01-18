@@ -8,7 +8,7 @@
 
 Traced all entities through:
 - [actions.py](file:///home/s/sync/documents/projects/darkstar/executor/actions.py) — WRITE operations
-- [engine.py](file:///home/s/sync/documents/projects/darkstar/executor/engine.py) — System state gathering & PV dump detection  
+- [engine.py](file:///home/s/sync/documents/projects/darkstar/executor/engine.py) — System state gathering & PV dump detection
 - [inputs.py](file:///home/s/sync/documents/projects/darkstar/inputs.py) — Planner reads
 - [recorder.py](file:///home/s/sync/documents/projects/darkstar/backend/recorder.py) — Historical data
 - [ha_socket.py](file:///home/s/sync/documents/projects/darkstar/backend/ha_socket.py) — Live metrics

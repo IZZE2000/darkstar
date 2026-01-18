@@ -26,9 +26,7 @@ class SlotObservation(Base):
     export_price_sek_kwh: Mapped[float | None] = mapped_column(Float)
     executed_action: Mapped[str | None] = mapped_column(String)
     quality_flags: Mapped[str | None] = mapped_column(Text)
-    created_at: Mapped[datetime | None] = mapped_column(
-        DateTime, default=datetime.utcnow
-    )
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, default=datetime.utcnow)
 
 
 class SlotForecast(Base):
@@ -46,10 +44,10 @@ class SlotForecast(Base):
     forecast_version: Mapped[str] = mapped_column(String)
     pv_correction_kwh: Mapped[float] = mapped_column(Float, default=0.0, server_default=text("0"))
     load_correction_kwh: Mapped[float] = mapped_column(Float, default=0.0, server_default=text("0"))
-    correction_source: Mapped[str] = mapped_column(String, default="none", server_default=text("'none'"))
-    created_at: Mapped[datetime | None] = mapped_column(
-        DateTime, default=datetime.utcnow
+    correction_source: Mapped[str] = mapped_column(
+        String, default="none", server_default=text("'none'")
     )
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, default=datetime.utcnow)
 
     __table_args__ = (UniqueConstraint("slot_start", "forecast_version"),)
 
@@ -66,18 +64,14 @@ class SlotPlan(Base):
     planned_export_kwh: Mapped[float | None] = mapped_column(Float)
     planned_water_heating_kwh: Mapped[float | None] = mapped_column(Float)
     planned_cost_sek: Mapped[float | None] = mapped_column(Float)
-    created_at: Mapped[datetime | None] = mapped_column(
-        DateTime, default=datetime.utcnow
-    )
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, default=datetime.utcnow)
 
 
 class ConfigVersion(Base):
     __tablename__ = "config_versions"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    created_at: Mapped[datetime | None] = mapped_column(
-        DateTime, default=datetime.utcnow
-    )
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, default=datetime.utcnow)
     yaml_blob: Mapped[str] = mapped_column(Text)
     reason: Mapped[str | None] = mapped_column(String)
     metrics_json: Mapped[str | None] = mapped_column(Text)
@@ -88,9 +82,7 @@ class LearningRun(Base):
     __tablename__ = "learning_runs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    started_at: Mapped[datetime | None] = mapped_column(
-        DateTime, default=datetime.utcnow
-    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime, default=datetime.utcnow)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime)
     horizon_days: Mapped[int] = mapped_column(Integer, default=7)
     params_json: Mapped[str | None] = mapped_column(Text)
@@ -112,9 +104,7 @@ class LearningDailyMetric(Base):
     pv_error_mean_abs_kwh: Mapped[float | None] = mapped_column(Float)
     load_error_mean_abs_kwh: Mapped[float | None] = mapped_column(Float)
     s_index_base_factor: Mapped[float | None] = mapped_column(Float)
-    created_at: Mapped[datetime | None] = mapped_column(
-        DateTime, default=datetime.utcnow
-    )
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, default=datetime.utcnow)
 
 
 class LearningParamHistory(Base):
@@ -127,9 +117,7 @@ class LearningParamHistory(Base):
     new_value: Mapped[str | None] = mapped_column(String)
     loop: Mapped[str | None] = mapped_column(String)
     reason: Mapped[str | None] = mapped_column(String)
-    created_at: Mapped[datetime | None] = mapped_column(
-        DateTime, default=datetime.utcnow
-    )
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, default=datetime.utcnow)
 
 
 class SensorTotal(Base):
@@ -144,9 +132,7 @@ class TrainingEpisode(Base):
     __tablename__ = "training_episodes"
 
     episode_id: Mapped[str] = mapped_column(String, primary_key=True)
-    created_at: Mapped[datetime | None] = mapped_column(
-        DateTime, default=datetime.utcnow
-    )
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, default=datetime.utcnow)
     inputs_json: Mapped[str] = mapped_column(Text)
     context_json: Mapped[str | None] = mapped_column(Text)
     schedule_json: Mapped[str] = mapped_column(Text)

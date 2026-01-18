@@ -16,4 +16,3 @@ Start here:
    using Oracle-like dynamics and exposes the v2 state.
 3. Implement `train_bc_v2.py` and `eval_bc_v2_cost.py` to run several
    BC trainings and cost evaluations against MPC/Oracle.
-

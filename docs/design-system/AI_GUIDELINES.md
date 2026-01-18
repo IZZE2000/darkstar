@@ -1,6 +1,6 @@
 # Darkstar Design System — AI Guidelines
 
-> **SSOT**: [`frontend/src/index.css`](file:///frontend/src/index.css)  
+> **SSOT**: [`frontend/src/index.css`](file:///frontend/src/index.css)
 > **Preview**: Run `pnpm run dev` and navigate to `/design-system`
 
 ---
@@ -57,7 +57,7 @@ Line-heights are built into the Tailwind config.
 
 For dynamic colors (when color is a prop):
 ```tsx
-<button 
+<button
   className="btn btn-pill btn-dynamic"
   style={{ '--btn-bg': color, '--btn-text': textColor } as React.CSSProperties}
 >

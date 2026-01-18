@@ -22,19 +22,19 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 ## 🤖 AI Instructions (Read First)
 
 1.  **Structure:** This file is a **chronological stream**. Newest items are at the **bottom**.
-    
+
 2.  **No Reordering:** Never move items. Only update their status or append new items.
-    
+
 3.  **Status Protocol:**
-    
+
     -   Update the status tag in the Header: `### [STATUS] Rev ID — Title`
-        
+
     -   Allowed Statuses: `[DRAFT]`, `[PLANNED]`, `[IN PROGRESS]`, `[DONE]`, `[PAUSED]`, `[OBSOLETE]`.
-        
+
 4.  **New Revisions:** Always use the template below.
-    
+
 5.  **Cleanup:** When this file gets too long (>15 completed items), move the oldest `[DONE]` items to `CHANGELOG.md`.
-    
+
 
 ### Revision Template
 
@@ -76,9 +76,9 @@ Problem: Kepler read wear cost from wrong config key (learning.default_battery_c
 Solution:
 
 1.  Fixed `adapter.py` to read from correct config key.
-    
+
 2.  Added `ramping_cost_sek_per_kw: 0.05` to reduce sawtooth switching.
-    
+
 3.  Fixed adapter to read from kepler config section.
 
 ### [IN PROGRESS] Rev O1 — Onboarding & System Profiles
@@ -88,36 +88,36 @@ Goal: Make Darkstar production-ready for both standalone Docker AND HA Add-on de
 Design Principles:
 
 1.  **Settings Tab = Single Source of Truth** (works for both deployment modes)
-    
+
 2.  **HA Add-on = Bootstrap Helper** (auto-detects where possible, entity dropdowns for sensors)
-    
+
 3.  **System Profiles** via 3 toggles: Solar, Battery, Water Heater
-    
+
 
 **Phase 1: HA Add-on Bootstrap**
 
 -   [x] **Auto-detection:** `SUPERVISOR_TOKEN` available as env var (no user token needed). HA URL is always `http://supervisor/core`.
-    
+
 -   [x] **Config:** Update `hassio/config.yaml` with entity selectors.
-    
+
 -   [x] **Startup:** Update `hassio/run.sh` to auto-generate `secrets.yaml`.
-    
+
 
 **Phase 2: Settings Tab — Setup Section**
 
 -   [ ] **HA Connection:** Add section in Settings → System with HA URL/Token fields (read-only in Add-on mode) and "Test Connection" button.
-    
+
 -   [ ] **Core Sensors:** Add selectors for Battery SoC, PV Production, Load Consumption.
-    
+
 
 **Phase 3: System Profile Toggles**
 
 -   [ ] **Config:** Add `system: { has_solar: true, has_battery: true, has_water_heater: true }` to `config.default.yaml`.
-    
+
 -   [ ] **UI:** Add 3 toggle switches in Settings → System.
-    
+
 -   [ ] **Logic:** Backend skips disabled features in planner/executor.
-    
+
 
 Phase 4: Validation
 
@@ -148,12 +148,12 @@ Phase 4: Validation
 
 -   [x] Add "External Executor Mode" toggle in Settings → Advanced.
 -   [x] When enabled, show "DB Sync" card with Load/Push buttons.
-    
+
 **Phase 3: Cleanup**
 
 -   [x] Hide Planning tab from navigation (legacy).
 -   [x] Remove "Reset Optimal" button.
-    
+
 
 ### [PLANNED] Rev UI2 — Premium Polish
 
@@ -165,7 +165,7 @@ Changes:
 2.  **Aurora Icons:** Semantic icons (Zap, Shield, etc.) in Activity Log.
 3.  **Dashboard Visuals:** Grouping of Today's Stats into Grid vs Energy.
 4.  **Sidebar Status:** Connectivity pulse dot.
-    
+
 
 ### [TODO] Rev K22 — Plan Cost Not Stored
 

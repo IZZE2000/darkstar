@@ -13,7 +13,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import pytz
+from sqlalchemy import create_engine
 
+from backend.learning.models import Base
 from executor.actions import HAClient
 from executor.config import (
     ControllerConfig,
@@ -23,8 +25,6 @@ from executor.config import (
     WaterHeaterConfig,
 )
 from executor.engine import ExecutorEngine, ExecutorStatus
-from sqlalchemy import create_engine
-from backend.learning.models import Base
 
 
 @pytest.fixture
@@ -44,7 +44,7 @@ def temp_db():
     """Create a temporary database file."""
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
         db_path = f.name
-    
+
     # Create schema
     engine = create_engine(f"sqlite:///{db_path}")
     Base.metadata.create_all(engine)

@@ -75,8 +75,8 @@ export default function Modal({
             {/* Dialog */}
             <div
                 className={`
-                    relative w-full ${sizeClasses[size]} 
-                    bg-surface rounded-ds-lg border border-line shadow-2xl 
+                    relative w-full ${sizeClasses[size]}
+                    bg-surface rounded-ds-lg border border-line shadow-2xl
                     animate-in zoom-in-95 fade-in duration-200
                     flex flex-col max-h-[90vh]
                     ${className}

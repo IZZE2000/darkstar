@@ -78,6 +78,7 @@ def setup_logging():
     # Explicitly set darkstar loggers
     logging.getLogger("darkstar").setLevel(log_level)
 
+
 def get_ring_buffer() -> RingBufferHandler:
     """Return the global ring buffer handler instance."""
     return _ring_buffer_handler

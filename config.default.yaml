@@ -20,13 +20,13 @@ advisor:
 system:
   system_id: prod
   inverter_profile: generic        # Profile: generic | deye | fronius | victron
-  
+
   # System Profile Toggles (what hardware do you have?)
   has_solar: true         # Enable PV forecasting & solar-related features
   has_battery: true       # Enable battery control & grid arbitrage
   has_water_heater: true  # Enable water heating optimization
   grid_meter_type: net    # Meter type: net (single +/- sensor) | dual (separate import/export)
-  
+
   grid:
     max_power_kw: 8                    # HARD limit: max grid import (cannot be exceeded)
   inverter:
@@ -174,7 +174,7 @@ input_sensors:
   # Context sensors for ML features
   alarm_state: alarm_control_panel.alarmo        # Alarm panel for occupancy detection (ML feature)
   vacation_mode: input_boolean.vacation_mode     # Vacation mode toggle (reduces load forecasts)
-  
+
   # Core energy sensors (real-time power)
   battery_soc: sensor.inverter_battery           # Current battery state of charge (%)
   pv_power: sensor.inverter_pv_power             # Current PV production (W or kW)
@@ -193,7 +193,7 @@ input_sensors:
   total_load_consumption: sensor.inverter_total_load_consumption  # Cumulative load (kWh)
   total_pv_production: sensor.inverter_total_production           # Cumulative PV production (kWh)
   water_heater_consumption: sensor.vvb_energy_daily               # Water heater daily energy (kWh)
-  
+
   # Daily sensors for Dashboard "Today's Stats" card
   today_grid_import: sensor.inverter_today_energy_import          # Today's grid import (kWh)
   today_grid_export: sensor.inverter_today_energy_export          # Today's grid export (kWh)
@@ -209,7 +209,7 @@ executor:
   interval_seconds: 60                           # How often to run (default: 1 minute)
   pause_reminder_minutes: 30                     # Notify if paused longer than this
   history_retention_days: 30                     # Keep execution history for N days
-  
+
   # Toggle entities (read by executor to check if enabled)
   automation_toggle_entity: input_boolean.darkstar_enable           # Master enable/disable switch
   manual_override_entity: input_boolean.darkstar_manual_override    # Manual override active flag
@@ -224,7 +224,7 @@ executor:
     max_charging_current_entity: number.inverter_battery_max_charging_current     # Max charge current (A)
     max_discharging_current_entity: number.inverter_battery_max_discharging_current  # Max discharge current (A)
     grid_max_export_power_entity: number.inverter_export_surplus_power           # Max grid export power (Watts)
-    
+
     # Control Unit Configuration (REV E3)
     control_unit: "A"                                                 # "A" (Amperes) or "W" (Watts)
     max_charging_power_entity:                                        # Entity for max charge power (W)
@@ -236,7 +236,7 @@ executor:
     min_charge_a: 10.0                 # Minimum meaningful charge current (A)
     round_step_a: 5.0                  # Round current commands to nearest X amps
     write_threshold_a: 5.0             # Only write if change exceeds X amps
-    
+
     # Watt-based Control Limits (used if control_unit="W")
     min_charge_w: 500.0                # Minimum meaningful charge power (W)
     round_step_w: 100.0                # Round power commands to nearest X watts

@@ -2,7 +2,8 @@ import contextlib
 import json
 import logging
 from typing import Any
-from sqlalchemy import create_engine, select, desc
+
+from sqlalchemy import create_engine, desc, select
 from sqlalchemy.orm import sessionmaker
 
 from backend.learning.models import LearningDailyMetric
@@ -33,7 +34,7 @@ def load_learning_overlays(learning_config: dict[str, Any]) -> dict[str, Any]:
         with Session() as session:
             stmt = select(LearningDailyMetric).order_by(desc(LearningDailyMetric.date)).limit(1)
             metric = session.execute(stmt).scalar_one_or_none()
-            
+
             if not metric:
                 return {}
 

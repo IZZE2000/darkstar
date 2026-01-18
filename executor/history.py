@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 import pytz
-from sqlalchemy import create_engine, select, delete, func, desc, text
+from sqlalchemy import create_engine, delete, desc, func, select, text
 from sqlalchemy.orm import sessionmaker
 
 from backend.learning.models import ExecutionLog
@@ -111,7 +111,7 @@ class ExecutionHistory:
                 error_message=record.error_message,
                 duration_ms=record.duration_ms,
                 source=record.source,
-                executor_version=record.executor_version
+                executor_version=record.executor_version,
             )
             session.add(entry)
             session.commit()
@@ -121,15 +121,16 @@ class ExecutionHistory:
         """
         Update slot_observations.executed_action for learning integration using SQLAlchemy.
         """
-        # Note: This is a cross-module update. For now using text() to avoid circular imports 
-        # or needing to know about SlotObservation here if we want to keep it decoupled. 
+        # Note: This is a cross-module update. For now using text() to avoid circular imports
+        # or needing to know about SlotObservation here if we want to keep it decoupled.
         # However, since models.py has everything, we could import it.
-        from backend.learning.models import SlotObservation
         try:
             with self.Session() as session:
                 session.execute(
-                    text("UPDATE slot_observations SET executed_action = :action WHERE slot_start = :start"),
-                    {"action": json.dumps(action_summary), "start": slot_start}
+                    text(
+                        "UPDATE slot_observations SET executed_action = :action WHERE slot_start = :start"
+                    ),
+                    {"action": json.dumps(action_summary), "start": slot_start},
                 )
                 session.commit()
         except Exception as e:
@@ -147,17 +148,17 @@ class ExecutionHistory:
         """
         with self.Session() as session:
             stmt = select(ExecutionLog)
-            
+
             if slot_start:
                 stmt = stmt.where(ExecutionLog.slot_start == slot_start)
-            
+
             if success_only is not None:
                 stmt = stmt.where(ExecutionLog.success == (1 if success_only else 0))
-                
+
             stmt = stmt.order_by(desc(ExecutionLog.executed_at)).limit(limit).offset(offset)
-            
+
             results = session.execute(stmt).scalars().all()
-            
+
             # Convert to dicts for API compatibility
             return [
                 {c.name: getattr(r, c.name) for c in ExecutionLog.__table__.columns}
@@ -183,7 +184,7 @@ class ExecutionHistory:
             result = session.execute(stmt)
             deleted = result.rowcount
             session.commit()
-            
+
             if deleted > 0:
                 logger.info("Cleaned up %d old execution records", deleted)
             return deleted
@@ -196,28 +197,36 @@ class ExecutionHistory:
 
         with self.Session() as session:
             # 1. Total executions
-            total = session.query(func.count(ExecutionLog.id)).filter(ExecutionLog.executed_at >= cutoff).scalar() or 0
-            
+            total = (
+                session.query(func.count(ExecutionLog.id))
+                .filter(ExecutionLog.executed_at >= cutoff)
+                .scalar()
+                or 0
+            )
+
             # 2. Success count
-            success = session.query(func.count(ExecutionLog.id)).filter(
-                ExecutionLog.executed_at >= cutoff,
-                ExecutionLog.success == 1
-            ).scalar() or 0
-            
+            success = (
+                session.query(func.count(ExecutionLog.id))
+                .filter(ExecutionLog.executed_at >= cutoff, ExecutionLog.success == 1)
+                .scalar()
+                or 0
+            )
+
             # 3. Override count
-            overrides = session.query(func.count(ExecutionLog.id)).filter(
-                ExecutionLog.executed_at >= cutoff,
-                ExecutionLog.override_active == 1
-            ).scalar() or 0
-            
+            overrides = (
+                session.query(func.count(ExecutionLog.id))
+                .filter(ExecutionLog.executed_at >= cutoff, ExecutionLog.override_active == 1)
+                .scalar()
+                or 0
+            )
+
             # 4. Override types breakdown
-            override_types = session.query(
-                ExecutionLog.override_type,
-                func.count(ExecutionLog.id)
-            ).filter(
-                ExecutionLog.executed_at >= cutoff,
-                ExecutionLog.override_active == 1
-            ).group_by(ExecutionLog.override_type).all()
+            override_types = (
+                session.query(ExecutionLog.override_type, func.count(ExecutionLog.id))
+                .filter(ExecutionLog.executed_at >= cutoff, ExecutionLog.override_active == 1)
+                .group_by(ExecutionLog.override_type)
+                .all()
+            )
 
         return {
             "period_days": days,
@@ -238,21 +247,24 @@ class ExecutionHistory:
         now_iso = now.isoformat()
 
         with self.Session() as session:
-            stmt = select(
-                ExecutionLog.slot_start,
-                ExecutionLog.planned_charge_kw,
-                ExecutionLog.planned_discharge_kw,
-                ExecutionLog.planned_water_kw,
-                ExecutionLog.planned_soc_target,
-                ExecutionLog.planned_soc_projected,
-                ExecutionLog.commanded_water_temp,
-                ExecutionLog.before_soc_percent,
-                ExecutionLog.executed_at
-            ).where(
-                ExecutionLog.slot_start >= today_start_iso,
-                ExecutionLog.slot_start < now_iso
-            ).order_by(ExecutionLog.slot_start.asc())
-            
+            stmt = (
+                select(
+                    ExecutionLog.slot_start,
+                    ExecutionLog.planned_charge_kw,
+                    ExecutionLog.planned_discharge_kw,
+                    ExecutionLog.planned_water_kw,
+                    ExecutionLog.planned_soc_target,
+                    ExecutionLog.planned_soc_projected,
+                    ExecutionLog.commanded_water_temp,
+                    ExecutionLog.before_soc_percent,
+                    ExecutionLog.executed_at,
+                )
+                .where(
+                    ExecutionLog.slot_start >= today_start_iso, ExecutionLog.slot_start < now_iso
+                )
+                .order_by(ExecutionLog.slot_start.asc())
+            )
+
             rows = session.execute(stmt).all()
 
         # Group by slot_start, keeping latest execution per slot

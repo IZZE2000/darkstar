@@ -73,7 +73,7 @@ Users reported that after some operations (likely UI saves or auto-migrations), 
 
 **Goal:** Reduce Kepler MILP solver execution time from 22s to <5s by switching from soft pairwise spacing penalties to a hardened linear spacing constraint.
 
-**Context:** 
+**Context:**
 Profiling confirmed the water heating "spacing penalty" (O(T×S) pairwise constraints) was the primary bottleneck (0.47s benchmark). Switch to a "Hard Constraint" formulation (`sum(heat[t-S:t]) + start[t]*S <= S`) reduced benchmark time to 0.07s (**6.7x speedup**). This formulation prunes the search space aggressively and scales linearly O(T).
 
 **Trade-off:** This removes the ability to "pay" to violate spacing. Users must configure `water_min_spacing_hours` < `water_heating_max_gap_hours` to ensure top-ups are possible when comfort requires it.
@@ -462,7 +462,7 @@ This era focused on the transition to a public beta release, including infrastru
   # OLD:
   if self.ha_client:
       toggle_state = self.ha_client.get_state_value(self.config.automation_toggle_entity)
-  
+
   # NEW:
   if self.ha_client and self.config.automation_toggle_entity:
       toggle_state = self.ha_client.get_state_value(self.config.automation_toggle_entity)
@@ -473,7 +473,7 @@ This era focused on the transition to a public beta release, including infrastru
   # OLD:
   if self.config.has_battery:
       work_mode = self.ha_client.get_state_value(self.config.inverter.work_mode_entity)
-  
+
   # NEW:
   if self.config.has_battery and self.config.inverter.work_mode_entity:
       work_mode = self.ha_client.get_state_value(self.config.inverter.work_mode_entity)
@@ -484,7 +484,7 @@ This era focused on the transition to a public beta release, including infrastru
   # OLD:
   if self.config.has_water_heater:
       water_str = self.ha_client.get_state_value(self.config.water_heater.target_entity)
-  
+
   # NEW:
   if self.config.has_water_heater and self.config.water_heater.target_entity:
       water_str = self.ha_client.get_state_value(self.config.water_heater.target_entity)
@@ -905,11 +905,11 @@ manager.open(() => socket.connect())
        """Empty entity strings should become None."""
        config_data = {"executor": {"inverter": {"work_mode_entity": ""}}}
        # ... assert entity is None
-   
+
    def test_none_stays_none():
        """None values should remain None."""
        # ... test with missing keys
-   
+
    def test_valid_entity_preserved():
        """Valid entity IDs should be preserved."""
        config_data = {"executor": {"inverter": {"work_mode_entity": "select.inverter"}}}
@@ -1062,7 +1062,7 @@ manager.open(() => socket.connect())
     ```typescript
     const validateEntities = (form: Record<string, string>): string[] => {
         const errors: string[] = [];
-        
+
         // If executor enabled, require core entities
         if (form['executor.enabled'] === 'true') {
             const required = [
@@ -1070,14 +1070,14 @@ manager.open(() => socket.connect())
                 'executor.inverter.work_mode_entity',
                 'executor.inverter.grid_charging_entity'
             ];
-            
+
             for (const key of required) {
                 if (!form[key] || form[key].trim() === '') {
                     errors.push(`${key} is required when executor is enabled`);
                 }
             }
         }
-        
+
         return errors;
     };
     ```
@@ -1092,7 +1092,7 @@ manager.open(() => socket.connect())
             ("input_sensors.battery_soc", "Battery SoC sensor"),
             ("executor.inverter.work_mode_entity", "Inverter work mode"),
         ]
-        
+
         for path, name in required_entities:
             value = _get_nested(config, path.split('.'))
             if not value or str(value).strip() == "":
@@ -1114,7 +1114,7 @@ manager.open(() => socket.connect())
     ```tsx
     {isHAAddon && (
         <InfoBanner>
-            ℹ️ Running as Home Assistant Add-on. 
+            ℹ️ Running as Home Assistant Add-on.
             HA connection is auto-configured via Supervisor.
         </InfoBanner>
     )}
@@ -1395,7 +1395,7 @@ manager.open(() => socket.connect())
    * [x] Open `backend/api/routers/schedule.py`
    * [x] Locate the `today_with_history` function (line ~136)
    * [x] After the `forecast_map` query (around line 273), add new section:
-   
+
    ```python
    # 4. Planned Actions Map (slot_plans table)
    planned_map: dict[datetime, dict[str, float]] = {}
@@ -1408,7 +1408,7 @@ manager.open(() => socket.connect())
                today_iso = tz.localize(
                    datetime.combine(today_local, datetime.min.time())
                ).isoformat()
-               
+
                query = """
                    SELECT
                        slot_start,
@@ -1420,17 +1420,17 @@ manager.open(() => socket.connect())
                    WHERE slot_start >= ?
                    ORDER BY slot_start ASC
                """
-               
+
                async with conn.execute(query, (today_iso,)) as cursor:
                    async for row in cursor:
                        try:
                            st = datetime.fromisoformat(str(row["slot_start"]))
                            st_local = st if st.tzinfo else tz.localize(st)
                            key = st_local.astimezone(tz).replace(tzinfo=None)
-                           
+
                            # Convert kWh to kW (slot_plans stores kWh, frontend expects kW)
                            duration_hours = 0.25  # 15-min slots
-                           
+
                            planned_map[key] = {
                                "battery_charge_kw": float(row["planned_charge_kwh"] or 0.0) / duration_hours,
                                "battery_discharge_kw": float(row["planned_discharge_kwh"] or 0.0) / duration_hours,
@@ -1439,7 +1439,7 @@ manager.open(() => socket.connect())
                            }
                        except Exception:
                            continue
-                           
+
        logger.info(f"Loaded {len(planned_map)} planned slots for {today_local}")
    except Exception as e:
        logger.warning(f"Failed to load planned map: {e}")
@@ -1448,7 +1448,7 @@ manager.open(() => socket.connect())
 5. **[AUTOMATED] Merge Planned Actions into Slots**
    * [x] Locate the slot merge loop (around line 295-315)
    * [x] After the forecast merge block, add:
-   
+
    ```python
    # Attach planned actions from slot_plans database
    if key in planned_map:
@@ -1700,7 +1700,7 @@ manager.open(() => socket.connect())
      ```python
      # If requesting a specific file that exists, serve it directly
      file_path = static_dir / full_path
-     
+
      # Security: Prevent directory traversal attacks
      try:
          resolved_path = file_path.resolve()
@@ -1708,7 +1708,7 @@ manager.open(() => socket.connect())
              raise HTTPException(status_code=404, detail="Not found")
      except (ValueError, OSError):
          raise HTTPException(status_code=404, detail="Not found")
-     
+
      if file_path.is_file():
          return FileResponse(file_path)
      ```
@@ -1723,31 +1723,31 @@ manager.open(() => socket.connect())
      import pytest
      from fastapi.testclient import TestClient
      from backend.main import create_app
-     
-     
+
+
      def test_path_traversal_blocked():
          """Verify directory traversal attacks are blocked."""
          app = create_app()
          client = TestClient(app)
-         
+
          # Attempt to access parent directory
          response = client.get("/../../etc/passwd")
          assert response.status_code == 404, "Directory traversal should return 404"
-         
+
          # Attempt with URL encoding
          response = client.get("/%2e%2e/%2e%2e/etc/passwd")
          assert response.status_code == 404, "Encoded traversal should return 404"
-         
+
          # Attempt with multiple traversals
          response = client.get("/../../../../../etc/passwd")
          assert response.status_code == 404, "Multiple traversals should return 404"
-     
-     
+
+
      def test_legitimate_static_file_allowed():
          """Verify legitimate static files are still accessible."""
          app = create_app()
          client = TestClient(app)
-         
+
          # This assumes index.html exists in static_dir
          response = client.get("/index.html")
          # Should return 200 (if file exists) or 404 (if static dir missing in tests)
@@ -1798,12 +1798,12 @@ manager.open(() => socket.connect())
    * [x] Create `frontend/src/components/ui/Badge.tsx`:
      ```tsx
      import React from 'react'
-     
+
      interface BadgeProps {
          variant: 'warning' | 'info' | 'error' | 'success'
          children: React.ReactNode
      }
-     
+
      export const Badge: React.FC<BadgeProps> = ({ variant, children }) => {
          const variantClasses = {
              warning: 'bg-yellow-500/10 text-yellow-500 border-yellow-500/30',
@@ -1811,7 +1811,7 @@ manager.open(() => socket.connect())
              error: 'bg-red-500/10 text-red-500 border-red-500/30',
              success: 'bg-green-500/10 text-green-500 border-green-500/30',
          }
-     
+
          return (
              <span
                  className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${variantClasses[variant]}`}
@@ -1935,10 +1935,10 @@ manager.open(() => socket.connect())
       ```bash
       curl -i http://localhost:8000/../../etc/passwd
       # Expected: HTTP/1.1 404 Not Found
-      
+
       curl -i http://localhost:8000/../backend/main.py
       # Expected: HTTP/1.1 404 Not Found
-      
+
       curl -i http://localhost:8000/assets/../../../etc/passwd
       # Expected: HTTP/1.1 404 Not Found
       ```
@@ -2001,24 +2001,24 @@ manager.open(() => socket.connect())
     * [ ] Suggested commit message:
       ```
       feat(security,ui): pre-release polish and path traversal fix
-      
+
       REV F9 - Production-grade improvements before public beta release:
-      
+
       Security:
       - Fix path traversal vulnerability in serve_spa handler
       - Add security unit tests for directory traversal prevention
-      
+
       Code quality:
       - Remove 9 debug console.* statements from production code
       - Fix typo "calculationsWfz" in config help text
-      
+
       UX:
       - Simplify help system to tooltip-only (single source of truth)
       - Add visual "[NOT IMPLEMENTED]" badge for incomplete features
       - Remove redundant inline helper text from settings fields
-      
+
       Breaking Changes: None
-      
+
       Closes: Priority items #3, #4, #5, #8 from BETA_AUDIT report
       ```
 
@@ -2301,14 +2301,14 @@ manager.open(() => socket.connect())
 
 #### Phase 1: Security & Hygiene [DONE]
 **Goal:** Ensure future configuration saves are secure and establish legal footing.
-- [x] **API Security Hardening**: Update `backend/api/routers/config.py` (and relevant service layers) to implement a strict exclusion filter. 
+- [x] **API Security Hardening**: Update `backend/api/routers/config.py` (and relevant service layers) to implement a strict exclusion filter.
   - *Requirement:* When saving the dashboard settings, the system MUST NOT merge any keys from `secrets.yaml` into the writable `config.yaml`.
 - [x] **Legal Foundation**: Create root `LICENSE` file containing the AGPL-3.0 license text (syncing with the mentions in README).
 
 
 #### Phase 2: Professional Documentation [DONE]
 **Goal:** Provide a "wow" first impression and clear technical guidance for new users.
-- [x] **README Enhancement**: 
+- [x] **README Enhancement**:
   - Add high-visibility "PUBLIC BETA" banner.
   - Add GitHub Action status badges and AGPL-3.0 License badge.
   - Add "My Home Assistant" Add-on button.
@@ -2323,7 +2323,7 @@ manager.open(() => socket.connect())
 - [x] **Add-on Runner Migration**: Refactor `darkstar/run.sh`.
   - *Task:* Change the legacy `flask run` command to `uvicorn backend.main:app`.
   - *Task:* Ensure environment variables passed from the HA Supervisor are correctly used.
-- [x] **Container Health Monitoring**: 
+- [x] **Container Health Monitoring**:
   - Add `HEALTHCHECK` directive to root `Dockerfile`. (Already in place)
   - Sync `docker-compose.yml` healthcheck.
 - [x] **Legacy Code Removal**:
@@ -2357,12 +2357,12 @@ manager.open(() => socket.connect())
   - `scripts/docker-entrypoint.sh`
   - `darkstar/run.sh`
 - [x] **CI Fix**: Resolve `pytz` dependency issue in GitHub Actions pipeline.
-- [x] **Multi-Arch Build Verification**: 
+- [x] **Multi-Arch Build Verification**:
   - Manually trigger `.github/workflows/build-addon.yml`.
   - Verify successful container image push to GHCR.
-- [x] **GitHub Release Creation**: 
+- [x] **GitHub Release Creation**:
   - Generate a formal GitHub Release `v2.4.0-beta`.
-- [x] **HA Ingress Fix (v2.4.1-beta)**: 
+- [x] **HA Ingress Fix (v2.4.1-beta)**:
   - Fixed SPA base path issue where API calls went to wrong URL under HA Ingress.
   - Added dynamic `<base href>` injection in `backend/main.py` using `X-Ingress-Path` header.
   - Updated `frontend/src/lib/socket.ts` to use `document.baseURI` for WebSocket path.
@@ -3545,7 +3545,7 @@ return 60  # Was hardcoded instead of using config
 **Goal:** Fix inefficient water heating schedules (redundant heating & expensive slots).
 
 **Implementation Status (2025-12-26):**
--   [x] **Soft Efficiency Penalty:** Added `water_min_spacing_hours` and `water_spacing_penalty_sek` to `KeplerSolver`. 
+-   [x] **Soft Efficiency Penalty:** Added `water_min_spacing_hours` and `water_spacing_penalty_sek` to `KeplerSolver`.
 -   [x] **Progressive Gap Penalty:** Implemented a two-tier "Rubber Band" penalty in MILP to discourage very long gaps between heating sessions.
 -   [x] **UI Support:** Added spacing parameters to Settings → Parameters → Water Heating.
 
@@ -3564,10 +3564,10 @@ Goal: Elevate the "Command Center" feel with live visual feedback and semantic c
     - [x] **Positioning:** Card moved **UP** to the primary row.
     - [x] **Overrides:** Added "Water Boost (1h)" and "Battery Top Up (50%)" manual controls.
     - [x] **Visual Flair:** Implemented "Active Reactor" glowing states and circuit-board connective lines.
-- [x] **Cleanup:** 
+- [x] **Cleanup:**
     - [x] Removed redundant titles ("Quick Actions", "Control Parameters") to save space.
     - [x] Implemented **Toolbar Card** for Plan Badge (Freshness + Next Action) and Refresh controls.
-- [x] **HA Event Stream (E1):** Implement **WebSockets** to replace all polling mechanisms. 
+- [x] **HA Event Stream (E1):** Implement **WebSockets** to replace all polling mechanisms.
     - **Scope:** Real-time streaming for Charts, Sparklines, and Status.
     - **Cleanup:** Remove the "30s Auto-Refresh" toggle and interval logic entirely. Dashboard becomes fully push-based.
 - [x] **Data Fix (Post-E1):** Fixed - `/api/energy/today` was coupled to executor's HA client. Refactored to use direct HA requests. Also fixed `setAutoRefresh` crash in Dashboard.tsx.
@@ -3581,7 +3581,7 @@ Goal: Elevate the "Command Center" feel with live visual feedback and semantic c
 -   [x] Phase 2: Settings Integration
     -   [x] Add "External Executor Mode" toggle in Settings → Advanced.
     -   [x] When enabled, show "DB Sync" card with Load/Push buttons.
-    
+
 **Phase 3: Cleanup**
 
 -   [x] Hide Planning tab from navigation (legacy).
@@ -3594,36 +3594,36 @@ Goal: Make Darkstar production-ready for both standalone Docker AND HA Add-on de
 Design Principles:
 
 1.  **Settings Tab = Single Source of Truth** (works for both deployment modes)
-    
+
 2.  **HA Add-on = Bootstrap Helper** (auto-detects where possible, entity dropdowns for sensors)
-    
+
 3.  **System Profiles** via 3 toggles: Solar, Battery, Water Heater
-    
+
 
 **Phase 1: HA Add-on Bootstrap**
 
 -   [x] **Auto-detection:** `SUPERVISOR_TOKEN` available as env var (no user token needed). HA URL is always `http://supervisor/core`.
-    
+
 -   [x] **Config:** Update `hassio/config.yaml` with entity selectors.
-    
+
 -   [x] **Startup:** Update `hassio/run.sh` to auto-generate `secrets.yaml`.
-    
+
 
 **Phase 2: Settings Tab — Setup Section**
 
 -   [x] **HA Connection:** Add section in Settings → System with HA URL/Token fields (read-only in Add-on mode) and "Test Connection" button.
-    
+
 -   [x] **Core Sensors:** Add selectors for Battery SoC, PV Production, Load Consumption.
-    
+
 
 **Phase 3: System Profile Toggles**
 
 -   [x] **Config:** Add `system: { has_solar: true, has_battery: true, has_water_heater: true }` to `config.default.yaml`.
-    
+
 -   [x] **UI:** Add 3 toggle switches in Settings → System.
-    
+
 -   [x] **Logic:** Backend skips disabled features in planner/executor.
-    
+
 
 Phase 4: Validation
 
@@ -3643,9 +3643,9 @@ Problem: Kepler read wear cost from wrong config key (learning.default_battery_c
 Solution:
 
 1.  Fixed `adapter.py` to read from correct config key.
-    
+
 2.  Added `ramping_cost_sek_per_kw: 0.05` to reduce sawtooth switching.
-    
+
 3.  Fixed adapter to read from kepler config section.
 
 ### [OBSOLETE] Rev K20 — Stored Energy Cost for Discharge
@@ -4068,5 +4068,3 @@ Reason: Superseded by Rev K24. We determined that using historical cost in the s
 *   **Infrastructure**: SQLite learning DB, MariaDB history sync, Nordpool/HA integration.
 
 ---
-
-

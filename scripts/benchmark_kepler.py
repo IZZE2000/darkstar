@@ -31,8 +31,8 @@ from rich.table import Table
 # Add project root to path (must be before local imports)
 sys.path.append(str(Path(__file__).parent.parent.resolve()))
 
-from planner.solver.kepler import KeplerSolver  # noqa: E402
-from planner.solver.types import (  # noqa: E402
+from planner.solver.kepler import KeplerSolver
+from planner.solver.types import (
     KeplerConfig,
     KeplerInput,
     KeplerInputSlot,
@@ -175,7 +175,7 @@ def generate_scenario(sc_config: dict[str, Any]) -> dict[str, Any]:
         "features": {
             "Water": water_enabled,
             "Spacing": spacing_enabled,
-            "Horizon": f"{slots/4:.1f}h",
+            "Horizon": f"{slots / 4:.1f}h",
         },
     }
 

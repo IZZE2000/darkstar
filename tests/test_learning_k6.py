@@ -9,8 +9,6 @@ import pytest
 sys.path.append(str(Path(__file__).parent.parent))
 from datetime import datetime, timedelta
 
-from datetime import datetime, timedelta
-
 from backend.learning.engine import LearningEngine
 from backend.learning.models import Base
 
@@ -26,10 +24,10 @@ def learning_engine(tmp_path):
         f.write(f"learning:\n  sqlite_path: {db_path}\ntimezone: Europe/Stockholm\n")
 
     engine = LearningEngine(str(config_path))
-    
+
     # Manually create schema for tests
     Base.metadata.create_all(engine.store.engine)
-    
+
     return engine
 
 

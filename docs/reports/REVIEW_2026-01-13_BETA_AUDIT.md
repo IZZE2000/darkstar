@@ -1,7 +1,7 @@
 # Darkstar Beta-to-Release Review: Findings Report
 
-**Review Date:** 2026-01-13  
-**Version:** 2.4.9-beta  
+**Review Date:** 2026-01-13
+**Version:** 2.4.9-beta
 **Status:** Review Complete
 
 ---

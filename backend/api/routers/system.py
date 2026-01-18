@@ -141,17 +141,13 @@ async def get_log_info() -> LogInfoResponse:
     """Return metadata about the main log file."""
     log_path = Path("data/darkstar.log")
     if not log_path.exists():
-        return LogInfoResponse(
-            filename="darkstar.log",
-            size_bytes=0,
-            last_modified="never"
-        )
+        return LogInfoResponse(filename="darkstar.log", size_bytes=0, last_modified="never")
 
     stats = log_path.stat()
     return LogInfoResponse(
         filename="darkstar.log",
         size_bytes=stats.st_size,
-        last_modified=datetime.fromtimestamp(stats.st_mtime, tz=UTC).isoformat()
+        last_modified=datetime.fromtimestamp(stats.st_mtime, tz=UTC).isoformat(),
     )
 
 
@@ -163,15 +159,12 @@ async def get_log_info() -> LogInfoResponse:
 async def download_logs():
     """Download the main log file."""
     from fastapi.responses import FileResponse
+
     log_path = Path("data/darkstar.log")
     if not log_path.exists():
         raise HTTPException(status_code=404, detail="Log file not found")
 
-    return FileResponse(
-        path=log_path,
-        filename="darkstar.log",
-        media_type="text/plain"
-    )
+    return FileResponse(path=log_path, filename="darkstar.log", media_type="text/plain")
 
 
 @router.delete(

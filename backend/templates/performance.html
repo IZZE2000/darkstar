@@ -29,7 +29,7 @@
 
         <!-- Charts Grid -->
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            
+
             <!-- SoC Tunnel -->
             <div class="card col-span-2">
                 <h2 class="text-xl font-semibold mb-4 text-blue-400">SoC Tunnel: Plan vs Reality</h2>
@@ -73,7 +73,7 @@
             try {
                 const response = await fetch('/api/performance/metrics?days=7');
                 const data = await response.json();
-                
+
                 renderSoCChart(data.soc_series);
                 renderCostChart(data.cost_series);
                 updateMetrics(data.cost_series);
@@ -175,7 +175,7 @@
 
             document.getElementById('metric-planned-cost').textContent = `${totalPlanned.toFixed(2)} SEK`;
             document.getElementById('metric-realized-cost').textContent = `${totalRealized.toFixed(2)} SEK`;
-            
+
             const devEl = document.getElementById('metric-cost-dev');
             devEl.textContent = `${deviation.toFixed(2)} SEK`;
             devEl.classList.add(totalRealized <= totalPlanned ? 'text-emerald-400' : 'text-red-400');

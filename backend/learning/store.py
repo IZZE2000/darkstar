@@ -5,7 +5,7 @@ from typing import Any
 
 import pandas as pd
 import pytz
-from sqlalchemy import create_engine, func, select, text, cast, Integer
+from sqlalchemy import Integer, cast, create_engine, func, select, text
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import sessionmaker
 
@@ -50,13 +50,13 @@ class LearningStore:
                 if slot_start is None:
                     continue
 
-                if isinstance(slot_start, (datetime, pd.Timestamp)):
+                if isinstance(slot_start, datetime | pd.Timestamp):
                     slot_start = slot_start.astimezone(self.timezone).isoformat()
                 else:
                     slot_start = pd.to_datetime(slot_start).astimezone(self.timezone).isoformat()
 
                 if slot_end is not None:
-                    if isinstance(slot_end, (datetime, pd.Timestamp)):
+                    if isinstance(slot_end, datetime | pd.Timestamp):
                         slot_end = slot_end.astimezone(self.timezone).isoformat()
                     else:
                         slot_end = pd.to_datetime(slot_end).astimezone(self.timezone).isoformat()
@@ -68,21 +68,19 @@ class LearningStore:
                     slot_start=slot_start,
                     slot_end=slot_end,
                     import_price_sek_kwh=import_price,
-                    export_price_sek_kwh=export_price
+                    export_price_sek_kwh=export_price,
                 )
                 stmt = stmt.on_conflict_do_update(
-                    index_elements=['slot_start'],
+                    index_elements=["slot_start"],
                     set_={
-                        'slot_end': func.coalesce(stmt.excluded.slot_end, SlotObservation.slot_end),
-                        'import_price_sek_kwh': func.coalesce(
-                            stmt.excluded.import_price_sek_kwh,
-                            SlotObservation.import_price_sek_kwh
+                        "slot_end": func.coalesce(stmt.excluded.slot_end, SlotObservation.slot_end),
+                        "import_price_sek_kwh": func.coalesce(
+                            stmt.excluded.import_price_sek_kwh, SlotObservation.import_price_sek_kwh
                         ),
-                        'export_price_sek_kwh': func.coalesce(
-                            stmt.excluded.export_price_sek_kwh,
-                            SlotObservation.export_price_sek_kwh
-                        )
-                    }
+                        "export_price_sek_kwh": func.coalesce(
+                            stmt.excluded.export_price_sek_kwh, SlotObservation.export_price_sek_kwh
+                        ),
+                    },
                 )
                 session.execute(stmt)
             session.commit()
@@ -99,13 +97,13 @@ class LearningStore:
                 slot_start = record["slot_start"]
                 slot_end = record.get("slot_end")
 
-                if isinstance(slot_start, (datetime, pd.Timestamp)):
+                if isinstance(slot_start, datetime | pd.Timestamp):
                     slot_start = slot_start.astimezone(self.timezone).isoformat()
                 else:
                     slot_start = pd.to_datetime(slot_start).astimezone(self.timezone).isoformat()
 
                 if slot_end is not None:
-                    if isinstance(slot_end, (datetime, pd.Timestamp)):
+                    if isinstance(slot_end, datetime | pd.Timestamp):
                         slot_end = slot_end.astimezone(self.timezone).isoformat()
                     else:
                         slot_end = pd.to_datetime(slot_end).astimezone(self.timezone).isoformat()
@@ -124,26 +122,38 @@ class LearningStore:
                     soc_end_percent=record.get("soc_end_percent"),
                     import_price_sek_kwh=record.get("import_price_sek_kwh"),
                     export_price_sek_kwh=record.get("export_price_sek_kwh"),
-                    quality_flags=record.get("quality_flags", "{}")
+                    quality_flags=record.get("quality_flags", "{}"),
                 )
 
                 stmt = stmt.on_conflict_do_update(
-                    index_elements=['slot_start'],
+                    index_elements=["slot_start"],
                     set_={
-                        'slot_end': func.coalesce(stmt.excluded.slot_end, SlotObservation.slot_end),
-                        'import_kwh': stmt.excluded.import_kwh,
-                        'export_kwh': stmt.excluded.export_kwh,
-                        'pv_kwh': stmt.excluded.pv_kwh,
-                        'load_kwh': stmt.excluded.load_kwh,
-                        'water_kwh': stmt.excluded.water_kwh,
-                        'batt_charge_kwh': func.coalesce(stmt.excluded.batt_charge_kwh, SlotObservation.batt_charge_kwh),
-                        'batt_discharge_kwh': func.coalesce(stmt.excluded.batt_discharge_kwh, SlotObservation.batt_discharge_kwh),
-                        'soc_start_percent': func.coalesce(stmt.excluded.soc_start_percent, SlotObservation.soc_start_percent),
-                        'soc_end_percent': func.coalesce(stmt.excluded.soc_end_percent, SlotObservation.soc_end_percent),
-                        'import_price_sek_kwh': func.coalesce(stmt.excluded.import_price_sek_kwh, SlotObservation.import_price_sek_kwh),
-                        'export_price_sek_kwh': func.coalesce(stmt.excluded.export_price_sek_kwh, SlotObservation.export_price_sek_kwh),
-                        'quality_flags': stmt.excluded.quality_flags
-                    }
+                        "slot_end": func.coalesce(stmt.excluded.slot_end, SlotObservation.slot_end),
+                        "import_kwh": stmt.excluded.import_kwh,
+                        "export_kwh": stmt.excluded.export_kwh,
+                        "pv_kwh": stmt.excluded.pv_kwh,
+                        "load_kwh": stmt.excluded.load_kwh,
+                        "water_kwh": stmt.excluded.water_kwh,
+                        "batt_charge_kwh": func.coalesce(
+                            stmt.excluded.batt_charge_kwh, SlotObservation.batt_charge_kwh
+                        ),
+                        "batt_discharge_kwh": func.coalesce(
+                            stmt.excluded.batt_discharge_kwh, SlotObservation.batt_discharge_kwh
+                        ),
+                        "soc_start_percent": func.coalesce(
+                            stmt.excluded.soc_start_percent, SlotObservation.soc_start_percent
+                        ),
+                        "soc_end_percent": func.coalesce(
+                            stmt.excluded.soc_end_percent, SlotObservation.soc_end_percent
+                        ),
+                        "import_price_sek_kwh": func.coalesce(
+                            stmt.excluded.import_price_sek_kwh, SlotObservation.import_price_sek_kwh
+                        ),
+                        "export_price_sek_kwh": func.coalesce(
+                            stmt.excluded.export_price_sek_kwh, SlotObservation.export_price_sek_kwh
+                        ),
+                        "quality_flags": stmt.excluded.quality_flags,
+                    },
                 )
                 session.execute(stmt)
             session.commit()
@@ -168,20 +178,20 @@ class LearningStore:
                     load_p10=forecast.get("load_p10"),
                     load_p90=forecast.get("load_p90"),
                     temp_c=forecast.get("temp_c"),
-                    forecast_version=forecast_version
+                    forecast_version=forecast_version,
                 )
                 # Preserve corrections on conflict
                 stmt = stmt.on_conflict_do_update(
-                    index_elements=['slot_start', 'forecast_version'],
+                    index_elements=["slot_start", "forecast_version"],
                     set_={
-                        'pv_forecast_kwh': stmt.excluded.pv_forecast_kwh,
-                        'load_forecast_kwh': stmt.excluded.load_forecast_kwh,
-                        'pv_p10': stmt.excluded.pv_p10,
-                        'pv_p90': stmt.excluded.pv_p90,
-                        'load_p10': stmt.excluded.load_p10,
-                        'load_p90': stmt.excluded.load_p90,
-                        'temp_c': stmt.excluded.temp_c
-                    }
+                        "pv_forecast_kwh": stmt.excluded.pv_forecast_kwh,
+                        "load_forecast_kwh": stmt.excluded.load_forecast_kwh,
+                        "pv_p10": stmt.excluded.pv_p10,
+                        "pv_p90": stmt.excluded.pv_p90,
+                        "load_p10": stmt.excluded.load_p10,
+                        "load_p90": stmt.excluded.load_p90,
+                        "temp_c": stmt.excluded.temp_c,
+                    },
                 )
                 session.execute(stmt)
             session.commit()
@@ -200,7 +210,7 @@ class LearningStore:
                 if not slot_start:
                     continue
 
-                if isinstance(slot_start, (datetime, pd.Timestamp)):
+                if isinstance(slot_start, datetime | pd.Timestamp):
                     slot_start = slot_start.astimezone(self.timezone).isoformat()
                 else:
                     slot_start = pd.to_datetime(slot_start).astimezone(self.timezone).isoformat()
@@ -215,20 +225,22 @@ class LearningStore:
                     planned_import_kwh=float(row.get("kepler_import_kwh", 0.0) or 0.0),
                     planned_export_kwh=float(row.get("kepler_export_kwh", 0.0) or 0.0),
                     planned_water_heating_kwh=float(row.get("water_heating_kw", 0.0) or 0.0) * 0.25,
-                    planned_cost_sek=float(row.get("planned_cost_sek", row.get("kepler_cost_sek", 0.0)) or 0.0)
+                    planned_cost_sek=float(
+                        row.get("planned_cost_sek", row.get("kepler_cost_sek", 0.0)) or 0.0
+                    ),
                 )
                 stmt = stmt.on_conflict_do_update(
-                    index_elements=['slot_start'],
+                    index_elements=["slot_start"],
                     set_={
-                        'planned_charge_kwh': stmt.excluded.planned_charge_kwh,
-                        'planned_discharge_kwh': stmt.excluded.planned_discharge_kwh,
-                        'planned_soc_percent': stmt.excluded.planned_soc_percent,
-                        'planned_import_kwh': stmt.excluded.planned_import_kwh,
-                        'planned_export_kwh': stmt.excluded.planned_export_kwh,
-                        'planned_water_heating_kwh': stmt.excluded.planned_water_heating_kwh,
-                        'planned_cost_sek': stmt.excluded.planned_cost_sek,
-                        'created_at': func.current_timestamp()
-                    }
+                        "planned_charge_kwh": stmt.excluded.planned_charge_kwh,
+                        "planned_discharge_kwh": stmt.excluded.planned_discharge_kwh,
+                        "planned_soc_percent": stmt.excluded.planned_soc_percent,
+                        "planned_import_kwh": stmt.excluded.planned_import_kwh,
+                        "planned_export_kwh": stmt.excluded.planned_export_kwh,
+                        "planned_water_heating_kwh": stmt.excluded.planned_water_heating_kwh,
+                        "planned_cost_sek": stmt.excluded.planned_cost_sek,
+                        "created_at": func.current_timestamp(),
+                    },
                 )
                 session.execute(stmt)
             session.commit()
@@ -243,13 +255,17 @@ class LearningStore:
     ) -> None:
         """Store a training episode for RL using SQLAlchemy."""
         with self.Session() as session:
-            stmt = sqlite_insert(TrainingEpisode).values(
-                episode_id=episode_id,
-                inputs_json=inputs_json,
-                schedule_json=schedule_json,
-                context_json=context_json,
-                config_overrides_json=config_overrides_json
-            ).on_conflict_do_nothing()
+            stmt = (
+                sqlite_insert(TrainingEpisode)
+                .values(
+                    episode_id=episode_id,
+                    inputs_json=inputs_json,
+                    schedule_json=schedule_json,
+                    context_json=context_json,
+                    config_overrides_json=config_overrides_json,
+                )
+                .on_conflict_do_nothing()
+            )
             session.execute(stmt)
             session.commit()
 
@@ -276,23 +292,25 @@ class LearningStore:
         """
         Query slot_observations for low-SoC events during peak hours using SQLAlchemy.
         """
-        cutoff_date = (
-            (datetime.now(self.timezone) - timedelta(days=days_back)).date().isoformat()
-        )
+        cutoff_date = (datetime.now(self.timezone) - timedelta(days=days_back)).date().isoformat()
         start_hour, end_hour = peak_hours
 
         with self.Session() as session:
-            stmt = select(
-                func.date(SlotObservation.slot_start),
-                SlotObservation.slot_start,
-                SlotObservation.soc_end_percent
-            ).where(
-                func.date(SlotObservation.slot_start) >= cutoff_date,
-                SlotObservation.soc_end_percent.is_not(None),
-                SlotObservation.soc_end_percent < threshold_percent,
-                cast(func.strftime('%H', SlotObservation.slot_start), Integer) >= start_hour,
-                cast(func.strftime('%H', SlotObservation.slot_start), Integer) < end_hour
-            ).order_by(SlotObservation.slot_start.desc())
+            stmt = (
+                select(
+                    func.date(SlotObservation.slot_start),
+                    SlotObservation.slot_start,
+                    SlotObservation.soc_end_percent,
+                )
+                .where(
+                    func.date(SlotObservation.slot_start) >= cutoff_date,
+                    SlotObservation.soc_end_percent.is_not(None),
+                    SlotObservation.soc_end_percent < threshold_percent,
+                    cast(func.strftime("%H", SlotObservation.slot_start), Integer) >= start_hour,
+                    cast(func.strftime("%H", SlotObservation.slot_start), Integer) < end_hour,
+                )
+                .order_by(SlotObservation.slot_start.desc())
+            )
 
             results = session.execute(stmt).all()
             return [
@@ -325,18 +343,15 @@ class LearningStore:
         now = datetime.now(self.timezone).isoformat()
         with self.Session() as session:
             stmt = sqlite_insert(ReflexState).values(
-                param_path=param_path,
-                last_value=new_value,
-                last_updated=now,
-                change_count=1
+                param_path=param_path, last_value=new_value, last_updated=now, change_count=1
             )
             stmt = stmt.on_conflict_do_update(
-                index_elements=['param_path'],
+                index_elements=["param_path"],
                 set_={
-                    'last_value': stmt.excluded.last_value,
-                    'last_updated': stmt.excluded.last_updated,
-                    'change_count': ReflexState.change_count + 1
-                }
+                    "last_value": stmt.excluded.last_value,
+                    "last_updated": stmt.excluded.last_updated,
+                    "change_count": ReflexState.change_count + 1,
+                },
             )
             session.execute(stmt)
             session.commit()
@@ -349,9 +364,7 @@ class LearningStore:
         """
         Compare forecast vs actual values for PV or load using SQLAlchemy.
         """
-        cutoff_date = (
-            (datetime.now(self.timezone) - timedelta(days=days_back)).date().isoformat()
-        )
+        cutoff_date = (datetime.now(self.timezone) - timedelta(days=days_back)).date().isoformat()
 
         if target == "pv":
             forecast_col = "f.pv_forecast_kwh"
@@ -389,20 +402,18 @@ class LearningStore:
         """
         Calculate arbitrage statistics for ROI analysis using SQLAlchemy.
         """
-        cutoff_date = (
-            (datetime.now(self.timezone) - timedelta(days=days_back)).date().isoformat()
-        )
+        cutoff_date = (datetime.now(self.timezone) - timedelta(days=days_back)).date().isoformat()
 
         with self.Session() as session:
             stmt = select(
                 func.sum(SlotObservation.export_kwh * SlotObservation.export_price_sek_kwh),
                 func.sum(SlotObservation.import_kwh * SlotObservation.import_price_sek_kwh),
                 func.sum(SlotObservation.batt_charge_kwh),
-                func.sum(SlotObservation.batt_discharge_kwh)
+                func.sum(SlotObservation.batt_discharge_kwh),
             ).where(
                 func.date(SlotObservation.slot_start) >= cutoff_date,
                 SlotObservation.export_price_sek_kwh.is_not(None),
-                SlotObservation.import_price_sek_kwh.is_not(None)
+                SlotObservation.import_price_sek_kwh.is_not(None),
             )
 
             row = session.execute(stmt).fetchone()
@@ -424,22 +435,20 @@ class LearningStore:
         """
         Estimate effective battery capacity from discharge observations using SQLAlchemy.
         """
-        cutoff_date = (
-            (datetime.now(self.timezone) - timedelta(days=days_back)).date().isoformat()
-        )
+        cutoff_date = (datetime.now(self.timezone) - timedelta(days=days_back)).date().isoformat()
 
         with self.Session() as session:
             stmt = select(
                 SlotObservation.soc_start_percent,
                 SlotObservation.soc_end_percent,
-                SlotObservation.batt_discharge_kwh
+                SlotObservation.batt_discharge_kwh,
             ).where(
                 func.date(SlotObservation.slot_start) >= cutoff_date,
                 SlotObservation.soc_start_percent.is_not(None),
                 SlotObservation.soc_end_percent.is_not(None),
                 SlotObservation.batt_discharge_kwh.is_not(None),
                 SlotObservation.batt_discharge_kwh > 0.1,
-                SlotObservation.soc_start_percent > SlotObservation.soc_end_percent
+                SlotObservation.soc_start_percent > SlotObservation.soc_end_percent,
             )
 
             rows = session.execute(stmt).all()
@@ -471,22 +480,34 @@ class LearningStore:
 
         with self.Session() as session:
             # 1. Forecast Accuracy
-            stmt_pv = select(func.avg(func.abs(SlotObservation.pv_kwh - SlotForecast.pv_forecast_kwh))).join(
-                SlotForecast, SlotObservation.slot_start == SlotForecast.slot_start
-            ).where(func.date(SlotObservation.slot_start) >= cutoff_date)
+            stmt_pv = (
+                select(func.avg(func.abs(SlotObservation.pv_kwh - SlotForecast.pv_forecast_kwh)))
+                .join(SlotForecast, SlotObservation.slot_start == SlotForecast.slot_start)
+                .where(func.date(SlotObservation.slot_start) >= cutoff_date)
+            )
 
             pv_res = session.execute(stmt_pv).scalar()
             if pv_res:
                 metrics["mae_pv"] = round(pv_res, 4)
 
             # 2. Plan Deviation
-            stmt_plan = select(
-                func.avg(func.abs(SlotObservation.batt_charge_kwh - SlotPlan.planned_charge_kwh)),
-                func.avg(func.abs(SlotObservation.batt_discharge_kwh - SlotPlan.planned_discharge_kwh)),
-                func.avg(func.abs(SlotObservation.soc_end_percent - SlotPlan.planned_soc_percent))
-            ).join(
-                SlotPlan, SlotObservation.slot_start == SlotPlan.slot_start
-            ).where(func.date(SlotObservation.slot_start) >= cutoff_date)
+            stmt_plan = (
+                select(
+                    func.avg(
+                        func.abs(SlotObservation.batt_charge_kwh - SlotPlan.planned_charge_kwh)
+                    ),
+                    func.avg(
+                        func.abs(
+                            SlotObservation.batt_discharge_kwh - SlotPlan.planned_discharge_kwh
+                        )
+                    ),
+                    func.avg(
+                        func.abs(SlotObservation.soc_end_percent - SlotPlan.planned_soc_percent)
+                    ),
+                )
+                .join(SlotPlan, SlotObservation.slot_start == SlotPlan.slot_start)
+                .where(func.date(SlotObservation.slot_start) >= cutoff_date)
+            )
 
             plan_res = session.execute(stmt_plan).fetchone()
             if plan_res:
@@ -495,15 +516,19 @@ class LearningStore:
                 metrics["mae_plan_soc"] = round(plan_res[2] or 0.0, 4)
 
             # 3. Cost Deviation
-            stmt_cost = select(
-                func.sum(SlotObservation.import_kwh * SlotObservation.import_price_sek_kwh -
-                         SlotObservation.export_kwh * SlotObservation.export_price_sek_kwh),
-                func.sum(SlotPlan.planned_cost_sek)
-            ).join(
-                SlotPlan, SlotObservation.slot_start == SlotPlan.slot_start
-            ).where(
-                func.date(SlotObservation.slot_start) >= cutoff_date,
-                SlotObservation.import_price_sek_kwh.is_not(None)
+            stmt_cost = (
+                select(
+                    func.sum(
+                        SlotObservation.import_kwh * SlotObservation.import_price_sek_kwh
+                        - SlotObservation.export_kwh * SlotObservation.export_price_sek_kwh
+                    ),
+                    func.sum(SlotPlan.planned_cost_sek),
+                )
+                .join(SlotPlan, SlotObservation.slot_start == SlotPlan.slot_start)
+                .where(
+                    func.date(SlotObservation.slot_start) >= cutoff_date,
+                    SlotObservation.import_price_sek_kwh.is_not(None),
+                )
             )
 
             cost_res = session.execute(stmt_cost).fetchone()
@@ -520,29 +545,38 @@ class LearningStore:
 
         with self.Session() as session:
             # 1. SoC Series
-            stmt_soc = select(
-                SlotObservation.slot_start,
-                SlotPlan.planned_soc_percent,
-                SlotObservation.soc_end_percent
-            ).outerjoin(
-                SlotPlan, SlotObservation.slot_start == SlotPlan.slot_start
-            ).where(func.date(SlotObservation.slot_start) >= cutoff_date).order_by(SlotObservation.slot_start.asc())
+            stmt_soc = (
+                select(
+                    SlotObservation.slot_start,
+                    SlotPlan.planned_soc_percent,
+                    SlotObservation.soc_end_percent,
+                )
+                .outerjoin(SlotPlan, SlotObservation.slot_start == SlotPlan.slot_start)
+                .where(func.date(SlotObservation.slot_start) >= cutoff_date)
+                .order_by(SlotObservation.slot_start.asc())
+            )
 
             soc_results = session.execute(stmt_soc).all()
             soc_series = [{"time": r[0], "planned": r[1], "actual": r[2]} for r in soc_results]
 
             # 2. Daily Cost Series
-            stmt_cost_daily = select(
-                func.date(SlotObservation.slot_start).label("day"),
-                func.sum(SlotPlan.planned_cost_sek),
-                func.sum(SlotObservation.import_kwh * SlotObservation.import_price_sek_kwh -
-                         SlotObservation.export_kwh * SlotObservation.export_price_sek_kwh)
-            ).outerjoin(
-                SlotPlan, SlotObservation.slot_start == SlotPlan.slot_start
-            ).where(
-                func.date(SlotObservation.slot_start) >= cutoff_date,
-                SlotObservation.import_price_sek_kwh.is_not(None)
-            ).group_by("day").order_by("day")
+            stmt_cost_daily = (
+                select(
+                    func.date(SlotObservation.slot_start).label("day"),
+                    func.sum(SlotPlan.planned_cost_sek),
+                    func.sum(
+                        SlotObservation.import_kwh * SlotObservation.import_price_sek_kwh
+                        - SlotObservation.export_kwh * SlotObservation.export_price_sek_kwh
+                    ),
+                )
+                .outerjoin(SlotPlan, SlotObservation.slot_start == SlotPlan.slot_start)
+                .where(
+                    func.date(SlotObservation.slot_start) >= cutoff_date,
+                    SlotObservation.import_price_sek_kwh.is_not(None),
+                )
+                .group_by("day")
+                .order_by("day")
+            )
 
             cost_results = session.execute(stmt_cost_daily).all()
             cost_series = [

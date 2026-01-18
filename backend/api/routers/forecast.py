@@ -1,22 +1,14 @@
-import json
 import logging
 from datetime import datetime, timedelta
-from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 # import aiosqlite # Removed
-import numpy as np  # pyright: ignore [reportMissingImports]
-import pandas as pd
 import pytz
-import requests
-from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel
+from fastapi import APIRouter, HTTPException
 
 from backend.learning import LearningEngine, get_learning_engine
-from backend.strategy.history import get_strategy_history
 from inputs import load_yaml
 from ml.api import get_forecast_slots_async
-from ml.weather import get_weather_volatility  # pyright: ignore [reportUnknownVariableType]
 
 logger = logging.getLogger("darkstar.api.forecast")
 router = APIRouter(prefix="/api/aurora", tags=["aurora"])
@@ -53,11 +45,11 @@ def _get_engine_and_config() -> tuple[LearningEngine | None, dict[str, Any]]:
     return engine, config
 
 
-import asyncio
-from typing import cast
-from sqlalchemy import func, select, and_
+import asyncio  # noqa: E402
 
-from backend.learning.models import (
+from sqlalchemy import func, select  # noqa: E402
+
+from backend.learning.models import (  # noqa: E402
     LearningRun,
     SlotForecast,
     SlotObservation,
@@ -89,8 +81,9 @@ async def _compute_graduation_level(engine: LearningEngine | None) -> dict[str, 
     return {"label": level_label, "runs": total_runs}
 
 
-
-async def _compute_risk_profile(engine: LearningEngine | None, config: dict[str, Any]) -> dict[str, Any]:
+async def _compute_risk_profile(
+    engine: LearningEngine | None, config: dict[str, Any]
+) -> dict[str, Any]:
     """Compute risk profile based on weather volatility."""
     volatility = 0.0
     try:
@@ -102,41 +95,38 @@ async def _compute_risk_profile(engine: LearningEngine | None, config: dict[str,
         pass
     except Exception as e:
         logger.warning(f"Failed to compute risk profile: {e}")
-    
+
     # Simple mapping
     risk = "low"
     if volatility > 0.5:
         risk = "high"
     elif volatility > 0.2:
         risk = "medium"
-        
-    return {
-        "level": risk,
-        "volatility_score": volatility,
-        "details": "Based on weather variance"
-    }
+
+    return {"level": risk, "volatility_score": volatility, "details": "Based on weather variance"}
+
 
 @router.get(
     "/dashboard",
     summary="Aurora Dashboard Data",
-    description="Aggregated view for the Aurora dashboard."
+    description="Aggregated view for the Aurora dashboard.",
 )
 async def aurora_dashboard() -> dict[str, Any]:
     """Aggregate data for the dashboard."""
     engine, config = _get_engine_and_config()
-    
+
     # 1. Identity
     identity = await _compute_graduation_level(engine)
-    
+
     # 2. Metrics
     metrics = await _compute_metrics(engine, days_back=7)
-    
+
     # 3. Risk
     risk = await _compute_risk_profile(engine, config)
-    
+
     # 4. Correction History
     corrections = await _fetch_correction_history(engine, config)
-    
+
     # 5. Horizon (Next 24h)
     stats: dict[str, Any] = {}
     try:
@@ -146,18 +136,18 @@ async def aurora_dashboard() -> dict[str, Any]:
         slot_start = now.replace(minute=minutes, second=0, microsecond=0)
         horizon_end = slot_start + timedelta(hours=24)
         active_version = config.get("forecasting", {}).get("active_forecast_version", "aurora")
-        
+
         horizon_slots = await get_forecast_slots_async(slot_start, horizon_end, active_version)
-        
+
         # Calculate stats
         total_pv = sum(s.get("pv_forecast_kwh", 0) for s in horizon_slots)
         total_load = sum(s.get("load_forecast_kwh", 0) for s in horizon_slots)
-        
+
         stats = {
             "horizon_hours": 24,
             "total_pv_kwh": round(total_pv, 2),
             "total_load_kwh": round(total_load, 2),
-            "slots": horizon_slots
+            "slots": horizon_slots,
         }
     except Exception as e:
         logger.error(f"Failed to fetch horizon for dashboard: {e}")
@@ -169,9 +159,8 @@ async def aurora_dashboard() -> dict[str, Any]:
         "risk": risk,
         "correction_history": corrections,
         "horizon": stats,
-        "status": "online" if engine else "offline"
+        "status": "online" if engine else "offline",
     }
-
 
 
 async def _fetch_correction_history(
@@ -188,7 +177,7 @@ async def _fetch_correction_history(
     def fetch():
         with engine.store.Session() as session:
             # Group by DATE(slot_start)
-            # In SQLite, we can use func.date() or substring if dates are ISO. 
+            # In SQLite, we can use func.date() or substring if dates are ISO.
             # Models store slot_start as string ISO.
             stmt = (
                 select(
@@ -239,7 +228,7 @@ async def _compute_metrics(
     tz = getattr(engine, "timezone", _get_timezone())
     now = datetime.now(tz)
     start_time = now - timedelta(days=max(days_back, 1))
-    
+
     start_iso = start_time.isoformat()
     now_iso = now.isoformat()
 
@@ -276,6 +265,7 @@ async def _compute_metrics(
         logger.warning("Failed to compute metrics: %s", exc)
     return metrics
 
+
 # get_aurora_briefing_text, aurora_dashboard, aurora_briefing, toggle_reflex remain unchanged
 # ...
 
@@ -290,11 +280,11 @@ async def forecast_eval(days: int = 7) -> dict[str, Any]:
     try:
         engine = get_learning_engine()
         if not engine or not hasattr(engine, "store"):
-             raise ValueError("Engine not ready")
-             
+            raise ValueError("Engine not ready")
+
         now = datetime.now(pytz.UTC)
         start_time = now - timedelta(days=max(days, 1))
-        
+
         start_iso = start_time.isoformat()
         now_iso = now.isoformat()
 
@@ -304,7 +294,9 @@ async def forecast_eval(days: int = 7) -> dict[str, Any]:
                     select(
                         SlotForecast.forecast_version,
                         func.avg(func.abs(SlotObservation.pv_kwh - SlotForecast.pv_forecast_kwh)),
-                        func.avg(func.abs(SlotObservation.load_kwh - SlotForecast.load_forecast_kwh)),
+                        func.avg(
+                            func.abs(SlotObservation.load_kwh - SlotForecast.load_forecast_kwh)
+                        ),
                         func.count().label("samples"),
                     )
                     .join(SlotObservation, SlotObservation.slot_start == SlotForecast.slot_start)
@@ -346,8 +338,8 @@ async def forecast_day(date: str | None = None) -> dict[str, Any]:
     try:
         engine = get_learning_engine()
         if not engine or not hasattr(engine, "store"):
-             raise ValueError("Engine not ready")
-             
+            raise ValueError("Engine not ready")
+
         tz = _get_timezone()
 
         try:
@@ -357,7 +349,7 @@ async def forecast_day(date: str | None = None) -> dict[str, Any]:
 
         day_start = tz.localize(datetime(target_date.year, target_date.month, target_date.day))
         day_end = day_start + timedelta(days=1)
-        
+
         start_iso = day_start.isoformat()
         end_iso = day_end.isoformat()
 
@@ -365,7 +357,9 @@ async def forecast_day(date: str | None = None) -> dict[str, Any]:
             with engine.store.Session() as session:
                 # Observations
                 obs_stmt = (
-                    select(SlotObservation.slot_start, SlotObservation.pv_kwh, SlotObservation.load_kwh)
+                    select(
+                        SlotObservation.slot_start, SlotObservation.pv_kwh, SlotObservation.load_kwh
+                    )
                     .where(
                         SlotObservation.slot_start >= start_iso,
                         SlotObservation.slot_start < end_iso,
@@ -375,14 +369,15 @@ async def forecast_day(date: str | None = None) -> dict[str, Any]:
                 obs_results = session.execute(obs_stmt).all()
 
                 # Forecasts
-                f_stmt = (
-                    select(SlotForecast.slot_start, SlotForecast.pv_forecast_kwh, 
-                           SlotForecast.load_forecast_kwh, SlotForecast.forecast_version)
-                    .where(
-                        SlotForecast.slot_start >= start_iso,
-                        SlotForecast.slot_start < end_iso,
-                        SlotForecast.forecast_version.in_(["baseline_7_day_avg", "aurora"]),
-                    )
+                f_stmt = select(
+                    SlotForecast.slot_start,
+                    SlotForecast.pv_forecast_kwh,
+                    SlotForecast.load_forecast_kwh,
+                    SlotForecast.forecast_version,
+                ).where(
+                    SlotForecast.slot_start >= start_iso,
+                    SlotForecast.slot_start < end_iso,
+                    SlotForecast.forecast_version.in_(["baseline_7_day_avg", "aurora"]),
                 )
                 f_results = session.execute(f_stmt).all()
                 return obs_results, f_results

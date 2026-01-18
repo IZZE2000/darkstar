@@ -10,7 +10,6 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
 
-import aiosqlite
 import pytz
 from fastapi import APIRouter, HTTPException, Query, Request
 
@@ -67,11 +66,12 @@ async def debug_logs() -> dict[str, Any]:
         raise HTTPException(500, str(exc)) from exc
 
 
-import asyncio
-from typing import cast
-from sqlalchemy import func, select
+import asyncio  # noqa: E402
 
-from backend.learning.models import SlotObservation
+from sqlalchemy import select  # noqa: E402
+
+from backend.learning.models import SlotObservation  # noqa: E402
+
 
 @router.get(
     "/api/history/soc",
@@ -95,33 +95,39 @@ async def historic_soc(date: str = Query("today")) -> dict[str, Any]:
         # Get learning engine and query historic SoC data
         engine = get_learning_engine()
         if not engine or not hasattr(engine, "store"):
-             # Fallback or error if engine not ready
-             return {
+            # Fallback or error if engine not ready
+            return {
                 "date": target_date.isoformat(),
                 "slots": [],
                 "message": "Engine not initialized",
             }
-            
-        target_iso = target_date.isoformat()
+
+        target_date.isoformat()
 
         def fetch():
             with engine.store.Session() as session:
-                # We need to filter by date. 
+                # We need to filter by date.
                 # Since slot_start is an ISO string, we can filter by prefix OR use func.date logic if compatible.
                 # SlotObservation.slot_start is YYYY-MM-DDTHH:MM:SS...
                 # Filtering by >= target_date and < target_date + 1 day is better for index.
-                day_start = tz.localize(datetime(target_date.year, target_date.month, target_date.day))
+                day_start = tz.localize(
+                    datetime(target_date.year, target_date.month, target_date.day)
+                )
                 day_end = day_start + timedelta(days=1)
-                
+
                 start_iso_str = day_start.isoformat()
                 end_iso_str = day_end.isoformat()
-                
+
                 stmt = (
-                    select(SlotObservation.slot_start, SlotObservation.soc_end_percent, SlotObservation.quality_flags)
+                    select(
+                        SlotObservation.slot_start,
+                        SlotObservation.soc_end_percent,
+                        SlotObservation.quality_flags,
+                    )
                     .where(
                         SlotObservation.slot_start >= start_iso_str,
                         SlotObservation.slot_start < end_iso_str,
-                        SlotObservation.soc_end_percent.is_not(None)
+                        SlotObservation.soc_end_percent.is_not(None),
                     )
                     .order_by(SlotObservation.slot_start)
                 )

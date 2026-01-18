@@ -1,7 +1,7 @@
 # HANDOVER: Debugging HA WebSocket Silent Failure
 
 ## 🔴 Critical Context
-We are debugging a **"Black Box" failure** in the Home Assistant Add-on deployment. 
+We are debugging a **"Black Box" failure** in the Home Assistant Add-on deployment.
 - **Symptom**: The PowerFlow card is blank (no live data).
 - **Status**: The WebSocket connects and authenticates, but **no data flow** was visible in logs.
 - **Current Version**: `v2.4.16-beta` (Installed by user).

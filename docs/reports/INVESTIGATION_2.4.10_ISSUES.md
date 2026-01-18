@@ -18,7 +18,7 @@ Specifically, `_set_work_mode` does not check if `self.config.inverter.work_mode
         """Set inverter work mode if different from current."""
         start = time.time()
         entity = self.config.inverter.work_mode_entity  # <--- If this is "", it crashes
-        
+
         # Get current state
         current = self.ha.get_state_value(entity)
 ```

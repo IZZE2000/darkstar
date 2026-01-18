@@ -5,10 +5,10 @@ from pathlib import Path
 
 import pytest
 import pytz
-from sqlalchemy import create_engine, select, text, inspect
+from sqlalchemy import inspect
 
+from backend.learning.models import Base
 from executor.history import ExecutionHistory, ExecutionRecord
-from backend.learning.models import Base, ExecutionLog
 
 
 @pytest.fixture
@@ -284,7 +284,7 @@ class TestCleanupOldRecords:
         """cleanup_old_records removes records older than retention period."""
         history = ExecutionHistory(temp_db, timezone="Europe/Stockholm")
         Base.metadata.create_all(history.engine)
-        
+
         tz = pytz.timezone("Europe/Stockholm")
         now = datetime.now(tz)
 

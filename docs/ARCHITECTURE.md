@@ -271,7 +271,7 @@ flowchart LR
         CTRL --> HA[Home Assistant API]
         CTRL --> LOG[Log Execution]
     end
-    
+
     SJ --> SP
     SP --> READ
     LOG --> EL
@@ -512,14 +512,14 @@ flowchart TB
         SS[SchedulerService]
         WS[WebSocketManager]
         Cache[TTLCache]
-        
+
         API -->|"POST /api/run_planner"| PS
         SS -->|"Scheduled runs"| PS
         PS -->|"invalidate()"| Cache
         PS -->|"emit(schedule_updated)"| WS
         WS -->|"Push to clients"| FE[Frontend]
     end
-    
+
     subgraph Background Tasks
         SS
     end
@@ -553,4 +553,3 @@ flowchart TB
 ### Deprecation Notice
 
 Scheduling is handled in-process via the `SchedulerService` within the FastAPI server.
-

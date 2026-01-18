@@ -9,8 +9,10 @@ Rev K19: Anti-legionella cycle tracking.
 
 import logging
 from datetime import datetime
-from sqlalchemy import create_engine, select, text
+
+from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+
 from backend.learning.models import VacationState
 
 logger = logging.getLogger("darkstar.planner.vacation")
@@ -58,11 +60,11 @@ def save_last_anti_legionella(sqlite_path: str, timestamp: datetime) -> None:
             if not state:
                 state = VacationState(key="last_anti_legionella_at")
                 session.add(state)
-            
+
             state.value = timestamp.isoformat()
             state.updated_at = datetime.now().isoformat()
             session.commit()
-            
+
         logger.info("Saved last_anti_legionella_at: %s", timestamp.isoformat())
     except Exception as e:
         logger.error("Failed to save last_anti_legionella_at: %s", e)

@@ -15,6 +15,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import pytz
 
+from backend.learning.models import Base
 from backend.learning.reflex import (
     BOUNDS,
     CONFIDENCE_BIAS_THRESHOLD,
@@ -28,7 +29,6 @@ from backend.learning.reflex import (
     AuroraReflex,
 )
 from backend.learning.store import LearningStore
-from backend.learning.models import Base
 
 
 @pytest.fixture
@@ -39,7 +39,7 @@ def temp_db():
 
     tz = pytz.timezone("Europe/Stockholm")
     store = LearningStore(db_path, tz)
-    
+
     # Create schema
     Base.metadata.create_all(store.engine)
 

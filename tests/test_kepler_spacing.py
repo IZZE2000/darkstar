@@ -12,15 +12,18 @@ def create_mock_slots(count=24, start_hour=12):
     slots = []
     for i in range(count):
         s = start_time + timedelta(minutes=30 * i)
-        slots.append(KeplerInputSlot(
-            start_time=s,
-            end_time=s + timedelta(minutes=30),
-            load_kwh=0.5,
-            pv_kwh=1.0 if 8 <= s.hour <= 16 else 0.0,
-            import_price_sek_kwh=1.0,  # expensive default
-            export_price_sek_kwh=0.0
-        ))
+        slots.append(
+            KeplerInputSlot(
+                start_time=s,
+                end_time=s + timedelta(minutes=30),
+                load_kwh=0.5,
+                pv_kwh=1.0 if 8 <= s.hour <= 16 else 0.0,
+                import_price_sek_kwh=1.0,  # expensive default
+                export_price_sek_kwh=0.0,
+            )
+        )
     return slots
+
 
 def get_base_config():
     return KeplerConfig(
@@ -32,16 +35,15 @@ def get_base_config():
         charge_efficiency=1.0,
         discharge_efficiency=1.0,
         wear_cost_sek_per_kwh=0.0,
-
         # Water enabled
         water_heating_power_kw=2.0,
-        water_heating_min_kwh=0.0, # Test spacing purely
+        water_heating_min_kwh=0.0,  # Test spacing purely
         water_heating_max_gap_hours=0.0,
-
         # Default spacing
         water_min_spacing_hours=4.0,
-        water_spacing_penalty_sek=0.0 # Deprecated/Unused
+        water_spacing_penalty_sek=0.0,  # Deprecated/Unused
     )
+
 
 def test_strict_spacing_enforced():
     """Verify that heater cannot restart within the strict spacing window."""
@@ -58,7 +60,7 @@ def test_strict_spacing_enforced():
     # Config: Spacing 4 hours (8 slots)
     # T=0 to T=4 is only 2 hours. Should be BLOCKED.
     config = get_base_config()
-    config.water_heating_min_kwh = 1.0 # Need at least 1 slot worth (2kW * 0.5h = 1kwh)
+    config.water_heating_min_kwh = 1.0  # Need at least 1 slot worth (2kW * 0.5h = 1kwh)
 
     result = solver.solve(input_data, config)
     assert result.is_optimal
@@ -76,14 +78,16 @@ def test_strict_spacing_enforced():
     # A block start is where 0 -> 1.
     starts = []
     for i in range(1, len(heat_map)):
-        if heat_map[i] == 1 and heat_map[i-1] == 0:
+        if heat_map[i] == 1 and heat_map[i - 1] == 0:
             starts.append(i)
-    if heat_map[0] == 1: starts.insert(0, 0)
+    if heat_map[0] == 1:
+        starts.insert(0, 0)
 
     # If we have multiple starts, check distance
     if len(starts) > 1:
-        dist = (starts[1] - starts[0]) * 0.5 # hours
+        dist = (starts[1] - starts[0]) * 0.5  # hours
         assert dist >= 4.0, f"Second start at {dist}h is too soon (< 4.0h)"
+
 
 def test_spacing_disabled():
     """Verify normal operation when spacing is disabled (0h)."""
@@ -96,11 +100,11 @@ def test_spacing_disabled():
     # With spacing=0, it should allow T=0 and T=1.
     slots[0].import_price_sek_kwh = 0.01
     slots[1].import_price_sek_kwh = 0.01
-    slots[2].import_price_sek_kwh = 1.0 # Expensive
+    slots[2].import_price_sek_kwh = 1.0  # Expensive
 
     config = get_base_config()
-    config.water_min_spacing_hours = 0.0 # DISABLED
-    config.water_heating_min_kwh = 2.0 # Needs 2 slots (2kW * 0.5h * 2 = 2kWh)
+    config.water_min_spacing_hours = 0.0  # DISABLED
+    config.water_heating_min_kwh = 2.0  # Needs 2 slots (2kW * 0.5h * 2 = 2kWh)
     config.water_block_start_penalty_sek = 0.0
 
     result = solver.solve(input_data, config)

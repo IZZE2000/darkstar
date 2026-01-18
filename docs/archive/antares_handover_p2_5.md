@@ -116,4 +116,3 @@ We moved beyond the original “flat SoC curve” bug and into a deeper data-fou
     - Proper use of HA LTS + cumulative APIs.
     - Separation of concerns between planner, recorder, and backfill tools.
     - Clear documentation in `docs/PLAN.md` and `docs/ANTARES_ROADMAP.md`.
-

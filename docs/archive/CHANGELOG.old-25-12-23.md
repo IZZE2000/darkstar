@@ -422,5 +422,3 @@ This phase promoted Kepler from shadow mode to primary planner, implemented stra
 *   **Infrastructure**: SQLite learning DB, MariaDB history sync, Nordpool/HA integration.
 
 ---
-
-

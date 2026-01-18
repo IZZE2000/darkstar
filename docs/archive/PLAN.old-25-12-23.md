@@ -188,17 +188,17 @@ system:
 
 1. **Run Planner** — Runs planner + immediate slot execution
    - 3-phase text: "Planning..." → "Executing..." → "Done ✓"
-   
+
 2. **Executor Toggle** (Pause/Resume)
    - Pause: Sets idle mode (zero export, min_soc, stop heating)
    - Visual: Red/orange pulsing glow when paused
    - 30-min reminder notification with "ACTIVATE" webhook action
-   
+
 3. **Toggle Vacation** — Inline arrows for duration selection
    - Options: 3, 7, 14, 21, 28 days
    - Visual: Amber glow when active, shows end date
    - Auto-disables when end date reached
-   
+
 4. **Boost Water** — Inline arrows for duration selection
    - Options: 30min, 1h, 2h (heats to 65°C)
    - Visual: Countdown timer, red glow when active
@@ -500,11 +500,11 @@ if vacation_enabled:
     # Skip normal comfort heating
     kepler_config.water_heating_min_kwh = 0.0
     kepler_config.water_comfort_penalty_sek = 0.0
-    
+
     # Check if anti-legionella is due
     last_al = load_last_anti_legionella()
     days_since = (now - last_al).days if last_al else 999
-    
+
     if days_since >= 6 and now.hour >= 14:
         # Schedule anti-legionella: 3h block in cheapest slots
         al_kwh = vacation_cfg.get("anti_legionella_duration_hours", 3.0) * power_kw

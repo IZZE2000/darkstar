@@ -52,12 +52,12 @@ After fix, slots should include planned schedule overlay:
 {
   "start_time": "2026-01-13T00:00:00+01:00",
   "end_time": "2026-01-13T01:00:00+01:00",
-  
+
   // Observations (from slot_observations table) ✅
   "actual_soc": 27.0,
   "actual_charge_kw": 0.0,
   "actual_discharge_kw": 0.0,
-  
+
   // Planned actions (from schedule.json) ❌ MISSING
   "target_soc": 45.0,
   "charge_kw": 2.5,
@@ -66,7 +66,7 @@ After fix, slots should include planned schedule overlay:
   "water_heating_kw": 0.0,
   "reason": "Cheap window - strategic charge",
   "priority": 2,
-  
+
   // Prices & forecasts
   "import_price_sek_kwh": 1.9987875,
   "pv_forecast_kwh": 0.0,
@@ -151,9 +151,9 @@ The endpoint needs to:
 
 ## Browser Console Evidence
 ```
-🔍 [DEBUG] historyData sample slot: 
-Object { 
-  start_time: "2026-01-13T00:00:00+01:00", 
+🔍 [DEBUG] historyData sample slot:
+Object {
+  start_time: "2026-01-13T00:00:00+01:00",
   actual_soc: 27,
   // NO target_soc, charge_kw, reason, etc.
 }

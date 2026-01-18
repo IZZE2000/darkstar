@@ -41,7 +41,7 @@ Darkstar is a local, privacy-first energy management system that optimizes your 
 
 ### Option 1: Home Assistant Add-on (Recommended)
 
-1. Go to **[Settings → Add-ons → Add-on store](https://my.home-assistant.io/redirect/supervisor_store/)**, click **⋮ → Repositories**, fill in</br> `https://github.com/ergetie/darkstar` and click **Add → Close** or click the **Add repository** button below.  
+1. Go to **[Settings → Add-ons → Add-on store](https://my.home-assistant.io/redirect/supervisor_store/)**, click **⋮ → Repositories**, fill in</br> `https://github.com/ergetie/darkstar` and click **Add → Close** or click the **Add repository** button below.
    [![Open your Home Assistant instance and show the add add-on repository dialog with a specific repository URL pre-filled.](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fergetie%2Fdarkstar)
 2. Click on **Darkstar Energy Manager** and press **Install**.
 3. Start the add-on - Darkstar will **automatically detect** your Home Assistant connection. No manual token required!
@@ -172,10 +172,9 @@ The web UI provides:
 4. **Execution** — Native executor controls your inverter in real-time
 
 The system re-optimizes every hour to adapt to changing prices and conditions.
- 
+
 ---
 
 ## License
 
 Licensed under the **[GNU Affero General Public License v3.0 (AGPL-3.0)](LICENSE)**.
-

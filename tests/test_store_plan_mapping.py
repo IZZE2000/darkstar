@@ -5,8 +5,8 @@ import pandas as pd
 import pytest
 import pytz
 
-from backend.learning.store import LearningStore
 from backend.learning.models import Base
+from backend.learning.store import LearningStore
 
 # Mock timezone
 TZ = pytz.timezone("Europe/Stockholm")

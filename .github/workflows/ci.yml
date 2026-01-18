@@ -12,15 +12,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-          
+
       - name: Install Ruff
         run: pip install ruff
-        
+
       - name: Run Ruff
         run: ruff check backend/ inputs.py --output-format=github
 
@@ -32,22 +32,22 @@ jobs:
         working-directory: frontend
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
           version: 9
-          
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'pnpm'
           cache-dependency-path: frontend/pnpm-lock.yaml
-          
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-        
+
       - name: Run ESLint
         run: pnpm lint
 
@@ -56,17 +56,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-          
+
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
           pip install pytest httpx
-          
+
       - name: Run API tests
         run: PYTHONPATH=. pytest tests/test_api_routes.py -v
 
@@ -75,38 +75,38 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-          
+
       - name: Install dependencies
         run: pip install -r requirements.txt
-          
+
       - name: Export and validate OpenAPI schema
         run: |
           python -c "
           import json
           import sys
           sys.path.insert(0, '.')
-          
+
           # Import creates the app
           from backend.main import create_app
           app = create_app()
-          
+
           # Get FastAPI from Socket.IO wrapper
           fastapi_app = app.other_asgi_app
-          
+
           # Export OpenAPI
           schema = fastapi_app.openapi()
-          
+
           # Basic validation
           assert 'openapi' in schema, 'Missing openapi version'
           assert 'info' in schema, 'Missing info section'
           assert 'paths' in schema, 'Missing paths section'
           assert len(schema['paths']) > 50, f'Expected 50+ routes, got {len(schema[\"paths\"])}'
-          
+
           print(f'✓ OpenAPI schema valid: {len(schema[\"paths\"])} paths defined')
           print(json.dumps(schema['info'], indent=2))
           "

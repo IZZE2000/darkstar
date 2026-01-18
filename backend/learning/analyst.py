@@ -4,10 +4,10 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pandas as pd
-from sqlalchemy import select, desc, func
+from sqlalchemy import desc, select
 
+from backend.learning.models import LearningDailyMetric
 from backend.learning.store import LearningStore
-from backend.learning.models import LearningDailyMetric, SlotObservation, SlotForecast
 
 logger = logging.getLogger("darkstar.learning.analyst")
 
@@ -118,13 +118,13 @@ class Analyst:
                 if not metric:
                     metric = LearningDailyMetric(date=today_str)
                     session.add(metric)
-                
+
                 metric.pv_adjustment_by_hour_kwh = json.dumps(pv_adj)
                 metric.load_adjustment_by_hour_kwh = json.dumps(load_adj)
                 metric.s_index_base_factor = s_index_base_factor
-                metric.created_at = datetime.now() # SQLAlchemy DateTime
+                metric.created_at = datetime.now()  # SQLAlchemy DateTime
                 session.commit()
-                
+
             logger.info(
                 f"Analyst: Updated learning overlays for {today_str} (s_index={s_index_base_factor:.4f})."
             )
@@ -149,9 +149,12 @@ class Analyst:
         # Get last learned value
         try:
             with self.store.Session() as session:
-                stmt = select(LearningDailyMetric.s_index_base_factor).where(
-                    LearningDailyMetric.s_index_base_factor.is_not(None)
-                ).order_by(desc(LearningDailyMetric.date)).limit(1)
+                stmt = (
+                    select(LearningDailyMetric.s_index_base_factor)
+                    .where(LearningDailyMetric.s_index_base_factor.is_not(None))
+                    .order_by(desc(LearningDailyMetric.date))
+                    .limit(1)
+                )
                 row = session.execute(stmt).scalar_one_or_none()
                 current_base = float(row) if row is not None else config_base
         except Exception:

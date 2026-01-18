@@ -1,7 +1,7 @@
 # 🌟 Darkstar Energy Manager: Architectural Review & Brainstorm
 
-**Date:** December 4, 2025  
-**Reviewer:** Opus 4.5 (Gemini)  
+**Date:** December 4, 2025
+**Reviewer:** Opus 4.5 (Gemini)
 **Scope:** Full system analysis, vision alignment, improvement opportunities
 
 ---
@@ -233,7 +233,7 @@ The 3637-line `planner.py` contains the full legacy heuristic MPC. If Kepler is 
 > **Consider:** Archive the 7-pass heuristic logic to a separate module. Keep only the Kepler path in `planner.py`.
 
 **How to preserve comparison capability:**
-1. Move legacy MPC to `planner_legacy.py` 
+1. Move legacy MPC to `planner_legacy.py`
 2. Keep a `benchmark_mode` flag that runs both planners
 3. The Lab can compare Legacy vs Kepler on historical days
 4. Once Kepler is proven superior over 6+ months, deprecate legacy entirely
@@ -257,7 +257,7 @@ The 3637-line `planner.py` contains the full legacy heuristic MPC. If Kepler is 
 1. **Pre-training**: Collect anonymized data from 100+ Darkstar/other installations
 2. **Architecture**: Small transformer (e.g., 6 layers, 128 dim) that predicts next 24h
 3. **Fine-tuning**: When installed on your home, fine-tune on your data (cold-start: 7 days)
-4. **Benefits**: 
+4. **Benefits**:
    - Captures universal patterns (weekday vs weekend, seasonal, weather response)
    - Your home only needs to learn *deviations* from typical behavior
    - Much faster learning than training from scratch

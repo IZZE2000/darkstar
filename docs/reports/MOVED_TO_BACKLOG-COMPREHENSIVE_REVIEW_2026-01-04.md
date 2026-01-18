@@ -1,6 +1,6 @@
 # Darkstar Comprehensive Codebase Review
-**Date:** 2026-01-04  
-**Reviewer:** AI Agent (Claude 4.5 Sonnet)  
+**Date:** 2026-01-04
+**Reviewer:** AI Agent (Claude 4.5 Sonnet)
 **Scope:** Complete system audit for production release readiness
 
 ---
@@ -27,8 +27,8 @@ Darkstar Energy Manager is a **production-grade, state-of-the-art** energy manag
 5. **Missing Features**: Config keys exist but unused in code (strategic_charging, enable_export)
 
 ### Critical Issues: **NONE** ✅
-### High Priority Issues: **3**  
-### Medium Priority Issues: **12**  
+### High Priority Issues: **3**
+### Medium Priority Issues: **12**
 ### Low Priority Issues: **8**
 
 ---
@@ -126,7 +126,7 @@ darkstar/
 5. **docs/PLAN.md** ✅ Excellent
    - Well-structured active revisions
    - Clear naming conventions
-   - Rev ARC7 (DONE), ARC8 (DONE)  
+   - Rev ARC7 (DONE), ARC8 (DONE)
    - Good use of status tags
 
 6. **docs/BACKLOG.md** ✅ Excellent
@@ -155,7 +155,7 @@ darkstar/
 
 ## Backend Analysis
 
-### Code Quality: **EXCELLENT** 
+### Code Quality: **EXCELLENT**
 
 #### Main Application (`backend/main.py`)
 
@@ -627,19 +627,19 @@ $ python -m ruff check .
 ### 🟠 High Priority (Quality & Reliability)
 
 #### 1. **Developer Tooling: Install ruff**
-**Why**: Linting not running in current env, could mask issues  
-**Fix**: Add `ruff` to `requirements-dev.txt`  
+**Why**: Linting not running in current env, could mask issues
+**Fix**: Add `ruff` to `requirements-dev.txt`
 **Effort**: 5 minutes
 
 #### 2. **Documentation: Update Flask→FastAPI References**
-**Why**: Confusing for new developers  
-**Locations**: `AGENTS.md` L52, L59, `DEVELOPER.md` L52-59, L144-147  
+**Why**: Confusing for new developers
+**Locations**: `AGENTS.md` L52, L59, `DEVELOPER.md` L52-59, L144-147
 **Effort**: 15 minutes
 
 #### 3. **Security: Implement SEC-001 (Separate Secrets from Config)**
-**Why**: Prevents secrets from being saved to config.yaml  
-**Location**: `backend/api/routers/config.py`  
-**Effort**: 1 hour  
+**Why**: Prevents secrets from being saved to config.yaml
+**Location**: `backend/api/routers/config.py`
+**Effort**: 1 hour
 **Plan**: Strip secrets before write, or dedicated secrets API
 
 ---
@@ -647,63 +647,63 @@ $ python -m ruff check .
 ### 🟡 Medium Priority (Polish & UX)
 
 #### 4. **Testing: Add Coverage Tracking**
-**Why**: Identify untested code paths  
-**Fix**: Add `pytest-cov`, set coverage goals (target 80%+)  
+**Why**: Identify untested code paths
+**Fix**: Add `pytest-cov`, set coverage goals (target 80%+)
 **Effort**: 1 hour
 
 #### 5. **Testing: Add CI/CD Automation**
-**Why**: Catch regressions before merge  
-**Fix**: Add GitHub Actions for: lint (ruff, eslint), test (pytest, vitest), build  
+**Why**: Catch regressions before merge
+**Fix**: Add GitHub Actions for: lint (ruff, eslint), test (pytest, vitest), build
 **Effort**: 2 hours
 
 #### 6. **Database: Add Migration Framework**
-**Why**: Safe schema evolution  
-**Options**: Alembic, or simple version table + migration scripts  
+**Why**: Safe schema evolution
+**Options**: Alembic, or simple version table + migration scripts
 **Effort**: 3 hours
 
 #### 7. **Dependency Audit: Update Outdated Packages**
-**Why**: Security patches, new features  
-**Commands**: `pnpm outdated`, `pip list --outdated`  
+**Why**: Security patches, new features
+**Commands**: `pnpm outdated`, `pip list --outdated`
 **Effort**: 2 hours (test compatibility)
 
 #### 8. **Documentation: Add API Docs Link**
-**Why**: FastAPI auto-generates OpenAPI docs  
-**Fix**: Add `/docs` link to README  
+**Why**: FastAPI auto-generates OpenAPI docs
+**Fix**: Add `/docs` link to README
 **Effort**: 5 minutes
 
 #### 9. **Frontend: Accessibility Audit**
-**Why**: WCAG compliance, broader user base  
-**Tools**: axe DevTools, Lighthouse  
+**Why**: WCAG compliance, broader user base
+**Tools**: axe DevTools, Lighthouse
 **Effort**: 4 hours (audit + fixes)
 
 #### 10. **Docker: Add Health Check**
-**Why**: Probes for container orchestration  
-**Fix**: Add `HEALTHCHECK` to Dockerfile  
+**Why**: Probes for container orchestration
+**Fix**: Add `HEALTHCHECK` to Dockerfile
 **Effort**: 30 minutes
 
 #### 11. **Deployment: Add Backup/Restore Guide**
-**Why**: Data protection for planner_learning.db  
-**Location**: `docs/DEVELOPER.md` or new `docs/OPERATIONS.md`  
+**Why**: Data protection for planner_learning.db
+**Location**: `docs/DEVELOPER.md` or new `docs/OPERATIONS.md`
 **Effort**: 1 hour
 
 #### 12. **Backend: Split services.py Router**
-**Why**: 740 LOC is large, improve maintainability  
-**Fix**: Split into `ha.py` (HA integration) and `energy.py` (energy data)  
+**Why**: 740 LOC is large, improve maintainability
+**Fix**: Split into `ha.py` (HA integration) and `energy.py` (energy data)
 **Effort**: 2 hours
 
 #### 13. **Features: Implement Unused Config Keys**
-**Why**: Config exists but not used  
-**Keys**: `strategic_charging.price_threshold_sek`, `export.enable_export`, `pricing.subscription_fee_sek_per_month`  
+**Why**: Config exists but not used
+**Keys**: `strategic_charging.price_threshold_sek`, `export.enable_export`, `pricing.subscription_fee_sek_per_month`
 **Effort**: 4 hours (design + implement)
 
 #### 14. **ML: Add Model Versioning**
-**Why**: Track which model version made which forecast  
-**Fix**: Add version metadata to model files, log version in DB  
+**Why**: Track which model version made which forecast
+**Fix**: Add version metadata to model files, log version in DB
 **Effort**: 3 hours
 
 #### 15. **Infrastructure: Sunset MariaDB**
-**Why**: Reduce complexity, SQLite is sufficient  
-**Plan**: Documented in BACKLOG  
+**Why**: Reduce complexity, SQLite is sufficient
+**Plan**: Documented in BACKLOG
 **Effort**: 4 hours (migrate + test + docs)
 
 ---
@@ -711,39 +711,39 @@ $ python -m ruff check .
 ### 🟢 Low Priority (Nice to Have)
 
 #### 16. **Documentation: Add KEPLER_VISION.md**
-**Why**: Referenced but missing  
+**Why**: Referenced but missing
 **Effort**: 2 hours (write vision doc)
 
 #### 17. **Documentation: Add Migration Guide (v1→v2)**
-**Why**: Help existing users upgrade  
+**Why**: Help existing users upgrade
 **Effort**: 2 hours
 
 #### 18. **Frontend: Add E2E Tests**
-**Why**: Catch UI regressions  
-**Tool**: Playwright or Cypress  
+**Why**: Catch UI regressions
+**Tool**: Playwright or Cypress
 **Effort**: 8 hours (setup + initial tests)
 
 #### 19. **Logging: Structured JSON Logs**
-**Why**: Easier parsing for log aggregation  
-**Fix**: Use `python-json-logger`  
+**Why**: Easier parsing for log aggregation
+**Fix**: Use `python-json-logger`
 **Effort**: 2 hours
 
 #### 20. **CI/CD: Add Dependabot/Snyk**
-**Why**: Automated security vulnerability alerts  
+**Why**: Automated security vulnerability alerts
 **Effort**: 1 hour (setup GitHub integrations)
 
 #### 21. **UX: Add Contextual Help System**
-**Why**: Documented in BACKLOG, improves onboarding  
+**Why**: Documented in BACKLOG, improves onboarding
 **Effort**: 6 hours
 
 #### 22. **Backend: Add SQLite Connection Pooling**
-**Why**: Reduce contention under load  
-**Fix**: Documented in BACKLOG  
+**Why**: Reduce contention under load
+**Fix**: Documented in BACKLOG
 **Effort**: 3 hours
 
 #### 23. **Version Bump Process: Add Checklist**
-**Why**: Ensure consistent releases  
-**Fix**: Add to `AGENTS.md` or `docs/DEVELOPER.md`  
+**Why**: Ensure consistent releases
+**Fix**: Add to `AGENTS.md` or `docs/DEVELOPER.md`
 **Effort**: 30 minutes
 
 ---
@@ -751,24 +751,24 @@ $ python -m ruff check .
 ### 🔵 Future Investigations
 
 #### 24. **Feature: Smart EV Integration**
-**Scope**: Priority home battery vs EV charging  
-**Complexity**: High (new subsystem)  
+**Scope**: Priority home battery vs EV charging
+**Complexity**: High (new subsystem)
 **ROI**: High for EV owners
 
 #### 25. **Feature: Effekttariffer (Power Tariffs)**
-**Scope**: Swedish peak demand charges  
+**Scope**: Swedish peak demand charges
 **Complexity**: Medium (Kepler constraint changes)
 
 #### 26. **ML: Multi-Model Forecasting**
-**Scope**: Season/weekday-specific models  
+**Scope**: Season/weekday-specific models
 **Complexity**: Medium (model management)
 
 #### 27. **UI: Lab Redesign (What-If Simulator)**
-**Scope**: Compare hypothetical system configs  
+**Scope**: Compare hypothetical system configs
 **Complexity**: High (new feature)
 
 #### 28. **Admin Tools**
-**Scope**: Force retrain, clear cache, reset learning  
+**Scope**: Force retrain, clear cache, reset learning
 **Complexity**: Low (new endpoints)
 
 ---
@@ -898,7 +898,6 @@ The system has evolved significantly through Rev ARC7 (performance) and ARC8 (in
 
 ---
 
-**Report Generated:** 2026-01-04T08:48:00+01:00  
-**Review Duration:** Comprehensive (Phase 1-7 systematic analysis)  
+**Report Generated:** 2026-01-04T08:48:00+01:00
+**Review Duration:** Comprehensive (Phase 1-7 systematic analysis)
 **Confidence Level:** High (based on systematic file-by-file review)
-

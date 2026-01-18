@@ -5,9 +5,9 @@ Mixed-Integer Linear Programming solver for optimal battery scheduling.
 Migrated from backend/kepler/solver.py during Rev K13 modularization.
 """
 
+import logging
 from collections import defaultdict
 from datetime import timedelta  # Rev WH2
-import logging
 
 import pulp
 

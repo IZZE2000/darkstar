@@ -5,6 +5,7 @@ from typing import Any
 from backend.learning import get_learning_engine
 from backend.learning.models import PlannerDebug
 
+
 # ensure_learning_schema is no longer needed as Alembic handles schema.
 # Kept as no-op if called from legacy code, or can be removed if confident.
 def ensure_learning_schema(db_path: str) -> None:
@@ -27,17 +28,14 @@ def record_debug_payload(payload: dict[str, Any], learning_config: dict[str, Any
         engine = get_learning_engine()
         # Ensure store is available
         if not hasattr(engine, "store"):
-             # If engine/store not initialized (e.g. running outside full app context),
-             # we skip recording to avoid duplicate initialization logic or crashes.
-             return
+            # If engine/store not initialized (e.g. running outside full app context),
+            # we skip recording to avoid duplicate initialization logic or crashes.
+            return
 
         timestamp = datetime.now(UTC).isoformat()
-        
+
         with engine.store.Session() as session:
-            record = PlannerDebug(
-                created_at=timestamp,
-                payload=json.dumps(payload)
-            )
+            record = PlannerDebug(created_at=timestamp, payload=json.dumps(payload))
             session.add(record)
             session.commit()
 
