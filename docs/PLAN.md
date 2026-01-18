@@ -154,13 +154,3 @@ Currently, the charts can become cluttered when mixing planned and actual data. 
 * [x] Update `docs/DEVELOPER.md` and `.agent/rules/project.md` with new workflow instructions.
 * [x] Manual Verification of all changes.
 * [x] **User Manual Approval** required before final commit.
-
----
-
-### [PLANNED] REV // PERF2 — Performance Instrumentation
-
-**Goal:** Instrument MILP solver and Executor to identify performance bottlenecks.
-
-* [ ] Add timing logs to `KeplerSolver.solve` (build vs solve time).
-* [ ] Promote Executor tick duration to INFO and add breakdown.
-* [ ] Analyze logs to determine need for Rust optimization.
