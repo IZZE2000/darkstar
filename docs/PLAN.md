@@ -154,3 +154,16 @@ Currently, the charts can become cluttered when mixing planned and actual data. 
 * [x] Update `docs/DEVELOPER.md` and `.agent/rules/project.md` with new workflow instructions.
 * [x] Manual Verification of all changes.
 * [x] **User Manual Approval** required before final commit.
+
+---
+
+### [DONE] REV // F20 — Validation Condition Logic
+
+**Goal:** Fix "Entity not found" warnings for disabled features (Battery/Water/Solar) by making validation conditional.
+
+**Plan:**
+
+#### Phase 1: Logic Update [DONE]
+* [x] Update `backend/health.py` to check `system.has_battery`, `system.has_water_heater`, etc.
+* [x] Skip entity validation for disabled features.
+* [x] Verified with simulation script.

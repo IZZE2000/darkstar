@@ -114,7 +114,10 @@ class HealthChecker:
                     category="config",
                     severity="critical",
                     message="Configuration file not found",
-                    guidance=f"Copy config.default.yaml to {self.config_path} and configure your settings.",
+                    guidance=(
+                        f"Copy config.default.yaml to {self.config_path} "
+                        "and configure your settings."
+                    ),
                 )
             )
             return issues
@@ -124,7 +127,10 @@ class HealthChecker:
                     category="config",
                     severity="critical",
                     message=f"Invalid YAML syntax in config file: {e}",
-                    guidance="Fix the YAML syntax error in config.yaml. Check for incorrect indentation or special characters.",
+                    guidance=(
+                        "Fix the YAML syntax error in config.yaml. "
+                        "Check for incorrect indentation or special characters."
+                    ),
                 )
             )
             return issues
@@ -139,7 +145,10 @@ class HealthChecker:
                     category="config",
                     severity="critical",
                     message="Secrets file not found",
-                    guidance="Create secrets.yaml with your Home Assistant URL and token. See README for format.",
+                    guidance=(
+                        "Create secrets.yaml with your Home Assistant URL and token. "
+                        "See README for format."
+                    ),
                 )
             )
         except yaml.YAMLError as e:
@@ -171,7 +180,10 @@ class HealthChecker:
                     category="config",
                     severity="warning",
                     message="No input_sensors configured",
-                    guidance="Add input_sensors section to config.yaml to enable Home Assistant integration.",
+                    guidance=(
+                        "Add input_sensors section to config.yaml "
+                        "to enable Home Assistant integration."
+                    ),
                 )
             )
 
@@ -184,7 +196,10 @@ class HealthChecker:
                         category="config",
                         severity="critical",
                         message="Home Assistant URL not configured",
-                        guidance="Add home_assistant.url to secrets.yaml (e.g., http://homeassistant.local:8123)",
+                        guidance=(
+                            "Add home_assistant.url to secrets.yaml "
+                            "(e.g., http://homeassistant.local:8123)"
+                        ),
                     )
                 )
             if not ha_config.get("token"):
@@ -193,7 +208,10 @@ class HealthChecker:
                         category="config",
                         severity="critical",
                         message="Home Assistant token not configured",
-                        guidance="Add home_assistant.token to secrets.yaml. Generate a Long-Lived Access Token in HA.",
+                        guidance=(
+                            "Add home_assistant.token to secrets.yaml. "
+                            "Generate a Long-Lived Access Token in HA."
+                        ),
                     )
                 )
 
@@ -215,8 +233,10 @@ class HealthChecker:
                         category="config",
                         severity="critical",
                         message="Battery enabled but capacity not configured",
-                        guidance="Set battery.capacity_kwh to your battery's capacity (e.g., 27.0), "
-                        "or set system.has_battery to false.",
+                        guidance=(
+                            "Set battery.capacity_kwh to your battery's capacity (e.g., 27.0), "
+                            "or set system.has_battery to false."
+                        ),
                     )
                 )
 
@@ -286,7 +306,10 @@ class HealthChecker:
                         category="ha_connection",
                         severity="critical",
                         message="Home Assistant authentication failed",
-                        guidance="Your HA token is invalid or expired. Generate a new Long-Lived Access Token in HA → Profile → Security.",
+                        guidance=(
+                            "Your HA token is invalid or expired. "
+                            "Generate a new Long-Lived Access Token in HA → Profile → Security."
+                        ),
                     )
                 )
             elif response.status_code != 200:
@@ -343,46 +366,84 @@ class HealthChecker:
         if not url or not token:
             return issues
 
-        # Collect all entity IDs from config
-        entities_to_check: list[tuple[str, str]] = []  # (entity_id, config_key)
+        # Feature flags
+        system_cfg = self._config.get("system", {})
+        has_battery = system_cfg.get("has_battery", True)
+        has_water_heater = system_cfg.get("has_water_heater", True)
+        has_solar = system_cfg.get("has_solar", True)
+
+        # Collect all entity IDs from config with feature context
+        # (entity_id, config_key, required)
+        entities_to_check: list[tuple[str, str, bool]] = []
 
         # Input sensors
         input_sensors = self._config.get("input_sensors", {})
+
+        # Define which sensors require which flags
+        # Default is True (always required) unless specified
+        sensor_requirements = {
+            # Battery sensors
+            "battery_soc": has_battery,
+            "battery_power": has_battery,
+            "total_battery_charge": has_battery,
+            "total_battery_discharge": has_battery,
+            "today_battery_charge": has_battery,
+            # Water heater sensors
+            "water_power": has_water_heater,
+            "water_heater_consumption": has_water_heater,
+            # Solar sensors
+            "pv_power": has_solar,
+            "total_pv_production": has_solar,
+            "today_pv_production": has_solar,
+        }
+
         for key, entity_id in input_sensors.items():
             if entity_id and isinstance(entity_id, str):
-                entities_to_check.append((entity_id, f"input_sensors.{key}"))
+                # Check if this sensor is required based on flags
+                is_required = sensor_requirements.get(key, True)
+                if is_required:
+                    entities_to_check.append((entity_id, f"input_sensors.{key}", True))
 
         # Executor entities
         executor = self._config.get("executor", {})
         if executor:
-            # Inverter entities
-            inverter = executor.get("inverter", {})
-            for key in [
-                "work_mode_entity",
-                "grid_charging_entity",
-                "max_charging_current_entity",
-                "max_discharging_current_entity",
-            ]:
-                entity_id = inverter.get(key)
-                if entity_id:
-                    entities_to_check.append((entity_id, f"executor.inverter.{key}"))
+            # Inverter entities - Require has_battery
+            if has_battery:
+                inverter = executor.get("inverter", {})
+                for key in [
+                    "work_mode_entity",
+                    "grid_charging_entity",
+                    "max_charging_current_entity",
+                    "max_discharging_current_entity",
+                ]:
+                    entity_id = inverter.get(key)
+                    if entity_id:
+                        entities_to_check.append((entity_id, f"executor.inverter.{key}", True))
 
-            # Water heater
-            water = executor.get("water_heater", {})
-            target_entity = water.get("target_entity")
-            if target_entity:
-                entities_to_check.append((target_entity, "executor.water_heater.target_entity"))
+                # Check soc_target_entity (requires battery)
+                soc_target = executor.get("soc_target_entity")
+                if soc_target:
+                    entities_to_check.append((soc_target, "executor.soc_target_entity", True))
 
-            # Toggle entities
-            for key in ["automation_toggle_entity", "soc_target_entity"]:
+            # Water heater - Require has_water_heater
+            if has_water_heater:
+                water = executor.get("water_heater", {})
+                target_entity = water.get("target_entity")
+                if target_entity:
+                    entities_to_check.append(
+                        (target_entity, "executor.water_heater.target_entity", True)
+                    )
+
+            # General toggle entities - Always check
+            for key in ["automation_toggle_entity"]:
                 entity_id = executor.get(key)
                 if entity_id:
-                    entities_to_check.append((entity_id, f"executor.{key}"))
+                    entities_to_check.append((entity_id, f"executor.{key}", True))
 
         # Check each entity
         headers = {"Authorization": f"Bearer {token}"}
         async with httpx.AsyncClient(timeout=5.0) as client:
-            for entity_id, config_key in entities_to_check:
+            for entity_id, config_key, _ in entities_to_check:
                 try:
                     response = await client.get(
                         f"{url}/api/states/{entity_id}",
@@ -395,7 +456,10 @@ class HealthChecker:
                                 category="entity",
                                 severity="critical",
                                 message=f"Entity not found: {entity_id}",
-                                guidance=f"Check that '{entity_id}' exists in Home Assistant. Update {config_key} in config.yaml if renamed.",
+                                guidance=(
+                                    f"Check that '{entity_id}' exists in Home Assistant. "
+                                    f"Update {config_key} in config.yaml if renamed."
+                                ),
                                 entity_id=entity_id,
                             )
                         )
@@ -409,7 +473,10 @@ class HealthChecker:
                                     category="entity",
                                     severity="warning",
                                     message=f"Entity unavailable: {entity_id}",
-                                    guidance=f"The entity '{entity_id}' exists but is currently unavailable. Check your device/integration.",
+                                    guidance=(
+                                        f"The entity '{entity_id}' exists but is "
+                                        "currently unavailable. Check your device/integration."
+                                    ),
                                     entity_id=entity_id,
                                 )
                             )
@@ -435,7 +502,10 @@ class HealthChecker:
                             category="executor",
                             severity="critical",
                             message="Executor should be running but is not active",
-                            guidance="The executor is enabled in config but not running. Check executor logs or restart the service.",
+                            guidance=(
+                                "The executor is enabled in config but not running. "
+                                "Check executor logs or restart the service."
+                            ),
                         )
                     )
                 elif executor_health["has_error"]:
@@ -445,7 +515,10 @@ class HealthChecker:
                             category="executor",
                             severity="warning",
                             message=f"Executor last run failed: {error_msg}",
-                            guidance="Check executor logs for details. The error may be transient or indicate a configuration issue.",
+                            guidance=(
+                                "Check executor logs for details. "
+                                "The error may be transient or indicate a configuration issue."
+                            ),
                         )
                     )
         except Exception as e:
