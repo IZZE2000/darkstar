@@ -85,103 +85,51 @@ Currently, the charts can become cluttered when mixing planned and actual data. 
 
 ---
 
-### [PLANNED] REV // K22 — Configurable Effekttariff Penalty
+### [PLANNED] REV // K22 — Effekttariff (Active Guard)
 
-**Goal:** Allow users to dynamically control the "Peak Power" (Effekttariff) penalty via Home Assistant, enabling complex logic (seasonal/time-based) to be handled externally.
+**Goal:** Implement a dual-layer strategy (Planner + Executor) to minimize peak power usage ("Effekttariff").
 
 **Plan:**
 
-#### Phase 1: Configuration & Entities
+#### Phase 1: Configuration & Entities [PLANNED]
 * [ ] Add `grid.import_breach_penalty_sek` (Default: 5000.0) to `config.default.yaml`.
-* [ ] Add `grid.import_breach_penalty_enabled` (Default: false) to `config.default.yaml` (**User requested default OFF**).
+* [ ] Add `grid.import_breach_penalty_enabled` (Default: false) to `config.default.yaml`.
+* [ ] Add `grid.import_breach_limit_kw` (Default: 11.0) for the hard executor limit.
 * [ ] Add override entities to `executor.config`.
 
-#### Phase 2: Logic & Reactivity
-* [ ] **Planner Logic:** In `adapter.py` (or pipeline), if `import_breach_penalty_enabled` is False, pass `0.0` as the penalty cost to Kepler. If True, pass the configured/overridden value.
-* [ ] **Watcher Logic:** In `executor/engine.py`, monitor the `import_breach_penalty_enabled` entity. If it changes, **Trigger Immediate Re-plan**. This ensures the planner schedule always reflects the current fee state.
-* [ ] Frontend: Add these controls to `Settings > Grid`.
+#### Phase 2: Planner Logic (Economic) [PLANNED]
+* [ ] **Planner Logic:** Pass the penalty cost to Kepler if enabled.
+* [ ] **Re-planning:** Trigger re-plan if penalty configuration changes.
+
+#### Phase 3: Executor Active Guard (Reactive) [PLANNED]
+* [ ] **Monitor:** In `executor/engine.py` `_tick`, check `grid_import_power` vs `import_breach_limit_kw`.
+* [ ] **Reactive Logic:**
+    *   If Breach > Limit:
+        *   Trigger `ForceDischarge` on Battery (Max power).
+        *   Trigger `Disable` on Water Heating.
+        *   Log "Grid Breach Detected! Engaging Emergency Shedding".
+* [ ] **Recovery:** Hysteresis logic to release overrides when grid import drops.
+* [ ] **Frontend:** Add controls to `Settings > Grid`.
 
 ---
 
-### [DONE] REV // ARC9 — Database Migration Framework
+### [PLANNED] REV // ML2 — Active Load Disaggregation
 
-**Goal:** Introduce `Alembic` to manage database schema migrations safely and automatically.
+**Goal:** Sanitize historical data by separating "Base Load" from controllable heavy loads (EV, Water) to improve ML forecast accuracy.
 
 **Plan:**
 
-#### Phase 1: Setup
-#### Phase 1: Setup [DONE]
-* [x] Add `alembic` to `requirements.txt`.
-* [x] Initialize Alembic (`alembic init`).
-* [x] Configure `alembic.ini` to use `data/planner_learning.db` (and respect `DB_PATH` env var).
-* [x] Create `env.py` to import `Base` from `backend/learning/store.py` (or creating a proper SQLAlchemy Base).
+#### Phase 1: Instrumentation [PLANNED]
+* [ ] Verify configuration for `input_sensors.ev_power` and `input_sensors.water_power`.
+* [ ] Ensure `input_sensors.load_power` represents TOTAL house load.
 
-#### Phase 2: Implementation [DONE]
-* [x] Integrate `alembic` and `sqlalchemy` (Rev ARC9)
-* [x] Define SQLAlchemy models for all learning tables in `models.py`
-* [x] Create baseline migration script (stamp existing DB)
-* [x] Implement `lifespan` migration runner in `backend/main.py`
-* [x] Refactor `LearningStore` to SQLAlchemy
-* [x] Verify migration on fresh DB
-* [x] Verify migration on existing DB (no data loss)
+#### Phase 2: Recorder Logic [PLANNED]
+* [ ] Modify `backend/recorder.py` -> `record_observation_from_current_state`.
+* [ ] Calculate `base_load_kw = total_load_kw - ev_power_kw - water_power_kw`.
+* [ ] **Safety:** Ensure `base_load_kw` is never negative (clamp to 0.0), log warning if calculation drifted.
+* [ ] Store `base_load_kw` in the `load_kwh` column (or decided new schema? *Decision: Use existing column for "Uncontrollable Load" to implicitly train model on this*).
 
-#### Phase 3: Production Polish [DONE]
-* [x] **Unified Router Logic**: Refactor `forecast`, `debug`, `services` to use SQLAlchemy (remove `aiosqlite`).
-* [x] **ORM Observability**: Refactor `logging.py` to use `PlannerDebug` model.
-* [x] **Optimization**: Fix inefficient date queries in `services.py`.
-* [x] **Verification**: Ensure all dashboards load correctly without legacy drivers.
-
+#### Phase 3: Verification [PLANNED]
+* [ ] Dry-run script to visualize "Total vs Base" load.
+* [ ] Verify `planner_learning.db` contains clean base load data.
 ---
-
-### [COMPLETED] REV // DX4 — Tooling Upgrade (Commitlint & uv)
-
-**Goal:** Enforce Conventional Commits standards and accelerate backend development workflows using `uv`.
-
-**Plan:**
-
-#### Phase 1: Conventional Commits [COMPLETED]
-* [x] Install `@commitlint/cli` and `@commitlint/config-conventional` (devDeps).
-* [x] Create `commitlint.config.js` extending conventional config.
-* [x] Add `commitlint` repo/hook to `.pre-commit-config.yaml`.
-* [x] Verify bad commits are rejected and good commits pass.
-
-#### Phase 2: High-Performance Python [COMPLETED]
-* [x] Transition project documentation to use `uv` as the preferred package manager.
-* [x] Update `scripts/dev-backend.sh` to use `uv run` (or fallback).
-* [x] Verify backend starts and runs tests correctly with `uv`.
-
-#### Phase 3: Validation & Documentation [COMPLETED]
-* [x] Update `docs/DEVELOPER.md` and `.agent/rules/project.md` with new workflow instructions.
-* [x] Manual Verification of all changes.
-* [x] **User Manual Approval** required before final commit.
-
----
-
-### [DONE] REV // F20 — Validation Condition Logic
-
-**Goal:** Fix "Entity not found" warnings for disabled features (Battery/Water/Solar) by making validation conditional.
-
-**Plan:**
-
-#### Phase 1: Logic Update [DONE]
-* [x] Update `backend/health.py` to check `system.has_battery`, `system.has_water_heater`, etc.
-* [x] Skip entity validation for disabled features.
-* [x] Verified with simulation script.
-
----
-
-### [DONE] REV // F21 — Fix Button Logic (Pause & Water Boost)
-
-**Goal:** Resolve issues where Pause re-applies idle mode aggressively and Water Boost is overridden by the scheduler.
-
-**Plan:**
-
-#### Phase 1: Backend Logic [DONE]
-* [x] **Pause Fix:** Modify `_tick` in `executor/engine.py` to return early if paused, preventing "Idle Mode" spam.
-* [x] **Water Boost Fix:** Add high-priority override in `_tick` to respect active water boost status.
-* [x] **Verification:** Confirmed singleton pattern in `backend/main.py`.
-
-#### Phase 2: Frontend Synchronization [DONE]
-* [x] Update `QuickActions.tsx` to accept explicit `executorPaused` prop.
-* [x] Update `Dashboard.tsx` to pass the backend's true pause state.
-* [x] Linting: Ran `pnpm lint --fix` and `ruff check`.
