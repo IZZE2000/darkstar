@@ -279,6 +279,17 @@ ln -sf /config/darkstar/secrets.yaml /app/secrets.yaml
 mkdir -p /share/darkstar
 ln -sf /share/darkstar /app/data
 
+# -----------------------------------------------------------------------------
+# LEGACY CODE DETECTION (REV ARC11)
+# -----------------------------------------------------------------------------
+# Ensure we aren't accidentally running old sync code after the ARC11 migration
+if grep -q "store.Session()" /app/backend/learning/store.py 2>/dev/null; then
+    log "CRITICAL ERROR: Legacy sync code detected in store.py!"
+    log "The ARC11 migration requires a clean async codebase."
+    log "Please pull the latest changes and ensure 'store.Session' is removed."
+    exit 1
+fi
+
 log "Bootstrapping complete. Starting server..."
 
 # Start FastAPI via Uvicorn

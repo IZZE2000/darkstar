@@ -268,17 +268,17 @@ sites.
 Risk: Without this fix, production deployment will have broken API endpoints and planner crashes.
 
 #### Phase 5: Documentation & Rollback Plan [DONE]
-* [ ] **Update ARCHITECTURE.md**:
+* [x] **Update ARCHITECTURE.md**:
     * Remove "Hybrid Mode" section (9.2).
     * Update to "Unified AsyncIO Architecture".
     * Document async best practices (e.g., no blocking calls in `async def`).
-* [ ] **Rollback Strategy**:
+* [x] **Rollback Strategy**:
     * Tag commit before ARC11 merge: `git tag pre-arc11`.
     * Document rollback procedure in `docs/ROLLBACK.md`:
         * `git revert <arc11-commit-hash>`
         * Restart server (auto-migrates DB schema back if needed).
     * **Critical**: Do NOT delete sync methods until Phase 4 tests pass.
-* [ ] **Deployment Guide**:
+* [x] **Deployment Guide**:
     * Add migration notes to `docs/DEVELOPER.md`.
     * Update `run.sh` to detect old sync code and warn users.
 
