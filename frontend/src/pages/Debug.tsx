@@ -147,6 +147,7 @@ function LogsView({
                                     hour: '2-digit',
                                     minute: '2-digit',
                                     second: '2-digit',
+                                    hour12: false,
                                 })}
                             </span>
                             <span className="mr-2 rounded-full px-1.5 py-0.5 text-[10px] uppercase tracking-wide border border-line/50">
@@ -200,6 +201,7 @@ function LogsView({
                                         hour: '2-digit',
                                         minute: '2-digit',
                                         second: '2-digit',
+                                        hour12: false,
                                     })}{' '}
                                     · {entry.logger}
                                 </div>

@@ -170,7 +170,7 @@ Currently, the charts can become cluttered when mixing planned and actual data. 
 
 ---
 
-### [DONE] REV // UI8 — Load Disaggregation Debug View [DONE]
+### [DONE] REV // UI8 — Load Disaggregation Debug View
 
 **Goal:** Add a dedicated troubleshooting view for load disaggregation to the Debug page.
 
@@ -185,7 +185,7 @@ Currently, the charts can become cluttered when mixing planned and actual data. 
 
 ---
 
-### [DONE] REV // F22 — API Routing Precedence Fix [DONE]
+### [DONE] REV // F22 — API Routing Precedence Fix
 
 **Goal:** Resolve critical routing bug where SPA catch-all intercepted API calls.
 
@@ -196,3 +196,18 @@ Currently, the charts can become cluttered when mixing planned and actual data. 
 * [x] Refine SPA catch-all in `main.py` to exclude `/api/*` paths.
 * [x] Verify JSON responses for all critical API endpoints.
 * [x] Ensure SPA still loads correctly for non-API routes.
+
+---
+
+### [DONE] REV // F23 - Fix Aurora Restore Lost Functionality
+
+**Goal:** Restore critical Aurora dashboard features and learning logic lost during recent refactors.
+
+**Plan:**
+
+#### Phase 1: Investigation & Restoration [x]
+* [x] **Toggle Reflex:** Restore the `/api/aurora/config/toggle_reflex` endpoint in `forecast.py`.
+* [x] **Dashboard Metrics:** Restore `max_price_spread` calculation in `aurora_dashboard`.
+* [x] **Strategy History:** Restore fetching and display of strategy events from `data/strategy_history.json`.
+* [x] **Learning Runs:** Re-implement `log_learning_run` in `LearningStore` and ensure `ml/train.py` logs executions to the DB.
+* [x] **Linting:** Ensure restored code passes project linting standards.

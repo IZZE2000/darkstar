@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from backend.learning.models import (
     ExecutionLog,
     LearningDailyMetric,
+    LearningRun,
     ReflexState,
     SlotForecast,
     SlotObservation,
@@ -798,6 +799,29 @@ class LearningStore:
                 )
 
             return results
+
+    async def log_learning_run(
+        self,
+        status: str,
+        result_metrics: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
+        started_at: datetime | None = None,
+    ) -> None:
+        """Log a learning run execution."""
+        if started_at is None:
+            started_at = datetime.utcnow()
+
+        import json
+
+        async with self.AsyncSession() as session:
+            run = LearningRun(
+                started_at=started_at,
+                status=status,
+                result_metrics_json=json.dumps(result_metrics) if result_metrics else None,
+                params_json=json.dumps(params) if params else None,
+            )
+            session.add(run)
+            await session.commit()
 
     async def get_latest_metrics(self) -> dict[str, Any] | None:
         """Get the latest daily metrics for overlays using Async SQLAlchemy."""

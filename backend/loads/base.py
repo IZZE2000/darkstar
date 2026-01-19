@@ -3,6 +3,7 @@ from enum import Enum
 
 class LoadType(Enum):
     BINARY = "binary"  # On/Off (e.g. some water heaters)
+    FIXED = "fixed"  # Alias for binary/static loads
     VARIABLE = "variable"  # Variable power (e.g. smart EV chargers)
 
 

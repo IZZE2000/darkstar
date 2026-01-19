@@ -311,6 +311,36 @@ def train_models(days_back: int = 90, min_samples: int = 100) -> None:
 
     print("--- AURORA Training finished ---")
 
+    # Log run to DB
+    try:
+        import json
+
+        run_metrics = {
+            "load_models_trained": not load_df.empty,
+            "pv_models_trained": not pv_df.empty,
+        }
+        run_params = {"days_back": cfg.days_back, "min_samples": cfg.min_samples}
+
+        with sqlite3.connect(engine.db_path) as conn:
+            conn.execute(
+                """
+                INSERT INTO learning_runs
+                (started_at, completed_at, status, params_json, result_metrics_json)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    now.isoformat(),
+                    datetime.now(engine.timezone).isoformat(),
+                    "success",
+                    json.dumps(run_params),
+                    json.dumps(run_metrics),
+                ),
+            )
+            conn.commit()
+            print("Logged learning run to DB.")
+    except Exception as e:
+        print(f"Failed to log learning run: {e}")
+
 
 if __name__ == "__main__":
     args = _parse_args()

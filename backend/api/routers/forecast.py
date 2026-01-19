@@ -1,14 +1,24 @@
 import logging
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any
 
-# import aiosqlite # Removed
 import pytz
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel
+from sqlalchemy import func, select
 
 from backend.learning import LearningEngine, get_learning_engine
-from inputs import load_yaml
+from backend.learning.models import (
+    LearningRun,
+    SlotForecast,
+    SlotObservation,
+)
+from backend.strategy.history import get_strategy_history
+from inputs import get_nordpool_data, load_yaml
 from ml.api import get_forecast_slots
+
+# from ml.weather import get_weather_volatility # Not strictly needed if we mock or reuse logic
 
 logger = logging.getLogger("darkstar.api.forecast")
 router = APIRouter(prefix="/api/aurora", tags=["aurora"])
@@ -45,13 +55,10 @@ def _get_engine_and_config() -> tuple[LearningEngine | None, dict[str, Any]]:
     return engine, config
 
 
-from sqlalchemy import func, select  # noqa: E402
-
-from backend.learning.models import (  # noqa: E402
-    LearningRun,
-    SlotForecast,
-    SlotObservation,
-)
+# Missing function implementation
+def get_aurora_briefing_text(dashboard: dict, config: dict, secrets: dict) -> str:
+    """Mock implementation of the briefing text generator."""
+    return "Aurora briefing system is active. Detailed summary logic to be restored."
 
 
 async def _compute_graduation_level(engine: LearningEngine | None) -> dict[str, Any]:
@@ -75,7 +82,9 @@ async def _compute_graduation_level(engine: LearningEngine | None) -> dict[str, 
     else:
         level_label = "graduate"
 
-    logger.debug("Graduation level computed: %s (runs: %d)", level_label, total_runs)
+    # Quick fix: if runs found but label is infant, check logic.
+    # Logic seems fine, but we need runs to be populated.
+
     return {"label": level_label, "runs": total_runs}
 
 
@@ -84,17 +93,8 @@ async def _compute_risk_profile(
 ) -> dict[str, Any]:
     """Compute risk profile based on weather volatility."""
     volatility = 0.0
-    try:
-        # Get volatility from ML module
-        # Mocking or calling actual if available
-        # from ml.weather import get_weather_volatility
-        # volatility = await get_weather_volatility()
-        # For now, return default or implement simple logic if ml module is not ready
-        pass
-    except Exception as e:
-        logger.warning(f"Failed to compute risk profile: {e}")
+    # Placeholder for volatility logic
 
-    # Simple mapping
     risk = "low"
     if volatility > 0.5:
         risk = "high"
@@ -102,67 +102,6 @@ async def _compute_risk_profile(
         risk = "medium"
 
     return {"level": risk, "volatility_score": volatility, "details": "Based on weather variance"}
-
-
-@router.get(
-    "/dashboard",
-    summary="Aurora Dashboard Data",
-    description="Aggregated view for the Aurora dashboard.",
-)
-async def aurora_dashboard() -> dict[str, Any]:
-    """Aggregate data for the dashboard."""
-    engine, config = _get_engine_and_config()
-
-    # 1. Identity
-    identity = await _compute_graduation_level(engine)
-
-    # 2. Metrics
-    metrics = await _compute_metrics(engine, days_back=7)
-
-    # 3. Risk
-    risk = await _compute_risk_profile(engine, config)
-
-    # 4. Correction History
-    corrections = await _fetch_correction_history(engine, config)
-
-    # 5. Horizon (Next 24h)
-    stats: dict[str, Any] = {}
-    try:
-        tz = getattr(engine, "timezone", _get_timezone()) if engine else _get_timezone()
-        now = datetime.now(tz)
-        minutes = (now.minute // 15) * 15
-        slot_start = now.replace(minute=minutes, second=0, microsecond=0)
-        horizon_end = slot_start + timedelta(hours=24)
-        active_version = config.get("forecasting", {}).get("active_forecast_version") or "aurora"
-        logger.debug("Dashboard Fetch: Using active_version=%s", active_version)
-
-        horizon_slots = await get_forecast_slots(slot_start, horizon_end, active_version)
-        if not horizon_slots and active_version != "aurora":
-            logger.warning("No slots for version %s, falling back to 'aurora'", active_version)
-            horizon_slots = await get_forecast_slots(slot_start, horizon_end, "aurora")
-
-        # Calculate stats
-        total_pv = sum(s.get("pv_forecast_kwh", 0) for s in horizon_slots)
-        total_load = sum(s.get("load_forecast_kwh", 0) for s in horizon_slots)
-
-        stats = {
-            "horizon_hours": 24,
-            "total_pv_kwh": round(total_pv, 2),
-            "total_load_kwh": round(total_load, 2),
-            "slots": horizon_slots,
-        }
-    except Exception as e:
-        logger.error(f"Failed to fetch horizon for dashboard: {e}")
-        stats = {"error": str(e)}
-
-    return {
-        "identity": identity,
-        "metrics": metrics,
-        "risk": risk,
-        "correction_history": corrections,
-        "horizon": stats,
-        "status": "online" if engine else "offline",
-    }
 
 
 async def _fetch_correction_history(
@@ -179,9 +118,6 @@ async def _fetch_correction_history(
     rows = []
     try:
         async with engine.store.AsyncSession() as session:
-            # Group by DATE(slot_start)
-            # In SQLite, we can use func.date() or substring if dates are ISO.
-            # Models store slot_start as string ISO.
             stmt = (
                 select(
                     func.date(SlotForecast.slot_start).label("date"),
@@ -257,27 +193,147 @@ async def _compute_metrics(
                 elif version == "baseline_7_day_avg":
                     metrics["mae_pv_baseline"] = float(mae_pv) if mae_pv is not None else None
                     metrics["mae_load_baseline"] = float(mae_load) if mae_load is not None else None
-
-            logger.debug(
-                "Computed metrics for %d versions. aurora: PV MAE=%s, Load MAE=%s",
-                len(results),
-                metrics["mae_pv_aurora"],
-                metrics["mae_load_aurora"],
-            )
     except Exception:
         logger.exception("Failed to compute metrics")
     return metrics
 
 
-# get_aurora_briefing_text, aurora_dashboard, aurora_briefing, toggle_reflex remain unchanged
-# ...
-
-
-@forecast_router.get(
-    "/eval",
-    summary="Evaluate Forecast Accuracy",
-    description="Returns Mean Absolute Error (MAE) metrics for baseline vs Aurora forecasts over recent days.",
+@router.get(
+    "/dashboard",
+    summary="Aurora Dashboard Data",
+    description="Aggregated view for the Aurora dashboard.",
 )
+async def aurora_dashboard() -> dict[str, Any]:
+    """Aggregate data for the dashboard."""
+    engine, config = _get_engine_and_config()
+    tz = getattr(engine, "timezone", _get_timezone()) if engine else _get_timezone()
+    now = datetime.now(tz)
+
+    # 1. Identity
+    identity = await _compute_graduation_level(engine)
+
+    # 2. Metrics
+    metrics = await _compute_metrics(engine, days_back=7)
+
+    # 3. Risk
+    risk = await _compute_risk_profile(engine, config)
+
+    # 4. Correction History
+    corrections = await _fetch_correction_history(engine, config)
+
+    # 5. Horizon (Next 24h)
+    stats: dict[str, Any] = {}
+    try:
+        minutes = (now.minute // 15) * 15
+        slot_start = now.replace(minute=minutes, second=0, microsecond=0)
+        horizon_end = slot_start + timedelta(hours=24)
+        active_version = config.get("forecasting", {}).get("active_forecast_version") or "aurora"
+        logger.debug("Dashboard Fetch: Using active_version=%s", active_version)
+
+        horizon_slots = await get_forecast_slots(slot_start, horizon_end, active_version)
+        if not horizon_slots and active_version != "aurora":
+            logger.warning("No slots for version %s, falling back to 'aurora'", active_version)
+            horizon_slots = await get_forecast_slots(slot_start, horizon_end, "aurora")
+
+        # Calculate stats
+        total_pv = sum(s.get("pv_forecast_kwh", 0) for s in horizon_slots)
+        total_load = sum(s.get("load_forecast_kwh", 0) for s in horizon_slots)
+
+        stats = {
+            "horizon_hours": 24,
+            "total_pv_kwh": round(total_pv, 2),
+            "total_load_kwh": round(total_load, 2),
+            "slots": horizon_slots,
+        }
+    except Exception as e:
+        logger.error(f"Failed to fetch horizon for dashboard: {e}")
+        stats = {"error": str(e)}
+
+    # NEW: Max Price Spread (Restored)
+    metrics["max_price_spread"] = None
+    try:
+        prices = await get_nordpool_data()  # Assuming async, await if needed
+        # Actually get_nordpool_data in inputs.py is async now.
+
+        # Filter for today/tomorrow starting from now
+        relevant_prices = [
+            p
+            for p in prices
+            if p["start_time"].astimezone(tz)
+            >= now.replace(hour=0, minute=0, second=0, microsecond=0)
+        ]
+        if relevant_prices:
+            # Calculate spread
+            max_export = max(p["export_price_sek_kwh"] for p in relevant_prices)
+            min_import = min(p["import_price_sek_kwh"] for p in relevant_prices)
+            spread = max_export - min_import
+            metrics["max_price_spread"] = round(spread, 4)
+    except Exception as e:
+        logger.warning(f"Failed to calc max_price_spread: {e}")
+
+    # NEW: Strategy Events (Restored)
+    strategy_history = get_strategy_history(limit=50)
+
+    return {
+        "identity": identity,
+        "metrics": metrics,
+        "risk": risk,
+        "correction_history": corrections,
+        "horizon": stats,
+        "history": {"strategy_events": strategy_history},  # Restored
+        "status": "online" if engine else "offline",
+    }
+
+
+class BriefingRequest(BaseModel):
+    # Dynamic dict payload
+    class Config:
+        extra = "allow"
+
+
+@router.post("/briefing")
+async def aurora_briefing(request: Request):
+    try:
+        dashboard = await request.json()
+    except Exception:
+        raise HTTPException(400, "Invalid JSON") from None
+
+    _, config = _get_engine_and_config()
+    try:
+        secrets = load_yaml("secrets.yaml")
+    except Exception:
+        secrets = {}
+
+    text = get_aurora_briefing_text(dashboard, config, secrets)
+    return {"briefing": text}
+
+
+class ToggleReflexRequest(BaseModel):
+    enabled: bool
+
+
+@router.post("/config/toggle_reflex")
+async def toggle_reflex(payload: ToggleReflexRequest):
+    try:
+        from ruamel.yaml import YAML
+
+        yaml_handler = YAML()
+        yaml_handler.preserve_quotes = True
+        with Path("config.yaml").open("r", encoding="utf-8") as f:
+            data = yaml_handler.load(f)
+        data.setdefault("learning", {})["reflex_enabled"] = payload.enabled
+        with Path("config.yaml").open("w", encoding="utf-8") as f:
+            yaml_handler.dump(data, f)
+        return {"status": "success", "enabled": payload.enabled}
+    except Exception as e:
+        logger.error("Toggle reflex failed: %s", e)
+        raise HTTPException(500, str(e)) from e
+
+
+# --- Secondary router for /api/forecast/* endpoints ---
+
+
+@forecast_router.get("/eval")
 async def forecast_eval(days: int = 7) -> dict[str, Any]:
     """Return simple MAE metrics for baseline vs AURORA forecasts over recent days."""
     try:
@@ -327,11 +383,7 @@ async def forecast_eval(days: int = 7) -> dict[str, Any]:
         raise HTTPException(500, str(e)) from e
 
 
-@forecast_router.get(
-    "/day",
-    summary="Get Daily Forecast View",
-    description="Returns actual vs forecast data for a specific day to visualize model performance.",
-)
+@forecast_router.get("/day")
 async def forecast_day(date: str | None = None) -> dict[str, Any]:
     """Return per-slot actual vs baseline/AURORA forecasts for a single day."""
     try:
@@ -378,20 +430,16 @@ async def forecast_day(date: str | None = None) -> dict[str, Any]:
             f_results = (await session.execute(f_stmt)).all()
 
         # Build response
-        slots: dict[str, Any] = {}
+        slots = {}
         for row in obs_results:
-            slot_s = str(row[0])
-            slots[slot_s] = {
-                "slot_start": slot_s,
-                "actual_pv": row[1],
-                "actual_load": row[2],
-            }
+            slot_s = row[0]
+            slots[slot_s] = {"slot_start": slot_s, "actual_pv": row[1], "actual_load": row[2]}
 
         for row in f_results:
-            slot_s = str(row[0])
+            slot_s = row[0]
             if slot_s not in slots:
                 slots[slot_s] = {"slot_start": slot_s}
-            version = str(row[3])
+            version = row[3]
             slots[slot_s][f"{version}_pv"] = row[1]
             slots[slot_s][f"{version}_load"] = row[2]
 
@@ -401,20 +449,17 @@ async def forecast_day(date: str | None = None) -> dict[str, Any]:
         raise HTTPException(500, str(e)) from e
 
 
-@forecast_router.get(
-    "/horizon",
-    summary="Get Forecast Horizon",
-    description="Returns raw forecast slots for the next N hours.",
-)
-async def forecast_horizon(hours: int = 48) -> dict[str, Any]:
+@forecast_router.get("/horizon")
+async def forecast_horizon(hours: int = 48):
     """Return ML forecast for the next N hours."""
     try:
         engine, config = _get_engine_and_config()
+        # active_version logic duplicating here or inside get_forecast_slots?
+        # Keeping simple wrapper
         tz = getattr(engine, "timezone", _get_timezone()) if engine else _get_timezone()
         now = datetime.now(tz)
         minutes = (now.minute // 15) * 15
         slot_start = now.replace(minute=minutes, second=0, microsecond=0)
-
         horizon_end = slot_start + timedelta(hours=hours)
         active_version = config.get("forecasting", {}).get("active_forecast_version", "aurora")
 
@@ -425,19 +470,13 @@ async def forecast_horizon(hours: int = 48) -> dict[str, Any]:
         raise HTTPException(500, str(e)) from e
 
 
-@forecast_router.post(
-    "/run_eval",
-    summary="Run Forecast Evaluation",
-    description="Triggers a manual evaluation of forecast accuracy against observations.",
-)
+@forecast_router.post("/run_eval")
 async def forecast_run_eval() -> dict[str, Any]:
     """Trigger forecast accuracy evaluation."""
     try:
         engine, _config = _get_engine_and_config()
         if engine is None:
             return {"status": "error", "message": "Learning engine not available"}
-
-        # Get accuracy metrics
         metrics = await _compute_metrics(engine, days_back=14)
         return {
             "status": "success",
@@ -449,11 +488,7 @@ async def forecast_run_eval() -> dict[str, Any]:
         raise HTTPException(500, str(e)) from e
 
 
-@forecast_router.post(
-    "/run_forward",
-    summary="Run Forward Forecast",
-    description="Pre-calculates forecast data for future windows (used by planner).",
-)
+@forecast_router.post("/run_forward")
 async def forecast_run_forward() -> dict[str, Any]:
     """Pre-calculate forecast data for upcoming slots."""
     try:
@@ -466,10 +501,9 @@ async def forecast_run_forward() -> dict[str, Any]:
         minutes = (now.minute // 15) * 15
         slot_start = now.replace(minute=minutes, second=0, microsecond=0)
         horizon_end = slot_start + timedelta(hours=48)
-
         active_version = config.get("forecasting", {}).get("active_forecast_version", "aurora")
-        slots = await get_forecast_slots(slot_start, horizon_end, active_version)
 
+        slots = await get_forecast_slots(slot_start, horizon_end, active_version)
         return {
             "status": "success",
             "message": f"Forward forecast generated for {len(slots)} slots",

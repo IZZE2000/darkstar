@@ -18,6 +18,9 @@ def get_disaggregator(config: dict = Depends(get_config)) -> LoadDisaggregator:
     global _disaggregator
     if _disaggregator is None:
         _disaggregator = LoadDisaggregator(config)
+    elif len(_disaggregator.loads_registry) == 0 and len(config.get("deferrable_loads", [])) > 0:
+        # Re-initialize if the registry is empty but config now has loads (e.g. after first setup)
+        _disaggregator = LoadDisaggregator(config)
     return _disaggregator
 
 
