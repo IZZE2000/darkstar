@@ -13,7 +13,7 @@ def ensure_learning_schema(db_path: str) -> None:
     pass
 
 
-def record_debug_payload(payload: dict[str, Any], learning_config: dict[str, Any]) -> None:
+async def record_debug_payload(payload: dict[str, Any], learning_config: dict[str, Any]) -> None:
     """
     Persist planner debug payloads for observability.
 
@@ -34,10 +34,10 @@ def record_debug_payload(payload: dict[str, Any], learning_config: dict[str, Any
 
         timestamp = datetime.now(UTC).isoformat()
 
-        with engine.store.Session() as session:
+        async with engine.store.AsyncSession() as session:
             record = PlannerDebug(created_at=timestamp, payload=json.dumps(payload))
             session.add(record)
-            session.commit()
+            await session.commit()
 
     except Exception as e:
         # Use simple print as fallback if logger not available/configured

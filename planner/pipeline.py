@@ -116,7 +116,7 @@ class PlannerPipeline:
 
         return update_recursive(new_config, overrides)
 
-    def generate_schedule(
+    async def generate_schedule(
         self,
         input_data: dict[str, Any],
         overrides: dict[str, Any] | None = None,
@@ -164,7 +164,7 @@ class PlannerPipeline:
         # Load learning overlays (PV/Load bias, S-Index base)
         learning_overlays = {}
         if mode == "full":
-            learning_overlays = load_learning_overlays(active_config.get("learning", {}))
+            learning_overlays = await load_learning_overlays(active_config.get("learning", {}))
 
         # Rev WH2: Load previous schedule to check for active water heating (Mid-block locking)
         previous_schedule = []
@@ -269,7 +269,7 @@ class PlannerPipeline:
                 s_index_debug.update(s_debug or {})
             else:
                 # Legacy Dynamic Calculation
-                factor, s_debug, _ = calculate_dynamic_s_index(
+                factor, s_debug, _ = await calculate_dynamic_s_index(
                     df,
                     s_index_cfg,
                     float(s_index_cfg.get("max_factor", 1.5)),
@@ -283,7 +283,7 @@ class PlannerPipeline:
                 s_index_debug.update(s_debug or {})
 
             # Calculate Future Risk (D2) for Target SoC
-            risk_factor, risk_debug = calculate_future_risk_factor(
+            risk_factor, risk_debug = await calculate_future_risk_factor(
                 df,
                 s_index_cfg,
                 timezone_name,
@@ -565,7 +565,7 @@ class PlannerPipeline:
                     target_soc_pct if "target_soc_pct" in dir() else 0.0
                 )
 
-            save_schedule_to_json(
+            await save_schedule_to_json(
                 final_df,
                 active_config,
                 now_slot,
@@ -584,7 +584,7 @@ class PlannerPipeline:
                 store = LearningStore(sqlite_path, tz)
                 # Reset index so start_time becomes a column (store_plan expects it)
                 plan_df = final_df.reset_index()
-                store.store_plan(plan_df)
+                await store.store_plan(plan_df)
                 logger.debug("Stored plan to slot_plans for performance tracking")
             except Exception as store_err:
                 logger.warning("Failed to store plan to slot_plans: %s", store_err)
@@ -594,7 +594,7 @@ class PlannerPipeline:
         return final_df
 
 
-def generate_schedule(
+async def generate_schedule(
     input_data: dict[str, Any],
     config: dict[str, Any] | None = None,
     mode: str = "full",
@@ -619,4 +619,4 @@ def generate_schedule(
             config = yaml.safe_load(f)
 
     pipeline = PlannerPipeline(config)
-    return pipeline.generate_schedule(input_data, mode=mode, save_to_file=save_to_file)
+    return await pipeline.generate_schedule(input_data, mode=mode, save_to_file=save_to_file)

@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException
 
 from backend.learning import LearningEngine, get_learning_engine
 from inputs import load_yaml
-from ml.api import get_forecast_slots_async
+from ml.api import get_forecast_slots
 
 logger = logging.getLogger("darkstar.api.forecast")
 router = APIRouter(prefix="/api/aurora", tags=["aurora"])
@@ -45,8 +45,6 @@ def _get_engine_and_config() -> tuple[LearningEngine | None, dict[str, Any]]:
     return engine, config
 
 
-import asyncio  # noqa: E402
-
 from sqlalchemy import func, select  # noqa: E402
 
 from backend.learning.models import (  # noqa: E402
@@ -61,13 +59,9 @@ async def _compute_graduation_level(engine: LearningEngine | None) -> dict[str, 
     total_runs = 0
 
     if engine and hasattr(engine, "store"):
-        # Use run_in_executor to avoid blocking the event loop
-        def count_runs():
-            with engine.store.Session() as session:
-                return session.scalar(select(func.count(LearningRun.id)))
-
         try:
-            total_runs = await asyncio.to_thread(count_runs) or 0
+            async with engine.store.AsyncSession() as session:
+                total_runs = await session.scalar(select(func.count(LearningRun.id))) or 0
         except Exception as exc:
             logger.warning("Failed to count learning_runs: %s", exc)
 
@@ -137,7 +131,7 @@ async def aurora_dashboard() -> dict[str, Any]:
         horizon_end = slot_start + timedelta(hours=24)
         active_version = config.get("forecasting", {}).get("active_forecast_version", "aurora")
 
-        horizon_slots = await get_forecast_slots_async(slot_start, horizon_end, active_version)
+        horizon_slots = await get_forecast_slots(slot_start, horizon_end, active_version)
 
         # Calculate stats
         total_pv = sum(s.get("pv_forecast_kwh", 0) for s in horizon_slots)
@@ -174,8 +168,9 @@ async def _fetch_correction_history(
     cutoff_date = (now - timedelta(days=14)).strftime("%Y-%m-%d")
     active_version = config.get("forecasting", {}).get("active_forecast_version", "aurora")
 
-    def fetch():
-        with engine.store.Session() as session:
+    rows = []
+    try:
+        async with engine.store.AsyncSession() as session:
             # Group by DATE(slot_start)
             # In SQLite, we can use func.date() or substring if dates are ISO.
             # Models store slot_start as string ISO.
@@ -192,22 +187,18 @@ async def _fetch_correction_history(
                 .group_by("date")
                 .order_by("date")
             )
-            return session.execute(stmt).all()
-
-    rows = []
-    try:
-        results = await asyncio.to_thread(fetch)
-        for date_str, pv_corr, load_corr in results:
-            pv = float(pv_corr or 0.0)
-            load = float(load_corr or 0.0)
-            rows.append(
-                {
-                    "date": date_str,
-                    "total_correction_kwh": pv + load,
-                    "pv_correction_kwh": pv,
-                    "load_correction_kwh": load,
-                }
-            )
+            results = await session.execute(stmt)
+            for date_str, pv_corr, load_corr in results.all():
+                pv = float(pv_corr or 0.0)
+                load = float(load_corr or 0.0)
+                rows.append(
+                    {
+                        "date": date_str,
+                        "total_correction_kwh": pv + load,
+                        "pv_correction_kwh": pv,
+                        "load_correction_kwh": load,
+                    }
+                )
     except Exception as exc:
         logger.warning("Failed to fetch correction history: %s", exc)
     return rows
@@ -232,8 +223,8 @@ async def _compute_metrics(
     start_iso = start_time.isoformat()
     now_iso = now.isoformat()
 
-    def fetch():
-        with engine.store.Session() as session:
+    try:
+        async with engine.store.AsyncSession() as session:
             stmt = (
                 select(
                     SlotForecast.forecast_version,
@@ -250,17 +241,14 @@ async def _compute_metrics(
                 )
                 .group_by(SlotForecast.forecast_version)
             )
-            return session.execute(stmt).all()
-
-    try:
-        rows = await asyncio.to_thread(fetch)
-        for version, mae_pv, mae_load in rows:
-            if version == "aurora":
-                metrics["mae_pv_aurora"] = float(mae_pv) if mae_pv is not None else None
-                metrics["mae_load_aurora"] = float(mae_load) if mae_load is not None else None
-            elif version == "baseline_7_day_avg":
-                metrics["mae_pv_baseline"] = float(mae_pv) if mae_pv is not None else None
-                metrics["mae_load_baseline"] = float(mae_load) if mae_load is not None else None
+            results = await session.execute(stmt)
+            for version, mae_pv, mae_load in results.all():
+                if version == "aurora":
+                    metrics["mae_pv_aurora"] = float(mae_pv) if mae_pv is not None else None
+                    metrics["mae_load_aurora"] = float(mae_load) if mae_load is not None else None
+                elif version == "baseline_7_day_avg":
+                    metrics["mae_pv_baseline"] = float(mae_pv) if mae_pv is not None else None
+                    metrics["mae_load_baseline"] = float(mae_load) if mae_load is not None else None
     except Exception as exc:
         logger.warning("Failed to compute metrics: %s", exc)
     return metrics
@@ -288,28 +276,24 @@ async def forecast_eval(days: int = 7) -> dict[str, Any]:
         start_iso = start_time.isoformat()
         now_iso = now.isoformat()
 
-        def fetch():
-            with engine.store.Session() as session:
-                stmt = (
-                    select(
-                        SlotForecast.forecast_version,
-                        func.avg(func.abs(SlotObservation.pv_kwh - SlotForecast.pv_forecast_kwh)),
-                        func.avg(
-                            func.abs(SlotObservation.load_kwh - SlotForecast.load_forecast_kwh)
-                        ),
-                        func.count().label("samples"),
-                    )
-                    .join(SlotObservation, SlotObservation.slot_start == SlotForecast.slot_start)
-                    .where(
-                        SlotObservation.slot_start >= start_iso,
-                        SlotObservation.slot_start < now_iso,
-                        SlotForecast.forecast_version.in_(["baseline_7_day_avg", "aurora"]),
-                    )
-                    .group_by(SlotForecast.forecast_version)
+        async with engine.store.AsyncSession() as session:
+            stmt = (
+                select(
+                    SlotForecast.forecast_version,
+                    func.avg(func.abs(SlotObservation.pv_kwh - SlotForecast.pv_forecast_kwh)),
+                    func.avg(func.abs(SlotObservation.load_kwh - SlotForecast.load_forecast_kwh)),
+                    func.count().label("samples"),
                 )
-                return session.execute(stmt).all()
-
-        rows = await asyncio.to_thread(fetch)
+                .join(SlotObservation, SlotObservation.slot_start == SlotForecast.slot_start)
+                .where(
+                    SlotObservation.slot_start >= start_iso,
+                    SlotObservation.slot_start < now_iso,
+                    SlotForecast.forecast_version.in_(["baseline_7_day_avg", "aurora"]),
+                )
+                .group_by(SlotForecast.forecast_version)
+            )
+            results = await session.execute(stmt)
+            rows = results.all()
 
         versions: list[dict[str, Any]] = []
         for row in rows:
@@ -353,40 +337,34 @@ async def forecast_day(date: str | None = None) -> dict[str, Any]:
         start_iso = day_start.isoformat()
         end_iso = day_end.isoformat()
 
-        def fetch():
-            with engine.store.Session() as session:
-                # Observations
-                obs_stmt = (
-                    select(
-                        SlotObservation.slot_start, SlotObservation.pv_kwh, SlotObservation.load_kwh
-                    )
-                    .where(
-                        SlotObservation.slot_start >= start_iso,
-                        SlotObservation.slot_start < end_iso,
-                    )
-                    .order_by(SlotObservation.slot_start)
+        async with engine.store.AsyncSession() as session:
+            # Observations
+            obs_stmt = (
+                select(SlotObservation.slot_start, SlotObservation.pv_kwh, SlotObservation.load_kwh)
+                .where(
+                    SlotObservation.slot_start >= start_iso,
+                    SlotObservation.slot_start < end_iso,
                 )
-                obs_results = session.execute(obs_stmt).all()
+                .order_by(SlotObservation.slot_start)
+            )
+            obs_results = (await session.execute(obs_stmt)).all()
 
-                # Forecasts
-                f_stmt = select(
-                    SlotForecast.slot_start,
-                    SlotForecast.pv_forecast_kwh,
-                    SlotForecast.load_forecast_kwh,
-                    SlotForecast.forecast_version,
-                ).where(
-                    SlotForecast.slot_start >= start_iso,
-                    SlotForecast.slot_start < end_iso,
-                    SlotForecast.forecast_version.in_(["baseline_7_day_avg", "aurora"]),
-                )
-                f_results = session.execute(f_stmt).all()
-                return obs_results, f_results
-
-        obs_rows, f_rows = await asyncio.to_thread(fetch)
+            # Forecasts
+            f_stmt = select(
+                SlotForecast.slot_start,
+                SlotForecast.pv_forecast_kwh,
+                SlotForecast.load_forecast_kwh,
+                SlotForecast.forecast_version,
+            ).where(
+                SlotForecast.slot_start >= start_iso,
+                SlotForecast.slot_start < end_iso,
+                SlotForecast.forecast_version.in_(["baseline_7_day_avg", "aurora"]),
+            )
+            f_results = (await session.execute(f_stmt)).all()
 
         # Build response
         slots: dict[str, Any] = {}
-        for row in obs_rows:
+        for row in obs_results:
             slot_s = str(row[0])
             slots[slot_s] = {
                 "slot_start": slot_s,
@@ -394,7 +372,7 @@ async def forecast_day(date: str | None = None) -> dict[str, Any]:
                 "actual_load": row[2],
             }
 
-        for row in f_rows:
+        for row in f_results:
             slot_s = str(row[0])
             if slot_s not in slots:
                 slots[slot_s] = {"slot_start": slot_s}
@@ -425,7 +403,7 @@ async def forecast_horizon(hours: int = 48) -> dict[str, Any]:
         horizon_end = slot_start + timedelta(hours=hours)
         active_version = config.get("forecasting", {}).get("active_forecast_version", "aurora")
 
-        slots = await get_forecast_slots_async(slot_start, horizon_end, active_version)
+        slots = await get_forecast_slots(slot_start, horizon_end, active_version)
         return {"horizon_hours": hours, "slots": slots}
     except Exception as e:
         logger.exception("Forecast horizon failed")
@@ -475,7 +453,7 @@ async def forecast_run_forward() -> dict[str, Any]:
         horizon_end = slot_start + timedelta(hours=48)
 
         active_version = config.get("forecasting", {}).get("active_forecast_version", "aurora")
-        slots = await get_forecast_slots_async(slot_start, horizon_end, active_version)
+        slots = await get_forecast_slots(slot_start, horizon_end, active_version)
 
         return {
             "status": "success",

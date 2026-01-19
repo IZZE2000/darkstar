@@ -35,7 +35,7 @@ def get_git_version() -> str:
         return "dev"
 
 
-def save_schedule_to_json(
+async def save_schedule_to_json(
     schedule_df: pd.DataFrame,
     config: dict[str, Any],
     now_slot: pd.Timestamp | None,
@@ -97,11 +97,11 @@ def save_schedule_to_json(
         output["debug"] = debug_payload
 
         learning_config = config.get("learning", {})
-        record_debug_payload(debug_payload, learning_config)
+        await record_debug_payload(debug_payload, learning_config)
 
     class DateTimeEncoder(json.JSONEncoder):
         def default(self, obj):
-            if isinstance(obj, (datetime, pd.Timestamp)):
+            if isinstance(obj, datetime | pd.Timestamp):
                 return obj.isoformat()
             return super().default(obj)
 

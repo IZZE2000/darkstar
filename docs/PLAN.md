@@ -151,12 +151,150 @@ Currently, the charts can become cluttered when mixing planned and actual data. 
 ---
 ---
 
-### [BACKLOG] REV // ARC11 — Async Background Services (Full Migration)
+### [IN PROGRESS] REV // ARC11 — Async Background Services (Full Migration)
 
-**Goal:** Complete the migration to full AsyncIO by refactoring the Recorder and Planner Service to use async database methods, eliminating the "Dual-Mode" hybrid state.
+**Goal:** Complete the migration to full AsyncIO by refactoring background services (Recorder, LearningEngine, BackfillEngine, Analyst) to use async database methods, eliminating the "Dual-Mode" hybrid state.
+
+**Context:**
+Currently, `LearningStore` operates in **Hybrid Mode** (REV ARC10):
+*   **API Layer**: Uses `AsyncSession` (non-blocking, production-ready).
+*   **Background Services**: Use sync `Session` (blocking, runs in threads).
+
+This creates technical debt: duplicate engine initialization, dual testing requirements, and potential threading/GIL contention.
+
+**Scope:**
+*   **Primary**: Migrate all background services to `async/await`.
+*   **Secondary**: Remove all synchronous database code from `LearningStore`.
+*   **Tertiary**: Verify no performance regression on low-power hardware (N100).
+
+**Risk Assessment:**
+*   **Breaking Changes**: None (internal refactor only, no API changes).
+*   **Data Integrity**: SQLite async operations require careful lock management.
+*   **Performance**: Async overhead in tight loops could reduce throughput vs threads.
+*   **Rollback**: Must be possible to revert to sync code if async causes issues.
 
 **Plan:**
-*   Refactor `Recorder` (`backend/recorder.py`) to use `async/await`.
-*   Refactor `LearningEngine` (`backend/learning/engine.py`) to use `AsyncSession`.
-*   Remove synchronous `Session` and `create_engine` from `LearningStore`.
-*   Update `docs/ARCHITECTURE.md` to reflect unified AsyncIO architecture.
+
+#### Phase 1: Audit & Dependency Mapping [DONE]
+* [x] **Inventory**: List all files that instantiate `LearningStore` or call sync methods.
+    * `backend/recorder.py` (main loop)
+    * `backend/learning/engine.py` (LearningEngine delegates to store)
+    * `backend/learning/analyst.py` (Reflex learning loop)
+    * `backend/learning/backfill.py` (BackfillEngine for historical data)
+    * `backend/api/routers/learning.py` (API endpoint using `asyncio.to_thread`)
+* [x] **Call Graph**: Identify all `LearningStore` sync methods still in use:
+    * `store_slot_prices()`, `store_slot_observations()`, `store_forecasts()`, `store_plan()`
+    * `get_last_observation_time()`, `calculate_metrics()`, `get_performance_series()`
+    * All methods in `analyst.py` and `backfill.py`
+* [x] **Thread Safety**: Verify no shared mutable state between sync/async code paths.
+
+#### Phase 2: Incremental Migration (Background Services) [DONE]
+* [x] **Step 1: Recorder**
+    * Convert `record_observation_from_current_state()` to `async def`.
+    * Replace `time.sleep()` with `await asyncio.sleep()` in main loop.
+    * Update `backend/recorder.py::main()` to use `asyncio.run()` instead of `while True` loop.
+    * Update API endpoint (`backend/api/routers/learning.py`) to call async version directly (remove `asyncio.to_thread`).
+* [x] **Step 2: LearningEngine**
+    * Convert all methods in `backend/learning/engine.py` to `async def`.
+    * Replace `self.store.store_*()` calls with `await self.store.store_*_async()`.
+    * Update `etl_cumulative_to_slots()` to be async-compatible (CPU-bound, may need `asyncio.to_thread` wrapper).
+* [x] **Step 3: BackfillEngine**
+    * Convert `backend/learning/backfill.py::run()` to `async def`.
+    * Replace sync pandas DB queries with async SQLAlchemy queries.
+    * Update `main.py` startup to `await backfill.run()`.
+* [x] **Step 4: Analyst**
+    * Convert `backend/learning/analyst.py::update_learning_overlays()` to `async def`.
+    * Replace all `store.*()` calls with `await store.*_async()`.
+    * Update Recorder's `_run_analyst()` to `await analyst.update_learning_overlays()`.
+
+#### Phase 3: Cleanup (Remove Dual-Mode Code) [DONE]
+* [x] Audit codebase for remaining sync `LearningStore` usage.
+* [x] Identify all `LearningStore` sync methods still in use.
+* [x] Refactor remaining sync methods to async (e.g. `store_plan` in pipeline).
+* [x] Remove `self.engine` check in `LearningStore.__init__`.
+* [x] Remove `self.engine` (sync SQLAlchemy engine) from `LearningStore`.
+* [x] Remove `self.Session` (sync session factory).
+* [x] Audit `inputs.py` for remaining blocking IO.
+* [x] Delete all `store_*()` sync methods (keep only `*_async()` versions).
+* [x] Rename `*_async()` methods to remove `_async` suffix (e.g., `store_slot_prices_async` → `store_slot_prices`).
+* [x] **Test Cleanup**:
+    * Update all tests to use `pytest-asyncio` fixtures.
+    * Replace sync DB setup with `async with` context managers.
+* [x] **Lint & Type Check**:
+    * Run `uv run ruff check backend/` (zero tolerance).
+    * Run `uv run mypy backend/learning/` (verify async type hints).
+
+#### Phase 4: Verification & Performance Testing [DONE]
+- [x] Run full test suite (`uv run pytest`).
+- [x] Manually verify Recorder writes observations to DB (Async).
+- [x] Verify Analyst runs without locking the main thread.
+- [x] Verify BackfillEngine correctly handles gaps.
+- [x] Verify `run_planner.py` executes successfully.
+- [x] **Create Benchmark Script**:
+    - [x] Create `scripts/benchmark_async.py` (measure DB write latency, API response time).
+    - [x] Run benchmark on dev machine to ensure no regressions.
+
+#### Phase 4.1: Critical Production Fixes [DONE]
+
+Context: REV ARC11 migration is 95% complete, but several API routes still use the old sync Session() which
+no longer exists in LearningStore, causing AttributeError crashes.
+
+* [ ] Fix API Forecast Routes (CRITICAL):
+  - **File**: backend/api/routers/forecast.py
+  - **Problem**: Lines 66, 178, 236, 292, 357 use engine.store.Session() which was removed
+  - **Fix**: Replace all instances of:
+
+python
+    # ❌ BROKEN (Session doesn't exist)
+    with engine.store.Session() as session:
+        return session.scalar(select(...))
+
+
+   With:
+
+python
+    # ✅ CORRECT (AsyncSession exists)
+    async with engine.store.AsyncSession() as session:
+        return await session.scalar(select(...))
+
+
+  - **Note**: Also wrap the calling functions with asyncio.to_thread() if they're called from sync contexts
+
+* [ ] Fix Planner Logging (HIGH):
+  - **File**: planner/observability/logging.py
+  - **Problem**: Line 37 uses engine.store.Session()
+  - **Fix**: Same pattern as above - convert to AsyncSession() and add await
+
+* [ ] Verification Tests:
+  - **API Test**: curl http://localhost:8000/api/forecast/status should return 200, not 500
+  - **Planner Test**: python bin/run_planner.py should complete without AttributeError
+  - **Lint Test**: ruff check backend/ should show zero errors
+
+Root Cause: Phase 3 cleanup removed self.Session from LearningStore.__init__ but missed updating all call
+sites.
+
+Risk: Without this fix, production deployment will have broken API endpoints and planner crashes.
+
+#### Phase 5: Documentation & Rollback Plan [BACKLOG]
+* [ ] **Update ARCHITECTURE.md**:
+    * Remove "Hybrid Mode" section (9.2).
+    * Update to "Unified AsyncIO Architecture".
+    * Document async best practices (e.g., no blocking calls in `async def`).
+* [ ] **Rollback Strategy**:
+    * Tag commit before ARC11 merge: `git tag pre-arc11`.
+    * Document rollback procedure in `docs/ROLLBACK.md`:
+        * `git revert <arc11-commit-hash>`
+        * Restart server (auto-migrates DB schema back if needed).
+    * **Critical**: Do NOT delete sync methods until Phase 4 tests pass.
+* [ ] **Deployment Guide**:
+    * Add migration notes to `docs/DEVELOPER.md`.
+    * Update `run.sh` to detect old sync code and warn users.
+
+---
+
+**Success Criteria:**
+1. ✅ All background services use `async/await` exclusively.
+2. ✅ `LearningStore` has no synchronous engine or methods.
+3. ✅ All tests pass (`pytest`, `ruff`, `mypy`).
+4. ✅ No performance regression on N100 hardware (<5% latency increase).
+5. ✅ Rollback procedure tested and documented.
