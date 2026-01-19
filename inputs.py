@@ -170,6 +170,7 @@ async def get_nordpool_data(config_path: str = "config.yaml") -> list[dict[str, 
     nordpool_config = config.get("nordpool", {})
     price_area = nordpool_config.get("price_area", "SE4")
     currency = nordpool_config.get("currency", "SEK")
+    resolution_minutes = nordpool_config.get("resolution_minutes", 60)
 
     import asyncio
 
@@ -177,20 +178,28 @@ async def get_nordpool_data(config_path: str = "config.yaml") -> list[dict[str, 
 
     try:
         # Fetch prices for today and tomorrow using to_thread
-        raw_today = await asyncio.to_thread(prices_client.fetch, end_date=today, areas=[price_area])
+        raw_today = await asyncio.to_thread(
+            prices_client.fetch, end_date=today, areas=[price_area], resolution=resolution_minutes
+        )
         today_values = []
         if raw_today and "areas" in raw_today and price_area in raw_today["areas"]:
-            today_values = raw_today["areas"][price_area].get("values", [])
+            today_raw = raw_today["areas"][price_area].get("values", [])
+            today_values = [v for v in today_raw if v["start"].astimezone(local_tz).date() == today]
 
         tomorrow_values = []
         if now.hour >= 13:
             tomorrow = today + timedelta(days=1)
             raw_tomorrow = await asyncio.to_thread(
-                prices_client.fetch, end_date=tomorrow, areas=[price_area]
+                prices_client.fetch,
+                end_date=tomorrow,
+                areas=[price_area],
+                resolution=resolution_minutes,
             )
             if raw_tomorrow and "areas" in raw_tomorrow and price_area in raw_tomorrow["areas"]:
                 all_raw = raw_tomorrow["areas"][price_area].get("values", [])
-                tomorrow_values = [v for v in all_raw if v["start"].date() > today]
+                tomorrow_values = [
+                    v for v in all_raw if v["start"].astimezone(local_tz).date() == tomorrow
+                ]
 
         all_entries = today_values + tomorrow_values
 
