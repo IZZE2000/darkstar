@@ -178,11 +178,9 @@ async def schedule_today_with_history(
     # 2. Load History (LearningStore Async)
     exec_map: dict[datetime, dict[str, Any]] = {}
     try:
-        # Query window: Today start to Now
         today_start = tz.localize(datetime.combine(today_local, datetime.min.time()))
-        now_dt = datetime.now(tz)
 
-        rows = await store.get_history_range(today_start, now_dt)
+        rows = await store.get_executions_range(today_start)
 
         for row in rows:
             try:
@@ -301,11 +299,13 @@ async def schedule_today_with_history(
                 "start_time": tz.localize(key).isoformat(),
                 "end_time": tz.localize(key + timedelta(minutes=60)).isoformat(),
             }
+        slot["is_historical"] = False
 
         # Attach history
         if key in exec_map:
             h = exec_map[key]
             slot["is_executed"] = True
+            slot["is_historical"] = True
             slot["actual_charge_kw"] = h.get("actual_charge_kw")
             slot["actual_discharge_kw"] = h.get("actual_discharge_kw")
             slot["actual_export_kwh"] = h.get("actual_export_kwh")

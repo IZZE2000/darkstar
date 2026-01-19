@@ -290,3 +290,20 @@ Risk: Without this fix, production deployment will have broken API endpoints and
 3. ✅ All tests pass (`pytest`, `ruff`, `mypy`).
 4. ✅ No performance regression on N100 hardware (<5% latency increase).
 5. ✅ Rollback procedure tested and documented.
+
+---
+
+### [DONE] REV // F22 — Fix Historical Data Bug
+
+**Goal:** Restore visibility of actual SoC and charge data in the "Today" chart by querying the execution log.
+
+**Plan:**
+#### Phase 1: Implementation [DONE]
+* [x] Add get_executions_range() to LearningStore querying execution_log.
+* [x] Update /api/schedule/today_with_history to use the new method.
+* [x] Map fields to expected frontend format (actual_soc, actual_charge_kw).
+* [x] Set is_historical flag correctly for merged slots.
+
+#### Phase 2: Verification [DONE]
+* [x] Verify fix with debug_history.py (Confirmed non-zero values).
+* [x] Verify is_historical field presence.

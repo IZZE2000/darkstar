@@ -10,6 +10,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from backend.learning.models import (
+    ExecutionLog,
     LearningDailyMetric,
     ReflexState,
     SlotForecast,
@@ -680,6 +681,68 @@ class LearningStore:
 
             result = await session.execute(stmt)
             return [row._asdict() for row in result.all()]
+
+    async def get_executions_range(self, start: datetime) -> list[dict[str, Any]]:
+        """Get execution history from execution_log table, grouped by slot_start."""
+        start_iso = start.isoformat()
+
+        async with self.AsyncSession() as session:
+            stmt = (
+                select(ExecutionLog)
+                .where(ExecutionLog.slot_start >= start_iso)
+                .order_by(ExecutionLog.executed_at.asc())
+            )
+
+            result = await session.execute(stmt)
+            rows = result.scalars().all()
+
+            # Group by slot_start
+            slots: dict[str, list[ExecutionLog]] = {}
+            for r in rows:
+                ss = r.slot_start
+                if ss not in slots:
+                    slots[ss] = []
+                slots[ss].append(r)
+
+            results = []
+            for ss, entries in slots.items():
+                if not entries:
+                    continue
+
+                # Last entry for SoC (representing end of slot state as it progresses)
+                last_entry = entries[-1]
+
+                # Average power for the slot (ExecutionLog records every minute)
+                avg_charge_kw = sum((e.planned_charge_kw or 0.0) for e in entries) / len(entries)
+                avg_discharge_kw = sum((e.planned_discharge_kw or 0.0) for e in entries) / len(
+                    entries
+                )
+                avg_water_kw = sum((e.planned_water_kw or 0.0) for e in entries) / len(entries)
+                avg_export_kw = sum((e.planned_export_kw or 0.0) for e in entries) / len(entries)
+
+                # Estimate slot end (15 mins)
+                try:
+                    s_start_dt = datetime.fromisoformat(ss)
+                    s_end_dt = s_start_dt + timedelta(minutes=15)
+                    slot_end = s_end_dt.isoformat()
+                except Exception:
+                    slot_end = ss
+
+                results.append(
+                    {
+                        "slot_start": ss,
+                        "slot_end": slot_end,
+                        # Map to names expected by schedule API (mocking SlotObservation fields)
+                        "batt_charge_kwh": avg_charge_kw * 0.25,
+                        "batt_discharge_kwh": avg_discharge_kw * 0.25,
+                        "soc_end_percent": last_entry.before_soc_percent,
+                        "water_kwh": avg_water_kw * 0.25,
+                        "export_kwh": avg_export_kw * 0.25,
+                        "import_price_sek_kwh": 0.0,  # Overlay will handle this
+                    }
+                )
+
+            return results
 
     async def get_latest_metrics(self) -> dict[str, Any] | None:
         """Get the latest daily metrics for overlays using Async SQLAlchemy."""
