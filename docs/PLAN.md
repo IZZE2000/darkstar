@@ -181,15 +181,33 @@ Currently, the charts can become cluttered when mixing planned and actual data. 
 
 ---
 
-### [DONE] REV // FIX-01 — Accurate Startup Logging (Issue #1)
+### [DONE] REV // F23 — Accurate Startup Logging & Health Robustness (Issue #1)
 
-**Goal:** Resolve misleading "Has Water Heater: true" logs and clarify configuration SSOT.
+**Goal:** Resolve misleading "Has Water Heater: true" logs and eliminate "angry red messages" for optional features.
 
 **Plan:**
 
-#### Phase 1: Logging Refactor [DONE]
+#### Phase 1: Logging & Health Refactor [DONE]
 * [x] **run.sh:** Move status logging from Bash string-matching to Python object-reflection (SSOT: `config.yaml`).
-* [x] **Logging:** Print final active profile (Solar, Battery, Water) after Add-on option merging.
+* [x] **health.py:** Downgrade optional sensors (Alarmo, Vacation) from Critical to Warning.
+* [x] **health.py:** Respect hardware toggles (`has_solar`, etc.) in sensor validation.
 
 #### Phase 2: Documentation [DONE]
 * [x] **PLAN.md:** Document fix for posterity.
+
+---
+
+### [DONE] REV // F22 — Remove aiosqlite & Refactor Tests
+
+**Goal:** Remove `aiosqlite` from production dependencies and refactor tests to align with SQLAlchemy async architecture.
+
+**Plan:**
+
+#### Phase 1: Refactor [DONE]
+* [x] **Audit:** Confirm `backend/learning/store.py` uses SQLAlchemy (sync).
+* [x] **Refactor:** Rewrite `tests/test_schedule_history_overlay.py` to use `SQLAlchemy` `create_async_engine` + `text()` wrapping instead of raw `aiosqlite`.
+* [x] **Cleanup:** Downgrade `aiosqlite` to a test-only dependency in `requirements.txt`.
+
+#### Phase 2: Verification [DONE]
+* [x] **Test:** Run `pytest tests/test_schedule_history_overlay.py` (Passed).
+* [x] **Regression:** Run full suite (Passed).
