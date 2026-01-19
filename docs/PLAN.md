@@ -119,27 +119,28 @@ Currently, the charts can become cluttered when mixing planned and actual data. 
 
 **Plan:**
 
-#### Phase 1: Deferrable Load Framework [PLANNED]
-* [ ] Create `backend/loads/` module with `DeferrableLoad` base class supporting binary and variable power control types.
-* [ ] Implement `LoadDisaggregator` service with sensor validation, fallback strategies, and graceful degradation.
-* [ ] Add `deferrable_loads` configuration schema to `config.default.yaml` with load type definitions (water, ev, heat_pump, pool_pump).
-* [ ] Create load registry system for dynamic load type registration and management.
+#### Phase 1: Deferrable Load Framework [x]
+* [x] Create `backend/loads/` module with `DeferrableLoad` base class supporting binary and variable power control types.
+* [x] Implement `LoadDisaggregator` service with sensor validation, fallback strategies, and graceful degradation.
+* [x] Add `deferrable_loads` configuration schema to `config.default.yaml` with load type definitions (water, ev, heat_pump, pool_pump).
+* [x] Create load registry system for dynamic load type registration and management.
 
-#### Phase 2: Enhanced Recorder Pipeline [PLANNED]
-* [ ] Modify `backend/recorder.py` to use `LoadDisaggregator` for calculating `base_load_kw = total_load_kw - sum(controllable_loads)`.
-* [ ] Add sensor health monitoring with automatic fallback to total load when individual sensors fail.
-* [ ] Implement data validation ensuring `base_load_kw >= 0` with warning logs for calculation drift.
-* [ ] Store clean base load data in existing `load_kwh` column (no schema changes needed).
+#### Phase 2: Enhanced Recorder Pipeline [x]
+* [x] Modify `backend/recorder.py` to use `LoadDisaggregator` for calculating `base_load_kw = total_load_kw - sum(controllable_loads)`.
+* [x] Add sensor health monitoring with automatic fallback to total load when individual sensors fail.
+* [x] Implement data validation ensuring `base_load_kw >= 0` with warning logs for calculation drift.
+* [x] Store clean base load data in existing `load_kwh` column (no schema changes needed).
 
-#### Phase 3: ML Model Refresh [PLANNED]
-* [ ] Clear existing model files to force retraining on clean base load data.
-* [ ] Add forecast accuracy monitoring comparing base load predictions vs actuals.
-* [ ] Implement model performance alerts when accuracy degrades below thresholds.
+#### Phase 3: ML Model Refresh [x]
+* [x] Clear existing model files to force retraining on clean base load data.
+* [x] Add forecast accuracy monitoring comparing base load predictions vs actuals.
+* [x] Implement model performance alerts when accuracy degrades below thresholds.
 
-#### Phase 4: Planner Integration [PLANNED]
-* [ ] Update Kepler solver to use disaggregated base load + planned controllable loads in energy balance.
-* [ ] Add load type validation in planner input processing.
-* [ ] Create debugging tools to visualize total vs base load forecasts.
+#### Phase 4: Planner Integration [x]
+* [x] Update Kepler solver to use disaggregated base load + planned controllable loads in energy balance.
+* [x] Add load type validation in planner input processing.
+* [x] Create debugging tools to visualize total vs base load forecasts.
+* [x] UI & Config Polish: Add manual training, remove redundant risk appetite card, and refine configuration comments.
 
 ---
 

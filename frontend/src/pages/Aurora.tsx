@@ -34,7 +34,6 @@ export default function Aurora() {
     const [loading, setLoading] = useState(false)
     const [briefingLoading, setBriefingLoading] = useState(false)
     const [riskAppetite, setRiskAppetite] = useState<number>(3)
-    const [replanning, setReplanning] = useState(false)
     const [chartMode, setChartMode] = useState<'load' | 'pv'>('load')
     const [viewMode, setViewMode] = useState<'forecast' | 'soc'>('forecast')
     const [autoTuneEnabled, setAutoTuneEnabled] = useState<boolean>(false)
@@ -43,6 +42,7 @@ export default function Aurora() {
     const [togglingReflex, setTogglingReflex] = useState(false)
     const [probabilisticMode, setProbabilisticMode] = useState<boolean>(false)
     const [togglingProbabilistic, setTogglingProbabilistic] = useState(false)
+    const [training, setTraining] = useState(false)
 
     // Performance Data State
     const [perfData, setPerfData] = useState<AuroraPerformanceData | null>(null)
@@ -107,15 +107,6 @@ export default function Aurora() {
         }
     }
 
-    const handleRiskChange = async (value: number) => {
-        setRiskAppetite(value)
-        try {
-            await Api.configSave({ s_index: { risk_appetite: value } })
-        } catch (err) {
-            console.error('Failed to save risk level (risk_appetite):', err)
-        }
-    }
-
     const handleAutoTuneToggle = async () => {
         const newValue = !autoTuneEnabled
         setAutoTuneEnabled(newValue)
@@ -155,6 +146,19 @@ export default function Aurora() {
             setProbabilisticMode(!newValue)
         } finally {
             setTogglingProbabilistic(false)
+        }
+    }
+
+    const handleTrain = async () => {
+        setTraining(true)
+        try {
+            await Api.learningTrain()
+            fetchDashboard()
+        } catch (err) {
+            console.error('Failed to trigger ML training:', err)
+            alert('Failed to trigger ML training. Check logs.')
+        } finally {
+            setTraining(false)
         }
     }
 
@@ -258,7 +262,7 @@ export default function Aurora() {
             {/* 1. THE BRIDGE (Top Section) */}
             <div className="grid gap-4 lg:grid-cols-12">
                 {/* Identity & Status Card */}
-                <Card className={`lg:col-span-6 p-4 md:p-5 bg-gradient-to-br ${heroGradient} relative overflow-hidden`}>
+                <Card className={`lg:col-span-8 p-4 md:p-5 bg-gradient-to-br ${heroGradient} relative overflow-hidden`}>
                     <div className="relative z-10 flex flex-col md:flex-row gap-6">
                         {/* Avatar & Pulse */}
                         <div className="flex items-center gap-4">
@@ -310,209 +314,94 @@ export default function Aurora() {
                     </div>
                 </Card>
 
-                {/* Risk Dial (Control) */}
-                <Card className="lg:col-span-3 p-4 md:p-5 flex flex-col justify-center">
-                    <div className="flex justify-between items-center mb-4">
-                        <span className="text-[10px] uppercase font-bold text-muted tracking-wider">Risk Appetite</span>
-                        <div className="flex items-center gap-2">
-                            {/* Calc/Applied Indicators */}
-                            {dashboard?.state?.risk_profile?.raw_factor != null &&
-                                (dashboard.state.risk_profile.raw_factor ?? 0) > 0 && (
-                                    <span className="text-[9px] text-muted/60" title="Calculated based on risk">
-                                        Calc: {(dashboard.state.risk_profile.raw_factor ?? 0).toFixed(2)}
-                                    </span>
-                                )}
-                            <span className="text-[9px] text-muted" title="Proected factor for next run">
-                                Applied: {(dashboard?.state?.risk_profile?.current_factor ?? 1.0).toFixed(2)}
-                            </span>
-                        </div>
-                    </div>
-
-                    <div className="flex flex-col gap-3">
-                        {/* 5-Step Segmented Control */}
-                        <div className="grid grid-cols-5 gap-1 p-1 bg-surface2/50 rounded-lg border border-line/30">
-                            {[1, 2, 3, 4, 5].map((step) => {
-                                const isActive = riskAppetite === step
-                                // Determine color based on risk level
-                                let activeClass = 'bg-surface border-line text-text shadow-sm'
-                                if (isActive) {
-                                    if (step === 1)
-                                        activeClass =
-                                            'bg-emerald-500/20 border-emerald-500/50 text-emerald-100 shadow-[0_0_10px_rgba(16,185,129,0.2)]'
-                                    else if (step === 2) activeClass = 'bg-teal-500/20 border-teal-500/50 text-teal-100'
-                                    else if (step === 3) activeClass = 'bg-blue-500/20 border-blue-500/50 text-blue-100'
-                                    else if (step === 4)
-                                        activeClass = 'bg-amber-500/20 border-amber-500/50 text-amber-100'
-                                    else if (step === 5)
-                                        activeClass =
-                                            'bg-red-500/20 border-red-500/50 text-red-100 shadow-[0_0_10px_rgba(239,68,68,0.2)]'
-                                }
-
-                                return (
-                                    <button
-                                        key={step}
-                                        onClick={() => handleRiskChange(step)}
-                                        className={`
-                       relative flex items-center justify-center h-9 rounded-md text-[10px] font-medium transition-all duration-200
-                       border border-transparent
-                       ${isActive ? activeClass : 'text-muted hover:bg-surface/50 hover:text-text'}
-                     `}
-                                    >
-                                        {step}
-                                    </button>
-                                )
-                            })}
-                        </div>
-
-                        {/* Descriptions */}
-                        <div className="text-center h-8 flex flex-col justify-center">
-                            <span
-                                className={`text-[11px] font-medium transition-colors duration-300 ${
-                                    riskAppetite === 1
-                                        ? 'text-emerald-400'
-                                        : riskAppetite === 2
-                                          ? 'text-teal-400'
-                                          : riskAppetite === 3
-                                            ? 'text-blue-400'
-                                            : riskAppetite === 4
-                                              ? 'text-amber-400'
-                                              : 'text-red-400'
-                                }`}
-                            >
-                                {
-                                    {
-                                        1: 'Safety First',
-                                        2: 'Conservative',
-                                        3: 'Neutral (Balanced)',
-                                        4: 'Aggressive',
-                                        5: 'Gambler',
-                                    }[riskAppetite]
-                                }
-                            </span>
-                            <span className="text-[9px] text-muted/70">
-                                {
-                                    {
-                                        1: 'Covers Worst Case (p90)',
-                                        2: 'Covers High Load (p75)',
-                                        3: 'Trusts the Mean (p50)',
-                                        4: 'Expects Lower Load',
-                                        5: 'Bets on Sun/Empty',
-                                    }[riskAppetite]
-                                }
-                            </span>
-                        </div>
-                    </div>
-
-                    {/* Re-Plan Trigger */}
-                    <div className="mt-4 pt-3 border-t border-line/30 flex flex-col items-center gap-2">
-                        <button
-                            onClick={async () => {
-                                setReplanning(true)
-                                try {
-                                    // Save first (already done by setRisk logic, but ensuring)
-                                    await handleRiskChange(riskAppetite)
-                                    // Trigger Planner
-                                    await Api.runPlanner()
-                                    // Refresh Dashboard
-                                    await fetchDashboard()
-                                } finally {
-                                    setReplanning(false)
-                                }
-                            }}
-                            disabled={replanning}
-                            className={`flex items-center gap-2 px-3 py-1.5 rounded-full bg-surface hover:bg-surface2 border border-line/50 text-[10px] transition-colors ${
-                                replanning ? 'opacity-70 cursor-not-allowed text-muted' : 'text-muted hover:text-text'
-                            }`}
-                            title="Run Strategy Engine to update forecast based on new risk"
-                        >
-                            {replanning ? (
-                                <>
-                                    <div className="h-3 w-3 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
-                                    <span>Re-planning...</span>
-                                </>
-                            ) : (
-                                <>
-                                    <Zap className="h-3 w-3 text-accent" />
-                                    <span>Apply & Re-Plan</span>
-                                </>
-                            )}
-                        </button>
-                        {replanning && (
-                            <span className="text-[9px] text-muted/70 animate-pulse">
-                                Regenerating schedule with new risk level...
-                            </span>
-                        )}
-                    </div>
-                </Card>
-
                 {/* Controls Card (Auto-Tuner) */}
-                <Card className="lg:col-span-3 p-4 md:p-5 flex flex-col">
+                <Card className="lg:col-span-4 p-4 md:p-5 flex flex-col">
                     <div className="flex items-center gap-2 mb-4">
                         <Zap className="h-4 w-4 text-accent" />
                         <span className="text-xs font-medium text-text">Controls</span>
                     </div>
 
-                    <div className="flex items-center justify-between p-2 rounded-lg bg-surface2/50 border border-line/50">
-                        <div className="flex flex-col">
-                            <span className="text-[11px] font-medium text-text">Auto-Tuner</span>
-                            <span className="text-[9px] text-muted">Allow Aurora to act</span>
+                    <div className="flex flex-col gap-2 flex-grow">
+                        <div className="flex items-center justify-between p-2 rounded-lg bg-surface2/50 border border-line/50">
+                            <div className="flex flex-col">
+                                <span className="text-[11px] font-medium text-text">Auto-Tuner</span>
+                                <span className="text-[9px] text-muted">Allow Aurora to act</span>
+                            </div>
+                            <button
+                                onClick={handleAutoTuneToggle}
+                                disabled={togglingAutoTune}
+                                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 focus:ring-offset-surface ${
+                                    autoTuneEnabled ? 'bg-accent' : 'bg-surface2'
+                                }`}
+                            >
+                                <span
+                                    className={`${
+                                        autoTuneEnabled ? 'translate-x-5' : 'translate-x-1'
+                                    } inline-block h-3 w-3 transform rounded-full bg-white transition-transform`}
+                                />
+                            </button>
                         </div>
-                        <button
-                            onClick={handleAutoTuneToggle}
-                            disabled={togglingAutoTune}
-                            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 focus:ring-offset-surface ${
-                                autoTuneEnabled ? 'bg-accent' : 'bg-surface2'
-                            }`}
-                        >
-                            <span
-                                className={`${
-                                    autoTuneEnabled ? 'translate-x-5' : 'translate-x-1'
-                                } inline-block h-3 w-3 transform rounded-full bg-white transition-transform`}
-                            />
-                        </button>
+
+                        <div className="flex items-center justify-between p-2 rounded-lg bg-surface2/50 border border-line/50">
+                            <div className="flex flex-col">
+                                <span className="text-[11px] font-medium text-text">Aurora Reflex</span>
+                                <span className="text-[9px] text-muted">Long-term auto-tuning</span>
+                            </div>
+                            <button
+                                onClick={handleReflexToggle}
+                                disabled={togglingReflex}
+                                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 focus:ring-offset-surface ${
+                                    reflexEnabled ? 'bg-accent' : 'bg-surface2'
+                                }`}
+                            >
+                                <span
+                                    className={`${
+                                        reflexEnabled ? 'translate-x-5' : 'translate-x-1'
+                                    } inline-block h-3 w-3 transform rounded-full bg-white transition-transform`}
+                                />
+                            </button>
+                        </div>
+
+                        <div className="flex items-center justify-between p-2 rounded-lg bg-surface2/50 border border-line/50">
+                            <div className="flex flex-col">
+                                <span className="text-[11px] font-medium text-text">Probabilistic</span>
+                                <span className="text-[9px] text-muted">Use p10/p90 confidence bands</span>
+                            </div>
+                            <button
+                                onClick={handleProbabilisticToggle}
+                                disabled={togglingProbabilistic}
+                                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 focus:ring-offset-surface ${
+                                    probabilisticMode ? 'bg-accent' : 'bg-surface2'
+                                }`}
+                            >
+                                <span
+                                    className={`${
+                                        probabilisticMode ? 'translate-x-5' : 'translate-x-1'
+                                    } inline-block h-3 w-3 transform rounded-full bg-white transition-transform`}
+                                />
+                            </button>
+                        </div>
                     </div>
 
-                    <div className="flex items-center justify-between p-2 rounded-lg bg-surface2/50 border border-line/50 mt-2">
-                        <div className="flex flex-col">
-                            <span className="text-[11px] font-medium text-text">Aurora Reflex</span>
-                            <span className="text-[9px] text-muted">Long-term auto-tuning</span>
-                        </div>
+                    <div className="mt-4 pt-3 border-t border-line/30">
                         <button
-                            onClick={handleReflexToggle}
-                            disabled={togglingReflex}
-                            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 focus:ring-offset-surface ${
-                                reflexEnabled ? 'bg-accent' : 'bg-surface2'
-                            }`}
+                            onClick={handleTrain}
+                            disabled={training}
+                            className={`w-full flex items-center justify-center gap-2 py-2 rounded-lg bg-accent text-[#0F1216] text-[11px] font-semibold transition-all hover:bg-accent/90 disabled:opacity-50 disabled:cursor-not-allowed`}
                         >
-                            <span
-                                className={`${
-                                    reflexEnabled ? 'translate-x-5' : 'translate-x-1'
-                                } inline-block h-3 w-3 transform rounded-full bg-white transition-transform`}
-                            />
+                            {training ? (
+                                <>
+                                    <div className="h-3 w-3 border-2 border-[#0F1216]/20 border-t-[#0F1216] rounded-full animate-spin" />
+                                    <span>Training...</span>
+                                </>
+                            ) : (
+                                <>
+                                    <Brain className="h-3.5 w-3.5" />
+                                    <span>Train Model Now</span>
+                                </>
+                            )}
                         </button>
                     </div>
-
-                    <div className="flex items-center justify-between p-2 rounded-lg bg-surface2/50 border border-line/50 mt-2">
-                        <div className="flex flex-col">
-                            <span className="text-[11px] font-medium text-text">Probabilistic</span>
-                            <span className="text-[9px] text-muted">Use p10/p90 confidence bands</span>
-                        </div>
-                        <button
-                            onClick={handleProbabilisticToggle}
-                            disabled={togglingProbabilistic}
-                            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 focus:ring-offset-surface ${
-                                probabilisticMode ? 'bg-accent' : 'bg-surface2'
-                            }`}
-                        >
-                            <span
-                                className={`${
-                                    probabilisticMode ? 'translate-x-5' : 'translate-x-1'
-                                } inline-block h-3 w-3 transform rounded-full bg-white transition-transform`}
-                            />
-                        </button>
-                    </div>
-
-                    <div className="mt-auto pt-2 text-center text-[10px] text-muted">More controls coming soon.</div>
                 </Card>
             </div>
 

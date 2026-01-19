@@ -431,6 +431,7 @@ export const Api = {
     learningDailyMetrics: () => getJSON<LearningDailyMetricsResponse>('/api/learning/daily_metrics'),
     learningRun: () => getJSON<LearningRunResponse>('/api/learning/run', 'POST'),
     learningLoops: () => getJSON<LearningLoopsResponse>('/api/learning/loops'),
+    learningTrain: () => getJSON<{ status: string; message: string }>('/api/learning/train', 'POST'),
     theme: () => getJSON<ThemeResponse>('/api/themes'),
     runPlanner: () => getJSON<{ status: string; message?: string }>('/api/run_planner', 'POST'),
     resetToOptimal: () => getJSON<{ status: string }>('/api/schedule/save', 'POST'),

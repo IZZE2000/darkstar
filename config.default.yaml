@@ -80,11 +80,13 @@ water_heating:
 
 # Deferrable & Controllable Loads (Load Disaggregation)
 deferrable_loads:
-  - id: water_heater
-    name: "Water Heater"
-    sensor_key: water_power
-    type: variable
-    nominal_power_kw: 3.0
+  # List of loads that can be disaggregated from the main load sensor.
+  # These loads are subtracted from total load to train ML on "Base Load".
+  - id: water_heater           # Unique identifier for the load
+    name: "Water Heater"         # Display name
+    sensor_key: water_power    # Key in input_sensors for power reading (W or kW)
+    type: fixed                # 'fixed' (binary on/off) or 'variable' (modulating)
+    nominal_power_kw: 3.0      # Rated power when fully on
 
 # S-Index Configuration (Risk & Safety Strategy)
 s_index:

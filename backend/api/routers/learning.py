@@ -76,6 +76,24 @@ async def learning_history(limit: int = Query(20, ge=1, le=100)) -> dict[str, An
 
 
 @router.post(
+    "/api/learning/train",
+    summary="Trigger ML Training",
+    description="Trigger manual ML model retraining now.",
+)
+async def learning_train() -> dict[str, str]:
+    """Trigger ML model retraining manually."""
+    try:
+        from ml.train import train_models
+
+        # Offload to thread since train_models is heavy/sync
+        await asyncio.to_thread(train_models)
+        return {"status": "success", "message": "ML models retrained successfully"}
+    except Exception as e:
+        logger.exception("Failed to train models")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.post(
     "/api/learning/run",
     summary="Trigger Learning Run",
     description="Trigger learning orchestration manually.",
