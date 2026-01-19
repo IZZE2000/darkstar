@@ -184,6 +184,11 @@ class LearningStore:
                     pv_p90=forecast.get("pv_p90"),
                     load_p10=forecast.get("load_p10"),
                     load_p90=forecast.get("load_p90"),
+                    base_load_forecast_kwh=float(
+                        forecast.get("base_load_forecast_kwh", 0.0) or 0.0
+                    ),
+                    base_load_p10=forecast.get("base_load_p10"),
+                    base_load_p90=forecast.get("base_load_p90"),
                     temp_c=forecast.get("temp_c"),
                     forecast_version=forecast_version,
                 )
@@ -197,9 +202,13 @@ class LearningStore:
                         "pv_p90": stmt.excluded.pv_p90,
                         "load_p10": stmt.excluded.load_p10,
                         "load_p90": stmt.excluded.load_p90,
+                        "base_load_forecast_kwh": stmt.excluded.base_load_forecast_kwh,
+                        "base_load_p10": stmt.excluded.base_load_p10,
+                        "base_load_p90": stmt.excluded.base_load_p90,
                         "temp_c": stmt.excluded.temp_c,
                     },
                 )
+
                 await session.execute(stmt)
             await session.commit()
 
@@ -652,6 +661,9 @@ class LearningStore:
                 SlotForecast.pv_p90,
                 SlotForecast.load_p10,
                 SlotForecast.load_p90,
+                SlotForecast.base_load_forecast_kwh,
+                SlotForecast.base_load_p10,
+                SlotForecast.base_load_p90,
                 SlotForecast.temp_c,
                 SlotForecast.forecast_version,
                 SlotForecast.pv_correction_kwh,

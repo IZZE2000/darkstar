@@ -34,14 +34,9 @@ def planner_to_kepler_input(df: pd.DataFrame, initial_soc_kwh: float) -> KeplerI
         else:
             end_time = start_time + pd.Timedelta(minutes=15)
 
-        # Prefer adjusted forecasts if available
+        # Prefer adjusted forecasts if available (already represents Base Load)
         load = float(row.get("adjusted_load_kwh", row.get("load_forecast_kwh", 0.0)))
         pv = float(row.get("adjusted_pv_kwh", row.get("pv_forecast_kwh", 0.0)))
-
-        # Add water heating load if present
-        water_kw = float(row.get("water_heating_kw", 0.0))
-        slot_hours = (end_time - start_time).total_seconds() / 3600.0
-        load += water_kw * slot_hours
 
         slots.append(
             KeplerInputSlot(

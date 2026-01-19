@@ -40,7 +40,13 @@ class SlotForecast(Base):
     pv_p90: Mapped[float | None] = mapped_column(Float)
     load_p10: Mapped[float | None] = mapped_column(Float)
     load_p90: Mapped[float | None] = mapped_column(Float)
+    base_load_forecast_kwh: Mapped[float] = mapped_column(
+        Float, default=0.0, server_default=text("0.0")
+    )
+    base_load_p10: Mapped[float | None] = mapped_column(Float)
+    base_load_p90: Mapped[float | None] = mapped_column(Float)
     temp_c: Mapped[float | None] = mapped_column(Float)
+
     forecast_version: Mapped[str] = mapped_column(String)
     pv_correction_kwh: Mapped[float] = mapped_column(Float, default=0.0, server_default=text("0"))
     load_correction_kwh: Mapped[float] = mapped_column(Float, default=0.0, server_default=text("0"))

@@ -113,9 +113,9 @@ Currently, the charts can become cluttered when mixing planned and actual data. 
 
 ---
 
-### [DONE] REV ML2 - Load Disaggregation Framework
+### [DONE] REV // ML2: Load Disaggregation [DONE]
 
-**Goal:** Create a robust, extensible framework for separating base load from controllable loads (water, EV, heat pumps) to improve ML forecast accuracy and enable scalable deferrable load management.
+> Improving ML forecast accuracy by separating base load from controllable appliances.
 
 **Plan:**
 
@@ -141,6 +141,14 @@ Currently, the charts can become cluttered when mixing planned and actual data. 
 * [x] Add load type validation in planner input processing.
 * [x] Create debugging tools to visualize total vs base load forecasts.
 * [x] UI & Config Polish: Add manual training, remove redundant risk appetite card, and refine configuration comments.
+
+#### Phase 5: Ad-hoc Pipeline Fixes [x]
+* [x] Data Pipeline: Differentiate between "Base Load Forecast" and "Total Load Forecast" in database schema.
+* [x] Fix Double Counting: Update `inputs.py` to strictly prefer clean base load forecasts for planning.
+* [x] DB Migration: Add `base_load_forecast_kwh` columns to `slot_forecasts` table.
+* [x] Inference Refresh: Update `ml/forward.py` to populate the new base load columns.
+
+
 
 ---
 

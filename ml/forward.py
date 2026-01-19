@@ -227,11 +227,14 @@ async def generate_forward_slots(
             # Primary (Legacy/p50)
             "pv_forecast_kwh": float(predictions["pv_p50"][idx]),
             "load_forecast_kwh": float(predictions["load_p50"][idx]),
+            "base_load_forecast_kwh": float(predictions["load_p50"][idx]),
             # Probabilistic Bands
             "pv_p10": float(predictions["pv_p10"][idx]),
             "pv_p90": float(predictions["pv_p90"][idx]),
             "load_p10": float(predictions["load_p10"][idx]),
             "load_p90": float(predictions["load_p90"][idx]),
+            "base_load_p10": float(predictions["load_p10"][idx]),
+            "base_load_p90": float(predictions["load_p90"][idx]),
         }
         forecasts.append(item)
 

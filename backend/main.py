@@ -24,6 +24,7 @@ from backend.api.routers import (
     forecast,
     learning,
     legacy,
+    loads,
     schedule,
     services,
     system,
@@ -253,6 +254,7 @@ def create_app() -> socketio.ASGIApp:
     app.include_router(services.router_services)
     app.include_router(legacy.router)
     app.include_router(learning.router)
+    app.include_router(loads.router)
 
     # Mount additional routers
     app.include_router(forecast_router)

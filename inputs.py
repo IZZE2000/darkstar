@@ -333,7 +333,10 @@ async def _get_forecast_data_aurora(
             ts = slot["start_time"].astimezone(local_tz)
             idx = int((ts.hour * 60 + ts.minute) // 15) % 96
 
-            val_load = float(db_slot.get("load_forecast_kwh", 0.0))
+            # Strictly prefer base_load_forecast_kwh (CLEAN) over load_forecast_kwh (DIRTY/TOTAL)
+            val_load = float(
+                db_slot.get("base_load_forecast_kwh") or db_slot.get("load_forecast_kwh", 0.0)
+            )
             if val_load <= 0.001:
                 val_load = ha_profile[idx]
 
@@ -381,7 +384,11 @@ async def _get_forecast_data_aurora(
             date_key = ts.astimezone(local_tz).date().isoformat()
 
             base_pv = float(rec.get("pv_forecast_kwh", 0.0) or 0.0)
-            base_load = float(rec.get("load_forecast_kwh", 0.0) or 0.0)
+            # Prefer CLEAN base load forecast
+            base_load = float(
+                rec.get("base_load_forecast_kwh") or rec.get("load_forecast_kwh", 0.0) or 0.0
+            )
+
             pv_corr = float(rec.get("pv_correction_kwh", 0.0) or 0.0)
             load_corr = float(rec.get("load_correction_kwh", 0.0) or 0.0)
 
@@ -771,11 +778,15 @@ async def build_db_forecast_for_slots(
             load_p90 = None
         else:
             base_pv = float(rec.get("pv_forecast_kwh") or 0.0)
-            base_load = float(rec.get("load_forecast_kwh") or 0.0)
+            # Prefer CLEAN base load forecast
+            base_load = float(
+                rec.get("base_load_forecast_kwh") or rec.get("load_forecast_kwh") or 0.0
+            )
             pv_corr = float(rec.get("pv_correction_kwh") or 0.0)
             load_corr = float(rec.get("load_correction_kwh") or 0.0)
             pv = base_pv + pv_corr
             load = base_load + load_corr
+
             pv_p10 = rec.get("pv_p10")
             pv_p90 = rec.get("pv_p90")
             load_p10 = rec.get("load_p10")
