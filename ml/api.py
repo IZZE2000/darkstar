@@ -61,7 +61,7 @@ async def get_forecast_slots(
 
         records.append(
             {
-                "slot_start": row["slot_start"].isoformat(),
+                "slot_start": row["slot_start"],
                 "base": {"pv_kwh": base_pv, "load_kwh": base_load},
                 "correction": {"pv_kwh": pv_corr, "load_kwh": load_corr},
                 "final": {"pv_kwh": base_pv + pv_corr, "load_kwh": base_load + load_corr},

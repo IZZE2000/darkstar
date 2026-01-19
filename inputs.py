@@ -1,3 +1,4 @@
+import asyncio
 import math
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -666,7 +667,7 @@ async def get_all_input_data(config_path: str = "config.yaml") -> dict[str, Any]
             days = int(learning_cfg.get("horizon_days", 2))
             hours = days * 24
 
-            await asyncio.to_thread(run_inference, horizon_hours=hours, forecast_version="aurora")
+            await run_inference(horizon_hours=hours, forecast_version="aurora")
         except Exception as e:
             print(f"⚠️ AURORA Inference Pipeline Failed: {e}")
 

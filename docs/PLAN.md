@@ -225,3 +225,28 @@ Currently, the charts can become cluttered when mixing planned and actual data. 
 * [x] **Config Safety:** Implement atomic write pattern for `toggle_reflex` using `ruamel.yaml`.
 * [x] **Async Optimization:** Optimize `max_price_spread` price fetching and fix async/await usage.
 * [x] **Logging:** Add debug logging to expensive queries in `store.py`.
+
+### [IN PROGRESS] REV // UI9 — System Health Card
+
+**Goal:** Add a "System Health" card to the Aurora dashboard for real-time visibility into system status and data health.
+
+**Plan:**
+
+#### Phase 1: Implementation [IN PROGRESS]
+* [ ] **Backend:** Add `/api/system/health` endpoint with learning runs, DB stats, and uptime.
+* [ ] **Frontend:** Create `SystemHealthCard` component.
+* [ ] **Integration:** Add card to Aurora dashboard grid.
+
+---
+
+### [DONE] REV // F25 — Critical Planner Bugfixes
+
+**Goal:** Resolve blocking TypeError and ImportErrors preventing planner execution.
+
+**Plan:**
+
+#### Phase 1: Critical Hotfixes [x]
+* [x] **Data Type Fix:** Modify `ml/api.py` to preserve `datetime` objects instead of casting to string (Fixes `TypeError: 'str' object has no attribute 'tzinfo'`).
+* [x] **Missing Import:** Add `import asyncio` to `inputs.py` (Fixes `NameError: name 'asyncio' is not defined`).
+* [x] **Async Logic:** Correctly await `run_inference` in `inputs.py` instead of using `to_thread`.
+* [x] **Verification:** Verify planner completes full execution cycle.
