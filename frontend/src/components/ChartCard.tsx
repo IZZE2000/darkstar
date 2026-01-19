@@ -167,7 +167,7 @@ const chartOptions: ChartConfiguration['options'] = {
             position: 'left',
             min: 0,
             max: 9,
-            title: { display: false, text: 'kWh' },
+            title: { display: false, text: 'kW' },
             grid: { display: false },
             ticks: { display: false },
             border: { display: false },
@@ -351,7 +351,7 @@ const createChartData = (
             } as any,
             {
                 type: 'bar',
-                label: 'Export (kWh)',
+                label: 'Export (kW)',
                 data: values.export ?? values.labels.map(() => null),
                 backgroundColor: 'rgba(31, 178, 86, 0.3)', // DS.good - selling is positive!
                 borderColor: DS.good,
@@ -1037,12 +1037,19 @@ function buildLiveData(
 
             if (slot) {
                 const isExec = slot.is_executed === true
+                const hourFraction = resolutionMinutes / 60
 
                 price.push(slot.import_price_sek_kwh ?? null)
-                pv.push(isExec && slot.actual_pv_kwh != null ? slot.actual_pv_kwh : (slot.pv_forecast_kwh ?? null))
-                load.push(
-                    isExec && slot.actual_load_kwh != null ? slot.actual_load_kwh : (slot.load_forecast_kwh ?? null),
-                )
+
+                // Convert kWh to kW: kW = kWh / hourFraction
+                const rawPvKwh =
+                    isExec && slot.actual_pv_kwh != null ? slot.actual_pv_kwh : (slot.pv_forecast_kwh ?? null)
+                pv.push(rawPvKwh != null ? rawPvKwh / hourFraction : null)
+
+                const rawLoadKwh =
+                    isExec && slot.actual_load_kwh != null ? slot.actual_load_kwh : (slot.load_forecast_kwh ?? null)
+                load.push(rawLoadKwh != null ? rawLoadKwh / hourFraction : null)
+
                 // For charge/export, prefer actual_* when executed; discharge/water remain planned.
                 charge.push(
                     isExec && slot.actual_charge_kw != null
@@ -1050,7 +1057,16 @@ function buildLiveData(
                         : (slot.battery_charge_kw ?? slot.charge_kw ?? null),
                 )
                 discharge.push(slot.battery_discharge_kw ?? slot.discharge_kw ?? null)
-                exp.push(isExec && slot.actual_export_kw != null ? slot.actual_export_kw : (slot.export_kwh ?? null))
+
+                const rawExportKwh =
+                    isExec && slot.actual_export_kw != null ? slot.actual_export_kw : (slot.export_kwh ?? null)
+                // If it's actual_export_kw, it's already kW. If export_kwh, convert.
+                if (isExec && slot.actual_export_kw != null) {
+                    exp.push(slot.actual_export_kw)
+                } else {
+                    exp.push(rawExportKwh != null ? rawExportKwh / hourFraction : null)
+                }
+
                 water.push(slot.water_heating_kw ?? null)
                 socTarget.push(slot.soc_target_percent ?? null)
                 socProjected.push(slot.projected_soc_percent ?? null)
@@ -1183,13 +1199,18 @@ function buildLiveData(
 
             if (slot) {
                 const isExec = slot.is_executed === true
+                const hourFraction = resolutionMinutes / 60
 
                 price.push(slot.import_price_sek_kwh ?? null)
-                // For pv/load: prefer actual if available, fallback to forecast
-                pv.push(isExec && slot.actual_pv_kwh != null ? slot.actual_pv_kwh : (slot.pv_forecast_kwh ?? null))
-                load.push(
-                    isExec && slot.actual_load_kwh != null ? slot.actual_load_kwh : (slot.load_forecast_kwh ?? null),
-                )
+                // For pv/load: prefer actual if available, fallback to forecast. Convert kWh to kW.
+                const rawPvKwh =
+                    isExec && slot.actual_pv_kwh != null ? slot.actual_pv_kwh : (slot.pv_forecast_kwh ?? null)
+                pv.push(rawPvKwh != null ? rawPvKwh / hourFraction : null)
+
+                const rawLoadKwh =
+                    isExec && slot.actual_load_kwh != null ? slot.actual_load_kwh : (slot.load_forecast_kwh ?? null)
+                load.push(rawLoadKwh != null ? rawLoadKwh / hourFraction : null)
+
                 // For charge: only use actual if executed AND not null, otherwise use planned
                 charge.push(
                     isExec && slot.actual_charge_kw != null
@@ -1201,7 +1222,16 @@ function buildLiveData(
                         ? slot.actual_discharge_kw
                         : (slot.battery_discharge_kw ?? slot.discharge_kw ?? null),
                 )
-                exp.push(isExec && slot.actual_export_kw != null ? slot.actual_export_kw : (slot.export_kwh ?? null))
+
+                const rawExportKwh =
+                    isExec && slot.actual_export_kw != null ? slot.actual_export_kw : (slot.export_kwh ?? null)
+                // If it's actual_export_kw, it's already kW. If export_kwh, convert.
+                if (isExec && slot.actual_export_kw != null) {
+                    exp.push(slot.actual_export_kw)
+                } else {
+                    exp.push(rawExportKwh != null ? rawExportKwh / hourFraction : null)
+                }
+
                 water.push(slot.water_heating_kw ?? null)
                 socTarget.push(slot.soc_target_percent ?? null)
                 socProjected.push(slot.projected_soc_percent ?? null)
@@ -1261,12 +1291,25 @@ function buildLiveData(
         return aTime - bTime
     })
 
+    // For the fallback, we assume 15-min resolution if not specified.
+    // However, fallback usually has only a few slots, so we default to 0.25 (15 min).
+    const hourFraction = 0.25
+
     const price = ordered.map((slot) => slot.import_price_sek_kwh ?? null)
-    const pv = ordered.map((slot) => slot.pv_forecast_kwh ?? null)
-    const load = ordered.map((slot) => slot.load_forecast_kwh ?? null)
+    const pv = ordered.map((slot) => {
+        const val = slot.pv_forecast_kwh ?? null
+        return val != null ? val / hourFraction : null
+    })
+    const load = ordered.map((slot) => {
+        const val = slot.load_forecast_kwh ?? null
+        return val != null ? val / hourFraction : null
+    })
     const charge = ordered.map((slot) => slot.battery_charge_kw ?? slot.charge_kw ?? null)
     const discharge = ordered.map((slot) => slot.battery_discharge_kw ?? slot.discharge_kw ?? null)
-    const exp = ordered.map((slot) => slot.export_kwh ?? null)
+    const exp = ordered.map((slot) => {
+        const val = slot.export_kwh ?? null
+        return val != null ? val / hourFraction : null
+    })
     const water = ordered.map((slot) => slot.water_heating_kw ?? null)
     const socTarget = ordered.map((slot) => slot.soc_target_percent ?? null)
     const socProjected = ordered.map((slot) => slot.projected_soc_percent ?? null)

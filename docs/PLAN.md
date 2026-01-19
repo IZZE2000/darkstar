@@ -307,3 +307,20 @@ Risk: Without this fix, production deployment will have broken API endpoints and
 #### Phase 2: Verification [DONE]
 * [x] Verify fix with debug_history.py (Confirmed non-zero values).
 * [x] Verify is_historical field presence.
+
+---
+
+### [DONE] REV // F23 — Chart Unit Conversion (kWh to kW)
+
+**Goal:** Correct the chart to display power (kW) instead of energy (kWh) per slot for consistent unit display.
+
+**Plan:**
+#### Phase 1: Implementation [DONE]
+* [x] Fix load conversion in `ChartCard.tsx` (kWh / 0.25h for 15-min slots).
+* [x] Audit and fix other overlays (PV, Export).
+* [x] Update labels and tooltips to consistently use "kW".
+* [x] Fix formatting issues via `pnpm lint --fix`.
+
+#### Phase 2: Documentation [DONE]
+* [x] Add **UI Unit Conversions** section to `ARCHITECTURE.md`.
+* [x] Add inline comments to `ChartCard.tsx`.

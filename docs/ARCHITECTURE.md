@@ -222,6 +222,15 @@ flowchart LR
    - Discharge → Minimum SoC
 7. **Output**: `schedule.json` consumed by UI and Home Assistant automation.
 
+### UI Unit Conversions
+To ensure a consistent and intuitive display, the frontend converts certain energy values (kWh) to instantaneous power (kW) before rendering them on the chart.
+- **Calculation**: `kW = kWh ÷ hour_fraction` (where `hour_fraction` is 0.25 for 15-minute slots).
+- **Converted Fields**:
+    - PV Forecast & Actual
+    - Load Forecast & Actual
+    - Export (Planned)
+- **Direct Fields**: `Charge`, `Discharge`, `Water Heating`, and `Actual Export` are already provided in `kW` by the backend.
+
 ### Key Entry Point
 
 ```python
@@ -231,9 +240,6 @@ from planner.pipeline import PlannerPipeline, generate_schedule
 pipeline = PlannerPipeline(config)
 schedule_df = pipeline.generate_schedule(input_data, mode="full")
 ```
-
-**Legacy Reference**: The original 3,600-line heuristic planner is documented in `docs/LEGACY_MPC.md`.
-
 ---
 
 ## 7. Native Executor
