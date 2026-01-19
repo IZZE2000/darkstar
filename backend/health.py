@@ -379,30 +379,31 @@ class HealthChecker:
         # Input sensors
         input_sensors = self._config.get("input_sensors", {})
 
-        # Define which sensors require which flags
-        # Default is True (always required) unless specified
+        # Define which sensors are HARD requirements for core functionality
+        # If False, a missing entity is a WARNING, not a CRITICAL error.
         sensor_requirements = {
-            # Battery sensors
+            # Core energy sensors (CRITICAL)
             "battery_soc": has_battery,
-            "battery_power": has_battery,
-            "total_battery_charge": has_battery,
-            "total_battery_discharge": has_battery,
-            "today_battery_charge": has_battery,
-            # Water heater sensors
+            "load_power": True,
+            "pv_power": has_solar,
+            "grid_power": True,
+            # Features (WARNING if missing but enabled)
             "water_power": has_water_heater,
             "water_heater_consumption": has_water_heater,
-            # Solar sensors
-            "pv_power": has_solar,
-            "total_pv_production": has_solar,
-            "today_pv_production": has_solar,
+            "alarm_state": False,  # Optional
+            "vacation_mode": False,  # Optional
         }
 
         for key, entity_id in input_sensors.items():
             if entity_id and isinstance(entity_id, str):
-                # Check if this sensor is required based on flags
-                is_required = sensor_requirements.get(key, True)
-                if is_required:
-                    entities_to_check.append((entity_id, f"input_sensors.{key}", True))
+                # Is this sensor tied to a hardware toggle?
+                hardware_enabled = sensor_requirements.get(key, True)
+
+                # Skip checking if hardware is disabled
+                if hardware_enabled is False and key in ["battery_soc", "pv_power", "water_power"]:
+                    continue
+
+                entities_to_check.append((entity_id, f"input_sensors.{key}", hardware_enabled))
 
         # Executor entities
         executor = self._config.get("executor", {})
@@ -443,7 +444,7 @@ class HealthChecker:
         # Check each entity
         headers = {"Authorization": f"Bearer {token}"}
         async with httpx.AsyncClient(timeout=5.0) as client:
-            for entity_id, config_key, _ in entities_to_check:
+            for entity_id, config_key, is_required in entities_to_check:
                 try:
                     response = await client.get(
                         f"{url}/api/states/{entity_id}",
@@ -451,10 +452,12 @@ class HealthChecker:
                     )
 
                     if response.status_code == 404:
+                        # Downgrade severity if not a hard requirement
+                        severity = "critical" if is_required else "warning"
                         issues.append(
                             HealthIssue(
                                 category="entity",
-                                severity="critical",
+                                severity=severity,
                                 message=f"Entity not found: {entity_id}",
                                 guidance=(
                                     f"Check that '{entity_id}' exists in Home Assistant. "

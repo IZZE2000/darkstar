@@ -13,26 +13,10 @@ if [ -f "$CONFIG_PATH" ]; then
     TIMEZONE=$(jq -r '.timezone // "Europe/Stockholm"' "$CONFIG_PATH")
     LOG_LEVEL=$(jq -r '.log_level // "info"' "$CONFIG_PATH")
     PRICE_AREA=$(jq -r '.price_area // "SE4"' "$CONFIG_PATH")
-
-    # Entity selections from Add-on UI
-    BATTERY_SOC=$(jq -r '.battery_soc_sensor // ""' "$CONFIG_PATH")
-    PV_SENSOR=$(jq -r '.pv_production_sensor // ""' "$CONFIG_PATH")
-    LOAD_SENSOR=$(jq -r '.load_consumption_sensor // ""' "$CONFIG_PATH")
-
-    # System profile toggles
-    HAS_SOLAR=$(jq -r '.has_solar // true' "$CONFIG_PATH")
-    HAS_BATTERY=$(jq -r '.has_battery // true' "$CONFIG_PATH")
-    HAS_WATER_HEATER=$(jq -r '.has_water_heater // true' "$CONFIG_PATH")
 else
     TIMEZONE="Europe/Stockholm"
     LOG_LEVEL="info"
     PRICE_AREA="SE4"
-    BATTERY_SOC=""
-    PV_SENSOR=""
-    LOAD_SENSOR=""
-    HAS_SOLAR="true"
-    HAS_BATTERY="true"
-    HAS_WATER_HEATER="true"
 fi
 
 # Set timezone
@@ -249,20 +233,42 @@ if 'has_water_heater' in options:
     update_config('system', 'has_water_heater', options['has_water_heater'], lambda x: bool(x))
 
 
-if modified_config:
-    with open(config_path, 'w') as f:
-        safe_dump_stream(config, f)
-    print("[run.sh] Applied Add-on settings to config.yaml")
-else:
-    print("[run.sh] Config unchanged")
-
 if modified_secrets:
     with open(secrets_path, 'w') as f:
         safe_dump_stream(secrets, f)
     print("[run.sh] Updated secrets.yaml")
-else:
-    print("[run.sh] Secrets unchanged")
 
+if modified_config:
+    with open(config_path, 'w') as f:
+        safe_dump_stream(config, f)
+    print("[run.sh] Applied Add-on settings to config.yaml")
+
+# -----------------------------------------------------------------------------
+# FINAL STATUS LOGGING (SSOT: config.yaml)
+# -----------------------------------------------------------------------------
+import datetime
+ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+prefix = f"[{ts}]"
+
+print(f"{prefix} ==========================================")
+print(f"{prefix}   Darkstar Energy Manager v2.5.0-beta")
+print(f"{prefix} ==========================================")
+print(f"{prefix}   Timezone:      {config.get('timezone', 'Europe/Stockholm')}")
+print(f"{prefix}   Log Level:     {os.environ.get('LOG_LEVEL', 'info')}")
+print(f"{prefix}   Price Area:    {config.get('nordpool', {}).get('price_area', 'SE4')}")
+
+sys_cfg = config.get('system', {})
+print(f"{prefix}   Has Solar:     {str(sys_cfg.get('has_solar', True)).lower()}")
+print(f"{prefix}   Has Battery:   {str(sys_cfg.get('has_battery', True)).lower()}")
+print(f"{prefix}   Has Water:     {str(sys_cfg.get('has_water_heater', True)).lower()}")
+
+if supervisor_token:
+    print(f"{prefix}   HA Auth:       Supervisor Token (auto)")
+else:
+    print(f"{prefix}   HA Auth:       Manual token (secrets.yaml)")
+
+print(f"{prefix}   Web UI:        http://localhost:5000")
+print(f"{prefix} ==========================================")
 EOF
 
 # Symlink config files to app directory
@@ -273,22 +279,7 @@ ln -sf /config/darkstar/secrets.yaml /app/secrets.yaml
 mkdir -p /share/darkstar
 ln -sf /share/darkstar /app/data
 
-log "=========================================="
-log "  Darkstar Energy Manager v2.4.23-beta"
-log "=========================================="
-log "  Timezone: $TIMEZONE"
-log "  Log Level: $LOG_LEVEL"
-log "  Price Area: $PRICE_AREA"
-log "  Has Solar: $HAS_SOLAR"
-log "  Has Battery: $HAS_BATTERY"
-log "  Has Water Heater: $HAS_WATER_HEATER"
-if [ -n "$SUPERVISOR_TOKEN" ]; then
-    log "  HA Auth: Supervisor Token (auto)"
-else
-    log "  HA Auth: Manual token (secrets.yaml)"
-fi
-log "  Web UI: http://localhost:5000"
-log "=========================================="
+log "Bootstrapping complete. Starting server..."
 
 # Start FastAPI via Uvicorn
 exec uvicorn backend.main:app --host 0.0.0.0 --port 5000 --log-level "$LOG_LEVEL"

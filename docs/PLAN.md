@@ -150,21 +150,21 @@ Currently, the charts can become cluttered when mixing planned and actual data. 
 
 ---
 
-### [PLANNED] REV // DX6 — Dependency Audit
+### [DONE] REV // DX6 — Dependency Audit
 
 **Goal:** Ensure project dependencies are up to date, secure, and compatible.
 
 **Plan:**
 
-#### Phase 1: Audit [PLANNED]
-* [ ] **Frontend:** Run `pnpm outdated` in `frontend/` to identify stale packages.
-* [ ] **Backend:** Run `uv pip list --outdated` to check Python dependencies.
-* [ ] **Security:** Check `npm audit` and `pip-audit` (if available) for vulnerabilities.
+#### Phase 1: Audit [DONE]
+* [x] **Frontend:** Run `pnpm outdated` in `frontend/` to identify stale packages.
+* [x] **Backend:** Run `uv pip list --outdated` to check Python dependencies.
+* [x] **Security:** Check `npm audit` and `pip-audit` (if available) for vulnerabilities.
 
-#### Phase 2: Update [PLANNED]
-* [ ] **Apply Updates:** Update `package.json` (minor/patch first) and `requirements.txt`.
-* [ ] **Verification:** Run `pnpm test` and `uv run pytest` to ensure no breaking changes.
-* [ ] **Lockfiles:** Commit updated `pnpm-lock.yaml` and pinning in `requirements.txt`.
+#### Phase 2: Update [DONE]
+* [x] **Apply Updates:** Update `package.json` (minor/patch first) and `requirements.txt`.
+* [x] **Verification:** Run `pnpm test` and `uv run pytest` to ensure no breaking changes.
+* [x] **Lockfiles:** Commit updated `pnpm-lock.yaml` and pinning in `requirements.txt`.
 
 ---
 
@@ -178,3 +178,18 @@ Currently, the charts can become cluttered when mixing planned and actual data. 
 * [x] **pyproject.toml:** Add `[project]` metadata with `requires-python = ">=3.12"` to satisfy `uv` requirements.
 * [x] **Websockets:** Disable `logger` and `engineio_logger` in `backend/core/websockets.py` to stop "emitting event" spam.
 * [x] **HA Socket:** Lower `DIAG` logs in `backend/ha_socket.py` from `INFO` to `DEBUG`.
+
+---
+
+### [DONE] REV // FIX-01 — Accurate Startup Logging (Issue #1)
+
+**Goal:** Resolve misleading "Has Water Heater: true" logs and clarify configuration SSOT.
+
+**Plan:**
+
+#### Phase 1: Logging Refactor [DONE]
+* [x] **run.sh:** Move status logging from Bash string-matching to Python object-reflection (SSOT: `config.yaml`).
+* [x] **Logging:** Print final active profile (Solar, Battery, Water) after Add-on option merging.
+
+#### Phase 2: Documentation [DONE]
+* [x] **PLAN.md:** Document fix for posterity.
