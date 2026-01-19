@@ -57,6 +57,9 @@ data/cache/
 /sys
 /yaml
 
+# Performance Reports
+tests/performance/reports/performance_*.json
+
 
 # OS
 .DS_Store
