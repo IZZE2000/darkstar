@@ -11,6 +11,7 @@ from backend.learning.backfill import BackfillEngine
 
 # Local imports
 from backend.learning.store import LearningStore
+from backend.loads.service import LoadDisaggregator
 from inputs import get_ha_sensor_float
 
 logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
@@ -25,9 +26,12 @@ def _load_config():
         return {}
 
 
-async def record_observation_from_current_state():
+async def record_observation_from_current_state(
+    config: dict, disaggregator: LoadDisaggregator | None = None
+):
     """Capture current system state and store as an observation."""
-    config = _load_config()
+    if not config:
+        config = _load_config()
     db_path = config.get("learning", {}).get("sqlite_path", "data/planner_learning.db")
     tz_name = config.get("timezone", "Europe/Stockholm")
     tz = pytz.timezone(tz_name)
@@ -59,7 +63,18 @@ async def record_observation_from_current_state():
 
     # Current Power State (Snapshot)
     pv_kw = await get_kw("pv_power")
-    load_kw = await get_kw("load_power")
+    total_load_kw = await get_kw("load_power")
+
+    # Disaggregate loads if disaggregator is provided (REV // ML2)
+    controllable_kw = 0.0
+    if disaggregator:
+        controllable_kw = await disaggregator.update_current_power()
+        load_kw = disaggregator.calculate_base_load(total_load_kw, controllable_kw)
+        logger.info(
+            f"Disaggregation: Total={total_load_kw:.3f}kW, Controllable={controllable_kw:.3f}kW -> Base={load_kw:.3f}kW"
+        )
+    else:
+        load_kw = total_load_kw
 
     # Grid Metering Logic (REV // UI5)
     meter_type = config.get("system", {}).get("grid_meter_type", "net")
@@ -166,9 +181,12 @@ async def main() -> int:
     # Track last analyst run date to run once daily at ~6 AM local
     last_analyst_date = datetime.now(tz).date()
 
+    # Initialize disaggregator (REV // ML2)
+    disaggregator = LoadDisaggregator(config)
+
     while True:
         try:
-            await record_observation_from_current_state()
+            await record_observation_from_current_state(config, disaggregator)
         except Exception as exc:  # pragma: no cover - defensive logging
             print(f"[recorder] Error while recording observation: {exc}")
 

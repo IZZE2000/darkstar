@@ -113,25 +113,34 @@ Currently, the charts can become cluttered when mixing planned and actual data. 
 
 ---
 
-### [PLANNED] REV // ML2 — Active Load Disaggregation
+### [DONE] REV ML2 - Load Disaggregation Framework
 
-**Goal:** Sanitize historical data by separating "Base Load" from controllable heavy loads (EV, Water) to improve ML forecast accuracy.
+**Goal:** Create a robust, extensible framework for separating base load from controllable loads (water, EV, heat pumps) to improve ML forecast accuracy and enable scalable deferrable load management.
 
 **Plan:**
 
-#### Phase 1: Instrumentation [PLANNED]
-* [ ] Verify configuration for `input_sensors.ev_power` and `input_sensors.water_power`.
-* [ ] Ensure `input_sensors.load_power` represents TOTAL house load.
+#### Phase 1: Deferrable Load Framework [PLANNED]
+* [ ] Create `backend/loads/` module with `DeferrableLoad` base class supporting binary and variable power control types.
+* [ ] Implement `LoadDisaggregator` service with sensor validation, fallback strategies, and graceful degradation.
+* [ ] Add `deferrable_loads` configuration schema to `config.default.yaml` with load type definitions (water, ev, heat_pump, pool_pump).
+* [ ] Create load registry system for dynamic load type registration and management.
 
-#### Phase 2: Recorder Logic [PLANNED]
-* [ ] Modify `backend/recorder.py` -> `record_observation_from_current_state`.
-* [ ] Calculate `base_load_kw = total_load_kw - ev_power_kw - water_power_kw`.
-* [ ] **Safety:** Ensure `base_load_kw` is never negative (clamp to 0.0), log warning if calculation drifted.
-* [ ] Store `base_load_kw` in the `load_kwh` column (or decided new schema? *Decision: Use existing column for "Uncontrollable Load" to implicitly train model on this*).
+#### Phase 2: Enhanced Recorder Pipeline [PLANNED]
+* [ ] Modify `backend/recorder.py` to use `LoadDisaggregator` for calculating `base_load_kw = total_load_kw - sum(controllable_loads)`.
+* [ ] Add sensor health monitoring with automatic fallback to total load when individual sensors fail.
+* [ ] Implement data validation ensuring `base_load_kw >= 0` with warning logs for calculation drift.
+* [ ] Store clean base load data in existing `load_kwh` column (no schema changes needed).
 
-#### Phase 3: Verification [PLANNED]
-* [ ] Dry-run script to visualize "Total vs Base" load.
-* [ ] Verify `planner_learning.db` contains clean base load data.
+#### Phase 3: ML Model Refresh [PLANNED]
+* [ ] Clear existing model files to force retraining on clean base load data.
+* [ ] Add forecast accuracy monitoring comparing base load predictions vs actuals.
+* [ ] Implement model performance alerts when accuracy degrades below thresholds.
+
+#### Phase 4: Planner Integration [PLANNED]
+* [ ] Update Kepler solver to use disaggregated base load + planned controllable loads in energy balance.
+* [ ] Add load type validation in planner input processing.
+* [ ] Create debugging tools to visualize total vs base load forecasts.
+
 ---
 
 ### [PLANNED] REV // UI7 — Mobile Polish & Water Sensor Cleanup
@@ -149,23 +158,3 @@ Currently, the charts can become cluttered when mixing planned and actual data. 
 * [ ] **Positioning:** Ensure tooltips do not overflow off-screen or obscure the data point being pressed.
 
 ---
----
----
-
-### [DONE] REV // UI8 — Dynamic Chart Scaling
-
-**Goal:** Scale the ChartCard Y-axes (PV, Load, Power) based on system configuration instead of hardcoded values.
-
-**Plan:**
-
-#### Phase 1: Implementation [DONE]
-* [x] Update `ConfigResponse` type to include `solar_array`, `grid`, and `inverter` parameters.
-* [x] Add `scaling` state to `ChartCard.tsx` and fetch values from `Api.config()`.
-* [x] Apply dynamic `max` values to Chart.js scales:
-    *   `y4` (PV): set to `solar_array.kwp`.
-    *   `y1`, `y2` (Power/Load): set to `max(grid.max_power_kw, inverter.max_power_kw)`.
-* [x] Fix linting (Prettier) in `ChartCard.tsx`.
-
-#### Phase 2: Verification [DONE]
-* [x] Verified lint passes.
-* [x] Manual verification of config extraction logic.

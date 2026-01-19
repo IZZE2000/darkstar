@@ -11,6 +11,24 @@ This document contains the archive of all completed revisions. It serves as the 
 
 This era focused on the transition to SQLAlchemy and Alembic for robust database management, enforcement of Conventional Commits, and adopting `uv` for high-performance Python workflows.
 
+### [DONE] REV // UI8 — Dynamic Chart Scaling
+
+**Goal:** Scale the ChartCard Y-axes (PV, Load, Power) based on system configuration instead of hardcoded values.
+
+**Plan:**
+
+#### Phase 1: Implementation [DONE]
+* [x] Update `ConfigResponse` type to include `solar_array`, `grid`, and `inverter` parameters.
+* [x] Add `scaling` state to `ChartCard.tsx` and fetch values from `Api.config()`.
+* [x] Apply dynamic `max` values to Chart.js scales:
+    *   `y4` (PV): set to `solar_array.kwp`.
+    *   `y1`, `y2` (Power/Load): set to `max(grid.max_power_kw, inverter.max_power_kw)`.
+* [x] Fix linting (Prettier) in `ChartCard.tsx`.
+
+#### Phase 2: Verification [DONE]
+* [x] Verified lint passes.
+* [x] Manual verification of config extraction logic.
+
 ### [DONE] REV // F23 — Chart Unit Conversion (kWh to kW)
 
 **Goal:** Correct the chart to display power (kW) instead of energy (kWh) per slot for consistent unit display.
