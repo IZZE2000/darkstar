@@ -633,14 +633,17 @@ class LearningStore:
                     func.date(SlotObservation.slot_start).label("day"),
                     func.sum(SlotPlan.planned_cost_sek),
                     func.sum(
-                        SlotObservation.import_kwh * SlotObservation.import_price_sek_kwh
-                        - SlotObservation.export_kwh * SlotObservation.export_price_sek_kwh
+                        func.coalesce(SlotObservation.import_kwh, 0.0)
+                        * func.coalesce(SlotObservation.import_price_sek_kwh, 0.0)
+                        - func.coalesce(SlotObservation.export_kwh, 0.0)
+                        * func.coalesce(SlotObservation.export_price_sek_kwh, 0.0)
                     ),
                 )
                 .outerjoin(SlotPlan, SlotObservation.slot_start == SlotPlan.slot_start)
                 .where(
                     func.date(SlotObservation.slot_start) >= cutoff_date,
-                    SlotObservation.import_price_sek_kwh.is_not(None),
+                    # Remove strict NOT NULL check on price to allow debugging/partial data
+                    # SlotObservation.import_price_sek_kwh.is_not(None),
                 )
                 .group_by(text("day"))
                 .order_by(text("day"))
@@ -648,6 +651,12 @@ class LearningStore:
 
             cost_result = await session.execute(stmt_cost_daily)
             cost_results = cost_result.all()
+
+            # Debug log
+            logger.info("Cost Reality Query: %d daily rows found", len(cost_results))
+            for r in cost_results:
+                logger.debug("Date: %s, Plan: %s, Real: %s", r[0], r[1], r[2])
+
             cost_series = [
                 {
                     "date": r[0],

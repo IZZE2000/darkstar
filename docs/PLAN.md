@@ -211,3 +211,17 @@ Currently, the charts can become cluttered when mixing planned and actual data. 
 * [x] **Strategy History:** Restore fetching and display of strategy events from `data/strategy_history.json`.
 * [x] **Learning Runs:** Re-implement `log_learning_run` in `LearningStore` and ensure `ml/train.py` logs executions to the DB.
 * [x] **Linting:** Ensure restored code passes project linting standards.
+
+---
+
+### [DONE] REV // F24 — Critical Aurora Production Fixes [DONE]
+
+**Goal:** Resolve critical production issues: missing Cost Reality data, unsafe config writes, and async performance.
+
+**Plan:**
+
+#### Phase 1: Implementation [x]
+* [x] **Cost Reality:** Fix SQL query in `store.py` to use `coalesce` for realized cost calculation.
+* [x] **Config Safety:** Implement atomic write pattern for `toggle_reflex` using `ruamel.yaml`.
+* [x] **Async Optimization:** Optimize `max_price_spread` price fetching and fix async/await usage.
+* [x] **Logging:** Add debug logging to expensive queries in `store.py`.

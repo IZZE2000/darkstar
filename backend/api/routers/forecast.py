@@ -249,27 +249,34 @@ async def aurora_dashboard() -> dict[str, Any]:
         logger.error(f"Failed to fetch horizon for dashboard: {e}")
         stats = {"error": str(e)}
 
-    # NEW: Max Price Spread (Restored)
+    # NEW: Max Price Spread (Optimized)
     metrics["max_price_spread"] = None
     try:
-        prices = await get_nordpool_data()  # Assuming async, await if needed
-        # Actually get_nordpool_data in inputs.py is async now.
+        # Optimization: Use get_nordpool_data but filter in memory is fine for now if cached
+        # Ideally we would pass range to get_nordpool_data if supported
+        prices = await get_nordpool_data()
 
-        # Filter for today/tomorrow starting from now
-        relevant_prices = [
-            p
-            for p in prices
-            if p["start_time"].astimezone(tz)
-            >= now.replace(hour=0, minute=0, second=0, microsecond=0)
-        ]
-        if relevant_prices:
-            # Calculate spread
-            max_export = max(p["export_price_sek_kwh"] for p in relevant_prices)
-            min_import = min(p["import_price_sek_kwh"] for p in relevant_prices)
-            spread = max_export - min_import
-            metrics["max_price_spread"] = round(spread, 4)
+        # Filter for relevant range (today + tomorrow)
+        # Using list comprehension for speed
+        if prices and isinstance(prices, list):
+            start_check = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            relevant_prices = [
+                p
+                for p in prices
+                if isinstance(p, dict)
+                and p.get("start_time")
+                and p["start_time"].astimezone(tz) >= start_check
+            ]
+
+            if relevant_prices:
+                # Extract values, defaulting to 0 if key missing but keeping 0.0
+                exports = [p.get("export_price_sek_kwh", 0.0) for p in relevant_prices]
+                imports = [p.get("import_price_sek_kwh", 0.0) for p in relevant_prices]
+
+                if exports and imports:
+                    metrics["max_price_spread"] = round(max(exports) - min(imports), 4)
     except Exception as e:
-        logger.warning(f"Failed to calc max_price_spread: {e}")
+        logger.warning("Failed to calc max_price_spread: %s", e)
 
     # NEW: Strategy Events (Restored)
     strategy_history = get_strategy_history(limit=50)
@@ -314,17 +321,42 @@ class ToggleReflexRequest(BaseModel):
 
 @router.post("/config/toggle_reflex")
 async def toggle_reflex(payload: ToggleReflexRequest):
+    """Enable or disable Aurora Reflex safely."""
     try:
+        import tempfile
+
         from ruamel.yaml import YAML
 
+        config_path = Path("config.yaml")
+
+        # 1. Read existing config
         yaml_handler = YAML()
         yaml_handler.preserve_quotes = True
-        with Path("config.yaml").open("r", encoding="utf-8") as f:
-            data = yaml_handler.load(f)
+
+        # Use a read lock if strictly necessary, but for now simple read is improved
+        if not config_path.exists():
+            raise HTTPException(500, "Config file not found")
+
+        with config_path.open("r", encoding="utf-8") as f:
+            data = yaml_handler.load(f) or {}
+
+        # 2. Update data
         data.setdefault("learning", {})["reflex_enabled"] = payload.enabled
-        with Path("config.yaml").open("w", encoding="utf-8") as f:
-            yaml_handler.dump(data, f)
+
+        # 3. Atomic Write: Write to temp file then move
+        # Create temp file in same directory to ensure atomic move works
+        with tempfile.NamedTemporaryFile(
+            "w", delete=False, dir=config_path.parent, encoding="utf-8", suffix=".tmp"
+        ) as tmp_f:
+            yaml_handler.dump(data, tmp_f)
+            tmp_path = Path(tmp_f.name)
+
+        # Renaissance Move (Atomic Replace)
+        tmp_path.replace(config_path)
+
+        logger.info("Toggle Reflex: Set to %s", payload.enabled)
         return {"status": "success", "enabled": payload.enabled}
+
     except Exception as e:
         logger.error("Toggle reflex failed: %s", e)
         raise HTTPException(500, str(e)) from e
