@@ -163,7 +163,7 @@ class HAWebSocketClient:
                     await ws.send(json.dumps({"id": states_id, "type": "get_states"}))
 
                     # Listen loop
-                    logger.info("DIAG: Entering listen loop")
+                    logger.debug("DIAG: Entering listen loop")
                     self.stats["connected_at"] = datetime.now(UTC).isoformat()
                     self.stats["disconnected_at"] = None
                     rx_count = 0
@@ -178,13 +178,13 @@ class HAWebSocketClient:
 
                         # DIAG(Prob): Log first 5 messages to verify data flow
                         if rx_count <= 5:
-                            logger.info(
+                            logger.debug(
                                 f"DIAG: WebSocket RX type={data.get('type')} id={data.get('id')} event={data.get('event', {}).get('event_type')}"
                             )
 
                         # Handle the get_states response
                         if data.get("id") == states_id and data.get("type") == "result":
-                            logger.info(
+                            logger.debug(
                                 "DIAG: Received get_states result - processing initial states"
                             )
                             results = data.get("result", [])
@@ -229,7 +229,7 @@ class HAWebSocketClient:
                     k: v for k, v in new_state.get("attributes", {}).items() if k in allowed_attrs
                 }
 
-                logger.info(f"DIAG: Emitting vacation_mode {entity_id}={state_val}")
+                logger.debug(f"DIAG: Emitting vacation_mode {entity_id}={state_val}")
                 emit_ha_entity_change(
                     entity_id=entity_id, state=state_val, attributes=filtered_attrs
                 )
@@ -281,7 +281,7 @@ class HAWebSocketClient:
             from backend.events import emit_live_metrics
 
             # DIAG: Log every emission for now to prove data flow
-            logger.info(f"DIAG: Emitting live_metrics for {key} raw={state_val} val={value}")
+            logger.debug(f"DIAG: Emitting live_metrics for {key} raw={state_val} val={value}")
             emit_live_metrics(payload)
 
             # Update Runtime Stats

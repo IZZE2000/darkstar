@@ -25,8 +25,8 @@ class WebSocketManager:
             cls._instance.sio = socketio.AsyncServer(
                 async_mode="asgi",
                 cors_allowed_origins="*",
-                logger=True,  # Enable Socket.IO logging
-                engineio_logger=True,  # Enable Engine.IO logging
+                logger=False,  # Disable Socket.IO logging (Rev F21)
+                engineio_logger=False,  # Disable Engine.IO logging (Rev F21)
             )
             cls._instance.loop = None
 

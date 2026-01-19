@@ -1,3 +1,8 @@
+[project]
+name = "darkstar"
+version = "0.1.0"
+requires-python = ">=3.12"
+
 [tool.ruff]
 # Same line length as previous Black config
 line-length = 100

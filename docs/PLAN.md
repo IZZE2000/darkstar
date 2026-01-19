@@ -133,3 +133,48 @@ Currently, the charts can become cluttered when mixing planned and actual data. 
 * [ ] Dry-run script to visualize "Total vs Base" load.
 * [ ] Verify `planner_learning.db` contains clean base load data.
 ---
+
+### [PLANNED] REV // UI7 — Mobile Polish & Water Sensor Cleanup
+
+**Goal:** Improve mobile usability and remove visual clutter when features are disabled.
+
+**Plan:**
+
+#### Phase 1: Water Sensor Cleanup [PLANNED]
+* [ ] **Conditional Rendering:** In `frontend/src/components/PowerFlowCard`, check if `water_heating` is enabled (from config/state).
+* [ ] **Hide Elements:** If disabled, completely hide the water tank bubble and the energy flow line leading to it.
+
+#### Phase 2: Mobile Tooltips [PLANNED]
+* [ ] **Chart Configuration:** Adjust the chart tooltip styles (Recharts/Chart.js) to ensure they fit within small screens.
+* [ ] **Positioning:** Ensure tooltips do not overflow off-screen or obscure the data point being pressed.
+
+---
+
+### [PLANNED] REV // DX6 — Dependency Audit
+
+**Goal:** Ensure project dependencies are up to date, secure, and compatible.
+
+**Plan:**
+
+#### Phase 1: Audit [PLANNED]
+* [ ] **Frontend:** Run `pnpm outdated` in `frontend/` to identify stale packages.
+* [ ] **Backend:** Run `uv pip list --outdated` to check Python dependencies.
+* [ ] **Security:** Check `npm audit` and `pip-audit` (if available) for vulnerabilities.
+
+#### Phase 2: Update [PLANNED]
+* [ ] **Apply Updates:** Update `package.json` (minor/patch first) and `requirements.txt`.
+* [ ] **Verification:** Run `pnpm test` and `uv run pytest` to ensure no breaking changes.
+* [ ] **Lockfiles:** Commit updated `pnpm-lock.yaml` and pinning in `requirements.txt`.
+
+---
+
+### [DONE] REV // F21 — Backend Startup & Log Cleanup
+
+**Goal:** Fix `uv` startup warnings and silence excessive "DIAG" log spam from Socket.IO and backend services.
+
+**Plan:**
+
+#### Phase 1: Configuration & Logging [DONE]
+* [x] **pyproject.toml:** Add `[project]` metadata with `requires-python = ">=3.12"` to satisfy `uv` requirements.
+* [x] **Websockets:** Disable `logger` and `engineio_logger` in `backend/core/websockets.py` to stop "emitting event" spam.
+* [x] **HA Socket:** Lower `DIAG` logs in `backend/ha_socket.py` from `INFO` to `DEBUG`.
