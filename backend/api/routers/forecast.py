@@ -62,8 +62,11 @@ async def _compute_graduation_level(engine: LearningEngine | None) -> dict[str, 
         try:
             async with engine.store.AsyncSession() as session:
                 total_runs = await session.scalar(select(func.count(LearningRun.id))) or 0
-        except Exception as exc:
-            logger.warning("Failed to count learning_runs: %s", exc)
+                logger.debug("Graduation level check: found %d total learning runs", total_runs)
+        except Exception:
+            logger.exception("Failed to count learning_runs")
+    else:
+        logger.warning("Graduation level check: No engine or store available")
 
     if total_runs < 14:
         level_label = "infant"
@@ -72,6 +75,7 @@ async def _compute_graduation_level(engine: LearningEngine | None) -> dict[str, 
     else:
         level_label = "graduate"
 
+    logger.debug("Graduation level computed: %s (runs: %d)", level_label, total_runs)
     return {"label": level_label, "runs": total_runs}
 
 
@@ -129,9 +133,13 @@ async def aurora_dashboard() -> dict[str, Any]:
         minutes = (now.minute // 15) * 15
         slot_start = now.replace(minute=minutes, second=0, microsecond=0)
         horizon_end = slot_start + timedelta(hours=24)
-        active_version = config.get("forecasting", {}).get("active_forecast_version", "aurora")
+        active_version = config.get("forecasting", {}).get("active_forecast_version") or "aurora"
+        logger.debug("Dashboard Fetch: Using active_version=%s", active_version)
 
         horizon_slots = await get_forecast_slots(slot_start, horizon_end, active_version)
+        if not horizon_slots and active_version != "aurora":
+            logger.warning("No slots for version %s, falling back to 'aurora'", active_version)
+            horizon_slots = await get_forecast_slots(slot_start, horizon_end, "aurora")
 
         # Calculate stats
         total_pv = sum(s.get("pv_forecast_kwh", 0) for s in horizon_slots)
@@ -199,8 +207,8 @@ async def _fetch_correction_history(
                         "load_correction_kwh": load,
                     }
                 )
-    except Exception as exc:
-        logger.warning("Failed to fetch correction history: %s", exc)
+    except Exception:
+        logger.exception("Failed to fetch correction history")
     return rows
 
 
@@ -241,16 +249,23 @@ async def _compute_metrics(
                 )
                 .group_by(SlotForecast.forecast_version)
             )
-            results = await session.execute(stmt)
-            for version, mae_pv, mae_load in results.all():
+            results = (await session.execute(stmt)).all()
+            for version, mae_pv, mae_load in results:
                 if version == "aurora":
                     metrics["mae_pv_aurora"] = float(mae_pv) if mae_pv is not None else None
                     metrics["mae_load_aurora"] = float(mae_load) if mae_load is not None else None
                 elif version == "baseline_7_day_avg":
                     metrics["mae_pv_baseline"] = float(mae_pv) if mae_pv is not None else None
                     metrics["mae_load_baseline"] = float(mae_load) if mae_load is not None else None
-    except Exception as exc:
-        logger.warning("Failed to compute metrics: %s", exc)
+
+            logger.debug(
+                "Computed metrics for %d versions. aurora: PV MAE=%s, Load MAE=%s",
+                len(results),
+                metrics["mae_pv_aurora"],
+                metrics["mae_load_aurora"],
+            )
+    except Exception:
+        logger.exception("Failed to compute metrics")
     return metrics
 
 
