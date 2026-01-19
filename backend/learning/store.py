@@ -509,9 +509,35 @@ class LearningStore:
 
             pv_res = await session.scalar(stmt_pv)
             if pv_res:
-                metrics["mae_pv"] = round(pv_res, 4)
+                mae = round(pv_res, 4)
+                metrics["mae_pv"] = mae
+                if mae > 0.5:
+                    logger.warning(f"High PV forecast MAE detected: {mae} kWh (Threshold: 0.5)")
 
-            # 2. Plan Deviation
+            # 2. Load Forecast Accuracy (Prefer Base Load if available)
+            stmt_load = (
+                select(
+                    func.avg(
+                        func.abs(
+                            SlotObservation.load_kwh
+                            - func.coalesce(
+                                SlotForecast.base_load_forecast_kwh, SlotForecast.load_forecast_kwh
+                            )
+                        )
+                    )
+                )
+                .join(SlotForecast, SlotObservation.slot_start == SlotForecast.slot_start)
+                .where(func.date(SlotObservation.slot_start) >= cutoff_date)
+            )
+
+            load_res = await session.scalar(stmt_load)
+            if load_res:
+                mae = round(load_res, 4)
+                metrics["mae_load"] = mae
+                if mae > 0.5:
+                    logger.warning(f"High Load forecast MAE detected: {mae} kWh (Threshold: 0.5)")
+
+            # 3. Plan Deviation
             stmt_plan = (
                 select(
                     func.avg(

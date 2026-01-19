@@ -46,7 +46,21 @@ def _parse_args() -> argparse.Namespace:
         default=100,
         help="Minimum number of samples required to train each model (default: 100).",
     )
+    parser.add_argument(
+        "--clear",
+        action="store_true",
+        help="Delete all existing models in ml/models before training.",
+    )
     return parser.parse_args()
+
+
+def delete_trained_models(models_dir: Path = Path("ml/models")) -> None:
+    """Delete all .lgb files in the models directory."""
+    if not models_dir.exists():
+        return
+    for f in models_dir.glob("*.lgb"):
+        f.unlink()
+        print(f"Deleted model: {f}")
 
 
 def _load_slot_observations(
@@ -300,4 +314,6 @@ def train_models(days_back: int = 90, min_samples: int = 100) -> None:
 
 if __name__ == "__main__":
     args = _parse_args()
+    if args.clear:
+        delete_trained_models()
     train_models(days_back=args.days_back, min_samples=args.min_samples)

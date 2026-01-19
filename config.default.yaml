@@ -87,6 +87,17 @@ deferrable_loads:
     sensor_key: water_power    # Key in input_sensors for power reading (W or kW)
     type: binary                # 'binary' (on/off) or 'variable' (modulating)
     nominal_power_kw: 3.0      # Rated power when fully on
+  # - id: ev_charger
+  #   name: "EV Charger"
+  #   sensor_key: ev_power
+  #   type: variable
+  #   nominal_power_kw: 11.0
+  # - id: heat_pump
+  #   name: "Heat Pump"
+  #   sensor_key: hp_power
+  #   type: variable
+  #   nominal_power_kw: 5.0
+
 
 # S-Index Configuration (Risk & Safety Strategy)
 s_index:

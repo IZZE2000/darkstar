@@ -559,4 +559,30 @@ flowchart TB
 
 ### Deprecation Notice
 
-Scheduling is handled in-process via the `SchedulerService` within the FastAPI server.
+---
+
+## 12. Load Disaggregation Architecture (Rev ML2)
+
+Load Disaggregation improves forecast accuracy and optimization quality by isolating strictly "uncontrollable" home load (Base Load) from heavy appliances that can be rescheduled or monitored separately (Controllable Loads).
+
+### 12.1 The Data Pipeline
+1.  **Observation** (`backend/loads/service.py`):
+    - `LoadDisaggregator` fetches real-time power from specific appliance sensors (EV, Water Heater, etc.) via Home Assistant.
+    - **Formula**: `Base Load (kW) = Total Home Load - Sum(Controllable Loads)`.
+    - **Guardrails**: Clamps to 0 if negative; monitors sensor health for automated fallback.
+2.  **Storage** (`backend/recorder.py`):
+    - The `Recorder` stores this clean **Base Load** into the `slot_observations` table.
+3.  **Forecasting** (`ml/forward.py`):
+    - ML models are trained on this clean historical base load.
+    - Predictive inference generates `base_load_forecast_kwh` into the `slot_forecasts` table.
+4.  **Planning** (`inputs.py`):
+    - The Planner fetches the `base_load_forecast_kwh`.
+    - It ensures that **strictly Base Load** is passed to Kepler, preventing the "Double Counting" bug where controllable loads are included in the forecast *and* added by the solver.
+
+### 12.2 Registry Pattern
+The `LoadDisaggregator` uses a **Registry Pattern**, allowing different types of loads to be managed uniformly:
+- **Binary Loads**: On/Off (e.g., standard water heaters).
+- **Variable Loads**: Modulating power (e.g., EV chargers, Heat Pumps).
+
+### 12.3 Kepler Integration
+Kepler receives the clean base load forecast and adds its own decision variables (or forced constraints) for controllable loads (like water heating) to satisfy the house energy balance. This ensures the solver can trade off battery energy vs. appliance shifting with 100% accuracy.
