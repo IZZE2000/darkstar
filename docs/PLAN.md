@@ -150,3 +150,22 @@ Currently, the charts can become cluttered when mixing planned and actual data. 
 
 ---
 ---
+---
+
+### [DONE] REV // UI8 — Dynamic Chart Scaling
+
+**Goal:** Scale the ChartCard Y-axes (PV, Load, Power) based on system configuration instead of hardcoded values.
+
+**Plan:**
+
+#### Phase 1: Implementation [DONE]
+* [x] Update `ConfigResponse` type to include `solar_array`, `grid`, and `inverter` parameters.
+* [x] Add `scaling` state to `ChartCard.tsx` and fetch values from `Api.config()`.
+* [x] Apply dynamic `max` values to Chart.js scales:
+    *   `y4` (PV): set to `solar_array.kwp`.
+    *   `y1`, `y2` (Power/Load): set to `max(grid.max_power_kw, inverter.max_power_kw)`.
+* [x] Fix linting (Prettier) in `ChartCard.tsx`.
+
+#### Phase 2: Verification [DONE]
+* [x] Verified lint passes.
+* [x] Manual verification of config extraction logic.

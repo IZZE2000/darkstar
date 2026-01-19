@@ -45,7 +45,12 @@ export type ScheduleTodayWithHistoryResponse = {
     timezone?: string
 }
 export type ConfigResponse = {
-    system?: { battery?: { capacity_kwh?: number } }
+    system?: {
+        battery?: { capacity_kwh?: number }
+        solar_array?: { kwp?: number }
+        grid?: { max_power_kw?: number }
+        inverter?: { max_power_kw?: number }
+    }
     // Battery is also at root level in actual API response
     battery?: { capacity_kwh?: number; min_soc_percent?: number; max_soc_percent?: number }
     automation?: {

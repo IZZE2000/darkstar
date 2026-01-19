@@ -678,11 +678,26 @@ export default function ChartCard({
     })
     const [showOverlayMenu, setShowOverlayMenu] = useState(false)
     const [pricingConfig, setPricingConfig] = useState<{ vat: number; fees: number } | undefined>()
+    const [scaling, setScaling] = useState({
+        solarKwp: 10,
+        gridMaxKw: 8,
+        inverterMaxKw: 8,
+    })
 
-    // Load overlay defaults from config
+    // Load overlay defaults and scaling values from config
     useEffect(() => {
         Api.config()
             .then((config) => {
+                // Scaling values
+                const solarKwp = config?.system?.solar_array?.kwp ?? 10
+                const gridMaxKw = config?.system?.grid?.max_power_kw ?? 8
+                const inverterMaxKw = config?.system?.inverter?.max_power_kw ?? 8
+                setScaling({
+                    solarKwp: Number(solarKwp),
+                    gridMaxKw: Number(gridMaxKw),
+                    inverterMaxKw: Number(inverterMaxKw),
+                })
+
                 // Parse pricing for tooltips
                 if (config.pricing) {
                     const p = config.pricing
@@ -750,7 +765,24 @@ export default function ChartCard({
                 themeColors,
                 pricingConfig,
             ),
-            options: chartOptions,
+            options: {
+                ...chartOptions,
+                scales: {
+                    ...chartOptions?.scales,
+                    y1: {
+                        ...chartOptions?.scales?.y1,
+                        max: Math.max(scaling.gridMaxKw, scaling.inverterMaxKw),
+                    },
+                    y2: {
+                        ...chartOptions?.scales?.y2,
+                        max: Math.max(scaling.gridMaxKw, scaling.inverterMaxKw),
+                    },
+                    y4: {
+                        ...chartOptions?.scales?.y4,
+                        max: scaling.solarKwp,
+                    },
+                },
+            },
             plugins: [dotGridPlugin, nowLinePlugin, glowPlugin],
         }
         chartRef.current = new ChartJS(ref.current, cfg)
@@ -761,7 +793,7 @@ export default function ChartCard({
                 chartRef.current = null
             }
         }
-    }, [themeColors, pricingConfig]) // Re-create chart when theme colors are loaded
+    }, [themeColors, pricingConfig, scaling]) // Re-create chart when theme colors or scaling are loaded
 
     const isChartUsable = (chartInstance: Chart | null) => {
         if (!chartInstance) return false
