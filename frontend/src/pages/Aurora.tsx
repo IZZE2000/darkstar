@@ -6,6 +6,7 @@ import ContextRadar from '../components/ContextRadar'
 import ActivityLog from '../components/ActivityLog'
 import KPIStrip from '../components/KPIStrip'
 import ProbabilisticChart from '../components/ProbabilisticChart'
+import SystemHealthCard from '../components/SystemHealthCard'
 import { Line, Bar } from 'react-chartjs-2'
 import { Api } from '../lib/api'
 import type { AuroraDashboardResponse, SchedulerStatusResponse, AuroraPerformanceData } from '../lib/api'
@@ -173,8 +174,8 @@ export default function Aurora() {
         overallVol < 0.3
             ? 'from-emerald-900/60 via-surface to-surface'
             : overallVol < 0.7
-              ? 'from-sky-900/60 via-surface to-surface'
-              : 'from-amber-900/60 via-surface to-surface'
+                ? 'from-sky-900/60 via-surface to-surface'
+                : 'from-amber-900/60 via-surface to-surface'
 
     const horizonSlots = dashboard?.horizon?.slots ?? []
     const originalHorizonEnd = dashboard?.horizon?.end ?? new Date().toISOString()
@@ -247,11 +248,8 @@ export default function Aurora() {
             {/* Header */}
             <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
                 <div>
-                    <h1 className="text-lg font-medium text-text flex items-center gap-2">
+                    <h1 className="text-lg font-medium text-text">
                         Aurora Command Center
-                        <span className="px-2 py-0.5 rounded-full bg-surface2 border border-line/50 text-[10px] text-muted uppercase tracking-wider">
-                            {graduationLabel}
-                        </span>
                     </h1>
                     <p className="text-[11px] text-muted">
                         The Mastermind. Observing context, managing risk, and learning from reality.
@@ -262,7 +260,7 @@ export default function Aurora() {
             {/* 1. THE BRIDGE (Top Section) */}
             <div className="grid gap-4 lg:grid-cols-12">
                 {/* Identity & Status Card */}
-                <Card className={`lg:col-span-8 p-4 md:p-5 bg-gradient-to-br ${heroGradient} relative overflow-hidden`}>
+                <Card className={`lg:col-span-5 p-4 md:p-5 bg-gradient-to-br ${heroGradient} relative overflow-hidden`}>
                     <div className="relative z-10 flex flex-col md:flex-row gap-6">
                         {/* Avatar & Pulse */}
                         <div className="flex items-center gap-4">
@@ -280,8 +278,8 @@ export default function Aurora() {
                                     {overallVol > 0.6
                                         ? 'Defensive Mode'
                                         : overallVol > 0.3
-                                          ? 'Cautious Mode'
-                                          : 'Optimal Mode'}
+                                            ? 'Cautious Mode'
+                                            : 'Optimal Mode'}
                                 </div>
                                 <div className="text-[11px] text-muted flex items-center gap-2">
                                     <span
@@ -314,6 +312,11 @@ export default function Aurora() {
                     </div>
                 </Card>
 
+                {/* System Health Card */}
+                <div className="lg:col-span-3 h-full">
+                    <SystemHealthCard />
+                </div>
+
                 {/* Controls Card (Auto-Tuner) */}
                 <Card className="lg:col-span-4 p-4 md:p-5 flex flex-col">
                     <div className="flex items-center gap-2 mb-4">
@@ -330,14 +333,12 @@ export default function Aurora() {
                             <button
                                 onClick={handleAutoTuneToggle}
                                 disabled={togglingAutoTune}
-                                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 focus:ring-offset-surface ${
-                                    autoTuneEnabled ? 'bg-accent' : 'bg-surface2'
-                                }`}
+                                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 focus:ring-offset-surface ${autoTuneEnabled ? 'bg-accent' : 'bg-surface2'
+                                    }`}
                             >
                                 <span
-                                    className={`${
-                                        autoTuneEnabled ? 'translate-x-5' : 'translate-x-1'
-                                    } inline-block h-3 w-3 transform rounded-full bg-white transition-transform`}
+                                    className={`${autoTuneEnabled ? 'translate-x-5' : 'translate-x-1'
+                                        } inline-block h-3 w-3 transform rounded-full bg-white transition-transform`}
                                 />
                             </button>
                         </div>
@@ -350,14 +351,12 @@ export default function Aurora() {
                             <button
                                 onClick={handleReflexToggle}
                                 disabled={togglingReflex}
-                                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 focus:ring-offset-surface ${
-                                    reflexEnabled ? 'bg-accent' : 'bg-surface2'
-                                }`}
+                                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 focus:ring-offset-surface ${reflexEnabled ? 'bg-accent' : 'bg-surface2'
+                                    }`}
                             >
                                 <span
-                                    className={`${
-                                        reflexEnabled ? 'translate-x-5' : 'translate-x-1'
-                                    } inline-block h-3 w-3 transform rounded-full bg-white transition-transform`}
+                                    className={`${reflexEnabled ? 'translate-x-5' : 'translate-x-1'
+                                        } inline-block h-3 w-3 transform rounded-full bg-white transition-transform`}
                                 />
                             </button>
                         </div>
@@ -370,14 +369,12 @@ export default function Aurora() {
                             <button
                                 onClick={handleProbabilisticToggle}
                                 disabled={togglingProbabilistic}
-                                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 focus:ring-offset-surface ${
-                                    probabilisticMode ? 'bg-accent' : 'bg-surface2'
-                                }`}
+                                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 focus:ring-offset-surface ${probabilisticMode ? 'bg-accent' : 'bg-surface2'
+                                    }`}
                             >
                                 <span
-                                    className={`${
-                                        probabilisticMode ? 'translate-x-5' : 'translate-x-1'
-                                    } inline-block h-3 w-3 transform rounded-full bg-white transition-transform`}
+                                    className={`${probabilisticMode ? 'translate-x-5' : 'translate-x-1'
+                                        } inline-block h-3 w-3 transform rounded-full bg-white transition-transform`}
                                 />
                             </button>
                         </div>
@@ -634,7 +631,7 @@ export default function Aurora() {
                                     slots={(() => {
                                         const histData =
                                             dashboard?.horizon?.history_series?.[
-                                                chartMode === 'load' ? 'load' : 'pv'
+                                            chartMode === 'load' ? 'load' : 'pv'
                                             ] || []
                                         const futureData = horizonSlots.map((s) => {
                                             if (chartMode === 'load') {

@@ -1,11 +1,12 @@
 import logging
 from collections.abc import Iterable
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
 import pytz
-from sqlalchemy import Integer, cast, func, select, text
+from sqlalchemy import Integer, cast, desc, func, select, text
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
@@ -798,16 +799,76 @@ class LearningStore:
                         "slot_start": ss,
                         "slot_end": slot_end,
                         # Map to names expected by schedule API (mocking SlotObservation fields)
-                        "batt_charge_kwh": avg_charge_kw * 0.25,
-                        "batt_discharge_kwh": avg_discharge_kw * 0.25,
-                        "soc_end_percent": last_entry.before_soc_percent,
-                        "water_kwh": avg_water_kw * 0.25,
-                        "export_kwh": avg_export_kw * 0.25,
-                        "import_price_sek_kwh": 0.0,  # Overlay will handle this
+                        "planned_charge_kw": avg_charge_kw,
+                        "planned_discharge_kw": avg_discharge_kw,
+                        "planned_water_kw": avg_water_kw,
+                        "planned_export_kw": avg_export_kw,
+                        "soc_end_percent": last_entry.soc_end_percent,
                     }
                 )
 
             return results
+
+    async def get_db_stats(self) -> dict[str, Any]:
+        """Get database statistics (size, row counts) using Async SQLAlchemy."""
+        stats = {
+            "size_mb": 0.0,
+            "slot_plans_count": 0,
+            "slot_observations_count": 0,
+            "health": "unknown",
+        }
+
+        # 1. Get file size
+        try:
+            db_path = Path(self.db_path)
+            if db_path.exists():
+                stats["size_mb"] = round(db_path.stat().st_size / (1024 * 1024), 2)
+        except Exception:
+            pass
+
+        # 2. Get row counts
+        async with self.AsyncSession() as session:
+            try:
+                # Count plans
+                count_plans = await session.scalar(select(func.count(SlotPlan.slot_start)))
+                stats["slot_plans_count"] = count_plans or 0
+
+                # Count observations
+                count_obs = await session.scalar(select(func.count(SlotObservation.slot_start)))
+                stats["slot_observations_count"] = count_obs or 0
+
+                stats["health"] = "good"
+            except Exception as e:
+                logger.error(f"Error getting DB stats: {e}")
+                stats["health"] = "error"
+
+        return stats
+
+    async def get_learning_stats(self) -> dict[str, Any]:
+        """Get learning statistics using Async SQLAlchemy."""
+        async with self.AsyncSession() as session:
+            # Count runs
+            count_stmt = select(func.count(LearningRun.id))
+            total_runs = await session.scalar(count_stmt) or 0
+
+            # Last run
+            last_stmt = select(LearningRun).order_by(desc(LearningRun.started_at)).limit(1)
+            result = await session.execute(last_stmt)
+            last_run = result.scalar_one_or_none()
+
+            status = "infant"
+            if total_runs > 10:
+                status = "statistician"
+            if total_runs > 100:
+                status = "graduate"
+
+            return {
+                "total_runs": total_runs,
+                "status": status,
+                "last_run": last_run.started_at.isoformat()
+                if last_run and last_run.started_at
+                else None,
+            }
 
     async def log_learning_run(
         self,

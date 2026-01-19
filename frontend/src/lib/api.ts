@@ -389,6 +389,30 @@ export type LogInfoResponse = {
     last_modified: string
 }
 
+export type SystemHealthResponse = {
+    learning: {
+        total_runs: number
+        status: string
+        last_run: string | null
+    }
+    database: {
+        size_mb: number
+        slot_plans_count: number
+        slot_observations_count: number
+        health: string
+    }
+    planner: {
+        last_run: string | null
+        status: string
+        next_scheduled: string | null
+    }
+    system: {
+        errors_24h: number
+        uptime_hours: number
+        version: string
+    }
+}
+
 async function getJSON<T>(path: string, method: 'GET' | 'POST' | 'DELETE' = 'GET', body?: unknown): Promise<T> {
     // Strip leading slash to make paths relative - works with base href for HA Ingress
     const relativePath = path.startsWith('/') ? path.slice(1) : path
@@ -542,6 +566,7 @@ export const Api = {
         getJSON<EnergyRangeResponse>(`/api/energy/range?period=${period}`),
     // Log management
     logInfo: () => getJSON<LogInfoResponse>('/api/system/log-info'),
+    systemHealth: () => getJSON<SystemHealthResponse>('/api/system/health'),
     clearLogs: () => getJSON<{ status: string }>('/api/system/logs', 'DELETE'),
     // Load Disaggregation Debug (Rev ARC12)
     loadsDebug: () => getJSON<LoadsDebugResponse>('/api/loads/debug'),

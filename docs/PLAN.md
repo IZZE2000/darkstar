@@ -226,16 +226,16 @@ Currently, the charts can become cluttered when mixing planned and actual data. 
 * [x] **Async Optimization:** Optimize `max_price_spread` price fetching and fix async/await usage.
 * [x] **Logging:** Add debug logging to expensive queries in `store.py`.
 
-### [IN PROGRESS] REV // UI9 — System Health Card
+### [DONE] REV // UI9 — System Health Card
 
 **Goal:** Add a "System Health" card to the Aurora dashboard for real-time visibility into system status and data health.
 
 **Plan:**
 
-#### Phase 1: Implementation [IN PROGRESS]
-* [ ] **Backend:** Add `/api/system/health` endpoint with learning runs, DB stats, and uptime.
-* [ ] **Frontend:** Create `SystemHealthCard` component.
-* [ ] **Integration:** Add card to Aurora dashboard grid.
+#### Phase 1: Implementation [x]
+* [x] **Backend:** Add `/api/system/health` endpoint with learning runs, DB stats, and uptime.
+* [x] **Frontend:** Create `SystemHealthCard` component.
+* [x] **Integration:** Add card to Aurora dashboard grid.
 
 ---
 

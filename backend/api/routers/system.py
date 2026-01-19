@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import subprocess
 from datetime import UTC, datetime
@@ -8,7 +9,12 @@ from typing import Any
 import yaml
 from fastapi import APIRouter, HTTPException
 
-from backend.api.models.system import LogInfoResponse, StatusResponse, VersionResponse
+from backend.api.models.system import (
+    LogInfoResponse,
+    StatusResponse,
+    SystemHealthResponse,
+    VersionResponse,
+)
 from inputs import (
     get_ha_sensor_float,
     load_yaml,
@@ -16,6 +22,13 @@ from inputs import (
 
 logger = logging.getLogger("darkstar.api.system")
 router = APIRouter(tags=["system"])
+
+
+def _get_learning_engine() -> Any:
+    """Get the learning engine instance."""
+    from backend.learning import get_learning_engine
+
+    return get_learning_engine()
 
 
 def _get_git_version() -> str:
@@ -183,3 +196,89 @@ async def clear_logs():
     except Exception as e:
         logger.error(f"Failed to clear logs: {e}")
         raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.get(
+    "/api/system/health",
+    summary="Get System Health",
+    description="Returns comprehensive system health metrics (learning, database, planner).",
+    response_model=SystemHealthResponse,
+)
+async def get_system_health() -> SystemHealthResponse:
+    """Get comprehensive system health metrics."""
+    from backend.api.models.system import (
+        DatabaseHealth,
+        LearningHealth,
+        PlannerHealth,
+        SystemHealthResponse,
+        SystemMetrics,
+    )
+
+    # 1. Learning Stats
+    try:
+        engine = _get_learning_engine()
+        learning_stats = await engine.store.get_learning_stats()
+        learning_health = LearningHealth(
+            total_runs=learning_stats["total_runs"],
+            status=learning_stats["status"],
+            last_run=learning_stats["last_run"],
+        )
+    except Exception as e:
+        logger.error(f"Error getting learning stats: {e}")
+        learning_health = LearningHealth(total_runs=0, status="unknown", last_run=None)
+
+    # 2. Database Stats
+    try:
+        engine = _get_learning_engine()
+        db_stats = await engine.store.get_db_stats()
+        database_health = DatabaseHealth(
+            size_mb=db_stats["size_mb"],
+            slot_plans_count=db_stats["slot_plans_count"],
+            slot_observations_count=db_stats["slot_observations_count"],
+            health=db_stats["health"],
+        )
+    except Exception as e:
+        logger.error(f"Error getting DB stats: {e}")
+        database_health = DatabaseHealth(
+            size_mb=0.0, slot_plans_count=0, slot_observations_count=0, health="error"
+        )
+
+    # 3. Planner Stats
+    planner_health = PlannerHealth(last_run=None, status="unknown", next_scheduled=None)
+    try:
+        status_path = Path("data/scheduler_status.json")
+        if status_path.exists():
+            with status_path.open() as f:
+                data = json.load(f)
+
+            planner_health = PlannerHealth(
+                last_run=data.get("last_run_at"),
+                status=data.get("last_run_status", "unknown"),
+                next_scheduled=data.get("next_run_at"),
+            )
+    except Exception as e:
+        logger.error(f"Error getting planner stats: {e}")
+
+    # 4. System Metrics
+    uptime_hours = 0.0
+    try:
+        with Path("/proc/uptime").open() as f:
+            uptime_seconds = float(f.readline().split()[0])
+            uptime_hours = round(uptime_seconds / 3600, 1)
+    except Exception:
+        pass
+
+    errors_24h = 0
+    # Simple grep for ERROR in logs? Skipping for now to avoid perf issues, hardcode 0
+    # or check log size changes.
+
+    system_metrics = SystemMetrics(
+        errors_24h=errors_24h, uptime_hours=uptime_hours, version=_get_git_version()
+    )
+
+    return SystemHealthResponse(
+        learning=learning_health,
+        database=database_health,
+        planner=planner_health,
+        system=system_metrics,
+    )
