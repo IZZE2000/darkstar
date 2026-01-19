@@ -55,9 +55,7 @@ async def get_forecast_slots(
     records: list[dict[str, Any]] = []
     for row in df.to_dict("records"):
         base_pv = float(row.get("pv_forecast_kwh") or 0.0)
-        base_load = float(
-            row.get("base_load_forecast_kwh") or row.get("load_forecast_kwh") or 0.0
-        )
+        base_load = float(row.get("base_load_forecast_kwh") or row.get("load_forecast_kwh") or 0.0)
         pv_corr = float(row.get("pv_correction_kwh") or 0.0)
         load_corr = float(row.get("load_correction_kwh") or 0.0)
 

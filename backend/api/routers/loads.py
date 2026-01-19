@@ -7,7 +7,7 @@ from backend.loads.service import LoadDisaggregator
 
 from .config import get_config
 
-router = APIRouter(prefix="/loads", tags=["loads"])
+router = APIRouter(prefix="/api/loads", tags=["loads"])
 logger = logging.getLogger("darkstar.api.loads")
 
 # Simple singleton pattern for the disaggregator within the API

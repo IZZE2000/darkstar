@@ -619,7 +619,11 @@ class LearningStore:
 
             soc_result = await session.execute(stmt_soc)
             soc_results = soc_result.all()
-            logger.debug("get_performance_series: found %d SoC records for last %d days", len(soc_results), days_back)
+            logger.debug(
+                "get_performance_series: found %d SoC records for last %d days",
+                len(soc_results),
+                days_back,
+            )
             soc_series = [{"time": r[0], "planned": r[1], "actual": r[2]} for r in soc_results]
 
             # 2. Daily Cost Series

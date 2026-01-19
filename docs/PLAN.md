@@ -182,3 +182,17 @@ Currently, the charts can become cluttered when mixing planned and actual data. 
 * [x] Implement real-time controllable power list and data quality metrics.
 * [x] Add auto-refresh and error handling.
 * [x] Pass production-grade linting and type checks.
+
+---
+
+### [DONE] REV // F22 — API Routing Precedence Fix [DONE]
+
+**Goal:** Resolve critical routing bug where SPA catch-all intercepted API calls.
+
+**Plan:**
+
+#### Phase 1: Implementation [x]
+* [x] Unify `/api` prefix across all routers (`loads.py`, `services.py`, `forecast.py`).
+* [x] Refine SPA catch-all in `main.py` to exclude `/api/*` paths.
+* [x] Verify JSON responses for all critical API endpoints.
+* [x] Ensure SPA still loads correctly for non-API routes.

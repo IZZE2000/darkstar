@@ -12,7 +12,7 @@ from ml.api import get_forecast_slots
 
 logger = logging.getLogger("darkstar.api.forecast")
 router = APIRouter(prefix="/api/aurora", tags=["aurora"])
-forecast_router = APIRouter(tags=["forecast"])
+forecast_router = APIRouter(prefix="/api/forecast", tags=["forecast"])
 
 # --- Helper Functions ---
 
@@ -274,7 +274,7 @@ async def _compute_metrics(
 
 
 @forecast_router.get(
-    "/api/forecast/eval",
+    "/eval",
     summary="Evaluate Forecast Accuracy",
     description="Returns Mean Absolute Error (MAE) metrics for baseline vs Aurora forecasts over recent days.",
 )
@@ -328,7 +328,7 @@ async def forecast_eval(days: int = 7) -> dict[str, Any]:
 
 
 @forecast_router.get(
-    "/api/forecast/day",
+    "/day",
     summary="Get Daily Forecast View",
     description="Returns actual vs forecast data for a specific day to visualize model performance.",
 )
@@ -402,7 +402,7 @@ async def forecast_day(date: str | None = None) -> dict[str, Any]:
 
 
 @forecast_router.get(
-    "/api/forecast/horizon",
+    "/horizon",
     summary="Get Forecast Horizon",
     description="Returns raw forecast slots for the next N hours.",
 )
@@ -426,7 +426,7 @@ async def forecast_horizon(hours: int = 48) -> dict[str, Any]:
 
 
 @forecast_router.post(
-    "/api/forecast/run_eval",
+    "/run_eval",
     summary="Run Forecast Evaluation",
     description="Triggers a manual evaluation of forecast accuracy against observations.",
 )
@@ -450,7 +450,7 @@ async def forecast_run_eval() -> dict[str, Any]:
 
 
 @forecast_router.post(
-    "/api/forecast/run_forward",
+    "/run_forward",
     summary="Run Forward Forecast",
     description="Pre-calculates forecast data for future windows (used by planner).",
 )

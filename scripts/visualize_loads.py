@@ -5,11 +5,10 @@ Usage: python scripts/visualize_loads.py
 """
 
 import asyncio
-import json
-from datetime import datetime, timedelta
+
 from backend.loads.service import LoadDisaggregator
 from backend.recorder import _load_config
-from backend.learning.store import LearningStore
+
 
 async def show_current_breakdown():
     """Show current power breakdown."""
@@ -31,10 +30,9 @@ async def show_current_breakdown():
     metrics = disaggregator.get_quality_metrics()
     print(f"📈 Drift Rate: {metrics['drift_rate']:.1%}")
 
+
 async def show_historical_comparison():
     """Show base load vs total load over last 24h."""
-    config = _load_config()
-    db_path = config.get("learning", {}).get("sqlite_path", "data/planner_learning.db")
 
     # This would query the database for historical data
     print("\n📈 HISTORICAL COMPARISON (Last 24h)")
@@ -42,6 +40,7 @@ async def show_historical_comparison():
     print("Time        | Total | Base  | Water | Diff")
     print("-" * 40)
     # Implementation would show actual data...
+
 
 if __name__ == "__main__":
     asyncio.run(show_current_breakdown())

@@ -25,7 +25,7 @@ from inputs import (
 logger = logging.getLogger("darkstar.api.services")
 
 router_ha = APIRouter(prefix="/api/ha", tags=["ha"])
-router_services = APIRouter(tags=["services"])
+router_services = APIRouter(prefix="/api", tags=["services"])
 
 
 # --- Helper ---
@@ -247,7 +247,7 @@ async def get_ha_entities() -> dict[str, list[dict[str, str]]]:
 
 
 @router_services.get(
-    "/api/performance/data",
+    "/performance/data",
     summary="Get Performance Data",
     description="Get performance metrics for the Aurora card.",
 )
@@ -310,7 +310,7 @@ async def get_water_today() -> dict[str, Any]:
 
 
 @router_services.get(
-    "/api/water/boost",
+    "/water/boost",
     summary="Get Water Boost Status",
     description="Get current water boost status from executor.",
 )
@@ -334,7 +334,7 @@ class WaterBoostRequest(BaseModel):
 
 
 @router_services.post(
-    "/api/water/boost",
+    "/water/boost",
     summary="Set Water Boost",
     description="Activate water heater boost via executor quick action.",
 )
@@ -376,7 +376,7 @@ async def set_water_boost(req: WaterBoostRequest) -> dict[str, str]:
 
 
 @router_services.delete(
-    "/api/water/boost",
+    "/water/boost",
     summary="Cancel Water Boost",
     description="Cancel active water boost.",
 )
@@ -398,7 +398,7 @@ async def cancel_water_boost() -> dict[str, str]:
 
 
 @router_services.get(
-    "/api/energy/today",
+    "/energy/today",
     summary="Get Today's Energy",
     description="Get today's energy summary from HA sensors using parallel async fetching.",
 )
@@ -453,7 +453,7 @@ async def get_energy_today() -> dict[str, float]:
 
 
 @router_services.get(
-    "/api/energy/range",
+    "/energy/range",
     summary="Get Energy Range",
     description="Get energy range data (today, yesterday, week, month).",
 )
@@ -694,7 +694,7 @@ async def test_ha_connection() -> dict[str, str]:
 
 
 @router_services.get(
-    "/api/ha-socket",
+    "/ha-socket",
     summary="Get HA Socket Status",
     description="Return status of the HA WebSocket connection.",
 )
@@ -711,7 +711,7 @@ async def get_ha_socket_status() -> dict[str, Any]:
 
 
 @router_services.post(
-    "/api/simulate",
+    "/simulate",
     summary="Run Simulation",
     description="Run a simulation of the current schedule.",
 )

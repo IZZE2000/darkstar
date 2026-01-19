@@ -318,7 +318,6 @@ def create_app() -> socketio.ASGIApp:
                 _index_html_cache = (static_dir / "index.html").read_text()
             return _index_html_cache
 
-        # Catch-all route for SPA: serve index.html for all non-API routes
         @app.get("/{full_path:path}")
         async def serve_spa(full_path: str, request: Request):  # type: ignore[reportUnusedFunction]
             """Serve index.html for all routes (SPA fallback).
@@ -326,6 +325,10 @@ def create_app() -> socketio.ASGIApp:
             For HA Ingress support, dynamically injects <base href> tag
             based on X-Ingress-Path header.
             """
+            # Prevent API routes from being intercepted by SPA catch-all
+            if full_path.startswith("api/") or full_path == "api":
+                raise HTTPException(status_code=404, detail="API route not found")
+
             # Security: Prevent directory traversal attacks
             # checking logic extracted to validate_path for testability
             _ = validate_path(static_dir, full_path)
