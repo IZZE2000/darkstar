@@ -12,7 +12,13 @@ from backend.learning.store import LearningStore
 
 
 class LearningEngine:
-    """Learning engine for auto-tuning and forecast calibration"""
+    """
+    Learning engine for auto-tuning and forecast calibration.
+
+    NOTE (REV ARC10): This class and its usage in Recorder remain SYNCHRONOUS.
+    It uses the synchronous capabilities of LearningStore (Dual-mode).
+    Async migration for this component is scheduled for REV ARC11.
+    """
 
     def __init__(self, config_path: str = "config.yaml"):
         self.config = self._load_config(config_path)

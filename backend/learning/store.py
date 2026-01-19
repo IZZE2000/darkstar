@@ -7,6 +7,7 @@ import pandas as pd
 import pytz
 from sqlalchemy import Integer, cast, create_engine, func, select, text
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
 from backend.learning.models import (
@@ -29,13 +30,71 @@ class LearningStore:
         self.db_path = db_path
         self.timezone = timezone
 
-        # Initialize SQLAlchemy
+        # Initialize SQLAlchemy Sync (Legacy)
         # We use check_same_thread=False for SQLite shared access in FastAPI
         connect_args = {"check_same_thread": False, "timeout": 30.0}
         self.engine = create_engine(f"sqlite:///{db_path}", connect_args=connect_args)
         self.Session = sessionmaker(bind=self.engine)
 
+        # Initialize SQLAlchemy Async (ARC10)
+        self.async_engine = create_async_engine(
+            f"sqlite+aiosqlite:///{db_path}", connect_args=connect_args
+        )
+        self.AsyncSession = async_sessionmaker(self.async_engine, expire_on_commit=False)
+
+    async def close(self):
+        """Dispose of the async engine."""
+        await self.async_engine.dispose()
+
     # _init_schema was removed as Alembic handles migrations.
+
+    async def store_slot_prices_async(self, price_rows: Iterable[dict[str, Any]]) -> None:
+        """Store slot price data (import/export SEK per kWh) using Async SQLAlchemy."""
+        rows = list(price_rows or [])
+        if not rows:
+            return
+
+        async with self.AsyncSession() as session:
+            for row in rows:
+                slot_start = row.get("slot_start") or row.get("start_time")
+                slot_end = row.get("slot_end") or row.get("end_time")
+                if slot_start is None:
+                    continue
+
+                if isinstance(slot_start, datetime | pd.Timestamp):
+                    slot_start = slot_start.astimezone(self.timezone).isoformat()
+                else:
+                    slot_start = pd.to_datetime(slot_start).astimezone(self.timezone).isoformat()
+
+                if slot_end is not None:
+                    if isinstance(slot_end, datetime | pd.Timestamp):
+                        slot_end = slot_end.astimezone(self.timezone).isoformat()
+                    else:
+                        slot_end = pd.to_datetime(slot_end).astimezone(self.timezone).isoformat()
+
+                import_price = row.get("import_price_sek_kwh")
+                export_price = row.get("export_price_sek_kwh")
+
+                stmt = sqlite_insert(SlotObservation).values(
+                    slot_start=slot_start,
+                    slot_end=slot_end,
+                    import_price_sek_kwh=import_price,
+                    export_price_sek_kwh=export_price,
+                )
+                stmt = stmt.on_conflict_do_update(
+                    index_elements=["slot_start"],
+                    set_={
+                        "slot_end": func.coalesce(stmt.excluded.slot_end, SlotObservation.slot_end),
+                        "import_price_sek_kwh": func.coalesce(
+                            stmt.excluded.import_price_sek_kwh, SlotObservation.import_price_sek_kwh
+                        ),
+                        "export_price_sek_kwh": func.coalesce(
+                            stmt.excluded.export_price_sek_kwh, SlotObservation.export_price_sek_kwh
+                        ),
+                    },
+                )
+                await session.execute(stmt)
+            await session.commit()
 
     def store_slot_prices(self, price_rows: Iterable[dict[str, Any]]) -> None:
         """Store slot price data (import/export SEK per kWh) using SQLAlchemy."""
@@ -84,6 +143,79 @@ class LearningStore:
                 )
                 session.execute(stmt)
             session.commit()
+
+    async def store_slot_observations_async(self, observations_df: pd.DataFrame) -> None:
+        """Store slot observations in database using Async SQLAlchemy."""
+        if observations_df.empty:
+            return
+
+        async with self.AsyncSession() as session:
+            records = observations_df.to_dict("records")
+
+            for record in records:
+                slot_start = record["slot_start"]
+                slot_end = record.get("slot_end")
+
+                if isinstance(slot_start, datetime | pd.Timestamp):
+                    slot_start = slot_start.astimezone(self.timezone).isoformat()
+                else:
+                    slot_start = pd.to_datetime(slot_start).astimezone(self.timezone).isoformat()
+
+                if slot_end is not None:
+                    if isinstance(slot_end, datetime | pd.Timestamp):
+                        slot_end = slot_end.astimezone(self.timezone).isoformat()
+                    else:
+                        slot_end = pd.to_datetime(slot_end).astimezone(self.timezone).isoformat()
+
+                stmt = sqlite_insert(SlotObservation).values(
+                    slot_start=slot_start,
+                    slot_end=slot_end,
+                    import_kwh=float(record.get("import_kwh", 0.0) or 0.0),
+                    export_kwh=float(record.get("export_kwh", 0.0) or 0.0),
+                    pv_kwh=float(record.get("pv_kwh", 0.0) or 0.0),
+                    load_kwh=float(record.get("load_kwh", 0.0) or 0.0),
+                    water_kwh=float(record.get("water_kwh", 0.0) or 0.0),
+                    batt_charge_kwh=record.get("batt_charge_kwh"),
+                    batt_discharge_kwh=record.get("batt_discharge_kwh"),
+                    soc_start_percent=record.get("soc_start_percent"),
+                    soc_end_percent=record.get("soc_end_percent"),
+                    import_price_sek_kwh=record.get("import_price_sek_kwh"),
+                    export_price_sek_kwh=record.get("export_price_sek_kwh"),
+                    quality_flags=record.get("quality_flags", "{}"),
+                )
+
+                stmt = stmt.on_conflict_do_update(
+                    index_elements=["slot_start"],
+                    set_={
+                        "slot_end": func.coalesce(stmt.excluded.slot_end, SlotObservation.slot_end),
+                        "import_kwh": stmt.excluded.import_kwh,
+                        "export_kwh": stmt.excluded.export_kwh,
+                        "pv_kwh": stmt.excluded.pv_kwh,
+                        "load_kwh": stmt.excluded.load_kwh,
+                        "water_kwh": stmt.excluded.water_kwh,
+                        "batt_charge_kwh": func.coalesce(
+                            stmt.excluded.batt_charge_kwh, SlotObservation.batt_charge_kwh
+                        ),
+                        "batt_discharge_kwh": func.coalesce(
+                            stmt.excluded.batt_discharge_kwh, SlotObservation.batt_discharge_kwh
+                        ),
+                        "soc_start_percent": func.coalesce(
+                            stmt.excluded.soc_start_percent, SlotObservation.soc_start_percent
+                        ),
+                        "soc_end_percent": func.coalesce(
+                            stmt.excluded.soc_end_percent, SlotObservation.soc_end_percent
+                        ),
+                        "import_price_sek_kwh": func.coalesce(
+                            stmt.excluded.import_price_sek_kwh, SlotObservation.import_price_sek_kwh
+                        ),
+                        "export_price_sek_kwh": func.coalesce(
+                            stmt.excluded.export_price_sek_kwh, SlotObservation.export_price_sek_kwh
+                        ),
+                        "quality_flags": stmt.excluded.quality_flags,
+                    },
+                )
+                await session.execute(stmt)
+            await session.commit()
 
     def store_slot_observations(self, observations_df: pd.DataFrame) -> None:
         """Store slot observations in database using SQLAlchemy."""
@@ -158,6 +290,44 @@ class LearningStore:
                 session.execute(stmt)
             session.commit()
 
+    async def store_forecasts_async(self, forecasts: list[dict], forecast_version: str) -> None:
+        """Store forecast data using Async SQLAlchemy."""
+        if not forecasts:
+            return
+
+        async with self.AsyncSession() as session:
+            for forecast in forecasts:
+                slot_start = forecast.get("slot_start")
+                if slot_start is None:
+                    continue
+
+                stmt = sqlite_insert(SlotForecast).values(
+                    slot_start=slot_start,
+                    pv_forecast_kwh=float(forecast.get("pv_forecast_kwh", 0.0) or 0.0),
+                    load_forecast_kwh=float(forecast.get("load_forecast_kwh", 0.0) or 0.0),
+                    pv_p10=forecast.get("pv_p10"),
+                    pv_p90=forecast.get("pv_p90"),
+                    load_p10=forecast.get("load_p10"),
+                    load_p90=forecast.get("load_p90"),
+                    temp_c=forecast.get("temp_c"),
+                    forecast_version=forecast_version,
+                )
+                # Preserve corrections on conflict
+                stmt = stmt.on_conflict_do_update(
+                    index_elements=["slot_start", "forecast_version"],
+                    set_={
+                        "pv_forecast_kwh": stmt.excluded.pv_forecast_kwh,
+                        "load_forecast_kwh": stmt.excluded.load_forecast_kwh,
+                        "pv_p10": stmt.excluded.pv_p10,
+                        "pv_p90": stmt.excluded.pv_p90,
+                        "load_p10": stmt.excluded.load_p10,
+                        "load_p90": stmt.excluded.load_p90,
+                        "temp_c": stmt.excluded.temp_c,
+                    },
+                )
+                await session.execute(stmt)
+            await session.commit()
+
     def store_forecasts(self, forecasts: list[dict], forecast_version: str) -> None:
         """Store forecast data using SQLAlchemy."""
         if not forecasts:
@@ -195,6 +365,53 @@ class LearningStore:
                 )
                 session.execute(stmt)
             session.commit()
+
+    async def store_plan_async(self, plan_df: pd.DataFrame) -> None:
+        """Store the planned schedule for later comparison using Async SQLAlchemy."""
+        if plan_df.empty:
+            return
+
+        async with self.AsyncSession() as session:
+            records = plan_df.to_dict("records")
+            for row in records:
+                slot_start = row.get("start_time") or row.get("slot_start")
+                if not slot_start:
+                    continue
+
+                if isinstance(slot_start, datetime | pd.Timestamp):
+                    slot_start = slot_start.astimezone(self.timezone).isoformat()
+                else:
+                    slot_start = pd.to_datetime(slot_start).astimezone(self.timezone).isoformat()
+
+                stmt = sqlite_insert(SlotPlan).values(
+                    slot_start=slot_start,
+                    planned_charge_kwh=float(row.get("kepler_charge_kwh", 0.0) or 0.0),
+                    planned_discharge_kwh=float(row.get("kepler_discharge_kwh", 0.0) or 0.0),
+                    planned_soc_percent=float(
+                        row.get("soc_target_percent", row.get("kepler_soc_percent", 0.0)) or 0.0
+                    ),
+                    planned_import_kwh=float(row.get("kepler_import_kwh", 0.0) or 0.0),
+                    planned_export_kwh=float(row.get("kepler_export_kwh", 0.0) or 0.0),
+                    planned_water_heating_kwh=float(row.get("water_heating_kw", 0.0) or 0.0) * 0.25,
+                    planned_cost_sek=float(
+                        row.get("planned_cost_sek", row.get("kepler_cost_sek", 0.0)) or 0.0
+                    ),
+                )
+                stmt = stmt.on_conflict_do_update(
+                    index_elements=["slot_start"],
+                    set_={
+                        "planned_charge_kwh": stmt.excluded.planned_charge_kwh,
+                        "planned_discharge_kwh": stmt.excluded.planned_discharge_kwh,
+                        "planned_soc_percent": stmt.excluded.planned_soc_percent,
+                        "planned_import_kwh": stmt.excluded.planned_import_kwh,
+                        "planned_export_kwh": stmt.excluded.planned_export_kwh,
+                        "planned_water_heating_kwh": stmt.excluded.planned_water_heating_kwh,
+                        "planned_cost_sek": stmt.excluded.planned_cost_sek,
+                        "created_at": func.current_timestamp(),
+                    },
+                )
+                await session.execute(stmt)
+            await session.commit()
 
     def store_plan(self, plan_df: pd.DataFrame) -> None:
         """
@@ -268,6 +485,19 @@ class LearningStore:
             )
             session.execute(stmt)
             session.commit()
+
+    async def get_last_observation_time_async(self) -> datetime | None:
+        """Get the timestamp of the last recorded observation using Async SQLAlchemy."""
+        async with self.AsyncSession() as session:
+            result = await session.scalar(select(func.max(SlotObservation.slot_start)))
+            if result:
+                dt = datetime.fromisoformat(result)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=self.timezone)
+                else:
+                    dt = dt.astimezone(self.timezone)
+                return dt
+            return None
 
     def get_last_observation_time(self) -> datetime | None:
         """Get the timestamp of the last recorded observation using SQLAlchemy."""
@@ -594,3 +824,66 @@ class LearningStore:
         """Count training episodes using SQLAlchemy."""
         with self.Session() as session:
             return session.query(func.count(TrainingEpisode.episode_id)).scalar() or 0
+
+    async def get_history_range_async(self, start: datetime, end: datetime) -> list[dict[str, Any]]:
+        """Get observation history for a specific range."""
+        start_iso = start.isoformat()
+        end_iso = end.isoformat()
+
+        async with self.AsyncSession() as session:
+            stmt = (
+                select(
+                    SlotObservation.slot_start,
+                    SlotObservation.slot_end,
+                    SlotObservation.batt_charge_kwh,
+                    SlotObservation.batt_discharge_kwh,
+                    SlotObservation.soc_end_percent,
+                    SlotObservation.water_kwh,
+                    SlotObservation.import_kwh,
+                    SlotObservation.export_kwh,
+                    SlotObservation.import_price_sek_kwh,
+                )
+                .where(
+                    SlotObservation.slot_start >= start_iso, SlotObservation.slot_start < end_iso
+                )
+                .order_by(SlotObservation.slot_start.asc())
+            )
+
+            result = await session.execute(stmt)
+            return [row._asdict() for row in result.all()]
+
+    async def get_forecasts_range_async(
+        self, start: datetime, version: str
+    ) -> list[dict[str, Any]]:
+        """Get forecasts for a specific range and version."""
+        start_iso = start.isoformat()
+
+        async with self.AsyncSession() as session:
+            stmt = select(
+                SlotForecast.slot_start,
+                SlotForecast.pv_forecast_kwh,
+                SlotForecast.load_forecast_kwh,
+            ).where(SlotForecast.slot_start >= start_iso, SlotForecast.forecast_version == version)
+            result = await session.execute(stmt)
+            return [row._asdict() for row in result.all()]
+
+    async def get_plans_range_async(self, start: datetime) -> list[dict[str, Any]]:
+        """Get planned slots from a specific start time."""
+        start_iso = start.isoformat()
+
+        async with self.AsyncSession() as session:
+            stmt = (
+                select(
+                    SlotPlan.slot_start,
+                    SlotPlan.planned_charge_kwh,
+                    SlotPlan.planned_discharge_kwh,
+                    SlotPlan.planned_soc_percent,
+                    SlotPlan.planned_export_kwh,
+                    SlotPlan.planned_water_heating_kwh,
+                )
+                .where(SlotPlan.slot_start >= start_iso)
+                .order_by(SlotPlan.slot_start.asc())
+            )
+
+            result = await session.execute(stmt)
+            return [row._asdict() for row in result.all()]

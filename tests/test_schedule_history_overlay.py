@@ -1,12 +1,18 @@
+import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import aiosqlite
+sys.path.append(str(Path.cwd()))
+
+
 import pytest
 import pytz
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import create_async_engine
 
 from backend.api.routers.schedule import schedule_today_with_history
+from backend.learning.store import LearningStore
 
 
 @pytest.mark.anyio
@@ -18,8 +24,10 @@ async def test_today_with_history_includes_planned_actions(tmp_path):
     # and might fail or warn if missing (though the try/except blocks should handle it).
     # But slot_plans is what we care about.
 
-    async with aiosqlite.connect(db_path) as conn:
-        await conn.execute("""
+    engine = create_async_engine(f"sqlite+aiosqlite:///{db_path}")
+    async with engine.connect() as conn:
+        await conn.execute(
+            text("""
             CREATE TABLE slot_plans (
                 slot_start TEXT PRIMARY KEY,
                 planned_charge_kwh REAL,
@@ -29,7 +37,9 @@ async def test_today_with_history_includes_planned_actions(tmp_path):
                 planned_water_heating_kwh REAL
             )
         """)
-        await conn.execute("""
+        )
+        await conn.execute(
+            text("""
              CREATE TABLE slot_observations (
                 slot_start TEXT PRIMARY KEY,
                 slot_end TEXT,
@@ -42,7 +52,9 @@ async def test_today_with_history_includes_planned_actions(tmp_path):
                 import_price_sek_kwh REAL
             )
         """)
-        await conn.execute("""
+        )
+        await conn.execute(
+            text("""
              CREATE TABLE slot_forecasts (
                 slot_start TEXT PRIMARY KEY,
                 pv_forecast_kwh REAL,
@@ -50,6 +62,7 @@ async def test_today_with_history_includes_planned_actions(tmp_path):
                 forecast_version TEXT
             )
         """)
+        )
 
         # Insert test data for today (UTC to avoid timezone confusion in test)
         # Using UTC as the configured timezone
@@ -60,21 +73,21 @@ async def test_today_with_history_includes_planned_actions(tmp_path):
         # 1. Planned Charge Slot at 10:00
         slot_10 = today_start.replace(hour=10).isoformat()
         await conn.execute(
-            """
+            text("""
             INSERT INTO slot_plans (slot_start, planned_charge_kwh, planned_discharge_kwh, planned_soc_percent, planned_export_kwh, planned_water_heating_kwh)
-            VALUES (?, 0.5, 0.0, 50.0, 0.0, 0.25)
-        """,
-            (slot_10,),
+            VALUES (:slot_start, 0.5, 0.0, 50.0, 0.0, 0.25)
+            """),
+            {"slot_start": slot_10},
         )
 
         # 2. Planned Discharge Slot at 11:00
         slot_11 = today_start.replace(hour=11).isoformat()
         await conn.execute(
-            """
+            text("""
             INSERT INTO slot_plans (slot_start, planned_charge_kwh, planned_discharge_kwh, planned_soc_percent, planned_export_kwh, planned_water_heating_kwh)
-            VALUES (?, 0.0, 0.25, 40.0, 0.1, 0.0)
-        """,
-            (slot_11,),
+            VALUES (:slot_start, 0.0, 0.25, 40.0, 0.1, 0.0)
+            """),
+            {"slot_start": slot_11},
         )
 
         await conn.commit()
@@ -98,7 +111,10 @@ async def test_today_with_history_includes_planned_actions(tmp_path):
 
             MockPath.side_effect = side_effect
 
-            result = await schedule_today_with_history()
+            MockPath.side_effect = side_effect
+
+            store = LearningStore(str(db_path), tz)
+            result = await schedule_today_with_history(store=store)
 
     # Assertions
     slots = result["slots"]
@@ -147,8 +163,10 @@ async def test_today_with_history_sets_executed_flag(tmp_path):
     """Verify that historical slots from observations have is_executed=True."""
     db_path = tmp_path / "planner_learning.db"
 
-    async with aiosqlite.connect(db_path) as conn:
-        await conn.execute("""
+    engine = create_async_engine(f"sqlite+aiosqlite:///{db_path}")
+    async with engine.connect() as conn:
+        await conn.execute(
+            text("""
             CREATE TABLE slot_observations (
                 slot_start TEXT PRIMARY KEY,
                 slot_end TEXT,
@@ -161,7 +179,9 @@ async def test_today_with_history_sets_executed_flag(tmp_path):
                 import_price_sek_kwh REAL
             )
         """)
-        await conn.execute("""
+        )
+        await conn.execute(
+            text("""
             CREATE TABLE slot_forecasts (
                 slot_start TEXT PRIMARY KEY,
                 pv_forecast_kwh REAL,
@@ -169,7 +189,9 @@ async def test_today_with_history_sets_executed_flag(tmp_path):
                 forecast_version TEXT
             )
         """)
-        await conn.execute("""
+        )
+        await conn.execute(
+            text("""
             CREATE TABLE slot_plans (
                 slot_start TEXT PRIMARY KEY,
                 planned_charge_kwh REAL,
@@ -179,6 +201,7 @@ async def test_today_with_history_sets_executed_flag(tmp_path):
                 planned_water_heating_kwh REAL
             )
         """)
+        )
 
         # Insert historical observation for "now - 1 hour"
         tz = pytz.UTC
@@ -187,8 +210,10 @@ async def test_today_with_history_sets_executed_flag(tmp_path):
         past_end = past_start + timedelta(minutes=15)
 
         await conn.execute(
-            "INSERT INTO slot_observations (slot_start, slot_end, batt_charge_kwh, batt_discharge_kwh, soc_end_percent, water_kwh, import_kwh, export_kwh, import_price_sek_kwh) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (past_start.isoformat(), past_end.isoformat(), 0.5, 0.0, 50.0, 0.0, 0.0, 0.0, 0.5),
+            text(
+                "INSERT INTO slot_observations (slot_start, slot_end, batt_charge_kwh, batt_discharge_kwh, soc_end_percent, water_kwh, import_kwh, export_kwh, import_price_sek_kwh) VALUES (:start, :end, 0.5, 0.0, 50.0, 0.0, 0.0, 0.0, 0.5)"
+            ),
+            {"start": past_start.isoformat(), "end": past_end.isoformat()},
         )
         await conn.commit()
 
@@ -213,7 +238,8 @@ async def test_today_with_history_sets_executed_flag(tmp_path):
 
         from backend.api.routers.schedule import schedule_today_with_history
 
-        result = await schedule_today_with_history()
+        store = LearningStore(str(db_path), tz)
+        result = await schedule_today_with_history(store=store)
 
     slots = result["slots"]
     found_executed = False

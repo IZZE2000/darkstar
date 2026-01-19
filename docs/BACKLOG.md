@@ -42,6 +42,28 @@ This document contains ideas, improvements, and tasks that are not yet scheduled
 <!-- Add new bugs/requests here. AI will wipe this section when processing. -->
 - [Recurring] Check dependencies (`pnpm outdated` / `pip list --outdated`) every month.
 - Do we support direct PV export if profitable? It would make no sense to for example charge the battery then export from battery a sunny summer day where we have severe surplus solar and the prices are high midday.
+- Info for the inverter profiles expansion (add a task to create multiple profiles, do we need a unique default config for different brands?):
+"
+Så som det fungerar i predbat, att ställa om lägen är något i denna stilen, i denna tråden står där en hel del nyttig information som man skulle kunna ta med sig till denna plugin.
+# Service for start/stop
+charge_start_service:
+service: select.select_option
+entity_id: select.solinteg_inverter_working_mode
+option: "UPS"
+charge_stop_service:
+service: select.select_option
+entity_id: select.solinteg_inverter_working_mode
+option: "General"
+discharge_start_service:
+service: select.select_option
+entity_id: select.solinteg_inverter_working_mode
+option: "Economic"
+discharge_stop_service:
+service: select.select_option
+entity_id: select.solinteg_inverter_working_mode
+option: "General"
+https://github.com/springfall2008/batpred/discussions/2529
+"
 
 ---
 
@@ -53,7 +75,99 @@ This document contains ideas, improvements, and tasks that are not yet scheduled
 
 ---
 
+### [Planner] Smart EV Integration
+
+**Goal:** Prioritize home battery vs EV charging based on departure time and user preferences.
+
+**Inputs Needed:**
+- EV departure time (user input or calendar integration)
+- EV target SoC
+- EV charger entity (Home Assistant switch/sensor)
+- EV battery capacity
+
+**New Requirements (Beta Feedback):**
+1. **Battery Guard (Source Isolation):**
+   - prevent the House Battery from discharging *into* the EV.
+   - Logic: `If EV_Charging == True, Then Battery_Discharge_Allowed = False` (unless PV > Load).
+2. **Event-Driven Re-planning:**
+   - Detect `sensor.ev_status` = "Connected" and trigger immediate re-plan.
+   - Do not wait for 15-min cron.
+3. **Proactive PV dump**
+   -
+
+**Implementation:**
+- Add EV as second battery in Kepler MILP
+- Constraint: EV must reach target SoC by departure time
+- Policy: Prefer charging EV during cheap windows, home battery if surplus
+- UI: EV configuration tab, departure time scheduler
+
+**Complexity:** High (new subsystem, requires MILP solver changes)
+
+**ROI:** High for EV owners
+
+**Effort:** 2-3 weeks (design + implement + test)
+
+**Notes:** Big feature. Requires careful UX design.
+
+**Source:** Existing backlog item + expanded by Beta Feedback
+
+---
+
+### [Planner] Proactive PV Dump (Water Heating or EV!)
+
+**Goal:** Schedule water heating to `temp_max` proactively when PV surplus is forecasted.
+
+**Current State:** PV dump is only handled reactively via `excess_pv_heating` override in executor.
+
+**Proposed Change:** Kepler solver should anticipate forecasted PV surplus at SoC=100% and pre-schedule water heating.
+
+**Source:** Existing backlog item
+
+---
+
 ## 🟡 Medium Priority
+
+### [Architecture] REV ARC11 — Background Services Async Migration
+
+**Goal:** Complete the async architecture unification by migrating background services (Recorder) from synchronous threads to async tasks.
+
+**Depends On:** REV ARC10 must be completed and validated first.
+
+**Current State:**
+- After ARC10: `LearningStore` is fully async for API routes
+- Recorder (`backend/learning/engine.py`) still runs in a background thread
+- Thread uses sync wrapper or `asyncio.run()` bridge to access async store (antipattern)
+
+**Proposed Approach:**
+1. **Convert Recorder to Async Task:**
+   - Replace `threading.Thread` with `asyncio.create_task()`
+   - Convert all Recorder methods to `async def`
+   - Use `asyncio.sleep()` instead of `time.sleep()`
+   - Direct async calls to `LearningStore` (no bridge needed)
+
+2. **Audit Blocking Operations:**
+   - File I/O: Migrate to `aiofiles` if needed
+   - HTTP to HA: Already async via `ha_socket`
+   - Sleep/delays: Replace with `asyncio.sleep()`
+
+3. **Integration:**
+   - Update FastAPI lifespan to spawn Recorder as async task
+   - Implement graceful cancellation on shutdown
+   - Verify no blocking I/O in event loop
+
+**Benefits:**
+- Unified async architecture (no sync/async bridging)
+- Better performance (no thread overhead)
+- Cleaner code (no wrapper functions)
+- Easier debugging (single event loop)
+
+**Effort:** 1-2 days (Recorder refactoring + testing)
+
+**Risk:** Medium (timing-sensitive background loop refactoring)
+
+**Notes:** This completes the ARC9→ARC10→ARC11 async migration saga and delivers on the original SQLAlchemy async vision.
+
+---
 
 ### [UI] Advisor Overhaul
 
@@ -328,20 +442,6 @@ with sqlite3.connect(engine.db_path, timeout=30.0) as conn:  # Every request!
 
 ---
 
-
-
-### [Planner] Proactive PV Dump (Water Heating)
-
-**Goal:** Schedule water heating to `temp_max` proactively when PV surplus is forecasted.
-
-**Current State:** PV dump is only handled reactively via `excess_pv_heating` override in executor.
-
-**Proposed Change:** Kepler solver should anticipate forecasted PV surplus at SoC=100% and pre-schedule water heating.
-
-**Source:** Existing backlog item
-
----
-
 ### [Ops] Database Consolidation
 
 **Goal:** Merge SQLite databases from multiple environments into one unified dataset.
@@ -358,21 +458,7 @@ with sqlite3.connect(engine.db_path, timeout=30.0) as conn:  # Every request!
 
 ---
 
-### [UI] Hide Disabled Water Sensors
 
-**Goal:** Hide water power value in the power flow card when water heating is not enabled.
-
-**Notes:** Purely visual polish.
-
----
-
-### [UI] Mobile Chart Tooltip Readability
-
-**Goal:** Fix chart tooltips on mobile devices where they obscure data points or are too large.
-
-**Notes:** Usability fix for mobile users.
-
----
 
 ## ⏸️ On Hold
 
@@ -383,58 +469,6 @@ with sqlite3.connect(engine.db_path, timeout=30.0) as conn:  # Every request!
 **Status:** On Hold (prototype exists but parked for Kepler pivot).
 
 **Notes:** The current "Lab" tab was meant for this but needs complete redesign.
-
----
-
-## 🔜 Future Ideas
-
-### [Planner] Effekttariffer (Power Tariffs) (REVIEW-2026-01-04)
-
-**Goal:** Support Swedish "effekttariff" (peak demand charges) in the planner.
-
-**Concept:** Penalty for high grid import during certain hours. Planner needs to know about this to optimize import timing.
-
-**Design Considerations:**
-- Peak demand window detection (typically 16:00-20:00 on weekdays)
-- Monthly peak tracking
-- Penalty cost modeling in Kepler objective function
-- Config: `grid.peak_demand_tariff.enabled`, `grid.peak_demand_tariff.penalty_sek_per_kw`
-
-**Impact:** High complexity - affects Kepler solver constraints and requires new state tracking.
-
-**Effort:** 1-2 weeks (design + implement + test)
-
-**Notes:** Needs design brainstorm. Would affect Kepler solver constraints.
-
-**Source:** Existing backlog item + expanded by REVIEW-2026-01-04
-
----
-
-### [Planner] Smart EV Integration (REVIEW-2026-01-04)
-
-**Goal:** Prioritize home battery vs EV charging based on departure time.
-
-**Inputs Needed:**
-- EV departure time (user input or calendar integration)
-- EV target SoC
-- EV charger entity (Home Assistant switch/sensor)
-- EV battery capacity
-
-**Implementation:**
-- Add EV as second battery in Kepler MILP
-- Constraint: EV must reach target SoC by departure time
-- Policy: Prefer charging EV during cheap windows, home battery if surplus
-- UI: EV configuration tab, departure time scheduler
-
-**Complexity:** High (new subsystem, requires MILP solver changes)
-
-**ROI:** High for EV owners
-
-**Effort:** 2-3 weeks (design + implement + test)
-
-**Notes:** Big feature. Requires careful UX design.
-
-**Source:** Existing backlog item + expanded by REVIEW-2026-01-04
 
 ---
 

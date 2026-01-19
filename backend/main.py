@@ -38,6 +38,11 @@ from backend.core.websockets import ws_manager
 logger = logging.getLogger("darkstar.main")
 
 
+# Import inputs for config loading
+from backend.learning.store import LearningStore
+from inputs import load_yaml
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context manager for startup/shutdown events (FastAPI 0.93+)."""
@@ -127,10 +132,31 @@ async def lifespan(app: FastAPI):
 
     start_ha_socket_client()
 
+    # Initialize Async LearningStore (REV ARC10)
+    try:
+        config = load_yaml("config.yaml")
+        db_path = str(config.get("learning", {}).get("sqlite_path", "data/planner_learning.db"))
+        tz_name = str(config.get("timezone", "Europe/Stockholm"))
+        import pytz
+
+        store = LearningStore(db_path, pytz.timezone(tz_name))
+        app.state.learning_store = store
+        logger.info(f"✅ LearningStore initialized (Async) at {db_path}")
+    except Exception as e:
+        logger.error(f"❌ Failed to initialize LearningStore: {e}")
+        # We can't easily fail here without breaking the app, but partial functionality might work?
+        # For now, let's allow it but semantic routes will 500.
+        app.state.learning_store = None
+
     yield  # Server is running
 
     # Shutdown
     logger.info("👋 Darkstar ASGI Server Shutting Down...")
+
+    # Close LearningStore
+    if hasattr(app.state, "learning_store") and app.state.learning_store:
+        await app.state.learning_store.close()
+        logger.info("✅ LearningStore closed")
 
     # Stop executor
     if executor_instance:

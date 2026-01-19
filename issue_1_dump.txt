@@ -1,0 +1,52 @@
+title:	Some bugs/weird behaviour.
+state:	OPEN
+author:	gurkburk76
+labels:
+comments:	0
+assignees:	ergetie
+projects:
+milestone:
+number:	1
+--
+I have zero intresses in things like alarmo, water heater and vacation mode, if i comment these out in config and/or if there is a general option for this in the gui it should respect that and not pop up angry red messages in the gui :)
+
+Exempel:
+at startup i see this:
+
+````
+
+[2026-01-17 11:47:13] ==========================================
+[2026-01-17 11:47:13]   Darkstar Energy Manager v2.4.23-beta
+[2026-01-17 11:47:13] ==========================================
+[2026-01-17 11:47:13]   Timezone: Europe/Stockholm
+[2026-01-17 11:47:13]   Log Level: info
+[2026-01-17 11:47:13]   Price Area: SE4
+[2026-01-17 11:47:13]   Has Solar: true
+[2026-01-17 11:47:13]   Has Battery: true
+[2026-01-17 11:47:13]   Has Water Heater: true
+[2026-01-17 11:47:13]   HA Auth: Supervisor Token (auto)
+[2026-01-17 11:47:13]   Web UI: http://localhost:5000
+[2026-01-17 11:47:13] ==========================================
+
+in system i have this:
+system:
+  system_id: prod
+  inverter_profile: generic # Profile: generic | deye | fronius | victron
+  # System Profile Toggles (what hardware do you have?)
+  has_solar: true # Enable PV forecasting & solar-related features
+  has_battery: true # Enable battery control & grid arbitrage
+ has_water_heater: false             # <------ this should tell the system that i don't have a water heater and grey out/disable further warnings/errors
+
+Also, i've commented out / disabled things like alarmo, vvb, vacation mode.
+  vacation_mode:
+    enabled: false # Master switch (HA entity can override when ON) # <------ this should tell the system that i don't have a water heater and grey out/disable further warnings/errors
+    anti_legionella_temp_c: 65 # Target temperature for safety cycle
+    anti_legionella_interval_days: 7 # Run cycle every N days
+    anti_legionella_duration_hours: 3.0 # Duration at power_kw (e.g., 3h * 3kW = 9kWh)
+
+  #  alarm_state: alarm_control_panel.alarmo
+  #  vacation_mode: input_boolean.vacation_mode
+````
+Although there should be a "master" on/off for alarmo, this might not control it the way i thing it controls it.
+
+I have a solinteg inverter and still trying to figure out how stuff coorelates to the solarx integration that's used to actually tll the inverter what to do, like what value do i look for regarding sensor.grid_export_power ? But that's something else to figure out, not so much of a bug report.

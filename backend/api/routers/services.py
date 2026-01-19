@@ -8,9 +8,11 @@ from typing import Any, cast
 
 import httpx
 import pytz
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from backend.api.deps import get_learning_store
+from backend.learning.store import LearningStore
 from inputs import (
     async_get_ha_entity_state,
     async_get_ha_sensor_float,
@@ -455,12 +457,14 @@ async def get_energy_today() -> dict[str, float]:
     summary="Get Energy Range",
     description="Get energy range data (today, yesterday, week, month).",
 )
-async def get_energy_range(period: str = "today") -> dict[str, Any]:
+async def get_energy_range(
+    period: str = "today",
+    store: LearningStore = Depends(get_learning_store),
+) -> dict[str, Any]:
     """Get energy range data."""
     import pytz
     from sqlalchemy import func, select
 
-    from backend.learning import get_learning_engine
     from backend.learning.models import SlotObservation
 
     config = load_yaml("config.yaml")
@@ -474,10 +478,6 @@ async def get_energy_range(period: str = "today") -> dict[str, Any]:
 
     # All periods now query the database for financial metrics
     try:
-        engine = get_learning_engine()
-        if not hasattr(engine, "store"):
-            raise ValueError("Learning store not available")
-
         tz = pytz.timezone(config.get("timezone", "Europe/Stockholm"))
         now_local = datetime.now(tz)
         today_local = now_local.date()
@@ -510,50 +510,46 @@ async def get_energy_range(period: str = "today") -> dict[str, Any]:
         start_iso = day_start.isoformat()
         end_iso = day_end_excl.isoformat()
 
-        def fetch():
-            with engine.store.Session() as session:
-                stmt = select(
-                    func.sum(func.coalesce(SlotObservation.import_kwh, 0)),
-                    func.sum(func.coalesce(SlotObservation.export_kwh, 0)),
-                    func.sum(func.coalesce(SlotObservation.batt_charge_kwh, 0)),
-                    func.sum(func.coalesce(SlotObservation.batt_discharge_kwh, 0)),
-                    func.sum(func.coalesce(SlotObservation.water_kwh, 0)),
-                    func.sum(func.coalesce(SlotObservation.pv_kwh, 0)),
-                    func.sum(func.coalesce(SlotObservation.load_kwh, 0)),
-                    # Costs
-                    func.sum(
+        async with store.AsyncSession() as session:
+            stmt = select(
+                func.sum(func.coalesce(SlotObservation.import_kwh, 0)),
+                func.sum(func.coalesce(SlotObservation.export_kwh, 0)),
+                func.sum(func.coalesce(SlotObservation.batt_charge_kwh, 0)),
+                func.sum(func.coalesce(SlotObservation.batt_discharge_kwh, 0)),
+                func.sum(func.coalesce(SlotObservation.water_kwh, 0)),
+                func.sum(func.coalesce(SlotObservation.pv_kwh, 0)),
+                func.sum(func.coalesce(SlotObservation.load_kwh, 0)),
+                # Costs
+                func.sum(
+                    func.coalesce(SlotObservation.import_kwh, 0)
+                    * func.coalesce(SlotObservation.import_price_sek_kwh, 0)
+                ),
+                func.sum(
+                    func.coalesce(SlotObservation.export_kwh, 0)
+                    * func.coalesce(SlotObservation.export_price_sek_kwh, 0)
+                ),
+                # Grid Charge Cost
+                func.sum(
+                    func.max(
+                        0,
                         func.coalesce(SlotObservation.import_kwh, 0)
-                        * func.coalesce(SlotObservation.import_price_sek_kwh, 0)
-                    ),
-                    func.sum(
-                        func.coalesce(SlotObservation.export_kwh, 0)
-                        * func.coalesce(SlotObservation.export_price_sek_kwh, 0)
-                    ),
-                    # Grid Charge Cost
-                    func.sum(
-                        func.max(
-                            0,
-                            func.coalesce(SlotObservation.import_kwh, 0)
-                            - func.coalesce(SlotObservation.load_kwh, 0),
-                        )
-                        * func.coalesce(SlotObservation.import_price_sek_kwh, 0)
-                    ),
-                    # Self Consumption Savings
-                    func.sum(
-                        func.max(
-                            0,
-                            func.coalesce(SlotObservation.load_kwh, 0)
-                            - func.coalesce(SlotObservation.import_kwh, 0),
-                        )
-                        * func.coalesce(SlotObservation.import_price_sek_kwh, 0)
-                    ),
-                    func.count(),
-                ).where(
-                    SlotObservation.slot_start >= start_iso, SlotObservation.slot_start < end_iso
-                )
-                return session.execute(stmt).fetchone()
-
-        row = await asyncio.to_thread(fetch)
+                        - func.coalesce(SlotObservation.load_kwh, 0),
+                    )
+                    * func.coalesce(SlotObservation.import_price_sek_kwh, 0)
+                ),
+                # Self Consumption Savings
+                func.sum(
+                    func.max(
+                        0,
+                        func.coalesce(SlotObservation.load_kwh, 0)
+                        - func.coalesce(SlotObservation.import_kwh, 0),
+                    )
+                    * func.coalesce(SlotObservation.import_price_sek_kwh, 0)
+                ),
+                func.count(),
+            ).where(SlotObservation.slot_start >= start_iso, SlotObservation.slot_start < end_iso)
+            result = await session.execute(stmt)
+            row = result.fetchone()
 
         if not row:
             raise ValueError("No data returned")

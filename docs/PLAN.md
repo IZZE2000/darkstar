@@ -211,3 +211,50 @@ Currently, the charts can become cluttered when mixing planned and actual data. 
 #### Phase 2: Verification [DONE]
 * [x] **Test:** Run `pytest tests/test_schedule_history_overlay.py` (Passed).
 * [x] **Regression:** Run full suite (Passed).
+
+---
+
+### [COMPLETED] REV // ARC10 — True Async Database Upgrade (API Layer)
+
+**Goal:** Complete the transition to AsyncIO Database Architecture for the **API layer**, resolving the critical "Split-Brain" state between Sync Store and Async API routes.
+
+**Context:**
+Investigation revealed that `LearningStore` is currently **Synchronous** (Blocking), while API routes use raw `aiosqlite` hacks. This contradicts `ARCHITECTURE.md` and causes performance risks.
+
+**Scope Limitation:**
+This REV focuses on **API routes ONLY**. The background Recorder (`backend/learning/engine.py`) runs in a thread and will remain synchronous. It will be addressed in **REV ARC11** to avoid mixing threading and async complexity in a single revision.
+
+**Plan:**
+
+#### Phase 1: Core Async Upgrade [COMPLETED]
+* [x] **Add Dependency:** Add `aiosqlite` to `requirements.txt` (required for async SQLAlchemy with SQLite).
+* [x] **Refactor Engine:** Update `LearningStore.__init__` to use `sqlalchemy.ext.asyncio.create_async_engine` and `async_sessionmaker`.
+* [x] **Convert Methods:** Convert all public methods in `LearningStore` to `async def` with `async with self.AsyncSession()` context manager pattern.
+* [x] **Engine Disposal:** Add `async def close()` method to dispose engine, call in FastAPI lifespan shutdown.
+
+#### Phase 2: API Route Migration [COMPLETED]
+* [x] **Dependency Injection:** Update `backend/main.py` to initialize `LearningStore` in lifespan and add `get_learning_store` dependency.
+* [x] **Refactor Schedule Router:** Rewrite `backend/api/routers/schedule.py` (`schedule_today_with_history`) to use `await store.get_history_range_async(...)`.
+* [x] **Refactor Services Router:** Rewrite `backend/api/routers/services.py` (`get_energy_range`) to use `await store.AsyncSession`.
+
+#### Phase 3: Cleanup & Verification [COMPLETED]
+* [x] **Verify Sync:** Ensure `Recorder` (sync) still works via legacy methods in `LearningStore` (Dual-mode).
+* [x] **Verify Async:** Run tests `test_schedule_history_overlay.py`.
+* [x] **Lint:** Run `ruff` to ensure clean code.
+
+#### Phase 4: Documentation & Future Work [COMPLETED]
+* [x] **Document Scope:** Add comment in `backend/learning/engine.py` explaining Recorder remains sync, referencing REV ARC11.
+* [x] **Plan ARC11:** Create ARC11 placeholder in `PLAN.md` for background service async migration.
+* [x] **Update ARCHITECTURE.md:** Document the hybrid approach (async API, sync background services) and rationale.
+
+---
+
+### [BACKLOG] REV // ARC11 — Async Background Services (Full Migration)
+
+**Goal:** Complete the migration to full AsyncIO by refactoring the Recorder and Planner Service to use async database methods, eliminating the "Dual-Mode" hybrid state.
+
+**Plan:**
+*   Refactor `Recorder` (`backend/recorder.py`) to use `async/await`.
+*   Refactor `LearningEngine` (`backend/learning/engine.py`) to use `AsyncSession`.
+*   Remove synchronous `Session` and `create_engine` from `LearningStore`.
+*   Update `docs/ARCHITECTURE.md` to reflect unified AsyncIO architecture.

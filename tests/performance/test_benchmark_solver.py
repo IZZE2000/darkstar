@@ -1,6 +1,9 @@
 import logging
+import sys
 from datetime import datetime, timedelta
+from pathlib import Path
 
+sys.path.append(str(Path.cwd()))
 from planner.solver.kepler import KeplerSolver
 from planner.solver.types import KeplerConfig, KeplerInput, KeplerInputSlot
 

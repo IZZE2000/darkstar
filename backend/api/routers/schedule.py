@@ -6,7 +6,10 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytz
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+
+from backend.api.deps import get_learning_store
+from backend.learning.store import LearningStore
 
 # Local imports (using absolute paths relative to project root)
 from inputs import get_nordpool_data, load_yaml
@@ -133,9 +136,10 @@ async def get_schedule() -> dict[str, Any]:
     summary="Get Today's Schedule & History",
     description="Returns a merged view of the planned schedule and actual execution history for the current day.",
 )
-async def schedule_today_with_history() -> dict[str, Any]:
+async def schedule_today_with_history(
+    store: LearningStore = Depends(get_learning_store),
+) -> dict[str, Any]:
     """Merged view of today's schedule and execution history."""
-    import aiosqlite
 
     try:
         config = load_yaml("config.yaml")
@@ -171,156 +175,113 @@ async def schedule_today_with_history() -> dict[str, Any]:
     except Exception:
         pass
 
-    # 2. Load History (aiosqlite)
+    # 2. Load History (LearningStore Async)
     exec_map: dict[datetime, dict[str, Any]] = {}
     try:
-        db_path_str = str(config.get("learning", {}).get("sqlite_path", "data/planner_learning.db"))
-        db_path = Path(db_path_str)
-        if db_path.exists():
-            async with aiosqlite.connect(str(db_path)) as conn:
-                conn.row_factory = aiosqlite.Row
+        # Query window: Today start to Now
+        today_start = tz.localize(datetime.combine(today_local, datetime.min.time()))
+        now_dt = datetime.now(tz)
 
-                # Query window: Today start to Now
-                today_start = tz.localize(datetime.combine(today_local, datetime.min.time()))
-                now_dt = datetime.now(tz)
+        rows = await store.get_history_range_async(today_start, now_dt)
 
-                query = """
-                    SELECT
-                        slot_start, slot_end,
-                        batt_charge_kwh, batt_discharge_kwh, soc_end_percent, water_kwh,
-                        import_kwh, export_kwh,
-                        import_price_sek_kwh
-                    FROM slot_observations
-                    WHERE slot_start >= ? AND slot_start < ?
-                    ORDER BY slot_start ASC
-                """
-                async with conn.execute(
-                    query, (today_start.isoformat(), now_dt.isoformat())
-                ) as cursor:
-                    async for row in cursor:
-                        try:
-                            # Parse Timestamp
-                            s_start = datetime.fromisoformat(str(row["slot_start"]))
-                            s_end = datetime.fromisoformat(str(row["slot_end"]))
+        for row in rows:
+            try:
+                # Parse Timestamp
+                # row is a dict now
+                s_start = datetime.fromisoformat(str(row["slot_start"]))
+                s_end = datetime.fromisoformat(str(row["slot_end"]))
 
-                            # Normalize key
-                            local_start = s_start if s_start.tzinfo else tz.localize(s_start)
-                            local_end = s_end if s_end.tzinfo else tz.localize(s_end)
-                            key = local_start.astimezone(tz).replace(tzinfo=None)
+                # Normalize key
+                local_start = s_start if s_start.tzinfo else tz.localize(s_start)
+                local_end = s_end if s_end.tzinfo else tz.localize(s_end)
+                key = local_start.astimezone(tz).replace(tzinfo=None)
 
-                            # Calculate Duration (hours)
-                            duration_hours = (local_end - local_start).total_seconds() / 3600.0
-                            if duration_hours <= 0:
-                                duration_hours = 0.25  # Fallback 15 mins
+                # Calculate Duration (hours)
+                duration_hours = (local_end - local_start).total_seconds() / 3600.0
+                if duration_hours <= 0:
+                    duration_hours = 0.25  # Fallback 15 mins
 
-                            # Kw calculation: kWh / hours = kW
-                            # water_kwh -> water_heating_kw
-                            water_kw = float(row["water_kwh"] or 0.0) / duration_hours
+                # Kw calculation: kWh / hours = kW
+                # water_kwh -> water_heating_kw
+                water_kw = float(row["water_kwh"] or 0.0) / duration_hours
 
-                            # batt_charge_kwh -> actual_charge_kw
-                            charge_kwh = float(row["batt_charge_kwh"] or 0.0)
-                            charge_kw = charge_kwh / duration_hours
+                # batt_charge_kwh -> actual_charge_kw
+                charge_kwh = float(row["batt_charge_kwh"] or 0.0)
+                charge_kw = charge_kwh / duration_hours
 
-                            # batt_discharge_kwh -> actual_discharge_kw (for export/discharge slots)
-                            discharge_kwh = float(row["batt_discharge_kwh"] or 0.0)
-                            discharge_kw = discharge_kwh / duration_hours
+                # batt_discharge_kwh -> actual_discharge_kw (for export/discharge slots)
+                discharge_kwh = float(row["batt_discharge_kwh"] or 0.0)
+                discharge_kw = discharge_kwh / duration_hours
 
-                            # export_kwh for display
-                            export_kwh = float(row["export_kwh"] or 0.0)
+                # export_kwh for display
+                export_kwh = float(row["export_kwh"] or 0.0)
 
-                            exec_map[key] = {
-                                "actual_charge_kw": round(charge_kw, 3),
-                                "actual_discharge_kw": round(discharge_kw, 3),
-                                "actual_export_kwh": round(export_kwh, 3),
-                                "actual_soc": float(row["soc_end_percent"] or 0.0),
-                                "water_heating_kw": round(water_kw, 3),
-                                "import_price_sek_kwh": float(row["import_price_sek_kwh"] or 0.0),
-                            }
-                        except Exception:
-                            continue
+                exec_map[key] = {
+                    "actual_charge_kw": round(charge_kw, 3),
+                    "actual_discharge_kw": round(discharge_kw, 3),
+                    "actual_export_kwh": round(export_kwh, 3),
+                    "actual_soc": float(row["soc_end_percent"] or 0.0),
+                    "water_heating_kw": round(water_kw, 3),
+                    "import_price_sek_kwh": float(row["import_price_sek_kwh"] or 0.0),
+                }
+            except Exception:
+                continue
 
     except Exception as e:
         logger.warning(f"Failed to load History: {e}")
 
-    # 3. Forecast Map (aiosqlite)
+    # 3. Forecast Map (LearningStore Async)
     forecast_map: dict[datetime, dict[str, float]] = {}
     try:
-        db_path_str = str(config.get("learning", {}).get("sqlite_path", "data/planner_learning.db"))
-        db_path = Path(db_path_str)
         active_version = str(config.get("forecasting", {}).get("active_forecast_version", "aurora"))
-        if db_path.exists():
-            async with aiosqlite.connect(str(db_path)) as conn:
-                conn.row_factory = aiosqlite.Row
-                today_iso = tz.localize(
-                    datetime.combine(today_local, datetime.min.time())
-                ).isoformat()
-                async with conn.execute(
-                    "SELECT slot_start, pv_forecast_kwh, load_forecast_kwh FROM slot_forecasts WHERE slot_start >= ? AND forecast_version = ?",
-                    (today_iso, active_version),
-                ) as cursor:
-                    async for row in cursor:
-                        try:
-                            st = datetime.fromisoformat(str(row["slot_start"]))
-                            st_local = st if st.tzinfo else tz.localize(st)
-                            forecast_map[st_local.astimezone(tz).replace(tzinfo=None)] = {
-                                "pv_forecast_kwh": float(row["pv_forecast_kwh"] or 0),
-                                "load_forecast_kwh": float(row["load_forecast_kwh"] or 0),
-                            }
-                        except Exception:
-                            pass
+        today_start_dt = tz.localize(datetime.combine(today_local, datetime.min.time()))
+
+        rows = await store.get_forecasts_range_async(today_start_dt, active_version)
+
+        for row in rows:
+            try:
+                st = datetime.fromisoformat(str(row["slot_start"]))
+                st_local = st if st.tzinfo else tz.localize(st)
+                forecast_map[st_local.astimezone(tz).replace(tzinfo=None)] = {
+                    "pv_forecast_kwh": float(row["pv_forecast_kwh"] or 0),
+                    "load_forecast_kwh": float(row["load_forecast_kwh"] or 0),
+                }
+            except Exception:
+                pass
         logger.info(
             f"Loaded {len(forecast_map)} forecast slots for {today_local} (ver={active_version})"
         )
     except Exception as e:
         logger.warning(f"Failed to load forecast map: {e}")
 
-    # 4. Planned Actions Map (slot_plans table)
+    # 4. Planned Actions Map (LearningStore Async)
     planned_map: dict[datetime, dict[str, float]] = {}
     try:
-        db_path_str = str(config.get("learning", {}).get("sqlite_path", "data/planner_learning.db"))
-        db_path = Path(db_path_str)
-        if db_path.exists():
-            async with aiosqlite.connect(str(db_path)) as conn:
-                conn.row_factory = aiosqlite.Row
-                today_iso = tz.localize(
-                    datetime.combine(today_local, datetime.min.time())
-                ).isoformat()
+        today_start_dt = tz.localize(datetime.combine(today_local, datetime.min.time()))
 
-                query = """
-                    SELECT
-                        slot_start,
-                        planned_charge_kwh,
-                        planned_discharge_kwh,
-                        planned_soc_percent,
-                        planned_export_kwh,
-                        planned_water_heating_kwh
-                    FROM slot_plans
-                    WHERE slot_start >= ?
-                    ORDER BY slot_start ASC
-                """
+        # Use new method
+        rows = await store.get_plans_range_async(today_start_dt)
 
-                async with conn.execute(query, (today_iso,)) as cursor:
-                    async for row in cursor:
-                        try:
-                            st = datetime.fromisoformat(str(row["slot_start"]))
-                            st_local = st if st.tzinfo else tz.localize(st)
-                            key = st_local.astimezone(tz).replace(tzinfo=None)
+        for row in rows:
+            try:
+                st = datetime.fromisoformat(str(row["slot_start"]))
+                st_local = st if st.tzinfo else tz.localize(st)
+                key = st_local.astimezone(tz).replace(tzinfo=None)
 
-                            # Convert kWh to kW (slot_plans stores kWh, frontend expects kW)
-                            duration_hours = 0.25  # 15-min slots
+                # Convert kWh to kW (slot_plans stores kWh, frontend expects kW)
+                duration_hours = 0.25  # 15-min slots
 
-                            planned_map[key] = {
-                                "battery_charge_kw": float(row["planned_charge_kwh"] or 0.0)
-                                / duration_hours,
-                                "battery_discharge_kw": float(row["planned_discharge_kwh"] or 0.0)
-                                / duration_hours,
-                                "soc_target_percent": float(row["planned_soc_percent"] or 0.0),
-                                "export_kwh": float(row["planned_export_kwh"] or 0.0),
-                                "water_heating_kw": float(row["planned_water_heating_kwh"] or 0.0)
-                                / duration_hours,
-                            }
-                        except Exception:
-                            continue
+                planned_map[key] = {
+                    "battery_charge_kw": float(row["planned_charge_kwh"] or 0.0) / duration_hours,
+                    "battery_discharge_kw": float(row["planned_discharge_kwh"] or 0.0)
+                    / duration_hours,
+                    "soc_target_percent": float(row["planned_soc_percent"] or 0.0),
+                    "export_kwh": float(row["planned_export_kwh"] or 0.0),
+                    "water_heating_kw": float(row["planned_water_heating_kwh"] or 0.0)
+                    / duration_hours,
+                }
+            except Exception:
+                continue
 
         logger.info(f"Loaded {len(planned_map)} planned slots for {today_local}")
     except Exception as e:

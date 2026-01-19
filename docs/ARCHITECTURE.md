@@ -452,9 +452,15 @@ To ensure compatibility with Home Assistant Ingress (which exposes the add-on un
 
 ---
 
-### 9.2 Database Abstraction (Rev ARC9)
+### 9.2 Database Abstraction (Rev ARC9 & ARC10)
 
-To ensure type safety and schema stability, the backend uses **SQLAlchemy 2.0+** (AsyncIO) for all database interactions, replacing raw SQL/aiosqlite.
+To ensure type safety and schema stability, the backend uses **SQLAlchemy 2.0+** for all database interactions.
+
+**Hybrid Architecture (Rev ARC10):**
+The database layer (`LearningStore`) currently operates in a **Hybrid Mode** to support legacy components:
+*   **AsyncIO (Production):** All API routes (`api/routers/`) use `aiosqlite` + `AsyncSession` for high-performance, non-blocking DB access.
+*   **Sync (Legacy):** The Background Recorder (`recorder.py`) runs in a dedicated thread and uses blocking `Session` calls.
+*   **Goal:** Full Async migration of background services is scheduled for **REV ARC11**.
 
 **Key Components:**
 - **ORM Models**: Defined in `backend/learning/models.py`.
