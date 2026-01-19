@@ -18,14 +18,16 @@ def memory_db_path(tmp_path):
 
 
 @pytest.fixture
-def store(memory_db_path):
+async def store(memory_db_path):
     store = LearningStore(memory_db_path, TZ)
-    # Manually create schema for tests
-    Base.metadata.create_all(store.engine)
+    # Manually create schema for tests using async engine
+    async with store.async_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
     return store
 
 
-def test_store_plan_mappings(store, memory_db_path):
+@pytest.mark.asyncio
+async def test_store_plan_mappings(store, memory_db_path):
     """
     Verify that store_plan correctly maps:
     - soc_target_percent -> planned_soc_percent
@@ -54,7 +56,7 @@ def test_store_plan_mappings(store, memory_db_path):
     df = pd.DataFrame(slots)
 
     # 2. Store the plan
-    store.store_plan(df)
+    await store.store_plan(df)
 
     # 3. Verify DB contents using sqlite3 (sync)
     with sqlite3.connect(memory_db_path) as conn:

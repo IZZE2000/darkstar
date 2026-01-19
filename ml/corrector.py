@@ -282,7 +282,7 @@ def _clamp_correction(base: float, raw_correction: float) -> float:
     return float(max(-max_abs, min(max_abs, raw)))
 
 
-def predict_corrections(
+async def predict_corrections(
     horizon_hours: int = 48,
     forecast_version: str = "aurora",
     models_dir: str = "ml/models",
@@ -316,7 +316,7 @@ def predict_corrections(
     # Fetch base forecasts for the horizon window
     from ml.api import get_forecast_slots
 
-    base_records = get_forecast_slots(slot_start, horizon_end, forecast_version)
+    base_records = await get_forecast_slots(slot_start, horizon_end, forecast_version)
     if not base_records:
         return [], "none"
 

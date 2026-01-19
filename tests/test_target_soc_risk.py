@@ -8,6 +8,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 import pandas as pd
+import pytest
 import pytz
 
 from planner.strategy.s_index import (
@@ -56,7 +57,8 @@ def build_test_df(
     return pd.DataFrame(slots, index=index)
 
 
-def test_target_soc_risk_appetite_affects_result():
+@pytest.mark.asyncio
+async def test_target_soc_risk_appetite_affects_result():
     """Different risk_appetite values should produce different target SOCs."""
     df = build_test_df(load_kwh=30.0, pv_kwh=5.0)  # High deficit
 
@@ -71,7 +73,7 @@ def test_target_soc_risk_appetite_affects_result():
     results = {}
     for appetite in [1, 3, 5]:
         cfg = {**base_cfg, "risk_appetite": appetite}
-        factor, _debug = calculate_target_soc_risk_factor(df, cfg, "Europe/Stockholm")
+        factor, _debug = await calculate_target_soc_risk_factor(df, cfg, "Europe/Stockholm")
         results[appetite] = factor
 
     # Safety (1) should have highest factor (most buffer)
@@ -80,7 +82,8 @@ def test_target_soc_risk_appetite_affects_result():
     assert results[3] > results[5], f"Neutral ({results[3]}) should > Gambler ({results[5]})"
 
 
-def test_target_soc_pv_deficit_increases_buffer():
+@pytest.mark.asyncio
+async def test_target_soc_pv_deficit_increases_buffer():
     """Low PV vs high load should increase risk factor (more buffer)."""
     base_cfg = {
         "base_factor": 1.1,
@@ -93,13 +96,13 @@ def test_target_soc_pv_deficit_increases_buffer():
 
     # High deficit: load >> PV
     df_deficit = build_test_df(load_kwh=30.0, pv_kwh=2.0)
-    factor_deficit, _debug_deficit = calculate_target_soc_risk_factor(
+    factor_deficit, _debug_deficit = await calculate_target_soc_risk_factor(
         df_deficit, base_cfg, "Europe/Stockholm"
     )
 
     # Low deficit: PV covers most of load
     df_surplus = build_test_df(load_kwh=30.0, pv_kwh=25.0)
-    factor_surplus, _debug_surplus = calculate_target_soc_risk_factor(
+    factor_surplus, _debug_surplus = await calculate_target_soc_risk_factor(
         df_surplus, base_cfg, "Europe/Stockholm"
     )
 
@@ -108,7 +111,8 @@ def test_target_soc_pv_deficit_increases_buffer():
     )
 
 
-def test_target_soc_gambler_can_go_below_baseline():
+@pytest.mark.asyncio
+async def test_target_soc_gambler_can_go_below_baseline():
     """risk_appetite=5 with PV surplus should allow factor below base_factor."""
     cfg = {
         "base_factor": 1.1,
@@ -121,7 +125,7 @@ def test_target_soc_gambler_can_go_below_baseline():
 
     # PV surplus: more PV than load
     df = build_test_df(load_kwh=20.0, pv_kwh=30.0)
-    factor, _debug = calculate_target_soc_risk_factor(df, cfg, "Europe/Stockholm")
+    factor, _debug = await calculate_target_soc_risk_factor(df, cfg, "Europe/Stockholm")
 
     # With surplus and gambler mode, factor can drop below base_factor
     # The sigma adjustment should push it down
@@ -130,7 +134,8 @@ def test_target_soc_gambler_can_go_below_baseline():
     )
 
 
-def test_target_soc_respects_min_factor():
+@pytest.mark.asyncio
+async def test_target_soc_respects_min_factor():
     """Factor should never go below min_factor even in extreme gambler mode."""
     cfg = {
         "base_factor": 1.1,
@@ -143,14 +148,15 @@ def test_target_soc_respects_min_factor():
 
     # Extreme PV surplus
     df = build_test_df(load_kwh=10.0, pv_kwh=50.0)
-    factor, _debug = calculate_target_soc_risk_factor(df, cfg, "Europe/Stockholm")
+    factor, _debug = await calculate_target_soc_risk_factor(df, cfg, "Europe/Stockholm")
 
     assert factor >= cfg["min_factor"], (
         f"Factor ({factor}) should respect min_factor ({cfg['min_factor']})"
     )
 
 
-def test_target_soc_respects_max_factor():
+@pytest.mark.asyncio
+async def test_target_soc_respects_max_factor():
     """Factor should never exceed max_factor even in extreme safety mode."""
     cfg = {
         "base_factor": 1.2,
@@ -167,10 +173,10 @@ def test_target_soc_respects_max_factor():
     df = build_test_df(load_kwh=50.0, pv_kwh=1.0)
 
     # Mock cold temperature
-    def cold_temps(days, tz):
+    async def cold_temps(days, tz):
         return {1: -5.0, 2: -8.0}
 
-    factor, _debug = calculate_target_soc_risk_factor(df, cfg, "Europe/Stockholm", cold_temps)
+    factor, _debug = await calculate_target_soc_risk_factor(df, cfg, "Europe/Stockholm", cold_temps)
 
     assert factor <= cfg["max_factor"], (
         f"Factor ({factor}) should not exceed max_factor ({cfg['max_factor']})"

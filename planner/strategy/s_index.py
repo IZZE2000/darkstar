@@ -17,14 +17,14 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 
-def calculate_dynamic_s_index(
+async def calculate_dynamic_s_index(
     df: pd.DataFrame,
     s_index_cfg: dict[str, Any],
     max_factor: float,
     timezone_name: str,
     daily_pv_forecast: dict[str, float] | None = None,
     daily_load_forecast: dict[str, float] | None = None,
-    fetch_temperature_fn: Callable[[list[int], Any], dict[int, float]] | None = None,
+    fetch_temperature_fn: Callable[[list[int], Any], Any] | None = None,
 ) -> tuple[float | None, dict[str, Any], dict[int, float]]:
     """
     Compute dynamic S-index factor based on PV/load deficit and temperature.
@@ -118,7 +118,7 @@ def calculate_dynamic_s_index(
     mean_temp = None
     temp_adjustment = 0.0
     if temp_weight > 0 and fetch_temperature_fn is not None:
-        temps_map = fetch_temperature_fn(considered_days, tz)
+        temps_map = await fetch_temperature_fn(considered_days, tz)
         temperature_values = [
             temps_map.get(offset) for offset in considered_days if temps_map.get(offset) is not None
         ]
@@ -300,13 +300,13 @@ def calculate_probabilistic_s_index(
     return factor, debug_data
 
 
-def calculate_target_soc_risk_factor(
+async def calculate_target_soc_risk_factor(
     df: pd.DataFrame,
     s_index_cfg: dict[str, Any],
     timezone_name: str,
     daily_pv_forecast: dict[str, float] | None = None,
     daily_load_forecast: dict[str, float] | None = None,
-    fetch_temperature_fn: Callable[[list[int], Any], dict[int, float]] | None = None,
+    fetch_temperature_fn: Callable[[list[int], Any], Any] | None = None,
 ) -> tuple[float, dict[str, Any]]:
     """
     Calculate risk factor for end-of-day target SOC.
@@ -422,7 +422,7 @@ def calculate_target_soc_risk_factor(
     # Temperature adjustment (same as before, but only additive)
     temps_map: dict[int, float] = {}
     if fetch_temperature_fn is not None:
-        temps_map = fetch_temperature_fn([1, 2], tz)
+        temps_map = await fetch_temperature_fn([1, 2], tz)
 
     d1_temp = temps_map.get(1)
     d2_temp = temps_map.get(2)
@@ -534,13 +534,13 @@ def calculate_target_soc_risk_factor(
 
 
 # Keep old function as alias for backwards compatibility
-def calculate_future_risk_factor(
+async def calculate_future_risk_factor(
     df: pd.DataFrame,
     s_index_cfg: dict[str, Any],
     timezone_name: str,
     daily_pv_forecast: dict[str, float] | None = None,
     daily_load_forecast: dict[str, float] | None = None,
-    fetch_temperature_fn: Callable[[list[int], Any], dict[int, float]] | None = None,
+    fetch_temperature_fn: Callable[[list[int], Any], Any] | None = None,
 ) -> tuple[float, dict[str, Any]]:
     """
     DEPRECATED: Use calculate_target_soc_risk_factor instead.
@@ -548,7 +548,7 @@ def calculate_future_risk_factor(
     This function is kept for backwards compatibility but now delegates
     to the new function that properly incorporates risk_appetite and PV deficit.
     """
-    return calculate_target_soc_risk_factor(
+    return await calculate_target_soc_risk_factor(
         df,
         s_index_cfg,
         timezone_name,

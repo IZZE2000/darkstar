@@ -7,9 +7,12 @@ based on historical data.
 
 import contextlib
 import sqlite3
+import sys
 import tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
+
+sys.path.append(str(Path(__file__).parent.parent))
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -32,7 +35,7 @@ from backend.learning.store import LearningStore
 
 
 @pytest.fixture
-def temp_db():
+async def temp_db():
     """Create a temporary SQLite database for testing."""
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
         db_path = f.name
@@ -40,8 +43,9 @@ def temp_db():
     tz = pytz.timezone("Europe/Stockholm")
     store = LearningStore(db_path, tz)
 
-    # Create schema
-    Base.metadata.create_all(store.engine)
+    # Create schema using async engine
+    async with store.async_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
 
     yield db_path, store, tz
 
@@ -66,14 +70,16 @@ def mock_config():
 class TestLowSocEventsQuery:
     """Test the get_low_soc_events query method."""
 
-    def test_no_events_returns_empty(self, temp_db):
+    @pytest.mark.asyncio
+    async def test_no_events_returns_empty(self, temp_db):
         """When no low-SoC events exist, return empty list."""
         _db_path, store, _tz = temp_db
 
-        events = store.get_low_soc_events(days_back=30)
+        events = await store.get_low_soc_events(days_back=30)
         assert events == []
 
-    def test_finds_low_soc_during_peak(self, temp_db):
+    @pytest.mark.asyncio
+    async def test_finds_low_soc_during_peak(self, temp_db):
         """Find events where SoC < threshold during peak hours."""
         db_path, store, tz = temp_db
 
@@ -91,7 +97,7 @@ class TestLowSocEventsQuery:
             )
             conn.commit()
 
-        events = store.get_low_soc_events(
+        events = await store.get_low_soc_events(
             days_back=30,
             threshold_percent=SAFETY_LOW_SOC_THRESHOLD,
             peak_hours=SAFETY_PEAK_HOURS,
@@ -100,7 +106,8 @@ class TestLowSocEventsQuery:
         assert len(events) == 1
         assert events[0]["soc_end_percent"] == 3.5
 
-    def test_ignores_low_soc_outside_peak(self, temp_db):
+    @pytest.mark.asyncio
+    async def test_ignores_low_soc_outside_peak(self, temp_db):
         """Low SoC outside peak hours should not be counted."""
         db_path, store, tz = temp_db
 
@@ -121,7 +128,7 @@ class TestLowSocEventsQuery:
             )
             conn.commit()
 
-        events = store.get_low_soc_events(
+        events = await store.get_low_soc_events(
             days_back=30,
             threshold_percent=SAFETY_LOW_SOC_THRESHOLD,
             peak_hours=SAFETY_PEAK_HOURS,
@@ -129,7 +136,8 @@ class TestLowSocEventsQuery:
 
         assert len(events) == 0
 
-    def test_ignores_soc_above_threshold(self, temp_db):
+    @pytest.mark.asyncio
+    async def test_ignores_soc_above_threshold(self, temp_db):
         """SoC above threshold should not be counted."""
         db_path, store, tz = temp_db
 
@@ -146,7 +154,7 @@ class TestLowSocEventsQuery:
             )
             conn.commit()
 
-        events = store.get_low_soc_events(
+        events = await store.get_low_soc_events(
             days_back=30,
             threshold_percent=SAFETY_LOW_SOC_THRESHOLD,
             peak_hours=SAFETY_PEAK_HOURS,
@@ -158,32 +166,35 @@ class TestLowSocEventsQuery:
 class TestReflexState:
     """Test the reflex_state rate limiting functionality."""
 
-    def test_get_reflex_state_none_when_new(self, temp_db):
+    @pytest.mark.asyncio
+    async def test_get_reflex_state_none_when_new(self, temp_db):
         """New parameters should return None."""
         _db_path, store, _tz = temp_db
 
-        state = store.get_reflex_state("s_index.base_factor")
+        state = await store.get_reflex_state("s_index.base_factor")
         assert state is None
 
-    def test_update_and_get_reflex_state(self, temp_db):
+    @pytest.mark.asyncio
+    async def test_update_and_get_reflex_state(self, temp_db):
         """Can store and retrieve reflex state."""
         _db_path, store, _tz = temp_db
 
-        store.update_reflex_state("s_index.base_factor", 1.12)
+        await store.update_reflex_state("s_index.base_factor", 1.12)
 
-        state = store.get_reflex_state("s_index.base_factor")
+        state = await store.get_reflex_state("s_index.base_factor")
         assert state is not None
         assert state["last_value"] == 1.12
         assert state["change_count"] == 1
 
-    def test_change_count_increments(self, temp_db):
+    @pytest.mark.asyncio
+    async def test_change_count_increments(self, temp_db):
         """Multiple updates should increment change_count."""
         _db_path, store, _tz = temp_db
 
-        store.update_reflex_state("s_index.base_factor", 1.12)
-        store.update_reflex_state("s_index.base_factor", 1.14)
+        await store.update_reflex_state("s_index.base_factor", 1.12)
+        await store.update_reflex_state("s_index.base_factor", 1.14)
 
-        state = store.get_reflex_state("s_index.base_factor")
+        state = await store.get_reflex_state("s_index.base_factor")
         assert state["change_count"] == 2
         assert state["last_value"] == 1.14
 
@@ -191,7 +202,8 @@ class TestReflexState:
 class TestAnalyzeSafety:
     """Test the analyze_safety analyzer logic."""
 
-    def test_some_events_in_60d_is_stable(self, temp_db, mock_config):
+    @pytest.mark.asyncio
+    async def test_some_events_in_60d_is_stable(self, temp_db, mock_config):
         """With 1-2 events in 30 days, should report stable (not enough to increase)."""
         db_path, store, tz = temp_db
 
@@ -218,12 +230,13 @@ class TestAnalyzeSafety:
             reflex.timezone = tz
             reflex.learning_engine = MagicMock()
 
-            updates, msg = reflex.analyze_safety()
+            updates, msg = await reflex.analyze_safety()
 
             assert updates == {}
             assert "Stable" in msg or "2 events" in msg
 
-    def test_many_events_increases_base_factor(self, temp_db, mock_config):
+    @pytest.mark.asyncio
+    async def test_many_events_increases_base_factor(self, temp_db, mock_config):
         """With 3+ events in 30 days, should propose increase."""
         db_path, store, tz = temp_db
 
@@ -250,14 +263,15 @@ class TestAnalyzeSafety:
             reflex.timezone = tz
             reflex.learning_engine = MagicMock()
 
-            updates, _msg = reflex.analyze_safety()
+            updates, _msg = await reflex.analyze_safety()
 
             assert "s_index.base_factor" in updates
             new_value = updates["s_index.base_factor"]
             # Should increase by max_change (0.02) from 1.1 to 1.12
             assert new_value == 1.12
 
-    def test_no_events_60d_relaxes_base_factor(self, temp_db, mock_config):
+    @pytest.mark.asyncio
+    async def test_no_events_60d_relaxes_base_factor(self, temp_db, mock_config):
         """With no events in 60 days, should propose decrease."""
         _db_path, store, tz = temp_db
 
@@ -270,19 +284,20 @@ class TestAnalyzeSafety:
             reflex.timezone = tz
             reflex.learning_engine = MagicMock()
 
-            updates, _msg = reflex.analyze_safety()
+            updates, _msg = await reflex.analyze_safety()
 
             assert "s_index.base_factor" in updates
             new_value = updates["s_index.base_factor"]
             # Should decrease by 0.01 (half of max_change) from 1.1 to 1.09
             assert new_value == 1.09
 
-    def test_rate_limit_blocks_same_day_change(self, temp_db, mock_config):
+    @pytest.mark.asyncio
+    async def test_rate_limit_blocks_same_day_change(self, temp_db, mock_config):
         """Cannot change parameter twice on the same day."""
         _db_path, store, tz = temp_db
 
         # Simulate a change made today
-        store.update_reflex_state("s_index.base_factor", 1.12)
+        await store.update_reflex_state("s_index.base_factor", 1.12)
 
         with patch.object(AuroraReflex, "__init__", lambda self, path: None):
             reflex = AuroraReflex.__new__(AuroraReflex)
@@ -291,12 +306,13 @@ class TestAnalyzeSafety:
             reflex.timezone = tz
             reflex.learning_engine = MagicMock()
 
-            updates, msg = reflex.analyze_safety()
+            updates, msg = await reflex.analyze_safety()
 
             assert updates == {}
             assert "Rate limited" in msg
 
-    def test_respects_max_bound(self, temp_db, mock_config):
+    @pytest.mark.asyncio
+    async def test_respects_max_bound(self, temp_db, mock_config):
         """Should not exceed maximum bound."""
         db_path, store, tz = temp_db
 
@@ -326,13 +342,14 @@ class TestAnalyzeSafety:
             reflex.timezone = tz
             reflex.learning_engine = MagicMock()
 
-            updates, msg = reflex.analyze_safety()
+            updates, msg = await reflex.analyze_safety()
 
             # Should not propose change since already at max
             assert updates == {}
             assert "at max" in msg
 
-    def test_respects_min_bound(self, temp_db, mock_config):
+    @pytest.mark.asyncio
+    async def test_respects_min_bound(self, temp_db, mock_config):
         """Should not go below minimum bound."""
         _db_path, store, tz = temp_db
 
@@ -346,7 +363,7 @@ class TestAnalyzeSafety:
             reflex.timezone = tz
             reflex.learning_engine = MagicMock()
 
-            updates, msg = reflex.analyze_safety()
+            updates, msg = await reflex.analyze_safety()
 
             # Should not propose decrease since already at min
             assert updates == {}
@@ -356,14 +373,16 @@ class TestAnalyzeSafety:
 class TestForecastVsActualQuery:
     """Test the get_forecast_vs_actual query method."""
 
-    def test_no_data_returns_empty_df(self, temp_db):
+    @pytest.mark.asyncio
+    async def test_no_data_returns_empty_df(self, temp_db):
         """When no forecast data exists, return empty DataFrame."""
         _db_path, store, _tz = temp_db
 
-        df = store.get_forecast_vs_actual(days_back=14, target="pv")
+        df = await store.get_forecast_vs_actual(days_back=14, target="pv")
         assert len(df) == 0
 
-    def test_returns_matched_data(self, temp_db):
+    @pytest.mark.asyncio
+    async def test_returns_matched_data(self, temp_db):
         """Should return matched forecast and observation data."""
         db_path, store, tz = temp_db
 
@@ -389,7 +408,7 @@ class TestForecastVsActualQuery:
             )
             conn.commit()
 
-        df = store.get_forecast_vs_actual(days_back=14, target="pv")
+        df = await store.get_forecast_vs_actual(days_back=14, target="pv")
 
         assert len(df) == 1
         assert df.iloc[0]["forecast"] == 3.0
@@ -424,7 +443,8 @@ class TestAnalyzeConfidence:
             )
         conn.commit()
 
-    def test_insufficient_data_no_change(self, temp_db, mock_config):
+    @pytest.mark.asyncio
+    async def test_insufficient_data_no_change(self, temp_db, mock_config):
         """With insufficient data, should not make changes."""
         db_path, store, tz = temp_db
 
@@ -439,12 +459,13 @@ class TestAnalyzeConfidence:
             reflex.timezone = tz
             reflex.learning_engine = MagicMock()
 
-            updates, msg = reflex.analyze_confidence()
+            updates, msg = await reflex.analyze_confidence()
 
             assert updates == {}
             assert "Insufficient data" in msg
 
-    def test_over_prediction_lowers_confidence(self, temp_db, mock_config):
+    @pytest.mark.asyncio
+    async def test_over_prediction_lowers_confidence(self, temp_db, mock_config):
         """Systematic over-prediction should lower confidence."""
         db_path, store, tz = temp_db
 
@@ -459,7 +480,7 @@ class TestAnalyzeConfidence:
             reflex.timezone = tz
             reflex.learning_engine = MagicMock()
 
-            updates, msg = reflex.analyze_confidence()
+            updates, msg = await reflex.analyze_confidence()
 
             assert "forecasting.pv_confidence_percent" in updates
             new_value = updates["forecasting.pv_confidence_percent"]
@@ -467,7 +488,8 @@ class TestAnalyzeConfidence:
             assert new_value == 88.0
             assert "Over-predicting" in msg
 
-    def test_under_prediction_raises_confidence(self, temp_db, mock_config):
+    @pytest.mark.asyncio
+    async def test_under_prediction_raises_confidence(self, temp_db, mock_config):
         """Systematic under-prediction should raise confidence."""
         db_path, store, tz = temp_db
 
@@ -482,7 +504,7 @@ class TestAnalyzeConfidence:
             reflex.timezone = tz
             reflex.learning_engine = MagicMock()
 
-            updates, msg = reflex.analyze_confidence()
+            updates, msg = await reflex.analyze_confidence()
 
             assert "forecasting.pv_confidence_percent" in updates
             new_value = updates["forecasting.pv_confidence_percent"]
@@ -490,7 +512,8 @@ class TestAnalyzeConfidence:
             assert new_value == 92.0
             assert "Under-predicting" in msg
 
-    def test_small_bias_is_stable(self, temp_db, mock_config):
+    @pytest.mark.asyncio
+    async def test_small_bias_is_stable(self, temp_db, mock_config):
         """Small bias within threshold should be stable."""
         db_path, store, tz = temp_db
 
@@ -505,12 +528,13 @@ class TestAnalyzeConfidence:
             reflex.timezone = tz
             reflex.learning_engine = MagicMock()
 
-            updates, msg = reflex.analyze_confidence()
+            updates, msg = await reflex.analyze_confidence()
 
             assert updates == {}
             assert "Stable" in msg
 
-    def test_respects_confidence_bounds(self, temp_db, mock_config):
+    @pytest.mark.asyncio
+    async def test_respects_confidence_bounds(self, temp_db, mock_config):
         """Should not go below 80% or above 100%."""
         db_path, store, tz = temp_db
 
@@ -528,7 +552,7 @@ class TestAnalyzeConfidence:
             reflex.timezone = tz
             reflex.learning_engine = MagicMock()
 
-            updates, msg = reflex.analyze_confidence()
+            updates, msg = await reflex.analyze_confidence()
 
             assert updates == {}
             assert "at max" in msg
@@ -576,16 +600,18 @@ class TestConstants:
 class TestArbitrageStats:
     """Test the get_arbitrage_stats query method."""
 
-    def test_empty_returns_zeros(self, temp_db):
+    @pytest.mark.asyncio
+    async def test_empty_returns_zeros(self, temp_db):
         """Empty database should return zeros."""
         _db_path, store, _tz = temp_db
 
-        stats = store.get_arbitrage_stats(days_back=30)
+        stats = await store.get_arbitrage_stats(days_back=30)
         assert stats["total_export_revenue"] == 0.0
         assert stats["total_import_cost"] == 0.0
         assert stats["total_charge_kwh"] == 0.0
 
-    def test_calculates_profit(self, temp_db):
+    @pytest.mark.asyncio
+    async def test_calculates_profit(self, temp_db):
         """Should calculate profit from export and import."""
         db_path, store, tz = temp_db
 
@@ -614,7 +640,7 @@ class TestArbitrageStats:
             )
             conn.commit()
 
-        stats = store.get_arbitrage_stats(days_back=30)
+        stats = await store.get_arbitrage_stats(days_back=30)
 
         # export_revenue = 5.0 * 1.5 = 7.5
         # import_cost = 2.0 * 0.5 = 1.0
@@ -658,7 +684,8 @@ class TestAnalyzeROI:
         )
         conn.commit()
 
-    def test_insufficient_cycles(self, temp_db, mock_config):
+    @pytest.mark.asyncio
+    async def test_insufficient_cycles(self, temp_db, mock_config):
         """With too few cycles, should not make changes."""
         db_path, store, tz = temp_db
 
@@ -673,12 +700,13 @@ class TestAnalyzeROI:
             reflex.timezone = tz
             reflex.learning_engine = MagicMock()
 
-            updates, msg = reflex.analyze_roi()
+            updates, msg = await reflex.analyze_roi()
 
             assert updates == {}
             assert "Insufficient cycles" in msg
 
-    def test_high_profit_increases_cost(self, temp_db, mock_config):
+    @pytest.mark.asyncio
+    async def test_high_profit_increases_cost(self, temp_db, mock_config):
         """High profit per kWh should increase cycle cost estimate."""
         db_path, store, tz = temp_db
 
@@ -699,7 +727,7 @@ class TestAnalyzeROI:
             reflex.timezone = tz
             reflex.learning_engine = MagicMock()
 
-            updates, _msg = reflex.analyze_roi()
+            updates, _msg = await reflex.analyze_roi()
 
             # Should propose increase
             if "battery_economics.battery_cycle_cost_kwh" in updates:
@@ -709,14 +737,16 @@ class TestAnalyzeROI:
 class TestCapacityEstimate:
     """Test the get_capacity_estimate query method."""
 
-    def test_insufficient_data_returns_none(self, temp_db):
+    @pytest.mark.asyncio
+    async def test_insufficient_data_returns_none(self, temp_db):
         """With insufficient data, should return None."""
         _db_path, store, _tz = temp_db
 
-        estimated = store.get_capacity_estimate(days_back=30)
+        estimated = await store.get_capacity_estimate(days_back=30)
         assert estimated is None
 
-    def test_estimates_capacity(self, temp_db):
+    @pytest.mark.asyncio
+    async def test_estimates_capacity(self, temp_db):
         """Should estimate capacity from discharge data."""
         db_path, store, tz = temp_db
 
@@ -744,7 +774,7 @@ class TestCapacityEstimate:
                 )
             conn.commit()
 
-        estimated = store.get_capacity_estimate(days_back=30)
+        estimated = await store.get_capacity_estimate(days_back=30)
 
         # Should estimate around 30 kWh
         assert estimated is not None
@@ -754,7 +784,8 @@ class TestCapacityEstimate:
 class TestAnalyzeCapacity:
     """Test the analyze_capacity analyzer logic."""
 
-    def test_insufficient_data_no_change(self, temp_db, mock_config):
+    @pytest.mark.asyncio
+    async def test_insufficient_data_no_change(self, temp_db, mock_config):
         """With insufficient data, should not make changes."""
         _db_path, store, tz = temp_db
 
@@ -765,12 +796,13 @@ class TestAnalyzeCapacity:
             reflex.timezone = tz
             reflex.learning_engine = MagicMock()
 
-            updates, msg = reflex.analyze_capacity()
+            updates, msg = await reflex.analyze_capacity()
 
             assert updates == {}
             assert "Insufficient data" in msg
 
-    def test_healthy_capacity_no_change(self, temp_db, mock_config):
+    @pytest.mark.asyncio
+    async def test_healthy_capacity_no_change(self, temp_db, mock_config):
         """When capacity is healthy, should not make changes."""
         db_path, store, tz = temp_db
 
@@ -807,7 +839,7 @@ class TestAnalyzeCapacity:
             reflex.timezone = tz
             reflex.learning_engine = MagicMock()
 
-            updates, msg = reflex.analyze_capacity()
+            updates, msg = await reflex.analyze_capacity()
 
             assert updates == {}
             assert "Healthy" in msg

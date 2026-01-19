@@ -81,7 +81,7 @@ async def get_schedule() -> dict[str, Any]:
         price_map: dict[datetime, float] = {}
         try:
             # We assume config.yaml is in root
-            price_slots = get_nordpool_data("config.yaml")
+            price_slots = await get_nordpool_data("config.yaml")
             tz = pytz.timezone("Europe/Stockholm")  # Default fallback
 
             # Try to read timezone from config
@@ -182,7 +182,7 @@ async def schedule_today_with_history(
         today_start = tz.localize(datetime.combine(today_local, datetime.min.time()))
         now_dt = datetime.now(tz)
 
-        rows = await store.get_history_range_async(today_start, now_dt)
+        rows = await store.get_history_range(today_start, now_dt)
 
         for row in rows:
             try:
@@ -236,7 +236,7 @@ async def schedule_today_with_history(
         active_version = str(config.get("forecasting", {}).get("active_forecast_version", "aurora"))
         today_start_dt = tz.localize(datetime.combine(today_local, datetime.min.time()))
 
-        rows = await store.get_forecasts_range_async(today_start_dt, active_version)
+        rows = await store.get_forecasts_range(today_start_dt, active_version)
 
         for row in rows:
             try:
@@ -260,7 +260,7 @@ async def schedule_today_with_history(
         today_start_dt = tz.localize(datetime.combine(today_local, datetime.min.time()))
 
         # Use new method
-        rows = await store.get_plans_range_async(today_start_dt)
+        rows = await store.get_plans_range(today_start_dt)
 
         for row in rows:
             try:

@@ -1,7 +1,7 @@
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -16,7 +16,8 @@ def mock_engine(tmp_path):
     """Mock LearningEngine and config."""
     with patch("backend.learning.backfill.get_learning_engine") as mock_get:
         mock_le = MagicMock()
-        mock_le.store.get_last_observation_time.return_value = None
+        mock_le.store.get_last_observation_time = AsyncMock(return_value=None)
+        mock_le.store_slot_observations = AsyncMock()
         mock_le.sensor_map = {"sensor.test": "test_sensor"}
         mock_le.learning_config = {"sensor_map": {"sensor.test": "test_sensor"}}
 
@@ -34,7 +35,8 @@ def mock_engine(tmp_path):
                 yield engine, mock_le
 
 
-def test_backfill_no_gap(mock_engine):
+@pytest.mark.asyncio
+async def test_backfill_no_gap(mock_engine):
     """Test that backfill does nothing if data is up to date."""
     engine, mock_le = mock_engine
 
@@ -42,13 +44,14 @@ def test_backfill_no_gap(mock_engine):
     now = datetime.now(pytz.UTC)
     mock_le.store.get_last_observation_time.return_value = now - timedelta(minutes=5)
 
-    engine.run()
+    await engine.run()
 
     # Should not fetch history
     assert not mock_le.store_slot_observations.called
 
 
-def test_backfill_with_gap(mock_engine):
+@pytest.mark.asyncio
+async def test_backfill_with_gap(mock_engine):
     """Test backfill triggers when there is a gap."""
     engine, mock_le = mock_engine
 
@@ -58,7 +61,7 @@ def test_backfill_with_gap(mock_engine):
     mock_le.store.get_last_observation_time.return_value = last_obs
 
     # Mock fetch_history
-    with patch.object(engine, "_fetch_history") as mock_fetch:
+    with patch.object(engine, "_fetch_history", new_callable=AsyncMock) as mock_fetch:
         mock_fetch.return_value = [(last_obs + timedelta(minutes=i), 1.0) for i in range(120)]
 
         # Mock ETL
@@ -66,7 +69,7 @@ def test_backfill_with_gap(mock_engine):
         mock_df.empty = False
         mock_le.etl_cumulative_to_slots.return_value = mock_df
 
-        engine.run()
+        await engine.run()
 
         # Should fetch history
         assert mock_fetch.called
@@ -74,17 +77,18 @@ def test_backfill_with_gap(mock_engine):
         mock_le.store_slot_observations.assert_called_with(mock_df)
 
 
-def test_backfill_empty_db(mock_engine):
+@pytest.mark.asyncio
+async def test_backfill_empty_db(mock_engine):
     """Test backfill defaults to 7 days if DB is empty."""
     engine, mock_le = mock_engine
 
     # No last obs
     mock_le.store.get_last_observation_time.return_value = None
 
-    with patch.object(engine, "_fetch_history") as mock_fetch:
+    with patch.object(engine, "_fetch_history", new_callable=AsyncMock) as mock_fetch:
         mock_fetch.return_value = []
 
-        engine.run()
+        await engine.run()
 
         assert mock_fetch.called
         # Check start time passed to fetch (approx 7 days ago)

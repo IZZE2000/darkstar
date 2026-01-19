@@ -5,7 +5,6 @@ from typing import Any, cast
 
 import httpx
 import pytz
-import requests
 import yaml
 from nordpool.elspot import Prices
 from open_meteo_solar_forecast import OpenMeteoSolarForecast
@@ -18,7 +17,7 @@ from ml.weather import get_weather_volatility
 _ha_client: httpx.AsyncClient | None = None
 
 
-async def get_async_ha_client() -> httpx.AsyncClient:
+async def get_ha_client() -> httpx.AsyncClient:
     """Get or create singleton httpx.AsyncClient for HA."""
     global _ha_client
     if _ha_client is None or _ha_client.is_closed:
@@ -78,7 +77,7 @@ def load_yaml(path: str) -> dict[str, Any]:
         return {}
 
 
-async def async_get_ha_entity_state(entity_id: str) -> dict[str, Any] | None:
+async def get_ha_entity_state(entity_id: str) -> dict[str, Any] | None:
     """Fetch a single entity state from Home Assistant asynchronously."""
     ha_config = load_home_assistant_config()
     url = ha_config.get("url")
@@ -86,13 +85,13 @@ async def async_get_ha_entity_state(entity_id: str) -> dict[str, Any] | None:
 
     if not url or not token or not entity_id:
         print(
-            f"[async_get_ha_entity_state] Missing config: url={bool(url)}, token={bool(token)}, entity={entity_id}"
+            f"[get_ha_entity_state] Missing config: url={bool(url)}, token={bool(token)}, entity={entity_id}"
         )
         return None
 
     endpoint = f"{url.rstrip('/')}/api/states/{entity_id}"
     try:
-        client = await get_async_ha_client()
+        client = await get_ha_client()
         response = await client.get(endpoint, headers=make_ha_headers(token))
         response.raise_for_status()
         data = response.json()
@@ -100,13 +99,13 @@ async def async_get_ha_entity_state(entity_id: str) -> dict[str, Any] | None:
         # print(f"[async_get_ha_entity_state] {entity_id} → state={state_value}")
         return data
     except Exception as exc:
-        print(f"Warning: Failed to fetch Home Assistant entity '{entity_id}' (async): {exc}")
+        print(f"Warning: Could not fetch HA entity {entity_id}: {exc}")
         return None
 
 
-async def async_get_ha_sensor_float(entity_id: str) -> float | None:
+async def get_ha_sensor_float(entity_id: str) -> float | None:
     """Return numeric state of HA sensor asynchronously."""
-    state = await async_get_ha_entity_state(entity_id)
+    state = await get_ha_entity_state(entity_id)
     if not state:
         return None
 
@@ -120,45 +119,9 @@ async def async_get_ha_sensor_float(entity_id: str) -> float | None:
         return None
 
 
-def get_ha_entity_state(entity_id: str, *, timeout: int = 10) -> dict[str, Any] | None:
-    """Fetch a single entity state from Home Assistant."""
-    ha_config = load_home_assistant_config()
-    url = ha_config.get("url")
-    token = ha_config.get("token")
-
-    if not url or not token or not entity_id:
-        return None
-
-    endpoint = f"{url.rstrip('/')}/api/states/{entity_id}"
-    try:
-        response = requests.get(endpoint, headers=make_ha_headers(token), timeout=timeout)
-        response.raise_for_status()
-        return response.json()
-    except requests.RequestException as exc:
-        print(f"Warning: Failed to fetch Home Assistant entity '{entity_id}': {exc}")
-        return None
-
-
-def get_home_assistant_sensor_float(entity_id: str, *, timeout: int = 10) -> float | None:
-    """Return the numeric state of a Home Assistant sensor if available."""
-    state = get_ha_entity_state(entity_id, timeout=timeout)
-    if not state:
-        return None
-
-    raw_value = state.get("state")
-    if raw_value in (None, "unknown", "unavailable"):
-        return None
-
-    try:
-        return float(raw_value)
-    except (TypeError, ValueError):
-        print(f"Warning: Non-numeric value '{raw_value}' for Home Assistant entity '{entity_id}'")
-        return None
-
-
-def get_home_assistant_bool(entity_id: str, *, timeout: int = 10) -> bool:
+async def get_ha_bool(entity_id: str) -> bool:
     """Return True if entity is 'on', 'true', 'armed', etc."""
-    state = get_ha_entity_state(entity_id, timeout=timeout)
+    state = await get_ha_entity_state(entity_id)
     if not state:
         return False
 
@@ -171,29 +134,11 @@ def get_home_assistant_bool(entity_id: str, *, timeout: int = 10) -> bool:
     return is_true
 
 
-def get_nordpool_data(config_path: str = "config.yaml") -> list[dict[str, Any]]:
-    """
-    Fetch day-ahead electricity prices from Nordpool for the next 24-47 hours.
-
-    Args:
-        config_path (str): Path to the configuration YAML file
-
-    Returns:
-        list: List of dictionaries with keys:
-            - start_time (datetime): Start time of the price slot (timezone-aware)
-            - end_time (datetime): End time of the price slot (timezone-aware)
-            - import_price_sek_kwh (float): Price in SEK per kWh
-            - export_price_sek_kwh (float): Export price in SEK per kwh (estimated as 90% of import)
-    """
+async def get_nordpool_data(config_path: str = "config.yaml") -> list[dict[str, Any]]:
     # --- Smart Cache Check ---
-    # Prices are immutable once published. We invalidate if:
-    # 1. Cache is from yesterday (midnight rollover)
-    # 2. Cache starts in the future (Today is missing)
-    # 3. After 13:00 CET and cache doesn't have tomorrow's prices
     cache_key = "nordpool_data"
     cached = cache_sync.get(cache_key)
 
-    # Load config early to get timezone for cache validation
     with Path(config_path).open() as f:
         config = yaml.safe_load(f)
     local_tz = pytz.timezone(config.get("timezone", "Europe/Stockholm"))
@@ -201,95 +146,66 @@ def get_nordpool_data(config_path: str = "config.yaml") -> list[dict[str, Any]]:
     today = now.date()
 
     if cached and len(cached) > 0:
-        # Check if cache is still valid
         first_slot = cached[0]["start_time"]
         first_slot_date = first_slot.date() if hasattr(first_slot, "date") else today
         has_tomorrow = any(
             s["start_time"].date() > today for s in cached if hasattr(s["start_time"], "date")
         )
 
-        # Invalidate if cache is from yesterday
         if first_slot_date < today:
-            print("[nordpool] Cache invalidated: contains yesterday's data")
             cached = None
-        # Invalidate if cache starts in the future (Today must be in cache!)
-        elif first_slot > now and now.hour < 23:  # Allow for late night rollover edge cases
-            # If first_slot is more than 1 hour away from current 15m slot, it's poisoned
+        elif first_slot > now and now.hour < 23:
             current_slot_start = now.replace(
                 minute=(now.minute // 15) * 15, second=0, microsecond=0
             )
             if first_slot > current_slot_start:
-                print(
-                    f"[nordpool] Cache invalidated: poisoned (starts at {first_slot}, now is {now})"
-                )
                 cached = None
 
-        # After 13:00, we expect tomorrow's prices to be available
         if cached and now.hour >= 13 and not has_tomorrow:
-            print("[nordpool] Cache invalidated: after 13:00 but missing tomorrow")
             cached = None
 
         if cached:
-            print(f"[nordpool] Using cached data ({len(cached)} slots)")
             return cached
-
-    # Config already loaded above for cache validation
 
     nordpool_config = config.get("nordpool", {})
     price_area = nordpool_config.get("price_area", "SE4")
     currency = nordpool_config.get("currency", "SEK")
-    resolution_minutes = nordpool_config.get("resolution_minutes", 60)
 
-    # Initialize Nordpool Prices client with currency
+    import asyncio
+
     prices_client = Prices(currency=currency)
 
-    # Fetch prices for today AND tomorrow explicitly
-    # This ensures we get ALL hours, not just past ones
-    today_values: list[dict[str, Any]] = []
     try:
-        # Fetch TODAY's slots
-        data_today = prices_client.fetch(
-            end_date=now.date(), areas=[price_area], resolution=resolution_minutes
-        )
-        if data_today and data_today.get("areas") and data_today["areas"].get(price_area):
-            area_data = data_today["areas"][price_area]
-            today_values = cast("list[dict[str, Any]]", area_data.get("values", []))
+        # Fetch prices for today and tomorrow using to_thread
+        raw_today = await asyncio.to_thread(prices_client.fetch, end_date=today, areas=[price_area])
+        today_values = []
+        if raw_today and "areas" in raw_today and price_area in raw_today["areas"]:
+            today_values = raw_today["areas"][price_area].get("values", [])
 
-        if not today_values:
-            print(f"[nordpool] Warning: Fetched today ({now.date()}) but got 0 slots")
-    except Exception as e:
-        print(f"[nordpool] Warning: Could not fetch today's prices: {e}")
-
-    tomorrow_values: list[dict[str, Any]] = []
-    # Only try to fetch tomorrow if it's after 13:00 (when they are usually published)
-    if now.hour >= 13:
-        try:
-            # Fetch TOMORROW's slots (latest usually returns tomorrow if available)
-            data_tomorrow = prices_client.fetch(areas=[price_area], resolution=resolution_minutes)
-            tomorrow_areas = data_tomorrow.get("areas", {}) if data_tomorrow else {}
-            if tomorrow_areas.get(price_area):
-                area_vals = tomorrow_areas[price_area].get("values", [])
-                all_raw = cast("list[dict[str, Any]]", area_vals)
-                # Filter to only include slots after today
+        tomorrow_values = []
+        if now.hour >= 13:
+            tomorrow = today + timedelta(days=1)
+            raw_tomorrow = await asyncio.to_thread(
+                prices_client.fetch, end_date=tomorrow, areas=[price_area]
+            )
+            if raw_tomorrow and "areas" in raw_tomorrow and price_area in raw_tomorrow["areas"]:
+                all_raw = raw_tomorrow["areas"][price_area].get("values", [])
                 tomorrow_values = [v for v in all_raw if v["start"].date() > today]
-        except Exception as e:
-            print(f"[nordpool] Warning: Could not fetch tomorrow's prices: {e}")
 
-    # Combine today and tomorrow
-    all_values = today_values + tomorrow_values
+        all_entries = today_values + tomorrow_values
 
-    print(
-        f"[nordpool] Fetched {len(all_values)} total price slots "
-        f"(today: {len(today_values)}, tomorrow: {len(tomorrow_values)})"
-    )
+        if not all_entries:
+            return []
 
-    # Process the data into the required format
-    result = _process_nordpool_data(all_values, config, today_values)
+        processed = _process_nordpool_data(all_entries, config)
+        cache_sync.set(cache_key, processed, ttl_seconds=3600.0)
+        return processed
+    except Exception as exc:
+        print(f"Warning: Failed to fetch Nordpool prices: {exc}")
+        import traceback
 
-    # Cache for 1 hour
-    cache_sync.set(cache_key, result, ttl_seconds=3600.0)
-
-    return result
+        traceback.print_exc()
+        return []
 
 
 def _process_nordpool_data(
@@ -363,28 +279,25 @@ def _process_nordpool_data(
     return result
 
 
-def get_forecast_data(price_slots: list[dict[str, Any]], config: dict[str, Any]) -> dict[str, Any]:
+async def get_forecast_data(
+    price_slots: list[dict[str, Any]], config: dict[str, Any]
+) -> dict[str, Any]:
     """
-    Generate PV and load forecasts based on price slots and configuration.
-    Synchronous wrapper that handles both DB-backed (Aurora) and async fallbacks.
+    Generate PV and load forecasts based on price slots and configuration (Asynchronous).
     """
     forecasting_cfg = cast("dict[str, Any]", config.get("forecasting", {}) or {})
     active_version = str(forecasting_cfg.get("active_forecast_version", "baseline_7_day_avg"))
 
     if active_version == "aurora":
-        # Aurora logic is purely synchronous (DB-backed)
-        return _get_forecast_data_aurora(price_slots, config)
+        return await _get_forecast_data_aurora(price_slots, config)
     else:
-        # Fallback uses async Open-Meteo API
-        import asyncio
-
-        return asyncio.run(_get_forecast_data_async(price_slots, config))
+        return await _get_forecast_data_async(price_slots, config)
 
 
-def _get_forecast_data_aurora(
+async def _get_forecast_data_aurora(
     price_slots: list[dict[str, Any]], config: dict[str, Any]
 ) -> dict[str, Any]:
-    """Synchronous logic for Aurora DB-backed forecasts."""
+    """Asynchronous logic for Aurora DB-backed forecasts."""
     timezone_name = str(config.get("timezone", "Europe/Stockholm"))
     local_tz = pytz.timezone(timezone_name)
     forecasting_cfg = config.get("forecasting", {})
@@ -394,11 +307,11 @@ def _get_forecast_data_aurora(
     active_version = str(forecasting_cfg.get("active_forecast_version", "aurora"))
 
     # 1. Build slots strictly for the price horizon (0-48h)
-    db_slots = build_db_forecast_for_slots(price_slots, config)
+    db_slots = await build_db_forecast_for_slots(price_slots, config)
 
     # 2. Fetch HA Load Baseline for fallback
     try:
-        ha_profile = get_load_profile_from_ha(config)
+        ha_profile = await get_load_profile_from_ha(config)
     except Exception:
         ha_profile = [0.0] * 96
 
@@ -450,7 +363,7 @@ def _get_forecast_data_aurora(
         end_dt = start_dt + timedelta(days=horizon_days)
 
         # Fetch extended records from DB (base + corrections)
-        extended_records = get_forecast_slots(start_dt, end_dt, active_version)
+        extended_records = await get_forecast_slots(start_dt, end_dt, active_version)
 
         for rec in extended_records:
             ts = rec["slot_start"]
@@ -492,7 +405,7 @@ def _get_forecast_data_aurora(
                     # Just in case code structure changed or valid ha_profile logic was conditioned
                     # We will re-fetch or use 0 default to avoid crash
                     try:
-                        load_val = get_load_profile_from_ha(config)[idx]
+                        load_val = (await get_load_profile_from_ha(config))[idx]
                     except Exception:
                         load_val = 0.0
             else:
@@ -620,7 +533,7 @@ async def _get_forecast_data_async(
                 daily_pv_forecast[target_date] = last_value
 
     try:
-        load_profile = get_load_profile_from_ha(config)
+        load_profile = await get_load_profile_from_ha(config)
     except Exception as exc:
         print(f"Warning: Failed to get HA load profile, using dummy: {exc}")
         load_profile = get_dummy_load_profile(config)
@@ -659,41 +572,31 @@ async def _get_forecast_data_async(
 
     return {
         "slots": forecast_data,
-        "daily_pv_forecast": daily_pv_forecast,
-        "daily_load_forecast": daily_load_forecast,
     }
 
 
-def get_initial_state(config_path: str = "config.yaml") -> dict[str, Any]:
+async def get_initial_state(config_path: str = "config.yaml") -> dict[str, Any]:
     """
-    Get the initial battery state.
-
-    Args:
-        config_path (str): Path to config file
-
-    Returns:
-        dict: Dictionary with:
-            - battery_soc_percent (float): Current battery state of charge
-            - battery_kwh (float): Current battery energy in kWh
-            - battery_cost_sek_per_kwh (float): Current average battery cost
+    Get the initial battery state (Asynchronous).
     """
     with Path(config_path).open() as f:
-        data = yaml.safe_load(f)
-        config: dict[str, Any] = data if isinstance(data, dict) else {}
+        config = yaml.safe_load(f)
 
     # Use system.battery if available, otherwise fall back to battery
     battery_config = config.get("system", {}).get("battery", config.get("battery", {}))
     capacity_kwh = battery_config.get("capacity_kwh", 10.0)
     battery_soc_percent = 50.0
-    battery_cost_sek_per_kwh = 0.20
+    battery_cost_sek_per_kwh = config.get("battery_economics", {}).get(
+        "battery_cycle_cost_kwh", 0.20
+    )
 
-    # Prefer Home Assistant SoC when available
-    # Read entity ID from config.yaml (input_sensors)
+    # HA Config
+    ha_config = load_home_assistant_config()
     input_sensors = config.get("input_sensors", {})
-    soc_entity_id = input_sensors.get("battery_soc", "sensor.inverter_battery")
+    soc_entity_id = input_sensors.get("battery_soc", ha_config.get("soc_entity_id"))
 
     if soc_entity_id:
-        ha_soc = get_home_assistant_sensor_float(soc_entity_id)
+        ha_soc = await get_ha_sensor_float(soc_entity_id)
         if ha_soc is not None:
             battery_soc_percent = ha_soc
         else:
@@ -707,8 +610,7 @@ def get_initial_state(config_path: str = "config.yaml") -> dict[str, Any]:
     battery_soc_percent = max(0.0, min(100.0, battery_soc_percent))
     battery_kwh = capacity_kwh * battery_soc_percent / 100.0
 
-    # Water heater energy today (Rev K18)
-    # Only fetch if water heater feature is enabled
+    # Water heater energy today
     system_config = config.get("system", {})
     has_water_heater = system_config.get("has_water_heater", False)
     water_heated_today_kwh = 0.0
@@ -716,7 +618,7 @@ def get_initial_state(config_path: str = "config.yaml") -> dict[str, Any]:
     if has_water_heater:
         water_entity = input_sensors.get("water_heater_consumption", "sensor.vvb_energy_daily")
         if water_entity:
-            ha_water = get_home_assistant_sensor_float(water_entity)
+            ha_water = await get_ha_sensor_float(water_entity)
             if ha_water is not None:
                 water_heated_today_kwh = ha_water
 
@@ -728,7 +630,7 @@ def get_initial_state(config_path: str = "config.yaml") -> dict[str, Any]:
     }
 
 
-def get_all_input_data(config_path: str = "config.yaml") -> dict[str, Any]:
+async def get_all_input_data(config_path: str = "config.yaml") -> dict[str, Any]:
     """
     Orchestrate all input data fetching.
     """
@@ -748,7 +650,7 @@ def get_all_input_data(config_path: str = "config.yaml") -> dict[str, Any]:
             days = int(learning_cfg.get("horizon_days", 2))
             hours = days * 24
 
-            run_inference(horizon_hours=hours, forecast_version="aurora")
+            await asyncio.to_thread(run_inference, horizon_hours=hours, forecast_version="aurora")
         except Exception as e:
             print(f"⚠️ AURORA Inference Pipeline Failed: {e}")
 
@@ -767,8 +669,8 @@ def get_all_input_data(config_path: str = "config.yaml") -> dict[str, Any]:
     temp_vol = float(volatility_raw.get("temp_volatility", 0.0) or 0.0)
 
     context = {
-        "vacation_mode": get_home_assistant_bool(vacation_id) if vacation_id else False,
-        "alarm_armed": get_home_assistant_bool(alarm_id) if alarm_id else False,
+        "vacation_mode": await get_ha_bool(vacation_id) if vacation_id else False,
+        "alarm_armed": await get_ha_bool(alarm_id) if alarm_id else False,
         "weather_volatility": {
             "cloud": max(0.0, min(1.0, cloud_vol)),
             "temp": max(0.0, min(1.0, temp_vol)),
@@ -776,11 +678,11 @@ def get_all_input_data(config_path: str = "config.yaml") -> dict[str, Any]:
     }
     # -------------------------------------
 
-    price_data = get_nordpool_data(config_path)
+    price_data = await get_nordpool_data(config_path)
 
-    forecast_result = get_forecast_data(price_data, config)
+    forecast_result = await get_forecast_data(price_data, config)
     forecast_data = forecast_result.get("slots", [])
-    initial_state = get_initial_state(config_path)
+    initial_state = await get_initial_state(config_path)
 
     return {
         "price_data": price_data,
@@ -793,7 +695,7 @@ def get_all_input_data(config_path: str = "config.yaml") -> dict[str, Any]:
     }
 
 
-def get_db_forecast_slots(
+async def get_db_forecast_slots(
     start: datetime, end: datetime, config: dict[str, Any]
 ) -> list[dict[str, Any]]:
     """
@@ -807,10 +709,10 @@ def get_db_forecast_slots(
         forecasting_cfg = {}
 
     version = str(forecasting_cfg.get("active_forecast_version", "baseline_7_day_avg"))
-    return get_forecast_slots(start, end, version)
+    return await get_forecast_slots(start, end, version)
 
 
-def build_db_forecast_for_slots(
+async def build_db_forecast_for_slots(
     price_slots: list[dict[str, Any]], config: dict[str, Any]
 ) -> list[dict[str, Any]]:
     """
@@ -835,7 +737,7 @@ def build_db_forecast_for_slots(
         minutes=15,
     )
 
-    records = get_forecast_slots(start_time, end_time, version)
+    records = await get_forecast_slots(start_time, end_time, version)
     if not records:
         return []
 
@@ -884,22 +786,12 @@ def build_db_forecast_for_slots(
     return result
 
 
-def get_load_profile_from_ha(config: dict[str, Any]) -> list[float]:
-    """Fetch actual load profile from Home Assistant historical data.
-
-    Notes on averaging logic:
-    - We build a 7-day matrix of 15-min buckets (7 x 96) and distribute kWh deltas.
-    - The per-slot daily profile is the average across all 7 days, dividing by 7
-      (not by the count of non-zero days), to avoid inflating totals when some
-      slots are zero for certain days.
-    """
-    from datetime import timedelta
-
+async def get_load_profile_from_ha(config: dict[str, Any]) -> list[float]:
+    """Fetch actual load profile from Home Assistant historical data (Async)."""
     ha_config = load_home_assistant_config()
     url = ha_config.get("url")
     token = cast("str", ha_config.get("token", ""))
 
-    # Read entity ID from config.yaml
     sensors_cfg = config.get("input_sensors", {})
     input_sensors: dict[str, Any] = sensors_cfg if isinstance(sensors_cfg, dict) else {}
 
@@ -909,14 +801,11 @@ def get_load_profile_from_ha(config: dict[str, Any]) -> list[float]:
         print("Warning: Missing Home Assistant configuration for load profile")
         return get_dummy_load_profile(config)
 
-    # Set up headers and API URL
     headers = make_ha_headers(token)
-
-    # Calculate time range for last 7 days
     end_time = datetime.now(pytz.UTC)
     start_time = end_time - timedelta(days=7)
 
-    api_url = f"{url}/api/history/period/{start_time.isoformat()}"
+    api_url = f"{url.rstrip('/')}/api/history/period/{start_time.isoformat()}"
     params = {
         "filter_entity_id": entity_id,
         "end_time": end_time.isoformat(),
@@ -926,7 +815,8 @@ def get_load_profile_from_ha(config: dict[str, Any]) -> list[float]:
 
     try:
         print(f"Fetching {entity_id} data from Home Assistant...")
-        response = requests.get(api_url, headers=headers, params=params, timeout=30)
+        client = await get_ha_client()
+        response = await client.get(api_url, headers=headers, params=params, timeout=30.0)
         response.raise_for_status()
 
         data = response.json()
@@ -934,7 +824,6 @@ def get_load_profile_from_ha(config: dict[str, Any]) -> list[float]:
             print(f"Warning: No data received from Home Assistant for {entity_id}")
             return get_dummy_load_profile(config)
 
-        # Process state changes into energy deltas
         states = data[0]
         if len(states) < 2:
             print(f"Warning: Insufficient data points from Home Assistant for {entity_id}")
@@ -1037,7 +926,7 @@ def get_load_profile_from_ha(config: dict[str, Any]) -> list[float]:
 
         return daily_profile
 
-    except requests.RequestException as e:
+    except (httpx.HTTPStatusError, httpx.RequestError) as e:
         print(f"Warning: Failed to fetch data from Home Assistant for {entity_id}: {e}")
         return get_dummy_load_profile(config)
     except Exception as e:
@@ -1056,9 +945,9 @@ if __name__ == "__main__":
     # Test the combined input data fetching
     print("Testing get_all_input_data()...")
 
-    def test():
+    async def test():
         try:
-            data = get_all_input_data(config_path="config.yaml")
+            data = await get_all_input_data(config_path="config.yaml")
             print(f"Price slots: {len(data['price_data'])}")
             print(f"Forecast slots: {len(data.get('forecast_data', []))}")
             print("Initial state:", data["initial_state"])
@@ -1072,8 +961,8 @@ if __name__ == "__main__":
                 forecast = forecast_slots[i] if i < len(forecast_slots) else {}
                 slot_time = slot["start_time"]
                 import_price = slot["import_price_sek_kwh"]
-                pv_forecast = forecast["pv_forecast_kwh"]
-                load_forecast = forecast["load_forecast_kwh"]
+                pv_forecast = forecast.get("pv_forecast_kwh", 0.0)
+                load_forecast = forecast.get("load_forecast_kwh", 0.0)
                 summary = (
                     f"Slot {i + 1}: {slot_time} - Import: {import_price:.3f} SEK/kWh, "
                     f"PV: {pv_forecast:.3f} kWh, "
@@ -1085,6 +974,11 @@ if __name__ == "__main__":
                 print(f"... and {len(data['price_data']) - 5} more slots")
 
         except Exception as e:
+            import traceback
+
+            traceback.print_exc()
             print(f"Error: {e}")
 
-    test()
+    import asyncio
+
+    asyncio.run(test())

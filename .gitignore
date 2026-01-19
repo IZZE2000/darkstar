@@ -77,3 +77,5 @@ calculate_metrics_n8n.js
 # DB & Logs
 data/planner_learning.db.*
 data/darkstar.log.*
+
+gsd-template/

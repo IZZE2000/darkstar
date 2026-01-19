@@ -239,34 +239,26 @@ This creates technical debt: duplicate engine initialization, dual testing requi
 Context: REV ARC11 migration is 95% complete, but several API routes still use the old sync Session() which
 no longer exists in LearningStore, causing AttributeError crashes.
 
-* [ ] Fix API Forecast Routes (CRITICAL):
+* [x] Fix API Forecast Routes (CRITICAL):
   - **File**: backend/api/routers/forecast.py
   - **Problem**: Lines 66, 178, 236, 292, 357 use engine.store.Session() which was removed
-  - **Fix**: Replace all instances of:
+  - **Fix**: Replace with `async with engine.store.AsyncSession() as session:` and `await`.
 
-python
-    # ❌ BROKEN (Session doesn't exist)
-    with engine.store.Session() as session:
-        return session.scalar(select(...))
-
-
-   With:
-
-python
-    # ✅ CORRECT (AsyncSession exists)
-    async with engine.store.AsyncSession() as session:
-        return await session.scalar(select(...))
-
-
-  - **Note**: Also wrap the calling functions with asyncio.to_thread() if they're called from sync contexts
-
-* [ ] Fix Planner Logging (HIGH):
+* [x] Fix Planner Logging (HIGH):
   - **File**: planner/observability/logging.py
   - **Problem**: Line 37 uses engine.store.Session()
-  - **Fix**: Same pattern as above - convert to AsyncSession() and add await
+  - **Fix**: Replace with `AsyncSession` and `await session.commit()`.
 
-* [ ] Verification Tests:
-  - **API Test**: curl http://localhost:8000/api/forecast/status should return 200, not 500
+* [x] Fix Planner Output (MEDIUM):
+  - **File**: planner/output/schedule.py
+  - **Problem**: `save_schedule_to_json` logic needs to await `record_debug_payload`.
+  - **Fix**: Convert to `async def` and `await`.
+
+* [x] Fix Planner Pipeline (MEDIUM):
+  - **File**: planner/pipeline.py
+  - **Problem**: Needs to `await save_schedule_to_json`.
+  - **Fix**: Add `await`.
+**: curl http://localhost:8000/api/forecast/status should return 200, not 500
   - **Planner Test**: python bin/run_planner.py should complete without AttributeError
   - **Lint Test**: ruff check backend/ should show zero errors
 

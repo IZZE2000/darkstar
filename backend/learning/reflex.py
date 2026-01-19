@@ -65,11 +65,11 @@ class AuroraReflex:
         self.yaml.preserve_quotes = True
         self.timezone = self.learning_engine.timezone
 
-        # Load current config
+        # Load current config (Sync in constructor is generally okay if not high-frequency)
         with self.config_path.open(encoding="utf-8") as f:
             self.config = self.yaml.load(f)
 
-    def run(self, dry_run: bool = False) -> list[str]:
+    async def run(self, dry_run: bool = False) -> list[str]:
         """
         Run all analyzers and apply updates if needed.
         Returns a list of actions taken (or proposed).
@@ -83,32 +83,32 @@ class AuroraReflex:
         report = []
 
         # 1. Analyze Safety (S-Index Base Factor)
-        safety_update, safety_msg = self.analyze_safety()
+        safety_update, safety_msg = await self.analyze_safety()
         report.append(safety_msg)
         if safety_update:
             updates.update(safety_update)
 
         # 2. Analyze Confidence (PV Confidence)
-        conf_update, conf_msg = self.analyze_confidence()
+        conf_update, conf_msg = await self.analyze_confidence()
         report.append(conf_msg)
         if conf_update:
             updates.update(conf_update)
 
         # 3. Analyze ROI (Battery Cycle Cost)
-        roi_update, roi_msg = self.analyze_roi()
+        roi_update, roi_msg = await self.analyze_roi()
         report.append(roi_msg)
         if roi_update:
             updates.update(roi_update)
 
         # 4. Analyze Capacity (Battery Capacity)
-        cap_update, cap_msg = self.analyze_capacity()
+        cap_update, cap_msg = await self.analyze_capacity()
         report.append(cap_msg)
         if cap_update:
             updates.update(cap_update)
 
         # Apply Updates
         if updates:
-            self.update_config(updates, dry_run)
+            await self.update_config(updates, dry_run)
             action = "Proposed" if dry_run else "Applied"
             report.append(f"{action} {len(updates)} config updates.")
         else:
@@ -116,12 +116,12 @@ class AuroraReflex:
 
         return report
 
-    def _can_update(self, param_path: str) -> bool:
+    async def _can_update(self, param_path: str) -> bool:
         """
         Check if we're allowed to update this parameter today (rate limiting).
         Returns True if no update was made today.
         """
-        state = self.store.get_reflex_state(param_path)
+        state = await self.store.get_reflex_state(param_path)
         if state is None:
             return True
 
@@ -163,7 +163,7 @@ class AuroraReflex:
 
         return new_value
 
-    def analyze_safety(self) -> tuple[dict, str]:
+    async def analyze_safety(self) -> tuple[dict, str]:
         """
         Monitor low-SoC events during peak hours.
         If SoC < 5% during 16:00-20:00 too often, increase s_index.base_factor.
@@ -174,11 +174,11 @@ class AuroraReflex:
         param_path = "s_index.base_factor"
 
         # Check rate limit
-        if not self._can_update(param_path):
+        if not await self._can_update(param_path):
             return {}, "Safety: Rate limited (changed today already)"
 
         # Query low-SoC events
-        events_30d = self.store.get_low_soc_events(
+        events_30d = await self.store.get_low_soc_events(
             days_back=30,
             threshold_percent=SAFETY_LOW_SOC_THRESHOLD,
             peak_hours=SAFETY_PEAK_HOURS,
@@ -210,7 +210,7 @@ class AuroraReflex:
 
         elif num_events == 0:
             # Check longer window for relaxation
-            events_60d = self.store.get_low_soc_events(
+            events_60d = await self.store.get_low_soc_events(
                 days_back=SAFETY_RELAXATION_DAYS,
                 threshold_percent=SAFETY_LOW_SOC_THRESHOLD,
                 peak_hours=SAFETY_PEAK_HOURS,
@@ -239,7 +239,7 @@ class AuroraReflex:
             f"Safety: Stable ({num_events} events in 30d, base_factor={current_value:.3f})",
         )
 
-    def analyze_confidence(self) -> tuple[dict, str]:
+    async def analyze_confidence(self) -> tuple[dict, str]:
         """
         Compare PV forecast vs actuals to detect systematic bias.
         If over-predicting (positive bias), lower confidence to increase safety margin.
@@ -250,11 +250,11 @@ class AuroraReflex:
         param_path = "forecasting.pv_confidence_percent"
 
         # Check rate limit
-        if not self._can_update(param_path):
+        if not await self._can_update(param_path):
             return {}, "Confidence: Rate limited (changed today already)"
 
         # Get forecast vs actual data
-        df = self.store.get_forecast_vs_actual(
+        df = await self.store.get_forecast_vs_actual(
             days_back=CONFIDENCE_LOOKBACK_DAYS,
             target="pv",
         )
@@ -314,7 +314,7 @@ class AuroraReflex:
             f"Confidence: Stable (bias={mean_bias:.2f} kWh, MAE={mae:.2f} kWh, {len(df)} samples)",
         )
 
-    def analyze_roi(self) -> tuple[dict, str]:
+    async def analyze_roi(self) -> tuple[dict, str]:
         """
         Analyze battery ROI by comparing realized profit per cycle vs configured cost.
 
@@ -326,11 +326,11 @@ class AuroraReflex:
         param_path = "battery_economics.battery_cycle_cost_kwh"
 
         # Check rate limit
-        if not self._can_update(param_path):
+        if not await self._can_update(param_path):
             return {}, "ROI: Rate limited (changed today already)"
 
         # Get arbitrage stats
-        stats = self.store.get_arbitrage_stats(days_back=ROI_LOOKBACK_DAYS)
+        stats = await self.store.get_arbitrage_stats(days_back=ROI_LOOKBACK_DAYS)
 
         total_charge = stats.get("total_charge_kwh", 0)
         net_profit = stats.get("net_profit", 0)
@@ -350,11 +350,11 @@ class AuroraReflex:
             )
 
         # Calculate realized profit per cycle
-        net_profit / cycles if cycles > 0 else 0
+        # net_profit / cycles if cycles > 0 else 0
 
         current_cost = self.config.get("battery_economics", {}).get("battery_cycle_cost_kwh", 0.2)
-        _min_val, _max_val = BOUNDS[param_path]
-        MAX_DAILY_CHANGE[param_path]
+        # _min_val, _max_val = BOUNDS[param_path]
+        # MAX_DAILY_CHANGE[param_path]
 
         # Compare profit per kWh charged vs current cost
         profit_per_kwh = net_profit / total_charge if total_charge > 0 else 0
@@ -384,7 +384,7 @@ class AuroraReflex:
             f"ROI: Stable (profit={profit_per_kwh:.2f} SEK/kWh, {cycles:.1f} cycles, cost={current_cost:.2f})",
         )
 
-    def analyze_capacity(self) -> tuple[dict, str]:
+    async def analyze_capacity(self) -> tuple[dict, str]:
         """
         Detect battery capacity fade by analyzing discharge efficiency.
 
@@ -396,11 +396,11 @@ class AuroraReflex:
         param_path = "battery.capacity_kwh"
 
         # Check rate limit
-        if not self._can_update(param_path):
+        if not await self._can_update(param_path):
             return {}, "Capacity: Rate limited (changed today already)"
 
         # Get capacity estimate
-        estimated = self.store.get_capacity_estimate(days_back=CAPACITY_LOOKBACK_DAYS)
+        estimated = await self.store.get_capacity_estimate(days_back=CAPACITY_LOOKBACK_DAYS)
 
         if estimated is None:
             return {}, "Capacity: Insufficient data for estimation"
@@ -431,55 +431,61 @@ class AuroraReflex:
             f"Capacity: Healthy (estimated {estimated:.1f} kWh, configured {current_capacity:.1f} kWh)",
         )
 
-    def update_config(self, updates: dict[str, Any], dry_run: bool) -> None:
+    async def update_config(self, updates: dict[str, Any], dry_run: bool) -> None:
         """
         Apply updates to config.yaml using ruamel.yaml to preserve comments.
         Also logs changes to strategy history and updates reflex state.
-
-        updates: dict of "path.to.key" -> new_value
         """
-        # Reload config to ensure we have the latest comment structure
-        with self.config_path.open(encoding="utf-8") as f:
-            data = self.yaml.load(f)
+        import asyncio
 
-        changes_made = []
+        def _apply_updates():
+            # Reload config to ensure we have the latest comment structure
+            with self.config_path.open(encoding="utf-8") as f:
+                data = self.yaml.load(f)
 
-        for key_path, new_value in updates.items():
-            keys = key_path.split(".")
-            target = data
-            for k in keys[:-1]:
-                target = target.setdefault(k, {})
+            changes_made = []
 
-            last_key = keys[-1]
-            old_value = target.get(last_key)
+            for key_path, new_value in updates.items():
+                keys = key_path.split(".")
+                target = data
+                for k in keys[:-1]:
+                    target = target.setdefault(k, {})
 
-            if old_value != new_value:
-                logger.info(f"Updating {key_path}: {old_value} -> {new_value}")
-                target[last_key] = new_value
+                last_key = keys[-1]
+                old_value = target.get(last_key)
 
-                changes_made.append(
-                    {
-                        "param": key_path,
-                        "old": old_value,
-                        "new": new_value,
-                    }
-                )
+                if old_value != new_value:
+                    logger.info(f"Updating {key_path}: {old_value} -> {new_value}")
+                    target[last_key] = new_value
 
-                # Try to add comment with previous value
-                try:
-                    comment = f" Reflex: was {old_value}"
-                    target.yaml_add_eol_comment(comment, last_key)
-                except Exception as e:
-                    logger.debug(f"Could not add YAML comment: {e}")
+                    changes_made.append(
+                        {
+                            "param": key_path,
+                            "old": old_value,
+                            "new": new_value,
+                        }
+                    )
 
-                # Update reflex state (even in dry run, for testing)
-                if not dry_run:
-                    self.store.update_reflex_state(key_path, float(new_value))
+                    # Try to add comment with previous value
+                    try:
+                        comment = f" Reflex: was {old_value}"
+                        target.yaml_add_eol_comment(comment, last_key)
+                    except Exception as e:
+                        logger.debug(f"Could not add YAML comment: {e}")
+            return data, changes_made
+
+        data, changes_made = await asyncio.to_thread(_apply_updates)
 
         if not dry_run:
-            # Write config
-            with self.config_path.open("w", encoding="utf-8") as f:
-                self.yaml.dump(data, f)
+            # Update reflex state in DB for each change
+            for change in changes_made:
+                await self.store.update_reflex_state(change["param"], float(change["new"]))
+
+            def _write_config():
+                with self.config_path.open("w", encoding="utf-8") as f:
+                    self.yaml.dump(data, f)
+
+            await asyncio.to_thread(_write_config)
             logger.info("Config saved.")
 
             # Log to strategy history
@@ -501,15 +507,19 @@ class AuroraReflex:
 
 
 if __name__ == "__main__":
+    import asyncio
     import sys
 
-    dry_run = "--apply" not in sys.argv
-    if dry_run:
-        print("Running in DRY RUN mode. Use --apply to actually update config.")
+    async def main():
+        dry_run = "--apply" not in sys.argv
+        if dry_run:
+            print("Running in DRY RUN mode. Use --apply to actually update config.")
 
-    reflex = AuroraReflex()
-    results = reflex.run(dry_run=dry_run)
+        reflex = AuroraReflex()
+        results = await reflex.run(dry_run=dry_run)
 
-    print("\n=== Aurora Reflex Report ===")
-    for line in results:
-        print(f"  • {line}")
+        print("\n=== Aurora Reflex Report ===")
+        for line in results:
+            print(f"  • {line}")
+
+    asyncio.run(main())

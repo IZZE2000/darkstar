@@ -1,43 +1,41 @@
-import asyncio
-from datetime import datetime
-from unittest.mock import patch
+import sys
+from unittest.mock import AsyncMock, patch
 
-from backend.services.planner_service import PlannerResult, PlannerService
+import pytest
+
+from backend.services.planner_service import PlannerService
 from backend.services.scheduler_service import SchedulerService
 
+# Ensure bin is in path (though tests usually run from root)
+sys.path.append("bin")
 
-def test_planner_service_lifecycle():
-    asyncio.run(_test_planner_lifecycle_async())
 
-
-async def _test_planner_lifecycle_async():
+@pytest.mark.asyncio
+async def test_planner_service_lifecycle():
     service = PlannerService()
 
-    # Patch the _run_sync method on the PlannerService class
-    with patch.object(PlannerService, "_run_sync") as mock_run:
-        # Mock must return a PlannerResult object
-        mock_run.return_value = PlannerResult(
-            success=True, planned_at=datetime.now(), slot_count=48, duration_ms=100.0, error=None
-        )
+    # Patch run_planner.main instead of _run_sync
+    with (
+        patch("bin.run_planner.main", new_callable=AsyncMock) as mock_main,
+        patch.object(PlannerService, "_count_schedule_slots", return_value=48),
+    ):
+        mock_main.return_value = 0  # Success exit code
 
         # Test run_once
         result = await service.run_once()
         assert result.success is True
         assert result.slot_count == 48
-        # run_once returns PlannerResult object too, not dict (check code)
 
         # Verify lock is released
         assert not service._lock.locked()
 
 
-def test_planner_service_failure():
-    asyncio.run(_test_planner_failure_async())
-
-
-async def _test_planner_failure_async():
+@pytest.mark.asyncio
+async def test_planner_service_failure():
     service = PlannerService()
-    with patch.object(PlannerService, "_run_sync") as mock_run:
-        mock_run.side_effect = Exception("Planner crashed")
+    # Patch run_planner.main to raise exception
+    with patch("bin.run_planner.main", new_callable=AsyncMock) as mock_main:
+        mock_main.side_effect = Exception("Planner crashed")
 
         result = await service.run_once()
         # run_once catches exception and returns PlannerResult with success=False
@@ -45,11 +43,8 @@ async def _test_planner_failure_async():
         assert "Planner crashed" in result.error
 
 
-def test_scheduler_service_lifecycle():
-    asyncio.run(_test_scheduler_lifecycle_async())
-
-
-async def _test_scheduler_lifecycle_async():
+@pytest.mark.asyncio
+async def test_scheduler_service_lifecycle():
     scheduler = SchedulerService()
 
     # Test startup/shutdown

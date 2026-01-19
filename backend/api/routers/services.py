@@ -14,10 +14,9 @@ from pydantic import BaseModel
 from backend.api.deps import get_learning_store
 from backend.learning.store import LearningStore
 from inputs import (
-    async_get_ha_entity_state,
-    async_get_ha_sensor_float,
-    get_async_ha_client,
-    get_home_assistant_sensor_float,
+    get_ha_client,
+    get_ha_entity_state,
+    get_ha_sensor_float,
     load_home_assistant_config,
     load_yaml,
     make_ha_headers,
@@ -56,7 +55,7 @@ async def _fetch_ha_history_avg(entity_id: str, hours: int) -> float:
     }
 
     try:
-        client = await get_async_ha_client()
+        client = await get_ha_client()
         resp = await client.get(api_url, headers=headers, params=params)
         if resp.status_code != 200:
             return 0.0
@@ -119,7 +118,7 @@ async def _fetch_ha_history_avg(entity_id: str, hours: int) -> float:
     description="Returns the state of a specific Home Assistant entity.",
 )
 async def get_ha_entity(entity_id: str) -> dict[str, Any]:
-    state = await async_get_ha_entity_state(entity_id)
+    state = await get_ha_entity_state(entity_id)
     if not state:
         return {
             "entity_id": entity_id,
@@ -161,7 +160,7 @@ async def get_ha_average(entity_id: str | None = None, hours: int = 24) -> dict[
     if avg_val == 0.0:
         try:
             config = load_yaml("config.yaml")
-            profile = get_load_profile_from_ha(config)
+            profile = await get_load_profile_from_ha(config)
             if profile:
                 avg_val = sum(profile) / len(profile)
         except Exception as e:
@@ -259,7 +258,8 @@ async def get_performance_data(days: int = 7) -> dict[str, Any]:
 
         engine = get_learning_engine()
         if hasattr(engine, "get_performance_series"):
-            data = engine.get_performance_series(days_back=days)  # pyright: ignore [reportUnknownMemberType, reportUnknownVariableType]
+            # get_performance_series is now async
+            data = await engine.get_performance_series(days_back=days)
             return cast("dict[str, Any]", data)
         else:
             return {
@@ -301,7 +301,7 @@ async def get_water_today() -> dict[str, Any]:
     sensors: dict[str, Any] = config.get("input_sensors", {})
     entity_id = sensors.get("water_heater_consumption", "sensor.vvb_energy_daily")
 
-    kwh = await async_get_ha_sensor_float(str(entity_id)) or 0.0
+    kwh = await get_ha_sensor_float(str(entity_id)) or 0.0
     return {"water_kwh_today": kwh, "cost": 0.0, "source": "home_assistant"}
 
 
@@ -422,7 +422,7 @@ async def get_energy_today() -> dict[str, float]:
     for key in keys:
         eid = sensors.get(key)
         if eid:
-            tasks.append(async_get_ha_sensor_float(str(eid)))
+            tasks.append(get_ha_sensor_float(str(eid)))
         else:
             tasks.append(asyncio.sleep(0, result=0.0))  # Placeholder for missing config
 
@@ -470,11 +470,11 @@ async def get_energy_range(
     config = load_yaml("config.yaml")
     sensors: dict[str, Any] = config.get("input_sensors", {})
 
-    def get_val(key: str, default: float = 0.0) -> float:
+    async def get_val(key: str, default: float = 0.0) -> float:
         eid = sensors.get(key)
         if not eid:
             return default
-        return get_home_assistant_sensor_float(str(eid)) or default
+        return await get_ha_sensor_float(str(eid)) or default
 
     # All periods now query the database for financial metrics
     try:
@@ -573,13 +573,13 @@ async def get_energy_range(
         # For "today", overlay real-time HA sensor values for energy totals
         # This ensures dashboard shows up-to-date energy values even if DB lags
         if period == "today":
-            ha_grid_imp = get_val("today_grid_import")
-            ha_grid_exp = get_val("today_grid_export")
-            ha_pv = get_val("today_pv_production")
-            ha_load = get_val("today_load_consumption")
-            ha_batt_chg = get_val("today_battery_charge")
-            ha_batt_dis = get_val("today_battery_discharge")
-            ha_water = get_val("water_heater_consumption")
+            ha_grid_imp = await get_val("today_grid_import")
+            ha_grid_exp = await get_val("today_grid_export")
+            ha_pv = await get_val("today_pv_production")
+            ha_load = await get_val("today_load_consumption")
+            ha_batt_chg = await get_val("today_battery_charge")
+            ha_batt_dis = await get_val("today_battery_discharge")
+            ha_water = await get_val("water_heater_consumption")
 
             # Use HA values if they're larger (more current) than DB values
             grid_imp_kwh = max(grid_imp_kwh, ha_grid_imp)

@@ -36,7 +36,7 @@ class PlannerService:
 
     async def run_once(self) -> PlannerResult:
         """
-        Run the planner in a threadpool to avoid blocking the event loop.
+        Run the planner asynchronously.
         Handles cache invalidation and WebSocket notification automatically.
 
         Uses a lock to prevent concurrent planner executions.
@@ -52,10 +52,27 @@ class PlannerService:
 
         async with self._lock:
             start = datetime.now()
+            planned_at = start
 
             try:
-                # Run blocking planner code in threadpool
-                result = await asyncio.to_thread(self._run_sync)
+                from bin.run_planner import main as run_planner_main
+
+                exit_code = await run_planner_main()
+
+                if exit_code == 0:
+                    slot_count = self._count_schedule_slots()
+                    result = PlannerResult(
+                        success=True,
+                        planned_at=planned_at,
+                        slot_count=slot_count,
+                    )
+                else:
+                    result = PlannerResult(
+                        success=False,
+                        planned_at=planned_at,
+                        error=f"Planner exited with code {exit_code}",
+                    )
+
                 result.duration_ms = (datetime.now() - start).total_seconds() * 1000
 
                 if result.success:
@@ -76,36 +93,6 @@ class PlannerService:
                 )
                 await self._notify_error(result)
                 return result
-
-    def _run_sync(self) -> PlannerResult:
-        """Blocking planner execution (runs in threadpool)."""
-        from bin.run_planner import main as run_planner_main
-
-        planned_at = datetime.now()
-
-        try:
-            exit_code = run_planner_main()
-
-            if exit_code == 0:
-                # Count slots from schedule.json
-                slot_count = self._count_schedule_slots()
-                return PlannerResult(
-                    success=True,
-                    planned_at=planned_at,
-                    slot_count=slot_count,
-                )
-            else:
-                return PlannerResult(
-                    success=False,
-                    planned_at=planned_at,
-                    error=f"Planner exited with code {exit_code}",
-                )
-        except Exception as e:
-            return PlannerResult(
-                success=False,
-                planned_at=planned_at,
-                error=str(e),
-            )
 
     def _count_schedule_slots(self) -> int:
         """Count slots in schedule.json for metadata."""

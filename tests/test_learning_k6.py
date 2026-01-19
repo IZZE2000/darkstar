@@ -14,7 +14,7 @@ from backend.learning.models import Base
 
 
 @pytest.fixture
-def learning_engine(tmp_path):
+async def learning_engine(tmp_path):
     """Create a LearningEngine with a temporary database."""
     db_path = tmp_path / "test_learning.db"
 
@@ -25,13 +25,15 @@ def learning_engine(tmp_path):
 
     engine = LearningEngine(str(config_path))
 
-    # Manually create schema for tests
-    Base.metadata.create_all(engine.store.engine)
+    # Manually create schema for tests using async engine
+    async with engine.store.async_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
 
     return engine
 
 
-def test_schema_creation(learning_engine):
+@pytest.mark.asyncio
+async def test_schema_creation(learning_engine):
     """Verify that the schema is created correctly, including slot_plans."""
     with sqlite3.connect(learning_engine.db_path) as conn:
         cursor = conn.cursor()
@@ -47,7 +49,8 @@ def test_schema_creation(learning_engine):
         assert cursor.fetchone() is not None
 
 
-def test_store_plan_and_metrics(learning_engine):
+@pytest.mark.asyncio
+async def test_store_plan_and_metrics(learning_engine):
     """Verify storing plans and calculating plan deviation metrics."""
     # 1. Store a plan
     now = datetime.now(learning_engine.timezone).replace(minute=0, second=0, microsecond=0)
@@ -73,7 +76,7 @@ def test_store_plan_and_metrics(learning_engine):
         },
     ]
     plan_df = pd.DataFrame(plan_data)
-    learning_engine.log_training_episode({}, plan_df)
+    await learning_engine.log_training_episode({}, plan_df)
 
     # 2. Store actual observations (deviating from plan)
     # Slot 1: Charged 4.0 instead of 5.0 (Deviation 1.0)
@@ -103,10 +106,10 @@ def test_store_plan_and_metrics(learning_engine):
         },
     ]
     obs_df = pd.DataFrame(obs_data)
-    learning_engine.store_slot_observations(obs_df)
+    await learning_engine.store_slot_observations(obs_df)
 
     # 3. Calculate Metrics
-    metrics = learning_engine.calculate_metrics(days_back=1)
+    metrics = await learning_engine.calculate_metrics(days_back=1)
 
     # Check Plan Deviation
     # Charge MAE: (|5-4| + |0-0|) / 2 = 0.5
@@ -130,13 +133,14 @@ def test_store_plan_and_metrics(learning_engine):
     assert metrics["cost_deviation"] == 2.5
 
 
-def test_store_training_episode(learning_engine):
+@pytest.mark.asyncio
+async def test_store_training_episode(learning_engine):
     """Verify storing training episodes."""
     episode_id = "test-episode-123"
     inputs = {"foo": "bar"}
     schedule = [{"start": "2023-01-01T00:00:00", "charge": 1.0}]
 
-    learning_engine.store.store_training_episode(
+    await learning_engine.store.store_training_episode(
         episode_id=episode_id, inputs_json=json.dumps(inputs), schedule_json=json.dumps(schedule)
     )
 

@@ -10,7 +10,7 @@ from fastapi import APIRouter, HTTPException
 
 from backend.api.models.system import LogInfoResponse, StatusResponse, VersionResponse
 from inputs import (
-    async_get_ha_sensor_float,
+    get_ha_sensor_float,
     load_yaml,
 )
 
@@ -101,7 +101,7 @@ async def get_system_status() -> StatusResponse:
     for key in keys:
         eid = sensors.get(key)
         if eid:
-            tasks.append(async_get_ha_sensor_float(str(eid)))
+            tasks.append(get_ha_sensor_float(str(eid)))
         else:
             tasks.append(asyncio.sleep(0, result=0.0))
 

@@ -34,7 +34,7 @@ def _parse_iso(value: Any) -> datetime | None:
         return None
     if isinstance(value, datetime):
         return value
-    if isinstance(value, (int, float)):
+    if isinstance(value, int | float):
         # Assume milliseconds if > 1e11 (valid for ~1973 onwards)
         if value > 1e11:
             value = value / 1000.0
@@ -91,7 +91,7 @@ class SimulationDataLoader:
     def _to_utc_iso(self, value: datetime) -> str:
         return self._localize_datetime(value).astimezone(pytz.UTC).isoformat()
 
-    def get_window_inputs(
+    async def get_window_inputs(
         self,
         now: datetime,
         horizon_hours: int | None = None,
@@ -102,7 +102,7 @@ class SimulationDataLoader:
         end = start + timedelta(hours=horizon)
 
         price_slots = self._load_price_data(start, end)
-        forecast_slots = self._load_forecast_slots(start, end)
+        forecast_slots = await self._load_forecast_slots(start, end)
         if not forecast_slots:
             forecast_slots = self._build_naive_forecasts(start, end)
 
@@ -177,10 +177,10 @@ class SimulationDataLoader:
             records.extend(segments)
         return sorted(records, key=lambda item: item["start_time"])
 
-    def _load_forecast_slots(self, start: datetime, end: datetime) -> list[dict[str, Any]]:
+    async def _load_forecast_slots(self, start: datetime, end: datetime) -> list[dict[str, Any]]:
         version = self.config.get("forecasting", {}).get("active_forecast_version") or "aurora"
         try:
-            slots = get_forecast_slots(start, end, version)
+            slots = await get_forecast_slots(start, end, version)
         except Exception:
             slots = []
         result: list[dict[str, Any]] = []

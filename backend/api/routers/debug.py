@@ -66,8 +66,6 @@ async def debug_logs() -> dict[str, Any]:
         raise HTTPException(500, str(exc)) from exc
 
 
-import asyncio  # noqa: E402
-
 from sqlalchemy import select  # noqa: E402
 
 from backend.learning.models import SlotObservation  # noqa: E402
@@ -102,38 +100,27 @@ async def historic_soc(date: str = Query("today")) -> dict[str, Any]:
                 "message": "Engine not initialized",
             }
 
-        target_date.isoformat()
+        day_start = tz.localize(datetime(target_date.year, target_date.month, target_date.day))
+        day_end = day_start + timedelta(days=1)
+        start_iso_str = day_start.isoformat()
+        end_iso_str = day_end.isoformat()
 
-        def fetch():
-            with engine.store.Session() as session:
-                # We need to filter by date.
-                # Since slot_start is an ISO string, we can filter by prefix OR use func.date logic if compatible.
-                # SlotObservation.slot_start is YYYY-MM-DDTHH:MM:SS...
-                # Filtering by >= target_date and < target_date + 1 day is better for index.
-                day_start = tz.localize(
-                    datetime(target_date.year, target_date.month, target_date.day)
+        async with engine.store.AsyncSession() as session:
+            stmt = (
+                select(
+                    SlotObservation.slot_start,
+                    SlotObservation.soc_end_percent,
+                    SlotObservation.quality_flags,
                 )
-                day_end = day_start + timedelta(days=1)
-
-                start_iso_str = day_start.isoformat()
-                end_iso_str = day_end.isoformat()
-
-                stmt = (
-                    select(
-                        SlotObservation.slot_start,
-                        SlotObservation.soc_end_percent,
-                        SlotObservation.quality_flags,
-                    )
-                    .where(
-                        SlotObservation.slot_start >= start_iso_str,
-                        SlotObservation.slot_start < end_iso_str,
-                        SlotObservation.soc_end_percent.is_not(None),
-                    )
-                    .order_by(SlotObservation.slot_start)
+                .where(
+                    SlotObservation.slot_start >= start_iso_str,
+                    SlotObservation.slot_start < end_iso_str,
+                    SlotObservation.soc_end_percent.is_not(None),
                 )
-                return session.execute(stmt).all()
-
-        rows = await asyncio.to_thread(fetch)
+                .order_by(SlotObservation.slot_start)
+            )
+            result = await session.execute(stmt)
+            rows = result.all()
 
         if not rows:
             return {
@@ -167,9 +154,9 @@ async def get_performance_metrics(days: int = Query(7, ge=1, le=90)) -> dict[str
     """Get performance metrics for charts."""
     try:
         engine = get_learning_engine()
-        # engine.get_performance_series handles session internally via store
-        data = cast("dict[str, Any]", engine.get_performance_series(days_back=days))  # type: ignore
-        return data
+        # get_performance_series is now async
+        data = await engine.get_performance_series(days_back=days)
+        return cast("dict[str, Any]", data)
     except Exception:
         logger.exception("Failed to get performance metrics")
         return {"soc_series": [], "cost_series": []}
@@ -185,7 +172,7 @@ async def debug_load_profile() -> dict[str, Any]:
     try:
         conf = load_yaml("config.yaml") or {}
         try:
-            profile = get_load_profile_from_ha(conf)
+            profile = await get_load_profile_from_ha(conf)
             return {
                 "source": "ha",
                 "profile_sum": sum(profile),

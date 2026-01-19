@@ -21,7 +21,7 @@ class Analyst:
             config.get("timezone", "Europe/Stockholm"),
         )
 
-    def analyze_forecast_accuracy(self, days: int = 7) -> dict[str, Any]:
+    async def analyze_forecast_accuracy(self, days: int = 7) -> dict[str, Any]:
         """
         Analyze forecast accuracy over the last N days using SQLAlchemy/Pandas.
         Returns bias metrics for Load and PV.
@@ -34,11 +34,11 @@ class Analyst:
         end_date = datetime.now(UTC)
         start_date = end_date - timedelta(days=days)
 
-        obs_df = self._fetch_observations(start_date, end_date)
+        obs_df = await self._fetch_observations(start_date, end_date)
         if obs_df.empty:
             return {"status": "no_data", "reason": "No observations found"}
 
-        plans_df = self._fetch_plans(start_date, end_date)
+        plans_df = await self._fetch_plans(start_date, end_date)
         if plans_df.empty:
             return {"status": "no_data", "reason": "No plans found"}
 
@@ -78,16 +78,16 @@ class Analyst:
 
         return results
 
-    def update_learning_overlays(self) -> None:
+    async def update_learning_overlays(self) -> None:
         """
-        Calculate new adjustment factors and write to learning_daily_metrics using SQLAlchemy.
+        Calculate new adjustment factors and write to learning_daily_metrics using Async SQLAlchemy.
         """
         if not self.learning_config.get("auto_tune_enabled", False):
             logger.info("Analyst: Auto-tune disabled. Skipping update.")
             return
 
         logger.info("Analyst: Running forecast analysis...")
-        analysis = self.analyze_forecast_accuracy(days=7)
+        analysis = await self.analyze_forecast_accuracy(days=7)
 
         if analysis.get("status") != "success":
             logger.warning(f"Analyst: Analysis failed or no data: {analysis.get('reason')}")
@@ -107,14 +107,14 @@ class Analyst:
                 pv_adj[hour] = max(-2.0, min(2.0, stats.get("pv_bias", 0.0)))
 
         # Calculate new s_index_base_factor
-        s_index_base_factor = self._calculate_new_s_index_base_factor(global_bias)
+        s_index_base_factor = await self._calculate_new_s_index_base_factor(global_bias)
 
         # Write to DB
         today_str = datetime.now().date().isoformat()
 
         try:
-            with self.store.Session() as session:
-                metric = session.get(LearningDailyMetric, today_str)
+            async with self.store.AsyncSession() as session:
+                metric = await session.get(LearningDailyMetric, today_str)
                 if not metric:
                     metric = LearningDailyMetric(date=today_str)
                     session.add(metric)
@@ -123,7 +123,7 @@ class Analyst:
                 metric.load_adjustment_by_hour_kwh = json.dumps(load_adj)
                 metric.s_index_base_factor = s_index_base_factor
                 metric.created_at = datetime.now()  # SQLAlchemy DateTime
-                session.commit()
+                await session.commit()
 
             logger.info(
                 f"Analyst: Updated learning overlays for {today_str} (s_index={s_index_base_factor:.4f})."
@@ -132,9 +132,9 @@ class Analyst:
         except Exception as e:
             logger.error(f"Analyst: Failed to write overlays: {e}")
 
-    def _calculate_new_s_index_base_factor(self, global_bias: dict[str, float]) -> float:
+    async def _calculate_new_s_index_base_factor(self, global_bias: dict[str, float]) -> float:
         """
-        Calculate updated s_index_base_factor based on forecast bias using SQLAlchemy.
+        Calculate updated s_index_base_factor based on forecast bias using Async SQLAlchemy.
         """
         s_index_cfg = self.config.get("s_index", {})
         config_base = float(s_index_cfg.get("base_factor", 1.05))
@@ -148,14 +148,15 @@ class Analyst:
 
         # Get last learned value
         try:
-            with self.store.Session() as session:
+            async with self.store.AsyncSession() as session:
                 stmt = (
                     select(LearningDailyMetric.s_index_base_factor)
                     .where(LearningDailyMetric.s_index_base_factor.is_not(None))
                     .order_by(desc(LearningDailyMetric.date))
                     .limit(1)
                 )
-                row = session.execute(stmt).scalar_one_or_none()
+                result = await session.execute(stmt)
+                row = result.scalar_one_or_none()
                 current_base = float(row) if row is not None else config_base
         except Exception:
             current_base = config_base
@@ -177,34 +178,63 @@ class Analyst:
 
         return round(new_factor, 4)
 
-    def _fetch_observations(self, start: datetime, end: datetime) -> pd.DataFrame:
-        """Fetch observations within date range using SQLAlchemy/Pandas."""
-        query = "SELECT slot_start, load_kwh, pv_kwh FROM slot_observations"
-        try:
-            # Using store.engine directly for pandas
-            df = pd.read_sql_query(query, self.store.engine)
+    async def _fetch_observations(self, start: datetime, end: datetime) -> pd.DataFrame:
+        """Fetch observations within date range using Async SQLAlchemy/Pandas."""
+        from backend.learning.models import SlotObservation
 
-            if not df.empty:
-                df["slot_start"] = pd.to_datetime(df["slot_start"], utc=True)
-                start_utc = start.astimezone(UTC) if start.tzinfo else start.replace(tzinfo=UTC)
-                end_utc = end.astimezone(UTC) if end.tzinfo else end.replace(tzinfo=UTC)
-                df = df[(df["slot_start"] >= start_utc) & (df["slot_start"] <= end_utc)]
-            return df
-        except Exception as e:
-            logger.error(f"Analyst: _fetch_observations error: {e}")
-            return pd.DataFrame()
+        async with self.store.AsyncSession() as session:
+            stmt = select(
+                SlotObservation.slot_start, SlotObservation.load_kwh, SlotObservation.pv_kwh
+            ).order_by(SlotObservation.slot_start.asc())
 
-    def _fetch_plans(self, start: datetime, end: datetime) -> pd.DataFrame:
-        """Fetch forecasts within date range using SQLAlchemy/Pandas."""
-        query = "SELECT slot_start, load_forecast_kwh, pv_forecast_kwh FROM slot_forecasts"
-        try:
-            df = pd.read_sql_query(query, self.store.engine)
-            if not df.empty:
-                df["slot_start"] = pd.to_datetime(df["slot_start"], utc=True)
-                start_utc = start.astimezone(UTC) if start.tzinfo else start.replace(tzinfo=UTC)
-                end_utc = end.astimezone(UTC) if end.tzinfo else end.replace(tzinfo=UTC)
-                df = df[(df["slot_start"] >= start_utc) & (df["slot_start"] <= end_utc)]
-            return df
-        except Exception as e:
-            logger.error(f"Analyst: _fetch_plans error: {e}")
-            return pd.DataFrame()
+            try:
+                result = await session.execute(stmt)
+                rows = result.all()
+                if not rows:
+                    return pd.DataFrame()
+
+                # Conversion to DataFrame for analysis
+                import asyncio
+
+                def build_df():
+                    df = pd.DataFrame([r._asdict() for r in rows])
+                    df["slot_start"] = pd.to_datetime(df["slot_start"], utc=True)
+                    start_utc = start.astimezone(UTC) if start.tzinfo else start.replace(tzinfo=UTC)
+                    end_utc = end.astimezone(UTC) if end.tzinfo else end.replace(tzinfo=UTC)
+                    return df[(df["slot_start"] >= start_utc) & (df["slot_start"] <= end_utc)]
+
+                return await asyncio.to_thread(build_df)
+            except Exception as e:
+                logger.error(f"Analyst: _fetch_observations error: {e}")
+                return pd.DataFrame()
+
+    async def _fetch_plans(self, start: datetime, end: datetime) -> pd.DataFrame:
+        """Fetch forecasts within date range using Async SQLAlchemy/Pandas."""
+        from backend.learning.models import SlotForecast
+
+        async with self.store.AsyncSession() as session:
+            stmt = select(
+                SlotForecast.slot_start,
+                SlotForecast.load_forecast_kwh,
+                SlotForecast.pv_forecast_kwh,
+            ).order_by(SlotForecast.slot_start.asc())
+
+            try:
+                result = await session.execute(stmt)
+                rows = result.all()
+                if not rows:
+                    return pd.DataFrame()
+
+                import asyncio
+
+                def build_df():
+                    df = pd.DataFrame([r._asdict() for r in rows])
+                    df["slot_start"] = pd.to_datetime(df["slot_start"], utc=True)
+                    start_utc = start.astimezone(UTC) if start.tzinfo else start.replace(tzinfo=UTC)
+                    end_utc = end.astimezone(UTC) if end.tzinfo else end.replace(tzinfo=UTC)
+                    return df[(df["slot_start"] >= start_utc) & (df["slot_start"] <= end_utc)]
+
+                return await asyncio.to_thread(build_df)
+            except Exception as e:
+                logger.error(f"Analyst: _fetch_plans error: {e}")
+                return pd.DataFrame()

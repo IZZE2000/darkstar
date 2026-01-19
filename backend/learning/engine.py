@@ -14,10 +14,7 @@ from backend.learning.store import LearningStore
 class LearningEngine:
     """
     Learning engine for auto-tuning and forecast calibration.
-
-    NOTE (REV ARC10): This class and its usage in Recorder remain SYNCHRONOUS.
-    It uses the synchronous capabilities of LearningStore (Dual-mode).
-    Async migration for this component is scheduled for REV ARC11.
+    Unified AsyncIO architecture (REV ARC11).
     """
 
     def __init__(self, config_path: str = "config.yaml"):
@@ -45,17 +42,17 @@ class LearningEngine:
             with Path("config.default.yaml").open(encoding="utf-8") as f:
                 return yaml.safe_load(f)
 
-    # Delegate storage methods to store
-    def store_slot_prices(self, price_rows: Any) -> None:
-        self.store.store_slot_prices(price_rows)
+    # Delegate storage methods to store (Async)
+    async def store_slot_prices(self, price_rows: Any) -> None:
+        await self.store.store_slot_prices(price_rows)
 
-    def store_slot_observations(self, observations_df: pd.DataFrame) -> None:
-        self.store.store_slot_observations(observations_df)
+    async def store_slot_observations(self, observations_df: pd.DataFrame) -> None:
+        await self.store.store_slot_observations(observations_df)
 
-    def store_forecasts(self, forecasts: list[dict], forecast_version: str) -> None:
-        self.store.store_forecasts(forecasts, forecast_version)
+    async def store_forecasts(self, forecasts: list[dict], forecast_version: str) -> None:
+        await self.store.store_forecasts(forecasts, forecast_version)
 
-    def log_training_episode(
+    async def log_training_episode(
         self, input_data: dict, schedule_df: pd.DataFrame, config_overrides: dict | None = None
     ) -> None:
         """
@@ -72,7 +69,7 @@ class LearningEngine:
             context_json = None  # TODO: Capture context if available
             config_overrides_json = json.dumps(config_overrides) if config_overrides else None
 
-            self.store.store_training_episode(
+            await self.store.store_training_episode(
                 episode_id=episode_id,
                 inputs_json=inputs_json,
                 schedule_json=schedule_json,
@@ -81,7 +78,7 @@ class LearningEngine:
             )
 
         # 2. Log to slot_plans
-        self.store.store_plan(schedule_df)
+        await self.store.store_plan(schedule_df)
 
     def _canonical_sensor_name(self, name: str) -> str:
         """Map incoming sensor names to canonical identifiers."""
@@ -123,9 +120,10 @@ class LearningEngine:
         resolution_minutes: int = 15,
     ) -> pd.DataFrame:
         """
-        Convert cumulative sensor data to 15-minute slot deltas
+        Convert cumulative sensor data to 15-minute slot deltas.
+        This remains CPU-bound but is efficient enough for small batches.
+        Large batches should be run in to_thread.
         """
-        # (Logic identical to original learning.py, preserved here)
         slot_records: dict[str, pd.DataFrame] = {}
         for sensor_name, data in cumulative_data.items():
             if data:
@@ -199,14 +197,14 @@ class LearningEngine:
         slot_df["duration_minutes"] = resolution_minutes
         return slot_df
 
-    def calculate_metrics(self, days_back: int = 7) -> dict[str, Any]:
+    async def calculate_metrics(self, days_back: int = 7) -> dict[str, Any]:
         """Calculate learning metrics for the last N days using the store."""
-        return self.store.calculate_metrics(days_back)
+        return await self.store.calculate_metrics(days_back)
 
-    def get_status(self) -> dict[str, Any]:
+    async def get_status(self) -> dict[str, Any]:
         """Get current status of the learning engine."""
-        last_obs = self.store.get_last_observation_time()
-        episodes = self.store.get_episodes_count()
+        last_obs = await self.store.get_last_observation_time()
+        episodes = await self.store.get_episodes_count()
 
         return {
             "status": "active",
@@ -216,8 +214,8 @@ class LearningEngine:
             "timezone": str(self.timezone),
         }
 
-    def get_performance_series(self, days_back: int = 7) -> dict[str, list[dict]]:
+    async def get_performance_series(self, days_back: int = 7) -> dict[str, list[dict]]:
         """
         Get time-series data for performance visualization using the store.
         """
-        return self.store.get_performance_series(days_back)
+        return await self.store.get_performance_series(days_back)

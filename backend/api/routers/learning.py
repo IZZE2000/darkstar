@@ -32,8 +32,8 @@ async def learning_status() -> dict[str, Any]:
     """Return learning engine status and metrics."""
     try:
         engine = _get_learning_engine()
-        # get_status is already refactored to use store
-        status = engine.get_status()
+        # get_status is now async
+        status = await engine.get_status()
         return cast("dict[str, Any]", status)
     except Exception as e:
         logger.exception("Failed to get learning status")
@@ -46,35 +46,30 @@ async def learning_status() -> dict[str, Any]:
     description="Return learning engine run history.",
 )
 async def learning_history(limit: int = Query(20, ge=1, le=100)) -> dict[str, Any]:
-    """Return learning engine run history using SQLAlchemy."""
+    """Return learning engine run history using Async SQLAlchemy."""
     try:
         engine = _get_learning_engine()
         store: LearningStore = engine.store
 
-        def _fetch_history():
-            with store.Session() as session:
-                stmt = select(LearningRun).order_by(desc(LearningRun.started_at)).limit(limit)
-                rows = session.execute(stmt).scalars().all()
+        async with store.AsyncSession() as session:
+            stmt = select(LearningRun).order_by(desc(LearningRun.started_at)).limit(limit)
+            result = await session.execute(stmt)
+            rows = result.scalars().all()
 
-                results = []
-                for run in rows:
-                    results.append(
-                        {
-                            "id": run.id,
-                            "run_date": run.started_at.isoformat() if run.started_at else None,
-                            "status": run.status,
-                            "metrics": json.loads(run.result_metrics_json)
-                            if run.result_metrics_json
-                            else None,
-                            "config_changes": json.loads(run.params_json)
-                            if run.params_json
-                            else None,
-                        }
-                    )
-                return results
-
-        runs = await asyncio.to_thread(_fetch_history)
-        return {"runs": runs, "count": len(runs)}
+            results = []
+            for run in rows:
+                results.append(
+                    {
+                        "id": run.id,
+                        "run_date": run.started_at.isoformat() if run.started_at else None,
+                        "status": run.status,
+                        "metrics": json.loads(run.result_metrics_json)
+                        if run.result_metrics_json
+                        else None,
+                        "config_changes": json.loads(run.params_json) if run.params_json else None,
+                    }
+                )
+            return {"runs": results, "count": len(results)}
     except Exception as e:
         logger.exception("Failed to get learning history")
         raise HTTPException(status_code=500, detail=str(e)) from e
@@ -91,6 +86,8 @@ async def learning_run() -> dict[str, Any]:
         from backend.learning.reflex import AuroraReflex
         from ml.train import train_models
 
+        # NOTE: Reflex and ML Training are CPU-intensive and sync.
+        # We still use to_thread for these.
         def _run_heavy_tasks():
             # Run Reflex
             reflex = AuroraReflex()
@@ -136,31 +133,25 @@ async def learning_loops() -> dict[str, Any]:
     description="Get latest daily metrics from learning engine.",
 )
 async def learning_daily_metrics():
-    """Get latest daily metrics from learning engine using SQLAlchemy."""
+    """Get latest daily metrics from learning engine using Async SQLAlchemy."""
     try:
         engine = _get_learning_engine()
         store: LearningStore = engine.store
 
-        def _fetch_metrics():
-            with store.Session() as session:
-                stmt = select(LearningDailyMetric).order_by(desc(LearningDailyMetric.date)).limit(1)
-                row = session.execute(stmt).scalar_one_or_none()
+        async with store.AsyncSession() as session:
+            stmt = select(LearningDailyMetric).order_by(desc(LearningDailyMetric.date)).limit(1)
+            result = await session.execute(stmt)
+            row = result.scalar_one_or_none()
 
-                if not row:
-                    return None
+            if not row:
+                return {"message": "No daily metrics yet"}
 
-                return {
-                    "date": row.date,
-                    "pv_error_mean_abs_kwh": row.pv_error_mean_abs_kwh,
-                    "load_error_mean_abs_kwh": row.load_error_mean_abs_kwh,
-                    "s_index_base_factor": row.s_index_base_factor,
-                }
-
-        result = await asyncio.to_thread(_fetch_metrics)
-        if not result:
-            return {"message": "No daily metrics yet"}
-
-        return result
+            return {
+                "date": row.date,
+                "pv_error_mean_abs_kwh": row.pv_error_mean_abs_kwh,
+                "load_error_mean_abs_kwh": row.load_error_mean_abs_kwh,
+                "s_index_base_factor": row.s_index_base_factor,
+            }
     except Exception as e:
         logger.exception("Failed to get daily metrics")
         raise HTTPException(status_code=500, detail=str(e)) from e
@@ -172,35 +163,28 @@ async def learning_daily_metrics():
     description="Return recent learning configuration changes.",
 )
 async def learning_changes(limit: int = Query(10, ge=1, le=50)) -> dict[str, Any]:
-    """Return recent learning configuration changes using SQLAlchemy."""
+    """Return recent learning configuration changes using Async SQLAlchemy."""
     try:
         engine = _get_learning_engine()
         store: LearningStore = engine.store
 
-        def _fetch_changes():
-            with store.Session() as session:
-                stmt = select(ConfigVersion).order_by(desc(ConfigVersion.created_at)).limit(limit)
-                rows = session.execute(stmt).scalars().all()
+        async with store.AsyncSession() as session:
+            stmt = select(ConfigVersion).order_by(desc(ConfigVersion.created_at)).limit(limit)
+            result = await session.execute(stmt)
+            rows = result.scalars().all()
 
-                changes = []
-                for change in rows:
-                    changes.append(
-                        {
-                            "id": change.id,
-                            "created_at": change.created_at.isoformat()
-                            if change.created_at
-                            else None,
-                            "reason": change.reason,
-                            "applied": change.applied,
-                            "metrics": json.loads(change.metrics_json)
-                            if change.metrics_json
-                            else None,
-                        }
-                    )
-                return changes
-
-        changes = await asyncio.to_thread(_fetch_changes)
-        return {"changes": changes}
+            changes = []
+            for change in rows:
+                changes.append(
+                    {
+                        "id": change.id,
+                        "created_at": change.created_at.isoformat() if change.created_at else None,
+                        "reason": change.reason,
+                        "applied": change.applied,
+                        "metrics": json.loads(change.metrics_json) if change.metrics_json else None,
+                    }
+                )
+            return {"changes": changes}
     except Exception as e:
         logger.exception("Failed to get learning changes")
         raise HTTPException(status_code=500, detail=str(e)) from e
@@ -216,8 +200,8 @@ async def record_observation() -> dict[str, str]:
     try:
         from backend.recorder import record_observation_from_current_state
 
-        # Run in thread as it does blocking I/O
-        await asyncio.to_thread(record_observation_from_current_state)
+        # record_observation_from_current_state is now async
+        await record_observation_from_current_state()
         return {"status": "success", "message": "Observation recorded"}
     except Exception as e:
         logger.exception("Failed to record observation")

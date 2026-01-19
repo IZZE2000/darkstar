@@ -1,4 +1,4 @@
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -6,10 +6,10 @@ from backend.ha_socket import HAWebSocketClient
 from backend.recorder import record_observation_from_current_state
 
 
-# Mock inputs.get_home_assistant_sensor_float
+# Mock inputs.get_ha_sensor_float
 @pytest.fixture
 def mock_get_sensor():
-    with patch("backend.recorder.get_home_assistant_sensor_float") as mock:
+    with patch("backend.recorder.get_ha_sensor_float", new_callable=AsyncMock) as mock:
         yield mock
 
 
@@ -25,7 +25,8 @@ def mock_store():
         yield mock
 
 
-def test_recorder_net_meter_mode(mock_config, mock_get_sensor, mock_store):
+@pytest.mark.asyncio
+async def test_recorder_net_meter_mode(mock_config, mock_get_sensor, mock_store):
     # Setup Config
     mock_config.return_value = {
         "system": {"grid_meter_type": "net"},
@@ -35,15 +36,19 @@ def test_recorder_net_meter_mode(mock_config, mock_get_sensor, mock_store):
     }
 
     # Setup Sensor Values (Grid = 500W Import)
-    def side_effect(entity, **kwargs):
+    async def side_effect(entity, **kwargs):
         if entity == "sensor.grid_net":
             return 500.0
         return 0.0
 
     mock_get_sensor.side_effect = side_effect
 
+    # Make store.store_slot_observations an AsyncMock
+    mock_store.return_value.store_slot_observations = AsyncMock()
+    mock_store.return_value.close = AsyncMock()
+
     # Run
-    record_observation_from_current_state()
+    await record_observation_from_current_state()
 
     # Verify Store call
     df = mock_store.return_value.store_slot_observations.call_args[0][0]
@@ -52,7 +57,8 @@ def test_recorder_net_meter_mode(mock_config, mock_get_sensor, mock_store):
     assert df.iloc[0]["export_kwh"] == 0.0
 
 
-def test_recorder_dual_meter_mode(mock_config, mock_get_sensor, mock_store):
+@pytest.mark.asyncio
+async def test_recorder_dual_meter_mode(mock_config, mock_get_sensor, mock_store):
     # Setup Config
     mock_config.return_value = {
         "system": {"grid_meter_type": "dual"},
@@ -63,7 +69,7 @@ def test_recorder_dual_meter_mode(mock_config, mock_get_sensor, mock_store):
     }
 
     # Setup Sensor Values (Import=1000W, Export=200W) - simultaneous?
-    def side_effect(entity, **kwargs):
+    async def side_effect(entity, **kwargs):
         if entity == "sensor.grid_import":
             return 1000.0
         if entity == "sensor.grid_export":
@@ -72,8 +78,12 @@ def test_recorder_dual_meter_mode(mock_config, mock_get_sensor, mock_store):
 
     mock_get_sensor.side_effect = side_effect
 
+    # Make store.store_slot_observations an AsyncMock
+    mock_store.return_value.store_slot_observations = AsyncMock()
+    mock_store.return_value.close = AsyncMock()
+
     # Run
-    record_observation_from_current_state()
+    await record_observation_from_current_state()
 
     # Verify Store call
     df = mock_store.return_value.store_slot_observations.call_args[0][0]

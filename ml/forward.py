@@ -56,7 +56,7 @@ def _load_models(models_dir: str = "ml/models") -> dict[str, lgb.Booster]:
     return models
 
 
-def generate_forward_slots(
+async def generate_forward_slots(
     horizon_hours: int = 168,
     forecast_version: str = "aurora",
 ) -> None:
@@ -236,9 +236,11 @@ def generate_forward_slots(
         forecasts.append(item)
 
     if forecasts:
-        engine.store_forecasts(forecasts, forecast_version=forecast_version)
+        await engine.store_forecasts(forecasts, forecast_version=forecast_version)
         print(f"✅ Stored {len(forecasts)} forward AURORA forecasts ({forecast_version}).")
 
 
 if __name__ == "__main__":
-    generate_forward_slots()
+    import asyncio
+
+    asyncio.run(generate_forward_slots())

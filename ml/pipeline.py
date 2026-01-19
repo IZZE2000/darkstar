@@ -21,7 +21,7 @@ def _get_engine() -> LearningEngine:
     return engine
 
 
-def _apply_corrections_to_db(
+async def _apply_corrections_to_db(
     engine: LearningEngine,
     corrections: list[dict[str, Any]],
     forecast_version: str,
@@ -29,10 +29,7 @@ def _apply_corrections_to_db(
     if not corrections:
         return
 
-    import sqlite3
-
-    with sqlite3.connect(engine.db_path, timeout=30.0) as conn:
-        cursor = conn.cursor()
+    async with engine.store.AsyncSession() as session:
         for row in corrections:
             slot_start = row.get("slot_start")
             if slot_start is None:
@@ -48,23 +45,31 @@ def _apply_corrections_to_db(
             load_corr = float(row.get("load_correction_kwh") or 0.0)
             source = row.get("correction_source") or "none"
 
-            cursor.execute(
-                """
+            from sqlalchemy import text
+
+            await session.execute(
+                text("""
                 UPDATE slot_forecasts
                 SET
-                    pv_correction_kwh = ?,
-                    load_correction_kwh = ?,
-                    correction_source = ?
-                WHERE slot_start = ?
-                  AND forecast_version = ?
-                """,
-                (pv_corr, load_corr, source, ts_str, forecast_version),
+                    pv_correction_kwh = :pv_corr,
+                    load_correction_kwh = :load_corr,
+                    correction_source = :source
+                WHERE slot_start = :slot_start
+                  AND forecast_version = :forecast_version
+                """),
+                {
+                    "pv_corr": pv_corr,
+                    "load_corr": load_corr,
+                    "source": source,
+                    "slot_start": ts_str,
+                    "forecast_version": forecast_version,
+                },
             )
 
-        conn.commit()
+        await session.commit()
 
 
-def run_inference(
+async def run_inference(
     horizon_hours: int = 168,
     forecast_version: str = "aurora",
 ) -> dict[str, Any]:
@@ -80,17 +85,17 @@ def run_inference(
     tz = engine.timezone
 
     # Step 1: Base AURORA forecast for full horizon (S-index compatible).
-    generate_forward_slots(horizon_hours=horizon_hours, forecast_version=forecast_version)
+    await generate_forward_slots(horizon_hours=horizon_hours, forecast_version=forecast_version)
 
     # Step 2: Correction for the upcoming 48h (planner horizon).
     # The corrector itself applies the Graduation Path and safety clamping.
-    corrections, source = predict_corrections(
+    corrections, source = await predict_corrections(
         horizon_hours=min(48, horizon_hours),
         forecast_version=forecast_version,
     )
 
     # Step 3: Persist corrections into DB
-    _apply_corrections_to_db(engine, corrections, forecast_version=forecast_version)
+    await _apply_corrections_to_db(engine, corrections, forecast_version=forecast_version)
 
     return {
         "status": "ok",
@@ -103,5 +108,7 @@ def run_inference(
 
 
 if __name__ == "__main__":
-    result = run_inference()
+    import asyncio
+
+    result = asyncio.run(run_inference())
     print(result)

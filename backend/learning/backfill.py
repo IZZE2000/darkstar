@@ -2,8 +2,8 @@ import logging
 from datetime import datetime, timedelta
 from pathlib import Path
 
+import httpx
 import pytz
-import requests
 import yaml
 
 from backend.learning import get_learning_engine
@@ -56,10 +56,10 @@ class BackfillEngine:
             "Content-Type": "application/json",
         }
 
-    def _fetch_history(
+    async def _fetch_history(
         self, entity_id: str, start_time: datetime, end_time: datetime
     ) -> list[tuple[datetime, float]]:
-        """Fetch history for a single entity from HA."""
+        """Fetch history for a single entity from HA asynchronously."""
         url = self.ha_config.get("url")
         if not url or not entity_id:
             return []
@@ -73,11 +73,10 @@ class BackfillEngine:
         }
 
         try:
-            response = requests.get(
-                api_url, headers=self._make_ha_headers(), params=params, timeout=60
-            )
-            response.raise_for_status()
-            data = response.json()
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.get(api_url, headers=self._make_ha_headers(), params=params)
+                response.raise_for_status()
+                data = response.json()
 
             if not data or not data[0]:
                 return []
@@ -96,14 +95,14 @@ class BackfillEngine:
             logger.error(f"Failed to fetch history for {entity_id}: {e}")
             return []
 
-    def run(self) -> None:
-        """Run the backfill process."""
+    async def run(self) -> None:
+        """Run the backfill process asynchronously."""
         logger.info("Starting backfill process...")
 
         # 1. Sync from Home Assistant (Primary Source)
         try:
             # Check last observation time
-            last_obs = self.store.get_last_observation_time()
+            last_obs = await self.store.get_last_observation_time()
             now = datetime.now(self.timezone)
 
             # Default lookback if empty DB (e.g., 7 days)
@@ -132,7 +131,7 @@ class BackfillEngine:
             count = 0
             for entity_id, canonical in raw_map.items():
                 logger.info(f"Backfilling {canonical} ({entity_id})...")
-                history = self._fetch_history(str(entity_id), start_time, now)
+                history = await self._fetch_history(str(entity_id), start_time, now)
                 if history:
                     cumulative_data[str(entity_id)] = history
                     count += len(history)
@@ -143,8 +142,10 @@ class BackfillEngine:
 
             logger.info(f"Fetched {count} data points. Processing into slots...")
 
-            # 3. ETL to slots
-            df = self.engine.etl_cumulative_to_slots(cumulative_data)
+            # 3. ETL to slots (CPU-bound, wrap in to_thread for 100% production grade)
+            import asyncio
+
+            df = await asyncio.to_thread(self.engine.etl_cumulative_to_slots, cumulative_data)
 
             if df.empty:
                 logger.warning("ETL produced empty DataFrame.")
@@ -153,7 +154,7 @@ class BackfillEngine:
             logger.info(f"Generated {len(df)} slots. Storing to DB...")
 
             # 4. Store
-            self.engine.store_slot_observations(df)
+            await self.engine.store_slot_observations(df)
             logger.info("Backfill complete.")
 
         except Exception as e:

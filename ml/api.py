@@ -4,11 +4,10 @@ API router for Aurora-based forecasting and Antares model parameters.
 
 from __future__ import annotations
 
-import sqlite3
 from typing import TYPE_CHECKING, Any, cast
 
-# import aiosqlite # Lazy imported
 import pandas as pd
+import pytz
 
 from backend.learning import LearningEngine, get_learning_engine
 
@@ -26,146 +25,31 @@ def _get_engine() -> LearningEngine:
     return cast("LearningEngine", engine)
 
 
-def get_forecast_slots(
+async def get_forecast_slots(
     start_time: datetime,
     end_time: datetime,
     forecast_version: str,
 ) -> list[dict[str, Any]]:
     """
-    Return forecast slots for the given time window and version.
-
-    The result is a list of dicts with keys:
-        - slot_start (datetime, timezone-aware in planner timezone)
-        - pv_forecast_kwh (float)
-        - load_forecast_kwh (float)
-        - temp_c (float | None)
-        - forecast_version (str)
-        - pv_correction_kwh (float)
-        - load_correction_kwh (float)
-        - correction_source (str)
+    Async return forecast slots for the given time window and version using LearningStore.
     """
     engine = _get_engine()
-    db_path = str(getattr(engine, "db_path", "data/planner_learning.db"))
-
-    with sqlite3.connect(db_path, timeout=30.0) as conn:
-        query = """
-            SELECT
-                slot_start,
-                pv_forecast_kwh,
-                load_forecast_kwh,
-                pv_p10,
-                pv_p90,
-                load_p10,
-                load_p90,
-                temp_c,
-                forecast_version,
-                pv_correction_kwh,
-                load_correction_kwh,
-                correction_source
-            FROM slot_forecasts
-            WHERE slot_start >= ?
-              AND slot_start < ?
-              AND forecast_version = ?
-            ORDER BY slot_start ASC
-        """
-        df = pd.read_sql_query(
-            query,
-            conn,
-            params=(start_time.isoformat(), end_time.isoformat(), forecast_version),
-        )
-
-    if df.empty:
-        return []
-
-    # Parse timestamps and normalise to the planner timezone
-    df["slot_start"] = pd.to_datetime(df["slot_start"], utc=True, errors="coerce")
-    df = df.dropna(subset=["slot_start"])
-    df["slot_start"] = df["slot_start"].dt.tz_convert(engine.timezone)
-
-    records: list[dict[str, Any]] = []
-    for row in df.to_dict("records"):
-        records.append(
-            {
-                "slot_start": row["slot_start"],
-                "pv_forecast_kwh": float(row.get("pv_forecast_kwh") or 0.0),
-                "load_forecast_kwh": float(row.get("load_forecast_kwh") or 0.0),
-                "pv_p10": (
-                    float(row.get("pv_p10") or 0.0) if row.get("pv_p10") is not None else None
-                ),
-                "pv_p90": (
-                    float(row.get("pv_p90") or 0.0) if row.get("pv_p90") is not None else None
-                ),
-                "load_p10": (
-                    float(row.get("load_p10") or 0.0) if row.get("load_p10") is not None else None
-                ),
-                "load_p90": (
-                    float(row.get("load_p90") or 0.0) if row.get("load_p90") is not None else None
-                ),
-                "temp_c": row.get("temp_c"),
-                "forecast_version": row.get("forecast_version"),
-                "pv_correction_kwh": float(row.get("pv_correction_kwh") or 0.0),
-                "load_correction_kwh": float(row.get("load_correction_kwh") or 0.0),
-                "correction_source": row.get("correction_source") or "none",
-            },
-        )
-    return records
-
-
-async def get_forecast_slots_async(
-    start_time: datetime,
-    end_time: datetime,
-    forecast_version: str,
-) -> list[dict[str, Any]]:
-    """
-    Async return forecast slots for the given time window and version.
-    Uses aiosqlite for non-blocking I/O.
-    """
-    import aiosqlite
-
-    engine = _get_engine()
-
-    query = """
-        SELECT
-            slot_start,
-            pv_forecast_kwh,
-            load_forecast_kwh,
-            pv_p10,
-            pv_p90,
-            load_p10,
-            load_p90,
-            temp_c,
-            forecast_version,
-            pv_correction_kwh,
-            load_correction_kwh,
-            correction_source
-        FROM slot_forecasts
-        WHERE slot_start >= ?
-          AND slot_start < ?
-          AND forecast_version = ?
-        ORDER BY slot_start ASC
-    """
-
-    db_path = str(getattr(engine, "db_path", "data/planner_learning.db"))
-    async with aiosqlite.connect(db_path) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(
-            query, (start_time.isoformat(), end_time.isoformat(), forecast_version)
-        ) as cursor:
-            rows = await cursor.fetchall()
+    rows = await engine.store.get_forecasts_range(start_time, forecast_version)
 
     if not rows:
         return []
 
-    # Convert to DataFrame for consistent processing
-    data = [dict(row) for row in rows]
-    df = pd.DataFrame(data)
+    # Filter by end_time and format
+    df = pd.DataFrame(rows)
+    df["slot_start"] = pd.to_datetime(df["slot_start"], utc=True)
+    df = df[
+        df["slot_start"] < end_time.astimezone(pytz.UTC if end_time.tzinfo else engine.timezone)
+    ]
 
     if df.empty:
         return []
 
-    # Parse timestamps and normalise to the planner timezone
-    df["slot_start"] = pd.to_datetime(df["slot_start"], utc=True, errors="coerce")
-    df = df.dropna(subset=["slot_start"])
+    # Normalise to the planner timezone
     df["slot_start"] = df["slot_start"].dt.tz_convert(engine.timezone)
 
     records: list[dict[str, Any]] = []
@@ -175,17 +59,13 @@ async def get_forecast_slots_async(
                 "slot_start": row["slot_start"],
                 "pv_forecast_kwh": float(row.get("pv_forecast_kwh") or 0.0),
                 "load_forecast_kwh": float(row.get("load_forecast_kwh") or 0.0),
-                "pv_p10": (
-                    float(row.get("pv_p10") or 0.0) if row.get("pv_p10") is not None else None
-                ),
-                "pv_p90": (
-                    float(row.get("pv_p90") or 0.0) if row.get("pv_p90") is not None else None
-                ),
+                "pv_p10": (float(row.get("pv_p10")) if row.get("pv_p10") is not None else None),
+                "pv_p90": (float(row.get("pv_p90")) if row.get("pv_p90") is not None else None),
                 "load_p10": (
-                    float(row.get("load_p10") or 0.0) if row.get("load_p10") is not None else None
+                    float(row.get("load_p10")) if row.get("load_p10") is not None else None
                 ),
                 "load_p90": (
-                    float(row.get("load_p90") or 0.0) if row.get("load_p90") is not None else None
+                    float(row.get("load_p90")) if row.get("load_p90") is not None else None
                 ),
                 "temp_c": row.get("temp_c"),
                 "forecast_version": row.get("forecast_version"),

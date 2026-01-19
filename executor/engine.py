@@ -10,6 +10,7 @@ The main executor loop that orchestrates:
 6. Logging execution history
 """
 
+import asyncio
 import collections
 import contextlib
 import json
@@ -1318,7 +1319,7 @@ class ExecutorEngine:
             try:
                 from inputs import get_nordpool_data
 
-                prices = get_nordpool_data("config.yaml")
+                prices = asyncio.run(get_nordpool_data("config.yaml"))
                 if prices:
                     # Get current slot's price
                     import pytz

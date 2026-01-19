@@ -1,3 +1,4 @@
+import asyncio
 import os
 import subprocess
 import sys
@@ -31,7 +32,7 @@ def get_version_string():
         return os.environ.get("DARKSTAR_VERSION", "dev")
 
 
-def main():
+async def main():
     config = load_yaml("config.yaml")
     automation = config.get("automation", {})
     if not automation.get("enable_scheduler", False):
@@ -39,7 +40,7 @@ def main():
         return 0
 
     # Build inputs and run planner
-    input_data = get_all_input_data("config.yaml")
+    input_data = await get_all_input_data("config.yaml")
 
     # Persist inputs to Learning DB (Prices & Forecasts)
     try:
@@ -48,14 +49,13 @@ def main():
         engine = LearningEngine("config.yaml")
 
         if "price_data" in input_data:
-            engine.store_slot_prices(input_data["price_data"])
+            await engine.store_slot_prices(input_data["price_data"])
             print(f"[planner] Stored {len(input_data['price_data'])} price slots to DB")
 
         if "forecast_data" in input_data:
             # Forecasts need a version, default to 'aurora' or 'baseline'
-            # We can get it from config or default
             f_ver = config.get("forecasting", {}).get("active_forecast_version", "aurora")
-            engine.store_forecasts(input_data["forecast_data"], forecast_version=f_ver)
+            await engine.store_forecasts(input_data["forecast_data"], forecast_version=f_ver)
             print(f"[planner] Stored {len(input_data['forecast_data'])} forecast slots to DB")
 
     except Exception as e:
@@ -63,7 +63,7 @@ def main():
 
     # Run Planner Pipeline
     # This will generate and save schedule.json
-    generate_schedule(input_data, config=config, mode="full", save_to_file=True)
+    await generate_schedule(input_data, config=config, mode="full", save_to_file=True)
 
     schedule_path = "schedule.json"
     print(f"[planner] Wrote schedule to {schedule_path}")
@@ -72,4 +72,10 @@ def main():
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        pass
+    except Exception as e:
+        print(f"Critial Error in planner: {e}")
+        sys.exit(1)

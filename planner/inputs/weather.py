@@ -7,10 +7,10 @@ Functions for fetching weather forecasts (temperature, etc.).
 from datetime import UTC, datetime
 from typing import Any
 
-import requests
+import httpx
 
 
-def fetch_temperature_forecast(
+async def fetch_temperature_forecast(
     days_ahead: list[int], tz: Any, config: dict[str, Any]
 ) -> dict[int, float]:
     """
@@ -50,14 +50,15 @@ def fetch_temperature_forecast(
     }
 
     try:
-        response = requests.get(
-            "https://api.open-meteo.com/v1/forecast",
-            params=params,
-            timeout=10,
-        )
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                "https://api.open-meteo.com/v1/forecast",
+                params=params,
+                timeout=10,
+            )
         response.raise_for_status()
         payload = response.json()
-    except requests.RequestException as exc:
+    except httpx.HTTPError as exc:
         print(f"Warning: Failed to fetch temperature forecast: {exc}")
         return {}
 
