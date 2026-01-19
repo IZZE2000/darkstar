@@ -167,3 +167,18 @@ Currently, the charts can become cluttered when mixing planned and actual data. 
 * [ ] **Positioning:** Ensure tooltips do not overflow off-screen or obscure the data point being pressed.
 
 ---
+
+---
+
+### [DONE] REV // UI8 — Load Disaggregation Debug View [DONE]
+
+**Goal:** Add a dedicated troubleshooting view for load disaggregation to the Debug page.
+
+**Plan:**
+
+#### Phase 1: Implementation [x]
+* [x] Update API types and definitions.
+* [x] Refactor `Debug.tsx` into a tabbed interface (Logs vs Loads).
+* [x] Implement real-time controllable power list and data quality metrics.
+* [x] Add auto-refresh and error handling.
+* [x] Pass production-grade linting and type checks.

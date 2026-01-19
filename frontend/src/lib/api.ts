@@ -189,6 +189,31 @@ export type DebugLogsResponse = {
     logs: DebugLogEntry[]
 }
 
+export type LoadItem = {
+    id: string
+    name: string
+    power_kw: number
+    healthy: boolean
+    type: string
+    sensor: string
+}
+
+export type LoadQualityMetrics = {
+    metrics: {
+        negative_base_load_count: number
+        total_calculations: number
+        sensor_failures: number
+    }
+    drift_rate: number
+    sensor_health: Record<string, boolean>
+}
+
+export type LoadsDebugResponse = {
+    controllable_total_kw: number
+    loads: LoadItem[]
+    quality_metrics: LoadQualityMetrics
+}
+
 export type HistorySocSlot = {
     timestamp: string
     soc_percent: number
@@ -518,6 +543,8 @@ export const Api = {
     // Log management
     logInfo: () => getJSON<LogInfoResponse>('/api/system/log-info'),
     clearLogs: () => getJSON<{ status: string }>('/api/system/logs', 'DELETE'),
+    // Load Disaggregation Debug (Rev ARC12)
+    loadsDebug: () => getJSON<LoadsDebugResponse>('/api/loads/debug'),
 }
 
 export const Sel = {

@@ -400,7 +400,11 @@ class LearningStore:
                     p10_col.label("p10"),
                     p90_col.label("p90"),
                 )
-                .join(SlotForecast, SlotObservation.slot_start == SlotForecast.slot_start)
+                .join(
+                    SlotForecast,
+                    (SlotObservation.slot_start == SlotForecast.slot_start)
+                    & (SlotForecast.forecast_version == "aurora"),
+                )
                 .where(
                     func.date(SlotObservation.slot_start) >= cutoff_date,
                     actual_col.is_not(None),
@@ -503,7 +507,11 @@ class LearningStore:
             # 1. Forecast Accuracy
             stmt_pv = (
                 select(func.avg(func.abs(SlotObservation.pv_kwh - SlotForecast.pv_forecast_kwh)))
-                .join(SlotForecast, SlotObservation.slot_start == SlotForecast.slot_start)
+                .join(
+                    SlotForecast,
+                    (SlotObservation.slot_start == SlotForecast.slot_start)
+                    & (SlotForecast.forecast_version == "aurora"),
+                )
                 .where(func.date(SlotObservation.slot_start) >= cutoff_date)
             )
 
@@ -526,7 +534,11 @@ class LearningStore:
                         )
                     )
                 )
-                .join(SlotForecast, SlotObservation.slot_start == SlotForecast.slot_start)
+                .join(
+                    SlotForecast,
+                    (SlotObservation.slot_start == SlotForecast.slot_start)
+                    & (SlotForecast.forecast_version == "aurora"),
+                )
                 .where(func.date(SlotObservation.slot_start) >= cutoff_date)
             )
 
@@ -607,6 +619,7 @@ class LearningStore:
 
             soc_result = await session.execute(stmt_soc)
             soc_results = soc_result.all()
+            logger.debug("get_performance_series: found %d SoC records for last %d days", len(soc_results), days_back)
             soc_series = [{"time": r[0], "planned": r[1], "actual": r[2]} for r in soc_results]
 
             # 2. Daily Cost Series
