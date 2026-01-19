@@ -124,7 +124,7 @@ Darkstar prioritizes a "zero-touch" update experience. If you introduce breaking
     - **Dynamic Path**: Alembic is configured to respect the `DB_PATH` environment variable.
 3.  **Fallback Logic**: When feasible, implement temporary "Plan B" fallbacks in Python code to handle both old and new key names until the next major release.
 
-> **Note:** The legacy heuristic MPC planner (7-pass logic) is preserved for reference in [LEGACY_MPC.md](LEGACY_MPC.md).
+4.  **Async Migration (ARC11)**: Background services (Recorder, Analyst, etc.) were migrated to 100% AsyncIO. All database operations MUST use `AsyncSession`. Do not use the legacy `Session()` class as it has been removed.
 
 ---
 

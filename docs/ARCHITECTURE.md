@@ -452,25 +452,20 @@ To ensure compatibility with Home Assistant Ingress (which exposes the add-on un
 
 ---
 
-### 9.2 Database Abstraction (Rev ARC9 & ARC10)
+### 9.2 Unified AsyncIO Architecture (Rev ARC11)
 
-To ensure type safety and schema stability, the backend uses **SQLAlchemy 2.0+** for all database interactions.
+As of **REV ARC11**, Darkstar has successfully completed its transition to a fully asynchronous architecture. The legacy "Hybrid Mode" has been eliminated.
 
-**Hybrid Architecture (Rev ARC10):**
-The database layer (`LearningStore`) currently operates in a **Hybrid Mode** to support legacy components:
-*   **AsyncIO (Production):** All API routes (`api/routers/`) use `aiosqlite` + `AsyncSession` for high-performance, non-blocking DB access.
-*   **Sync (Legacy):** The Background Recorder (`recorder.py`) runs in a dedicated thread and uses blocking `Session` calls.
-*   **Goal:** Full Async migration of background services is scheduled for **REV ARC11**.
+**Key Characteristics:**
+*   **Fully Asynchronous Services:** The Recorder, LearningEngine, BackfillEngine, and Analyst all run as native `asyncio` tasks.
+*   **Unified Database Layer:** `LearningStore` uses `AsyncSession` (SQLAlchemy 2.0) exclusively. Synchronous engines and session factories have been removed to prevent blocking IO.
+*   **Non-blocking Background Loops:** All background services use `await asyncio.sleep()` for timing, ensuring the FastAPI event loop remains responsive.
 
-**Key Components:**
-- **ORM Models**: Defined in `backend/learning/models.py`.
-- **Schema Management**: Managed by **Alembic**, running migrations automatically on startup (`alembic upgrade head`).
-- **Engine**: Singleton `LearningStore` provides session management and connection pooling.
-
-**Migration Flow:**
-1. Developer modifies `models.py`.
-2. Developer runs `alembic revision --autogenerate`.
-3. Startup script applies migration to production DB.
+**Async Best Practices for Darkstar:**
+1.  **Never Use Blocking IO in `async def`:** Avoid `time.sleep()`, synchronous `requests`, or blocking database calls. Use `await asyncio.sleep()`, `httpx`, and `AsyncSession`.
+2.  **Offload CPU-Bound Tasks:** For heavy computations (like ML inference or S-Index processing), use `asyncio.to_thread()` or a separate process to avoid stalling the event loop.
+3.  **Scoped Sessions:** Always use `async with engine.store.AsyncSession() as session:` for database interactions to ensure proper connection cleanup.
+4.  **Graceful Shutdown:** Background tasks are registered with the FastAPI lifespan manager to ensure clean termination.
 
 ---
 

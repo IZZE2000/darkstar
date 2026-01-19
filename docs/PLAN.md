@@ -267,7 +267,7 @@ sites.
 
 Risk: Without this fix, production deployment will have broken API endpoints and planner crashes.
 
-#### Phase 5: Documentation & Rollback Plan [BACKLOG]
+#### Phase 5: Documentation & Rollback Plan [DONE]
 * [ ] **Update ARCHITECTURE.md**:
     * Remove "Hybrid Mode" section (9.2).
     * Update to "Unified AsyncIO Architecture".
