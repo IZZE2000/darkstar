@@ -748,18 +748,43 @@ export default function ChartCard({
     const ref = useRef<HTMLCanvasElement | null>(null)
     const chartRef = useRef<Chart | null>(null)
     const [themeColors, setThemeColors] = useState<Record<string, string>>({})
-    const [overlays, setOverlays] = useState({
-        price: true,
-        pv: true,
-        load: true,
-        charge: false,
-        discharge: false,
-        export: false,
-        water: false,
-        socTarget: false,
-        socProjected: false,
-        socActual: true,
-        showActual: false,
+    const [overlays, setOverlays] = useState(() => {
+        // Load from localStorage if available, otherwise use defaults
+        const STORAGE_KEY = 'darkstar-chart-overlays'
+        try {
+            const saved = localStorage.getItem(STORAGE_KEY)
+            if (saved) {
+                const parsed = JSON.parse(saved)
+                return {
+                    price: parsed.price ?? true,
+                    pv: parsed.pv ?? true,
+                    load: parsed.load ?? true,
+                    charge: parsed.charge ?? false,
+                    discharge: parsed.discharge ?? false,
+                    export: parsed.export ?? false,
+                    water: parsed.water ?? false,
+                    socTarget: parsed.socTarget ?? false,
+                    socProjected: parsed.socProjected ?? false,
+                    socActual: parsed.socActual ?? true,
+                    showActual: parsed.showActual ?? false,
+                }
+            }
+        } catch (e) {
+            console.warn('Failed to load overlay preferences:', e)
+        }
+        return {
+            price: true,
+            pv: true,
+            load: true,
+            charge: false,
+            discharge: false,
+            export: false,
+            water: false,
+            socTarget: false,
+            socProjected: false,
+            socActual: true,
+            showActual: false,
+        }
     })
     const [showOverlayMenu, setShowOverlayMenu] = useState(false)
     const [pricingConfig, setPricingConfig] = useState<{ vat: number; fees: number } | undefined>()
@@ -768,6 +793,15 @@ export default function ChartCard({
         gridMaxKw: 8,
         inverterMaxKw: 8,
     })
+
+    // Persist overlay preferences to localStorage
+    useEffect(() => {
+        try {
+            localStorage.setItem('darkstar-chart-overlays', JSON.stringify(overlays))
+        } catch (e) {
+            console.warn('Failed to save overlay preferences:', e)
+        }
+    }, [overlays])
 
     // Load overlay defaults and scaling values from config
     useEffect(() => {
