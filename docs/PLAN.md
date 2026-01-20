@@ -148,3 +148,26 @@ Currently, the charts can become cluttered when mixing planned and actual data. 
 * [x] Fix `tests/test_store_plan_mapping.py` fixture usage.
 
 ---
+
+### [DONE] REV // F28 — v2.5.1-beta Startup Stabilization
+
+**Goal:** Fix critical startup failures (config migration locking and Alembic path resolution) for the v2.5.1-beta release.
+
+**Changes:**
+* [x] Move `migrate_config()` to start of lifespan (Superseded by F29)
+* [x] Implement absolute path resolution for `alembic.ini` (Superseded by F29)
+* [x] Add container environment debug logging (CWD, config paths).
+* [x] Fix `TestClient` lifespan triggering in `tests/test_api_routes.py`.
+* [x] Implement build gating in `.github/workflows/build-addon.yml`.
+
+---
+
+### [DONE] REV // F29 — v2.5.1-beta Migration Architecture Fixes
+
+**Goal:** Move migrations to container entrypoint to prevent race conditions and ensure file availability.
+
+**Changes:**
+* [x] Move config and database migrations to `docker-entrypoint.sh`.
+* [x] Add `alembic.ini` and `alembic/` to `Dockerfile`.
+* [x] Remove migration logic from FastAPI `lifespan`.
+* [x] Add safeguard checks to application startup.

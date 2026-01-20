@@ -273,3 +273,11 @@ async def migrate_config(config_path: str = "config.yaml") -> None:
 
     except Exception as e:
         logger.error(f"❌ Failed to migrate config: {e}", exc_info=True)
+
+
+if __name__ == "__main__":
+    import asyncio
+
+    # Setup basic logging for standalone run
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+    asyncio.run(migrate_config())

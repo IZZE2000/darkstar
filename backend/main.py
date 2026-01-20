@@ -71,13 +71,17 @@ async def lifespan(app: FastAPI):
 
     logger.info(f"   Alembic Config: {alembic_ini_path} (exists: {alembic_ini_path.exists()})")
 
-    # 2. Config Migration (Task 2) - Run BEFORE any other service starts
+    # 2. Migration Check (Safeguard)
+    # Migrations are now handled by docker-entrypoint.sh BEFORE FastAPI starts.
+    # We just log the status here for visibility.
     try:
-        from backend.config_migration import migrate_config
-
-        await migrate_config()
+        db_path = os.getenv("DB_PATH", "data/planner_learning.db")
+        if not Path(db_path).exists():
+            logger.warning(f"⚠️  Database file not found at {db_path}. Migration may have skipped.")
+        else:
+            logger.info(f"✅ Database found at {db_path}")
     except Exception as e:
-        logger.error(f"❌ Config migration failed: {e}")
+        logger.error(f"❌ Error during startup check: {e}")
 
     loop = asyncio.get_running_loop()
     ws_manager.set_loop(loop)
@@ -92,52 +96,6 @@ async def lifespan(app: FastAPI):
 
     await recorder_service.start()
 
-    # 3. Database migrations (REV ARC9) - Task 3 Fix
-    try:
-        import subprocess
-
-        logger.info("📦 Checking database schema...")
-
-        # Ensure data directory exists
-        db_path = os.getenv("DB_PATH", "data/planner_learning.db")
-        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-
-        # Inherit env and set ALEMBIC_CONFIG explicitly
-        run_env = os.environ.copy()
-        if alembic_ini_path.exists():
-            run_env["ALEMBIC_CONFIG"] = str(alembic_ini_path)
-
-        # Build command with explicit config path
-        cmd = [sys.executable, "-m", "alembic"]
-        if alembic_ini_path.exists():
-            cmd.extend(["-c", str(alembic_ini_path)])
-        cmd.extend(["upgrade", "head"])
-
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=60,
-            env=run_env,
-            cwd=str(alembic_ini_path.parent) if alembic_ini_path.exists() else str(cwd),
-        )
-
-        if result.returncode == 0:
-            if "Running upgrade" in result.stdout or "Running upgrade" in result.stderr:
-                logger.info("✅ Database migrations applied successfully.")
-            else:
-                logger.info("✅ Database schema is up to date.")
-        else:
-            logger.error("❌ Database migrations failed!")
-            if result.stderr:
-                logger.error(f"Alembic error: {result.stderr.strip()}")
-            if result.stdout:
-                logger.error(f"Alembic output: {result.stdout.strip()}")
-            # We allow startup even if migrations fail to let user see logs in UI
-    except Exception as e:
-        logger.error(f"❌ Failed to run database migrations: {e}")
-
-    # Start executor (if enabled in config)
     executor_instance = None
     try:
         executor_instance = get_executor_instance()

@@ -59,6 +59,10 @@ COPY scripts/ ./scripts/
 COPY scripts/docker-entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
+# Alembic migrations
+COPY alembic.ini ./
+COPY alembic/ ./alembic/
+
 # Copy default configuration (users mount their own config.yaml)
 COPY VERSION ./VERSION
 COPY config.default.yaml ./config.default.yaml

@@ -41,7 +41,7 @@ cleanup() {
 trap cleanup SIGTERM SIGINT SIGHUP
 
 log "=========================================="
-log "  Darkstar Energy Manager v2.4.16-beta"
+log "  Darkstar Energy Manager v2.5.1-beta"
 log "=========================================="
 
 # Check for required config files
@@ -72,6 +72,28 @@ if [ ! -f "/app/secrets.yaml" ]; then
 fi
 
 log "Config files found."
+
+# 1. Config Migration
+log "Running config migrations..."
+if ! python3 -m backend.config_migration; then
+    log "ERROR: Config migration failed!"
+    exit 1
+fi
+log "Config migration complete."
+
+# 2. Database Migration
+log "Running database migrations (Alembic)..."
+# Ensure data directory exists for SQLite
+mkdir -p /data
+if [ -f "/app/alembic.ini" ]; then
+    if ! alembic upgrade head; then
+        log "ERROR: Database migration failed!"
+        exit 1
+    fi
+    log "Database migration complete."
+else
+    log "WARNING: /app/alembic.ini not found, skipping DB migrations."
+fi
 
 # Initialize schedule.json if missing or corrupted (e.g., was a directory)
 if [ ! -f "/app/schedule.json" ] || [ -d "/app/schedule.json" ]; then
