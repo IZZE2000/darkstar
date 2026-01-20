@@ -230,3 +230,19 @@ Currently, the charts can become cluttered when mixing planned and actual data. 
 * [x] Update `health.py` to respect `grid_meter_type` (`net` vs `dual`).
 * [x] Implement explicit check for missing required sensors.
 * [x] **Verification**: `dual` mode correctly warns for missing import/export sensors; `net` mode does not.
+
+---
+
+### [DONE] REV // F35 — Fix Slot Observation Upsert Data Wipe
+
+**Goal:** Fix sleeping bug where BackfillEngine could wipe good recorded energy data with zeros.
+
+**Root Cause:** `store_slot_observations` unconditionally overwrote `import_kwh`, `export_kwh`, `pv_kwh`, `load_kwh`, `water_kwh` on conflict. When backfill ran with broken sensor mappings (producing 0.0), it wiped existing good data.
+
+**Plan:**
+
+#### Phase 1: Fix Upsert Logic [DONE]
+* [x] Identify root cause in `store.py` lines 141-145.
+* [x] Add SQLAlchemy `case()` import.
+* [x] Change energy field upserts to only overwrite when new value > 0.
+* [x] **Verification**: Lint passed, import verified.
