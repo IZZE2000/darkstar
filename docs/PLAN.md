@@ -248,3 +248,10 @@ Currently, the charts can become cluttered when mixing planned and actual data. 
 * [x] Create `DataBackfillCard` component with health status and action button.
 * [x] Integrate into `Aurora` dashboard between System Health and Controls.
 * [x] Add real-time status updates/polling.
+
+#### Phase 3: Bugfixes [DONE]
+* [x] Fix gap detection API to use correct timezone-aware isoformat.
+* [x] Fix gap detection to query unbounded `ExecutionLog` appropriately (added `< now` bound).
+* [x] Fix gap detection to target `ExecutionLog` instead of `SlotObservation` (Root Cause).
+* [x] Fix BackfillEngine to verify `ExecutionLog` gaps and populate them.
+* [x] **Verified**: Test ensures `200` OK and correct gap count instead of empty list. Verified BackfillEngine populates DB correctly.

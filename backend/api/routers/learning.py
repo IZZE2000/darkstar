@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy import desc, select
 
 from backend.learning.backfill import BackfillEngine
-from backend.learning.models import ConfigVersion, LearningDailyMetric, LearningRun, SlotObservation
+from backend.learning.models import ConfigVersion, ExecutionLog, LearningDailyMetric, LearningRun, SlotObservation
 
 if TYPE_CHECKING:
     from backend.learning.store import LearningStore
@@ -259,27 +259,50 @@ async def get_gaps(days: int = 10):
             minute=start_time.minute - (start_time.minute % 15), second=0, microsecond=0
         )
 
-        # Generate expected slots
+        logger.info(f"🔍 Gap detection: now={now}, start_time={start_time}, days={days}")
+
+        # Generate expected slots with consistent timezone format
         expected_slots = set()
         current = start_time
         while current < now:
-            expected_slots.add(current.isoformat())
+            # Use same format as database: astimezone + isoformat
+            expected_slots.add(current.astimezone(tz).isoformat())
             current += timedelta(minutes=15)
+
+        logger.info(f"📊 Generated {len(expected_slots)} expected slots")
+        logger.info(f"📊 Sample expected slots: {list(sorted(expected_slots))[:5]}")
 
         # Query existing slots
         existing_slots = set()
         async with store.AsyncSession() as session:
-            stmt = select(SlotObservation.slot_start).where(
-                SlotObservation.slot_start >= start_time.isoformat()
+            stmt = select(ExecutionLog.slot_start).where(
+                ExecutionLog.slot_start >= start_time.astimezone(tz).isoformat(),
+                ExecutionLog.slot_start < now.astimezone(tz).isoformat()
             )
             result = await session.execute(stmt)
             for row in result.scalars():
                 existing_slots.add(row)
 
+        logger.info(f"📊 Found {len(existing_slots)} existing slots in DB")
+        logger.info(f"📊 Sample existing slots: {list(sorted(existing_slots))[:5]}")
+
+        # DEBUG: Check What Slots Exist for Today
+        today_str = now.strftime('%Y-%m-%d')
+        today_slots = [slot for slot in existing_slots if slot.startswith(today_str)]
+        logger.info(f"📊 Today's slots ({len(today_slots)}): {sorted(today_slots)}")
+
+        expected_today = [slot for slot in expected_slots if slot.startswith(today_str)]
+        logger.info(f"📊 Expected today ({len(expected_today)}): {sorted(expected_today)[:10]}")
+
         # Find missing
         missing = sorted(expected_slots - existing_slots)
 
+        logger.info(f"📊 Missing slots: {len(missing)}")
+        if missing:
+            logger.info(f"📊 First 5 missing: {missing[:5]}")
+
         if not missing:
+            logger.info("✅ No gaps found - returning empty array")
             return []
 
         # Group into contiguous ranges

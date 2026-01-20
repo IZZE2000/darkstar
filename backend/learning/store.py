@@ -298,6 +298,59 @@ class LearningStore:
                 return dt
             return None
 
+    async def get_last_execution_time(self) -> datetime | None:
+        """Get the timestamp of the last recorded execution."""
+        async with self.AsyncSession() as session:
+            result = await session.scalar(select(func.max(ExecutionLog.slot_start)))
+            if result:
+                dt = datetime.fromisoformat(result)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=self.timezone)
+                else:
+                    dt = dt.astimezone(self.timezone)
+                return dt
+            return None
+
+    async def store_execution_logs_from_df(self, df: pd.DataFrame) -> None:
+        """Store execution logs from a DataFrame (used via backfill)."""
+        if df.empty:
+            return
+
+        async with self.AsyncSession() as session:
+            records = df.to_dict("records")
+            now_iso = datetime.now(self.timezone).isoformat()
+            
+            for record in records:
+                slot_start = record["slot_start"]
+                if isinstance(slot_start, datetime | pd.Timestamp):
+                    slot_start = slot_start.astimezone(self.timezone).isoformat()
+                else:
+                    slot_start = pd.to_datetime(slot_start).astimezone(self.timezone).isoformat()
+                
+                # Backfill execution log
+                # We approximate power (kW) from energy (kWh) * 4 since slots are 15 min
+                stmt = sqlite_insert(ExecutionLog).values(
+                    executed_at=now_iso,
+                    slot_start=slot_start,
+                    source="backfill",
+                    success=1,
+                    before_pv_kw=float(record.get("pv_kwh", 0.0) or 0.0) * 4.0,
+                    before_load_kw=float(record.get("load_kwh", 0.0) or 0.0) * 4.0,
+                    before_soc_percent=float(record.get("soc_start_percent", 0.0) or 0.0),
+                    # We don't have commanded values, but we can store what happened as "commanded" or just leave null
+                    # Storing what effectively happened as "planned" values for visualization? 
+                    # Actually charts use planned_* columns or before_* columns?
+                    # Chart uses data from ExecutionLog but aggregates planned_* columns mostly.
+                    # See get_executions_range logic: it uses planned_charge_kw etc.
+                    planned_charge_kw=float(record.get("batt_charge_kwh", 0.0) or 0.0) * 4.0,
+                    planned_discharge_kw=float(record.get("batt_discharge_kwh", 0.0) or 0.0) * 4.0,
+                    planned_export_kw=float(record.get("export_kwh", 0.0) or 0.0) * 4.0,
+                    planned_water_kw=float(record.get("water_kwh", 0.0) or 0.0) * 4.0,
+                )
+                stmt = stmt.on_conflict_do_nothing()
+                await session.execute(stmt)
+            await session.commit()
+
     async def get_low_soc_events(
         self,
         days_back: int = 30,

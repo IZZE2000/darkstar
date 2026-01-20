@@ -102,23 +102,25 @@ class BackfillEngine:
 
         # 1. Sync from Home Assistant (Primary Source)
         try:
-            # Check last observation time
-            last_obs = await self.store.get_last_observation_time()
+            # Check last execution time (aligns with gap detection)
+            last_exec = await self.store.get_last_execution_time()
             now = datetime.now(self.timezone)
 
             # Default lookback if empty DB (e.g., 7 days)
-            if not last_obs:
-                logger.info("No existing observations. Backfilling last 7 days.")
+            if not last_exec:
+                logger.info("No existing execution logs. Backfilling last 7 days.")
                 start_time = now - timedelta(days=7)
             else:
                 # Check gap
-                gap = now - last_obs
-                if gap < timedelta(minutes=15):
-                    logger.info("Data is up to date.")
+                gap = now - last_exec
+                # Gaps < 1 hour might just be current slot pending, but gap detection usually checks specific missing slots.
+                # Backfill engine runs in bulk.
+                if gap < timedelta(minutes=30):
+                    logger.info("Data is up to date (gap < 30 mins).")
                     return
 
-                logger.info(f"Found data gap of {gap}. Starting backfill from {last_obs}.")
-                start_time = last_obs
+                logger.info(f"Found data gap of {gap}. Starting backfill from {last_exec}.")
+                start_time = last_exec
 
             # Cap backfill to 10 days to avoid overloading HA
             if (now - start_time) > timedelta(days=10):
@@ -163,6 +165,8 @@ class BackfillEngine:
 
             if not cumulative_data:
                 logger.warning("No history data found for any sensors.")
+                # Even if no data, we might want to fill gaps with zeros if we are sure?
+                # For now abort as before.
                 return
 
             logger.info(f"Fetched {count} data points. Processing into slots...")
@@ -178,8 +182,10 @@ class BackfillEngine:
 
             logger.info(f"Generated {len(df)} slots. Storing to DB...")
 
-            # 4. Store
+            # 4. Store (Observations AND Execution Logs)
             await self.engine.store_slot_observations(df)
+            await self.store.store_execution_logs_from_df(df)
+            logger.info("Backfill complete.")
             logger.info("Backfill complete.")
 
         except Exception as e:
