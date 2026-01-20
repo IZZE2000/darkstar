@@ -207,6 +207,12 @@ type ChartValues = {
     socTarget?: (number | null)[]
     socProjected?: (number | null)[]
     socActual?: (number | null)[]
+    actualPv?: (number | null)[]
+    actualLoad?: (number | null)[]
+    actualCharge?: (number | null)[]
+    actualDischarge?: (number | null)[]
+    actualExport?: (number | null)[]
+    actualWater?: (number | null)[]
     hasNoData?: boolean
     day?: DaySel
     nowIndex?: number | null
@@ -235,14 +241,6 @@ const createChartData = (
     pricing?: { vat: number; fees: number },
 ): ExtendedChartData => {
     // Design System Colors (from index.css)
-    // Semantic mapping - APPROVED V2:
-    // - accent (gold): PV/Solar - it's the SUN
-    // - grid (grey): Import Price - neutral
-    // - house (cyan): Load - house consumption
-    // - good (green): Export - positive (selling)
-    // - bad (orange): Charge/Discharge - costs money
-    // - water (blue): Water heating
-    // - night (cyan): SoC lines
     const DS = {
         accent: '#FFCE59', // --color-accent: PV/Solar (SUN)
         grid: '#64748B', // --color-grid: Import Price (neutral)
@@ -261,13 +259,13 @@ const createChartData = (
                 type: 'line',
                 label: 'Import Price (SEK/kWh)',
                 data: values.price,
-                borderColor: DS.grid, // Grey - neutral grid price
+                borderColor: DS.grid,
                 backgroundColor: (context: ScriptableContext<'line'>) => {
                     const ctx = context.chart.ctx
                     const isDark = document.documentElement.classList.contains('dark')
-                    const opacity = isDark ? 0.35 : 0.5 // Higher in light mode
+                    const opacity = isDark ? 0.35 : 0.5
                     const gradient = ctx.createLinearGradient(0, 0, 0, context.chart.height)
-                    gradient.addColorStop(0, `rgba(100, 116, 139, ${opacity})`) // DS.grid
+                    gradient.addColorStop(0, `rgba(100, 116, 139, ${opacity})`)
                     gradient.addColorStop(1, 'rgba(100, 116, 139, 0)')
                     return gradient
                 },
@@ -282,13 +280,13 @@ const createChartData = (
                 type: 'line',
                 label: 'PV Forecast (kW)',
                 data: values.pv,
-                borderColor: DS.accent, // Gold - it's the SUN
+                borderColor: DS.accent,
                 backgroundColor: (context: ScriptableContext<'line'>) => {
                     const ctx = context.chart.ctx
                     const isDark = document.documentElement.classList.contains('dark')
-                    const opacity = isDark ? 0.5 : 0.65 // Higher in light mode
+                    const opacity = isDark ? 0.5 : 0.65
                     const gradient = ctx.createLinearGradient(0, 0, 0, context.chart.height)
-                    gradient.addColorStop(0, `rgba(255, 206, 89, ${opacity})`) // DS.accent
+                    gradient.addColorStop(0, `rgba(255, 206, 89, ${opacity})`)
                     gradient.addColorStop(1, 'rgba(255, 206, 89, 0)')
                     return gradient
                 },
@@ -303,7 +301,7 @@ const createChartData = (
                 type: 'bar',
                 label: 'Load (kW)',
                 data: values.load,
-                backgroundColor: 'rgba(0, 183, 181, 0.25)', // DS.house cyan at 25%
+                backgroundColor: 'rgba(0, 183, 181, 0.25)',
                 borderColor: DS.house,
                 glow: true,
                 borderWidth: 0,
@@ -312,14 +310,13 @@ const createChartData = (
                 barPercentage: 0.85,
                 categoryPercentage: 0.9,
                 grouped: false,
-                order: 0, // Render in front of gradient lines
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                order: 0,
             } as any,
             {
                 type: 'bar',
                 label: 'Charge (kW)',
                 data: values.charge ?? values.labels.map(() => null),
-                backgroundColor: 'rgba(241, 81, 50, 0.25)', // DS.bad - grid charge costs money
+                backgroundColor: 'rgba(241, 81, 50, 0.25)',
                 borderColor: DS.bad,
                 glow: true,
                 borderWidth: 0,
@@ -330,13 +327,12 @@ const createChartData = (
                 categoryPercentage: 0.9,
                 grouped: false,
                 order: 0,
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
             } as any,
             {
                 type: 'bar',
                 label: 'Discharge (kW)',
                 data: values.discharge ?? values.labels.map(() => null),
-                backgroundColor: 'rgba(236, 72, 153, 0.25)', // DS.peak (pink) at 25%
+                backgroundColor: 'rgba(236, 72, 153, 0.25)',
                 borderColor: DS.peak,
                 glow: true,
                 borderWidth: 0,
@@ -347,13 +343,12 @@ const createChartData = (
                 categoryPercentage: 0.9,
                 grouped: false,
                 order: 0,
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
             } as any,
             {
                 type: 'bar',
                 label: 'Export (kW)',
                 data: values.export ?? values.labels.map(() => null),
-                backgroundColor: 'rgba(31, 178, 86, 0.3)', // DS.good - selling is positive!
+                backgroundColor: 'rgba(31, 178, 86, 0.3)',
                 borderColor: DS.good,
                 glow: true,
                 borderWidth: 0,
@@ -364,13 +359,12 @@ const createChartData = (
                 categoryPercentage: 0.9,
                 grouped: false,
                 order: 0,
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
             } as any,
             {
                 type: 'bar',
                 label: 'Water Heating (kW)',
                 data: values.water ?? values.labels.map(() => null),
-                backgroundColor: 'rgba(78, 168, 222, 0.25)', // DS.water at 25%
+                backgroundColor: 'rgba(78, 168, 222, 0.25)',
                 borderColor: DS.water,
                 glow: true,
                 borderWidth: 0,
@@ -381,31 +375,29 @@ const createChartData = (
                 categoryPercentage: 0.9,
                 grouped: false,
                 order: 0,
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
             } as any,
             {
                 type: 'line',
                 label: 'SoC Target (%)',
                 data: values.socTarget ?? values.labels.map(() => null),
-                borderColor: DS.night, // Cyan
-                borderDash: [0, 6], // Round dots (0 dash + round cap = dots)
+                borderColor: DS.night,
+                borderDash: [0, 6],
                 borderCapStyle: 'round',
                 backgroundColor: (context: ScriptableContext<'line'>) => {
                     const ctx = context.chart.ctx
                     const isDark = document.documentElement.classList.contains('dark')
-                    const opacity = isDark ? 0.05 : 0.1 // Very subtle fill
+                    const opacity = isDark ? 0.05 : 0.1
                     const gradient = ctx.createLinearGradient(0, 0, 0, context.chart.height)
-                    gradient.addColorStop(0, `rgba(6, 182, 212, ${opacity})`) // DS.night
+                    gradient.addColorStop(0, `rgba(6, 182, 212, ${opacity})`)
                     gradient.addColorStop(1, 'rgba(6, 182, 212, 0)')
                     return gradient
                 },
                 fill: true,
-                // Dim historical segments (before nowIndex) to 50% opacity
                 segment: {
                     borderColor: (ctx: ScriptableLineSegmentContext) => {
                         const nowIdx = values.nowIndex ?? -1
                         if (nowIdx >= 0 && ctx.p1DataIndex < nowIdx) {
-                            return 'rgba(6, 182, 212, 0.5)' // DS.night at 50%
+                            return 'rgba(6, 182, 212, 0.5)'
                         }
                         return DS.night
                     },
@@ -416,20 +408,18 @@ const createChartData = (
                 tension: 0,
                 stepped: 'after',
                 hidden: true,
-                order: 10, // Render behind other datasets (higher = further back)
+                order: 10,
             } as ChartDataset,
             {
                 type: 'line',
                 label: 'SoC Projected (%)',
                 data: values.socProjected ?? values.labels.map(() => null),
-                borderColor: DS.night, // Cyan - solid line
-                // Dim historical segments (before nowIndex) to 50% opacity
+                borderColor: DS.night,
                 segment: {
                     borderColor: (ctx: ScriptableLineSegmentContext) => {
                         const nowIdx = values.nowIndex ?? -1
-                        // If segment end point is before nowIndex, it's historical
                         if (nowIdx >= 0 && ctx.p1DataIndex < nowIdx) {
-                            return 'rgba(6, 182, 212, 0.5)' // DS.night at 50%
+                            return 'rgba(6, 182, 212, 0.5)'
                         }
                         return DS.night
                     },
@@ -444,21 +434,91 @@ const createChartData = (
                 type: 'line',
                 label: 'SoC Actual (%)',
                 data: values.socActual ?? values.labels.map(() => null),
-                borderColor: DS.night, // Cyan - dotted to differentiate
-                borderDash: [0, 6], // Round dots (same as SoC Target)
+                borderColor: DS.night,
+                borderDash: [0, 6],
                 borderCapStyle: 'round',
                 yAxisID: 'y3',
                 pointRadius: 0,
                 borderWidth: 3,
                 tension: 0.3,
                 hidden: true,
-            },
+            } as ChartDataset,
+            {
+                type: 'line',
+                label: 'Actual PV (kW)',
+                data: values.actualPv ?? values.labels.map(() => null),
+                borderColor: DS.accent,
+                borderDash: [2, 4],
+                pointRadius: 0,
+                borderWidth: 2,
+                yAxisID: 'y4',
+                hidden: true,
+                order: 1,
+            } as ChartDataset,
+            {
+                type: 'line',
+                label: 'Actual Load (kW)',
+                data: values.actualLoad ?? values.labels.map(() => null),
+                borderColor: DS.house,
+                borderDash: [2, 4],
+                pointRadius: 0,
+                borderWidth: 2,
+                yAxisID: 'y1',
+                hidden: true,
+                order: 1,
+            } as ChartDataset,
+            {
+                type: 'line',
+                label: 'Actual Charge (kW)',
+                data: values.actualCharge ?? values.labels.map(() => null),
+                borderColor: DS.bad,
+                borderDash: [2, 4],
+                pointRadius: 0,
+                borderWidth: 2,
+                yAxisID: 'y1',
+                hidden: true,
+                order: 1,
+            } as ChartDataset,
+            {
+                type: 'line',
+                label: 'Actual Discharge (kW)',
+                data: values.actualDischarge ?? values.labels.map(() => null),
+                borderColor: DS.peak,
+                borderDash: [2, 4],
+                pointRadius: 0,
+                borderWidth: 2,
+                yAxisID: 'y1',
+                hidden: true,
+                order: 1,
+            } as ChartDataset,
+            {
+                type: 'line',
+                label: 'Actual Export (kW)',
+                data: values.actualExport ?? values.labels.map(() => null),
+                borderColor: DS.good,
+                borderDash: [2, 4],
+                pointRadius: 0,
+                borderWidth: 2,
+                yAxisID: 'y2',
+                hidden: true,
+                order: 1,
+            } as ChartDataset,
+            {
+                type: 'line',
+                label: 'Actual Water (kW)',
+                data: values.actualWater ?? values.labels.map(() => null),
+                borderColor: DS.water,
+                borderDash: [2, 4],
+                pointRadius: 0,
+                borderWidth: 2,
+                yAxisID: 'y1',
+                hidden: true,
+                order: 1,
+            } as ChartDataset,
         ],
     }
 
-    // Add no-data message if needed
     if (values.hasNoData) {
-        // cast to ExtendedChartData here to avoid ChartData strictness while manipulating plugins
         ;(baseData as ExtendedChartData).plugins = {
             tooltip: {
                 enabled: true,
@@ -474,8 +534,6 @@ const createChartData = (
         }
     }
 
-    // Preserve nowIndex on the returned object so runtime
-    // logic can position the "NOW" marker.
     return {
         ...baseData,
         nowIndex: values.nowIndex ?? null,
@@ -675,6 +733,7 @@ export default function ChartCard({
         socTarget: false,
         socProjected: false,
         socActual: true,
+        showActual: false,
     })
     const [showOverlayMenu, setShowOverlayMenu] = useState(false)
     const [pricingConfig, setPricingConfig] = useState<{ vat: number; fees: number } | undefined>()
@@ -725,6 +784,7 @@ export default function ChartCard({
                         // Only override SoC Actual if config explicitly mentions it;
                         // otherwise keep the initial default (true).
                         socActual: hasSocActualToken ? true : overlays.socActual,
+                        showActual: overlays.showActual, // Preserve current state
                     }
                     setOverlays(parsedOverlays)
                 }
@@ -829,6 +889,13 @@ export default function ChartCard({
             if (ds[8]) ds[8].hidden = !overlays.socProjected
             if (ds[9]) ds[9].hidden = !overlays.socActual
 
+            // Actual Overlays
+            if (ds[10]) ds[10].hidden = !overlays.showActual || !overlays.pv
+            if (ds[11]) ds[11].hidden = !overlays.showActual || !overlays.load
+            if (ds[12]) ds[12].hidden = !overlays.showActual || !overlays.charge
+            if (ds[13]) ds[13].hidden = !overlays.showActual || !overlays.discharge
+            if (ds[14]) ds[14].hidden = !overlays.showActual || !overlays.export
+
             try {
                 if (!isChartUsable(chartRef.current)) return
                 if (chartRef.current) {
@@ -915,6 +982,7 @@ export default function ChartCard({
                             ['SoC Target', 'socTarget'],
                             ['SoC Projected', 'socProjected'],
                             ['SoC Actual', 'socActual'],
+                            ['Show Actual (Overlay)', 'showActual'],
                         ] as const
                     ).map(([label, key]) => (
                         <button
@@ -963,30 +1031,9 @@ function buildLiveData(
             ? filterSlotsByDay(slots, day)
             : slots.filter((slot) => isToday(slot.start_time) || isTomorrow(slot.start_time))
 
-    // DEBUG: Track filtered slots for 48h view
-    if (range === '48h') {
-        console.log(`[48h DEBUG] Filtered ${filtered.length} slots from ${slots.length} total slots`)
-        if (filtered.length > 0) {
-            console.log(
-                `[48h DEBUG] First slot: ${filtered[0].start_time}, charge: ${filtered[0].battery_charge_kw ?? filtered[0].charge_kw}`,
-            )
-            console.log(
-                `[48h DEBUG] Sample charge values:`,
-                filtered.slice(0, 10).map((s) => ({
-                    time: s.start_time,
-                    charge: s.battery_charge_kw ?? s.charge_kw,
-                    actual_charge: s.actual_charge_kw,
-                    is_executed: s.is_executed,
-                })),
-            )
-        }
-    }
-
-    // Special handling for full-day views: always show 00:00–24:00,
-    // padding with nulls where the schedule has no data.
+    // Special handling for full-day views: always show 00:00–24:00
     if (range === 'day') {
         if (!filtered.length) {
-            // No slots at all for this day → show explicit "no data" state
             const labels = Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2, '0')}:00`)
             const nulls = Array(24).fill(null)
             return createChartData(
@@ -1002,6 +1049,12 @@ function buildLiveData(
                     socTarget: nulls.slice(),
                     socProjected: nulls.slice(),
                     socActual: nulls.slice(),
+                    actualPv: nulls.slice(),
+                    actualLoad: nulls.slice(),
+                    actualCharge: nulls.slice(),
+                    actualDischarge: nulls.slice(),
+                    actualExport: nulls.slice(),
+                    actualWater: nulls.slice(),
                     hasNoData: true,
                     day,
                 },
@@ -1009,28 +1062,21 @@ function buildLiveData(
             )
         }
 
-        const ordered = [...filtered].sort((a, b) => {
-            const aTime = new Date(a.start_time).getTime()
-            const bTime = new Date(b.start_time).getTime()
-            return aTime - bTime
-        })
+        const ordered = [...filtered].sort(
+            (a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime(),
+        )
 
-        // Infer resolution from consecutive slots; default to 15 minutes.
         let resolutionMinutes = 15
         if (ordered.length >= 2) {
             const dt0 = new Date(ordered[0].start_time).getTime()
             const dt1 = new Date(ordered[1].start_time).getTime()
             const deltaMinutes = Math.max(1, Math.round((dt1 - dt0) / 60000))
-            if (deltaMinutes === 15 || deltaMinutes === 30 || deltaMinutes === 60) {
-                resolutionMinutes = deltaMinutes
-            }
+            if ([15, 30, 60].includes(deltaMinutes)) resolutionMinutes = deltaMinutes
         }
 
-        // Build a full-day time grid from 00:00–24:00 local time
         const anchor = new Date()
-        if (day === 'today') {
-            anchor.setHours(0, 0, 0, 0)
-        } else {
+        if (day === 'today') anchor.setHours(0, 0, 0, 0)
+        else {
             anchor.setDate(anchor.getDate() + 1)
             anchor.setHours(0, 0, 0, 0)
         }
@@ -1038,12 +1084,8 @@ function buildLiveData(
         const stepMs = resolutionMinutes * 60 * 1000
         const steps = Math.round((24 * 60) / resolutionMinutes)
 
-        // Index slots by exact start timestamp for quick lookup
         const slotByTime = new Map<number, ScheduleSlot>()
-        for (const s of ordered) {
-            const t = new Date(s.start_time).getTime()
-            slotByTime.set(t, s)
-        }
+        for (const s of ordered) slotByTime.set(new Date(s.start_time).getTime(), s)
 
         const labels: string[] = []
         const price: (number | null)[] = []
@@ -1056,6 +1098,12 @@ function buildLiveData(
         const socTarget: (number | null)[] = []
         const socProjected: (number | null)[] = []
         const socActual: (number | null)[] = []
+        const actualPv: (number | null)[] = []
+        const actualLoad: (number | null)[] = []
+        const actualCharge: (number | null)[] = []
+        const actualDischarge: (number | null)[] = []
+        const actualExport: (number | null)[] = []
+        const actualWater: (number | null)[] = []
 
         let nowIndex: number | null = null
         const now = new Date()
@@ -1068,67 +1116,56 @@ function buildLiveData(
             labels.push(formatHour(bucketStart.toISOString()))
 
             if (slot) {
-                const isExec = slot.is_executed === true
                 const hourFraction = resolutionMinutes / 60
-
                 price.push(slot.import_price_sek_kwh ?? null)
 
-                // Convert kWh to kW: kW = kWh / hourFraction
-                const rawPvKwh =
-                    isExec && slot.actual_pv_kwh != null ? slot.actual_pv_kwh : (slot.pv_forecast_kwh ?? null)
-                pv.push(rawPvKwh != null ? rawPvKwh / hourFraction : null)
-
-                const rawLoadKwh =
-                    isExec && slot.actual_load_kwh != null ? slot.actual_load_kwh : (slot.load_forecast_kwh ?? null)
-                load.push(rawLoadKwh != null ? rawLoadKwh / hourFraction : null)
-
-                // For charge/export, prefer actual_* when executed; discharge/water remain planned.
-                charge.push(
-                    isExec && slot.actual_charge_kw != null
-                        ? slot.actual_charge_kw
-                        : (slot.battery_charge_kw ?? slot.charge_kw ?? null),
-                )
+                // Planned
+                pv.push((slot.pv_forecast_kwh ?? 0) / hourFraction)
+                load.push((slot.load_forecast_kwh ?? 0) / hourFraction)
+                charge.push(slot.battery_charge_kw ?? slot.charge_kw ?? null)
                 discharge.push(slot.battery_discharge_kw ?? slot.discharge_kw ?? null)
-
-                const rawExportKwh =
-                    isExec && slot.actual_export_kw != null ? slot.actual_export_kw : (slot.export_kwh ?? null)
-                // If it's actual_export_kw, it's already kW. If export_kwh, convert.
-                if (isExec && slot.actual_export_kw != null) {
-                    exp.push(slot.actual_export_kw)
-                } else {
-                    exp.push(rawExportKwh != null ? rawExportKwh / hourFraction : null)
-                }
-
+                exp.push((slot.export_kwh ?? 0) / hourFraction)
                 water.push(slot.water_heating_kw ?? null)
                 socTarget.push(slot.soc_target_percent ?? null)
                 socProjected.push(slot.projected_soc_percent ?? null)
-                socActual.push(slot.actual_soc != null ? slot.actual_soc : null)
+                socActual.push(slot.actual_soc ?? null)
+
+                // Actual
+                actualPv.push(slot.actual_pv_kwh != null ? slot.actual_pv_kwh / hourFraction : null)
+                actualLoad.push(slot.actual_load_kwh != null ? slot.actual_load_kwh / hourFraction : null)
+                actualCharge.push(slot.actual_charge_kw ?? null)
+                actualDischarge.push(slot.actual_discharge_kw ?? null)
+                actualExport.push(slot.actual_export_kw ?? null)
+                actualWater.push(slot.water_heating_kw ?? null)
             } else {
-                price.push(null)
-                pv.push(null)
-                load.push(null)
-                charge.push(null)
-                discharge.push(null)
-                exp.push(null)
-                water.push(null)
-                socTarget.push(null)
-                socProjected.push(null)
-                socActual.push(null)
+                ;[
+                    price,
+                    pv,
+                    load,
+                    charge,
+                    discharge,
+                    exp,
+                    water,
+                    socTarget,
+                    socProjected,
+                    socActual,
+                    actualPv,
+                    actualLoad,
+                    actualCharge,
+                    actualDischarge,
+                    actualExport,
+                    actualWater,
+                ].forEach((a) => a.push(null))
             }
 
-            if (day === 'today' && now >= bucketStart && now < bucketEnd) {
-                nowIndex = i
-            }
+            if (day === 'today' && now >= bucketStart && now < bucketEnd) nowIndex = i
         }
 
-        // Calculate precise time percentage for "Now Line"
         let nowPct: number | null = null
         if (day === 'today') {
             const totalMs = steps * stepMs
             const elapsed = now.getTime() - anchor.getTime()
-            if (elapsed >= 0 && elapsed <= totalMs) {
-                nowPct = elapsed / totalMs
-            }
+            if (elapsed >= 0 && elapsed <= totalMs) nowPct = elapsed / totalMs
         }
 
         return createChartData(
@@ -1144,239 +1181,128 @@ function buildLiveData(
                 socTarget,
                 socProjected,
                 socActual,
+                actualPv,
+                actualLoad,
+                actualCharge,
+                actualDischarge,
+                actualExport,
+                actualWater,
                 nowIndex,
                 nowPct,
-            },
-            themeColors,
-        )
-    }
-
-    // 48h / multi-day range: build a fixed 48-hour window (today+tomorrow)
-    if (range === '48h') {
-        if (!filtered.length) {
-            console.log('[buildLiveData] No slots found for 48h range, creating fallback')
-            const labels = Array.from({ length: 48 }, (_, i) => {
-                const hour = i % 24
-                return `${String(hour).padStart(2, '0')}:00`
-            })
-            return createChartData(
-                {
-                    labels,
-                    price: Array(labels.length).fill(null),
-                    pv: Array(labels.length).fill(null),
-                    load: Array(labels.length).fill(null),
-                    charge: Array(labels.length).fill(null),
-                    discharge: Array(labels.length).fill(null),
-                    export: Array(labels.length).fill(null),
-                    water: Array(labels.length).fill(null),
-                    socTarget: Array(labels.length).fill(null),
-                    socProjected: Array(labels.length).fill(null),
-                    hasNoData: true,
-                    day,
-                },
-                themeColors,
-            )
-        }
-
-        const ordered = [...filtered].sort((a, b) => {
-            const aTime = new Date(a.start_time).getTime()
-            const bTime = new Date(b.start_time).getTime()
-            return aTime - bTime
-        })
-
-        // Infer resolution from consecutive slots; default to 15 minutes.
-        let resolutionMinutes = 15
-        if (ordered.length >= 2) {
-            const dt0 = new Date(ordered[0].start_time).getTime()
-            const dt1 = new Date(ordered[1].start_time).getTime()
-            const deltaMinutes = Math.max(1, Math.round((dt1 - dt0) / 60000))
-            if (deltaMinutes === 15 || deltaMinutes === 30 || deltaMinutes === 60) {
-                resolutionMinutes = deltaMinutes
-            }
-        }
-
-        const anchor = new Date()
-        anchor.setHours(0, 0, 0, 0)
-
-        const stepMs = resolutionMinutes * 60 * 1000
-        const steps = Math.round((48 * 60) / resolutionMinutes)
-
-        const slotByTime = new Map<number, ScheduleSlot>()
-        for (const s of ordered) {
-            const t = new Date(s.start_time).getTime()
-            slotByTime.set(t, s)
-        }
-
-        const labels: string[] = []
-        const price: (number | null)[] = []
-        const pv: (number | null)[] = []
-        const load: (number | null)[] = []
-        const charge: (number | null)[] = []
-        const discharge: (number | null)[] = []
-        const exp: (number | null)[] = []
-        const water: (number | null)[] = []
-        const socTarget: (number | null)[] = []
-        const socProjected: (number | null)[] = []
-        const socActual: (number | null)[] = []
-
-        let nowIndex: number | null = null
-        const now = new Date()
-
-        for (let i = 0; i < steps; i++) {
-            const bucketStart = new Date(anchor.getTime() + i * stepMs)
-            const bucketEnd = new Date(bucketStart.getTime() + stepMs)
-            const slot = slotByTime.get(bucketStart.getTime())
-
-            labels.push(formatHour(bucketStart.toISOString()))
-
-            if (slot) {
-                const isExec = slot.is_executed === true
-                const hourFraction = resolutionMinutes / 60
-
-                price.push(slot.import_price_sek_kwh ?? null)
-                // For pv/load: prefer actual if available, fallback to forecast. Convert kWh to kW.
-                const rawPvKwh =
-                    isExec && slot.actual_pv_kwh != null ? slot.actual_pv_kwh : (slot.pv_forecast_kwh ?? null)
-                pv.push(rawPvKwh != null ? rawPvKwh / hourFraction : null)
-
-                const rawLoadKwh =
-                    isExec && slot.actual_load_kwh != null ? slot.actual_load_kwh : (slot.load_forecast_kwh ?? null)
-                load.push(rawLoadKwh != null ? rawLoadKwh / hourFraction : null)
-
-                // For charge: only use actual if executed AND not null, otherwise use planned
-                charge.push(
-                    isExec && slot.actual_charge_kw != null
-                        ? slot.actual_charge_kw
-                        : (slot.battery_charge_kw ?? slot.charge_kw ?? null),
-                )
-                discharge.push(
-                    isExec && slot.actual_discharge_kw != null
-                        ? slot.actual_discharge_kw
-                        : (slot.battery_discharge_kw ?? slot.discharge_kw ?? null),
-                )
-
-                const rawExportKwh =
-                    isExec && slot.actual_export_kw != null ? slot.actual_export_kw : (slot.export_kwh ?? null)
-                // If it's actual_export_kw, it's already kW. If export_kwh, convert.
-                if (isExec && slot.actual_export_kw != null) {
-                    exp.push(slot.actual_export_kw)
-                } else {
-                    exp.push(rawExportKwh != null ? rawExportKwh / hourFraction : null)
-                }
-
-                water.push(slot.water_heating_kw ?? null)
-                socTarget.push(slot.soc_target_percent ?? null)
-                socProjected.push(slot.projected_soc_percent ?? null)
-                socActual.push(slot.actual_soc != null ? slot.actual_soc : null)
-            } else {
-                price.push(null)
-                pv.push(null)
-                load.push(null)
-                charge.push(null)
-                discharge.push(null)
-                exp.push(null)
-                water.push(null)
-                socTarget.push(null)
-                socProjected.push(null)
-                socActual.push(null)
-            }
-
-            if (now >= bucketStart && now < bucketEnd) {
-                nowIndex = i
-            }
-        }
-
-        // Calculate precise time percentage for "Now Line"
-        let nowPct: number | null = null
-        const totalMs = steps * stepMs
-        const elapsed = now.getTime() - anchor.getTime()
-        // For 48h view, we show "now" if it's within the window (which starts at 00:00 today)
-        if (elapsed >= 0 && elapsed <= totalMs) {
-            nowPct = elapsed / totalMs
-        }
-
-        return createChartData(
-            {
-                labels,
-                price,
-                pv,
-                load,
-                charge,
-                discharge,
-                export: exp,
-                water,
-                socTarget,
-                socProjected,
-                socActual,
-                nowIndex,
-                nowPct,
+                day,
             },
             themeColors,
             pricing,
         )
     }
 
-    // Fallback for any other future range types (none today)
-    const ordered = [...filtered].sort((a, b) => {
-        const aTime = new Date(a.start_time).getTime()
-        const bTime = new Date(b.start_time).getTime()
-        return aTime - bTime
-    })
+    // 48h range
+    if (range === '48h') {
+        if (!filtered.length) return null
 
-    // For the fallback, we assume 15-min resolution if not specified.
-    // However, fallback usually has only a few slots, so we default to 0.25 (15 min).
-    const hourFraction = 0.25
+        const ordered = [...filtered].sort(
+            (a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime(),
+        )
 
-    const price = ordered.map((slot) => slot.import_price_sek_kwh ?? null)
-    const pv = ordered.map((slot) => {
-        const val = slot.pv_forecast_kwh ?? null
-        return val != null ? val / hourFraction : null
-    })
-    const load = ordered.map((slot) => {
-        const val = slot.load_forecast_kwh ?? null
-        return val != null ? val / hourFraction : null
-    })
-    const charge = ordered.map((slot) => slot.battery_charge_kw ?? slot.charge_kw ?? null)
-    const discharge = ordered.map((slot) => slot.battery_discharge_kw ?? slot.discharge_kw ?? null)
-    const exp = ordered.map((slot) => {
-        const val = slot.export_kwh ?? null
-        return val != null ? val / hourFraction : null
-    })
-    const water = ordered.map((slot) => slot.water_heating_kw ?? null)
-    const socTarget = ordered.map((slot) => slot.soc_target_percent ?? null)
-    const socProjected = ordered.map((slot) => slot.projected_soc_percent ?? null)
-    const socActual = ordered.map((slot) => slot.actual_soc ?? null)
+        const firstTs = new Date(ordered[0].start_time).getTime()
+        const lastTs = new Date(ordered[ordered.length - 1].start_time).getTime()
+        const stepMs = 15 * 60 * 1000
+        const steps = Math.round((lastTs - firstTs) / stepMs) + 1
 
-    const labels = ordered.map((slot) => formatHour(slot.start_time))
+        const labels: string[] = []
+        const price: (number | null)[] = []
+        const pv: (number | null)[] = []
+        const load: (number | null)[] = []
+        const charge: (number | null)[] = []
+        const discharge: (number | null)[] = []
+        const exp: (number | null)[] = []
+        const water: (number | null)[] = []
+        const socTarget: (number | null)[] = []
+        const socProjected: (number | null)[] = []
+        const socActual: (number | null)[] = []
+        const actualPv: (number | null)[] = []
+        const actualLoad: (number | null)[] = []
+        const actualCharge: (number | null)[] = []
+        const actualDischarge: (number | null)[] = []
+        const actualExport: (number | null)[] = []
+        const actualWater: (number | null)[] = []
 
-    let nowIndex: number | null = null
-    if (day === 'today') {
-        const now = new Date()
-        for (let i = 0; i < ordered.length; i++) {
-            const start = new Date(ordered[i].start_time || '')
-            const end = new Date(start.getTime() + 30 * 60 * 1000)
-            if (now >= start && now < end) {
-                nowIndex = i
-                break
+        const slotByTime = new Map<number, ScheduleSlot>()
+        for (const s of ordered) slotByTime.set(new Date(s.start_time).getTime(), s)
+
+        for (let i = 0; i < steps; i++) {
+            const t = firstTs + i * stepMs
+            const slot = slotByTime.get(t)
+            labels.push(formatHour(new Date(t).toISOString()))
+
+            if (slot) {
+                const hourFraction = 0.25
+                price.push(slot.import_price_sek_kwh ?? null)
+
+                // Planned
+                pv.push((slot.pv_forecast_kwh ?? 0) / hourFraction)
+                load.push((slot.load_forecast_kwh ?? 0) / hourFraction)
+                charge.push(slot.battery_charge_kw ?? slot.charge_kw ?? null)
+                discharge.push(slot.battery_discharge_kw ?? slot.discharge_kw ?? null)
+                exp.push((slot.export_kwh ?? 0) / hourFraction)
+                water.push(slot.water_heating_kw ?? null)
+                socTarget.push(slot.soc_target_percent ?? null)
+                socProjected.push(slot.projected_soc_percent ?? null)
+                socActual.push(slot.actual_soc ?? null)
+
+                // Actual
+                actualPv.push(slot.actual_pv_kwh != null ? slot.actual_pv_kwh / hourFraction : null)
+                actualLoad.push(slot.actual_load_kwh != null ? slot.actual_load_kwh / hourFraction : null)
+                actualCharge.push(slot.actual_charge_kw ?? null)
+                actualDischarge.push(slot.actual_discharge_kw ?? null)
+                actualExport.push(slot.actual_export_kw ?? null)
+                actualWater.push(slot.water_heating_kw ?? null)
+            } else {
+                ;[
+                    price,
+                    pv,
+                    load,
+                    charge,
+                    discharge,
+                    exp,
+                    water,
+                    socTarget,
+                    socProjected,
+                    socActual,
+                    actualPv,
+                    actualLoad,
+                    actualCharge,
+                    actualDischarge,
+                    actualExport,
+                    actualWater,
+                ].forEach((a) => a.push(null))
             }
         }
+
+        return createChartData(
+            {
+                labels,
+                price,
+                pv,
+                load,
+                charge,
+                discharge,
+                export: exp,
+                water,
+                socTarget,
+                socProjected,
+                socActual,
+                actualPv,
+                actualLoad,
+                actualCharge,
+                actualDischarge,
+                actualExport,
+                actualWater,
+            },
+            themeColors,
+            pricing,
+        )
     }
 
-    return createChartData(
-        {
-            labels,
-            price,
-            pv,
-            load,
-            charge,
-            discharge,
-            export: exp,
-            water,
-            socTarget,
-            socProjected,
-            socActual,
-            nowIndex,
-        },
-        themeColors,
-    )
+    return null
 }

@@ -174,26 +174,27 @@ class LearningEngine:
         end_time = max_ts
 
         slots = pd.date_range(
-            start=start_time, end=end_time, freq=f"{resolution_minutes}min", tz=self.timezone
+            start=start_time,
+            end=end_time,
+            freq=f"{resolution_minutes}min",
+            tz=self.timezone,
+            inclusive="both",
         )
 
         slot_df = pd.DataFrame({"slot_start": slots[:-1], "slot_end": slots[1:]})
-        [{} for _ in range(len(slot_df))]  # Simplified type hint
 
         for sensor_name, df in slot_records.items():
             canonical = self._canonical_sensor_name(sensor_name)
+            if canonical == "soc":
+                continue
+
             base_series = df.set_index("timestamp")["cumulative_value"]
-            aligned = base_series.reindex(slots)
-            gaps = aligned.isna()
             reindexed = base_series.reindex(slots, method="ffill")
             reindexed = reindexed.ffill().fillna(0)
             raw_diff = reindexed.diff().fillna(0)
 
-            gap_mask = gaps | gaps.shift(1, fill_value=False)
-            mask_spike = (raw_diff > 5.0) & ~gap_mask
-            raw_diff[mask_spike] = 0.0
+            # Basic spike filtering
             deltas = raw_diff.clip(lower=0)
-
             slot_df[f"{canonical}_kwh"] = deltas.iloc[1:].values
 
         if any(self._canonical_sensor_name(name) == "soc" for name in slot_records):
@@ -210,6 +211,125 @@ class LearningEngine:
             slot_df["soc_end_percent"] = soc_series.iloc[1:].values
 
         slot_df["duration_minutes"] = resolution_minutes
+        # Ensure ISO strings for storage if needed, but LearningStore expects datetime objects usually?
+        # Actually, store_slot_observations converts to dict, so strings are safer but LearningStore might handle it.
+        # REV ARC11: We prefer keeping them as datetime objects if possible, but let's follow the previous pattern.
+        slot_df["slot_start"] = slot_df["slot_start"].map(lambda x: x.isoformat())
+        slot_df["slot_end"] = slot_df["slot_end"].map(lambda x: x.isoformat())
+        return slot_df
+
+    def etl_power_to_slots(
+        self,
+        power_data: dict[str, list[tuple[datetime, float]]],
+        resolution_minutes: int = 15,
+    ) -> pd.DataFrame:
+        """
+        Convert instantaneous power sensor data (W) to energy (kWh) per slot.
+        Specifically optimized for backfill to populate bars in ChartCard.
+        """
+
+        slot_records: dict[str, pd.DataFrame] = {}
+        for sensor_name, data in power_data.items():
+            if data:
+                df = pd.DataFrame(data, columns=["timestamp", "power_value"])
+                df["timestamp"] = pd.to_datetime(df["timestamp"])
+                if df["timestamp"].dt.tz is None:
+                    df["timestamp"] = df["timestamp"].dt.tz_localize(self.timezone)
+                else:
+                    df["timestamp"] = df["timestamp"].dt.tz_convert(self.timezone)
+                df = df.sort_values("timestamp").drop_duplicates(subset=["timestamp"], keep="last")
+                slot_records[sensor_name] = df
+
+        if not slot_records:
+            return pd.DataFrame()
+
+        all_timestamps = []
+        for df in slot_records.values():
+            all_timestamps.extend(df["timestamp"].tolist())
+
+        if not all_timestamps:
+            return pd.DataFrame()
+
+        min_ts = min(all_timestamps)
+        max_ts = max(all_timestamps)
+        min_ts = min_ts.astimezone(self.timezone)
+
+        floored_minute = (min_ts.minute // resolution_minutes) * resolution_minutes
+        start_time = min_ts.replace(minute=floored_minute, second=0, microsecond=0)
+
+        slots = pd.date_range(
+            start=start_time,
+            end=max_ts,
+            freq=f"{resolution_minutes}min",
+            tz=self.timezone,
+            inclusive="both",
+        )
+        if len(slots) < 2:
+            return pd.DataFrame()
+
+        slot_df = pd.DataFrame({"slot_start": slots[:-1], "slot_end": slots[1:]})
+        hours_per_slot = resolution_minutes / 60.0
+
+        for sensor_name, df in slot_records.items():
+            canonical = self._canonical_sensor_name(sensor_name)
+
+            if canonical == "soc":
+                # SoC is a level, handled at the end
+                continue
+
+            # Average power (W) over the slot
+            # We use 'resample' to get the mean power in each 15min bucket
+            resampled = (
+                df.set_index("timestamp")["power_value"]
+                .resample(f"{resolution_minutes}min")
+                .mean()
+                .reindex(slots[:-1])
+                .fillna(0)
+            )
+
+            # Convert W to kWh: (W / 1000) * hours_per_slot
+            energy_kwh = (resampled / 1000.0) * hours_per_slot
+
+            if canonical == "battery":
+                # Battery sign: + discharge, - charge
+                slot_df["batt_discharge_kwh"] = energy_kwh.clip(lower=0).values
+                slot_df["batt_charge_kwh"] = energy_kwh.clip(upper=0).abs().values
+            elif canonical in ("grid", "import", "export"):
+                if canonical == "grid":
+                    # Grid sign: + import, - export
+                    slot_df["import_kwh"] = energy_kwh.clip(lower=0).values
+                    slot_df["export_kwh"] = energy_kwh.clip(upper=0).abs().values
+                elif canonical == "import":
+                    slot_df["import_kwh"] = energy_kwh.values
+                elif canonical == "export":
+                    slot_df["export_kwh"] = energy_kwh.values
+            else:
+                # Standard consumption/production (PV, Load, Water)
+                slot_df[f"{canonical}_kwh"] = energy_kwh.values
+
+        # Handle SoC (which is a level, not power)
+        soc_name = next(
+            (name for name in slot_records if self._canonical_sensor_name(name) == "soc"), None
+        )
+        if soc_name:
+            soc_series = (
+                slot_records[soc_name]
+                .set_index("timestamp")["power_value"]
+                .reindex(slots, method="ffill")
+                .ffill()
+            )
+            slot_df["soc_start_percent"] = soc_series.iloc[:-1].values
+            slot_df["soc_end_percent"] = soc_series.iloc[1:].values
+
+        # Ensure all expected columns exist (even if 0) to avoid SQLAlchemy issues
+        for col in ["pv_kwh", "load_kwh", "import_kwh", "export_kwh", "water_kwh"]:
+            if col not in slot_df.columns:
+                slot_df[col] = 0.0
+
+        slot_df["duration_minutes"] = resolution_minutes
+        slot_df["slot_start"] = slot_df["slot_start"].map(lambda x: x.isoformat())
+        slot_df["slot_end"] = slot_df["slot_end"].map(lambda x: x.isoformat())
+
         return slot_df
 
     async def calculate_metrics(self, days_back: int = 7) -> dict[str, Any]:

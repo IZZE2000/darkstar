@@ -690,6 +690,8 @@ class LearningStore:
                     SlotObservation.water_kwh,
                     SlotObservation.import_kwh,
                     SlotObservation.export_kwh,
+                    SlotObservation.pv_kwh,
+                    SlotObservation.load_kwh,
                     SlotObservation.import_price_sek_kwh,
                 )
                 .where(

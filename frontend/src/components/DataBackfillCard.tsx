@@ -37,10 +37,13 @@ export default function DataBackfillCard() {
         console.log('🚀 DataBackfillCard mounted, calling fetchGaps...')
         fetchGaps()
         // Auto-refresh every 5 minutes
-        const interval = setInterval(() => {
-            console.log('🔄 Auto-refresh triggered')
-            fetchGaps()
-        }, 5 * 60 * 1000)
+        const interval = setInterval(
+            () => {
+                console.log('🔄 Auto-refresh triggered')
+                fetchGaps()
+            },
+            5 * 60 * 1000,
+        )
         return () => {
             console.log('🛑 DataBackfillCard unmounting, clearing interval')
             clearInterval(interval)
@@ -86,10 +89,15 @@ export default function DataBackfillCard() {
     return (
         <Card className="p-4 md:p-5 flex flex-col h-full min-h-0 overflow-hidden relative">
             <div className="flex items-center gap-2 mb-4 shrink-0">
-                <Database className={`h-4 w-4 ${hasError ? 'text-red-400' : isHealthy ? 'text-emerald-400' : 'text-amber-400'}`} />
+                <Database
+                    className={`h-4 w-4 ${hasError ? 'text-red-400' : isHealthy ? 'text-emerald-400' : 'text-amber-400'}`}
+                />
                 <span className="text-xs font-medium text-text">Data Integrity</span>
                 {/* DEBUG BUTTON */}
-                <button onClick={testAPI} className="ml-auto text-[10px] bg-red-500/20 text-red-400 px-2 py-0.5 rounded hover:bg-red-500/30">
+                <button
+                    onClick={testAPI}
+                    className="ml-auto text-[10px] bg-red-500/20 text-red-400 px-2 py-0.5 rounded hover:bg-red-500/30"
+                >
                     Test API
                 </button>
             </div>
@@ -101,10 +109,7 @@ export default function DataBackfillCard() {
                     <div className="flex flex-col items-center gap-1 text-center">
                         <ServerOff className="h-6 w-6 text-red-400 opacity-80" />
                         <span className="text-[11px] text-red-300">{error}</span>
-                        <button
-                            onClick={fetchGaps}
-                            className="text-[10px] text-muted underline hover:text-text mt-1"
-                        >
+                        <button onClick={fetchGaps} className="text-[10px] text-muted underline hover:text-text mt-1">
                             Retry
                         </button>
                     </div>
@@ -133,8 +138,13 @@ export default function DataBackfillCard() {
 
                         <div className="w-full mt-2 bg-surface2/50 rounded-lg p-2 max-h-24 overflow-y-auto custom-scrollbar text-left border border-white/5">
                             {gaps.map((gap, i) => (
-                                <div key={i} className="flex justify-between items-center text-[9px] py-0.5 border-b border-white/5 last:border-0">
-                                    <span className="text-muted font-mono">{new Date(gap.start_time).toLocaleDateString()}</span>
+                                <div
+                                    key={i}
+                                    className="flex justify-between items-center text-[9px] py-0.5 border-b border-white/5 last:border-0"
+                                >
+                                    <span className="text-muted font-mono">
+                                        {new Date(gap.start_time).toLocaleDateString()}
+                                    </span>
                                     <span className="text-amber-300/80">{gap.missing_slots} slots</span>
                                 </div>
                             ))}
@@ -143,10 +153,11 @@ export default function DataBackfillCard() {
                         <button
                             onClick={handleBackfill}
                             disabled={backfilling}
-                            className={`mt-2 w-full flex items-center justify-center gap-2 py-2 rounded-lg text-[11px] font-semibold transition-all ${backfilling
-                                ? 'bg-amber-500/20 text-amber-400 cursor-not-allowed'
-                                : 'bg-amber-500 hover:bg-amber-400 text-[#0F1216]'
-                                }`}
+                            className={`mt-2 w-full flex items-center justify-center gap-2 py-2 rounded-lg text-[11px] font-semibold transition-all ${
+                                backfilling
+                                    ? 'bg-amber-500/20 text-amber-400 cursor-not-allowed'
+                                    : 'bg-amber-500 hover:bg-amber-400 text-[#0F1216]'
+                            }`}
                         >
                             {backfilling ? (
                                 <>
@@ -161,9 +172,7 @@ export default function DataBackfillCard() {
                             )}
                         </button>
                         {successMsg && (
-                            <span className="text-[9px] text-emerald-400 animate-fade-in mt-1">
-                                {successMsg}
-                            </span>
+                            <span className="text-[9px] text-emerald-400 animate-fade-in mt-1">{successMsg}</span>
                         )}
                     </div>
                 )}

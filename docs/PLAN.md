@@ -64,7 +64,7 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 
 ---
 
-### [PLANNED] REV // UI6 — ChartCard Overlay & Data Toggle
+### [DONE] REV // UI6 — ChartCard Overlay & Data Toggle
 
 **Goal:** Refactor the `ChartCard` to prioritize visibility of planned actions and forecasts, with a toggleable overlay for actual historical data.
 
@@ -73,14 +73,14 @@ Currently, the charts can become cluttered when mixing planned and actual data. 
 
 **Plan:**
 
-#### Phase 1: Frontend Refactor [PLANNED]
-* [ ] Modify `ChartCard.tsx` to separate "Planned/Forecast" series from "Actual" series.
-* [ ] Add a UI toggle (e.g., "Show Actual Data") to the chart controls.
-* [ ] Implement conditional rendering for actual data series based on the toggle state.
+#### Phase 1: Frontend Refactor [DONE]
+* [x] Modify `ChartCard.tsx` to separate "Planned/Forecast" series from "Actual" series.
+* [x] Add a UI toggle (e.g., "Show Actual Data") to the chart controls.
+* [x] Implement conditional rendering for actual data series based on the toggle state.
 
-#### Phase 2: Design & Polish [PLANNED]
-* [ ] Ensure "Actual" data overlays are visually distinct (e.g., using dashed lines, thinner lines, or lower opacity).
-* [ ] Verify legend updates correctly when toggling.
+#### Phase 2: Design & Polish [DONE]
+* [x] Ensure "Actual" data overlays are visually distinct (e.g., using dashed lines, thinner lines, or lower opacity).
+* [x] Verify legend updates correctly when toggling.
 
 
 ---

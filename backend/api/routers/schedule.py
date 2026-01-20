@@ -206,13 +206,19 @@ async def schedule_today_with_history(
                 discharge_kwh = float(row["batt_discharge_kwh"] or 0.0)
                 discharge_kw = discharge_kwh / duration_hours
 
-                # export_kwh for display
+                # export_kwh for display -> actual_export_kw
                 export_kwh = float(row["export_kwh"] or 0.0)
+                export_kw = export_kwh / duration_hours
+
+                pv_kwh = float(row["pv_kwh"] or 0.0)
+                load_kwh = float(row["load_kwh"] or 0.0)
 
                 exec_map[key] = {
                     "actual_charge_kw": round(charge_kw, 3),
                     "actual_discharge_kw": round(discharge_kw, 3),
-                    "actual_export_kwh": round(export_kwh, 3),
+                    "actual_export_kw": round(export_kw, 3),
+                    "actual_pv_kwh": round(pv_kwh, 3),
+                    "actual_load_kwh": round(load_kwh, 3),
                     "actual_soc": float(row["soc_end_percent"] or 0.0),
                     "water_heating_kw": round(water_kw, 3),
                     "import_price_sek_kwh": float(row["import_price_sek_kwh"] or 0.0),
@@ -303,8 +309,10 @@ async def schedule_today_with_history(
             slot["is_historical"] = True
             slot["actual_charge_kw"] = h.get("actual_charge_kw")
             slot["actual_discharge_kw"] = h.get("actual_discharge_kw")
-            slot["actual_export_kwh"] = h.get("actual_export_kwh")
+            slot["actual_export_kw"] = h.get("actual_export_kw")
             slot["actual_soc"] = h.get("actual_soc")
+            slot["actual_pv_kwh"] = h.get("actual_pv_kwh")
+            slot["actual_load_kwh"] = h.get("actual_load_kwh")
             slot["water_heating_kw"] = h.get("water_heating_kw", slot.get("water_heating_kw"))
             # Add historical price from DB if not already present
             if "import_price_sek_kwh" not in slot:

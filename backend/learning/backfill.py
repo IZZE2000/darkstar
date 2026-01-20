@@ -222,11 +222,13 @@ class BackfillEngine:
             input_sensors = self.config.get("input_sensors", {})
             raw_map = {}
             mapping = {
-                "total_grid_import": "import",
-                "total_grid_export": "export",
-                "total_pv_production": "pv",
-                "total_load_consumption": "load",
-                "water_heater_consumption": "water",
+                "pv_power": "pv",
+                "load_power": "load",
+                "battery_power": "battery",
+                "grid_power": "grid",
+                "grid_import_power": "import",
+                "grid_export_power": "export",
+                "water_power": "water",
                 "battery_soc": "soc",
             }
             for config_key, canonical in mapping.items():
@@ -264,7 +266,7 @@ class BackfillEngine:
                 continue
 
             # ETL to slots
-            df = await asyncio.to_thread(self.engine.etl_cumulative_to_slots, cumulative_data)
+            df = await asyncio.to_thread(self.engine.etl_power_to_slots, cumulative_data)
             if df.empty:
                 logger.warning(f"ETL produced empty DataFrame for gap {start_time} to {end_time}")
                 continue

@@ -424,7 +424,6 @@ export type BackfillStatusResponse = {
     message: string
 }
 
-
 async function getJSON<T>(path: string, method: 'GET' | 'POST' | 'DELETE' = 'GET', body?: unknown): Promise<T> {
     // Strip leading slash to make paths relative - works with base href for HA Ingress
     const relativePath = path.startsWith('/') ? path.slice(1) : path
