@@ -1,7 +1,6 @@
 import asyncio
 import json
 import logging
-from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, cast
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
@@ -9,7 +8,11 @@ from pydantic import BaseModel
 from sqlalchemy import desc, select
 
 from backend.learning.backfill import BackfillEngine
-from backend.learning.models import ConfigVersion, ExecutionLog, LearningDailyMetric, LearningRun, SlotObservation
+from backend.learning.models import (
+    ConfigVersion,
+    LearningDailyMetric,
+    LearningRun,
+)
 
 if TYPE_CHECKING:
     from backend.learning.store import LearningStore
@@ -248,98 +251,15 @@ class BackfillStatus(BaseModel):
 async def get_gaps(days: int = 10):
     """Detect missing observation slots in the last N days."""
     try:
-        engine = _get_learning_engine()
-        store: LearningStore = engine.store
-        tz = store.timezone
-        now = datetime.now(tz)
-        start_time = now - timedelta(days=days)
+        engine = BackfillEngine()
+        gaps = await engine.detect_gaps(days=days)
 
-        # Truncate to 15-minute boundaries
-        start_time = start_time.replace(
-            minute=start_time.minute - (start_time.minute % 15), second=0, microsecond=0
-        )
-
-        logger.info(f"🔍 Gap detection: now={now}, start_time={start_time}, days={days}")
-
-        # Generate expected slots with consistent timezone format
-        expected_slots = set()
-        current = start_time
-        while current < now:
-            # Use same format as database: astimezone + isoformat
-            expected_slots.add(current.astimezone(tz).isoformat())
-            current += timedelta(minutes=15)
-
-        logger.info(f"📊 Generated {len(expected_slots)} expected slots")
-        logger.info(f"📊 Sample expected slots: {list(sorted(expected_slots))[:5]}")
-
-        # Query existing slots
-        existing_slots = set()
-        async with store.AsyncSession() as session:
-            stmt = select(ExecutionLog.slot_start).where(
-                ExecutionLog.slot_start >= start_time.astimezone(tz).isoformat(),
-                ExecutionLog.slot_start < now.astimezone(tz).isoformat()
-            )
-            result = await session.execute(stmt)
-            for row in result.scalars():
-                existing_slots.add(row)
-
-        logger.info(f"📊 Found {len(existing_slots)} existing slots in DB")
-        logger.info(f"📊 Sample existing slots: {list(sorted(existing_slots))[:5]}")
-
-        # DEBUG: Check What Slots Exist for Today
-        today_str = now.strftime('%Y-%m-%d')
-        today_slots = [slot for slot in existing_slots if slot.startswith(today_str)]
-        logger.info(f"📊 Today's slots ({len(today_slots)}): {sorted(today_slots)}")
-
-        expected_today = [slot for slot in expected_slots if slot.startswith(today_str)]
-        logger.info(f"📊 Expected today ({len(expected_today)}): {sorted(expected_today)[:10]}")
-
-        # Find missing
-        missing = sorted(expected_slots - existing_slots)
-
-        logger.info(f"📊 Missing slots: {len(missing)}")
-        if missing:
-            logger.info(f"📊 First 5 missing: {missing[:5]}")
-
-        if not missing:
-            logger.info("✅ No gaps found - returning empty array")
-            return []
-
-        # Group into contiguous ranges
-        gaps = []
-        current_gap_start = missing[0]
-        current_gap_end = missing[0]
-        count = 1
-
-        for i in range(1, len(missing)):
-            curr_dt = datetime.fromisoformat(missing[i])
-            prev_dt = datetime.fromisoformat(missing[i - 1])
-
-            if (curr_dt - prev_dt) == timedelta(minutes=15):
-                current_gap_end = missing[i]
-                count += 1
-            else:
-                gaps.append(
-                    GapInfo(
-                        start_time=current_gap_start,
-                        end_time=current_gap_end,
-                        missing_slots=count,
-                    )
-                )
-                current_gap_start = missing[i]
-                current_gap_end = missing[i]
-                count = 1
-
-        # Append last gap
-        gaps.append(
+        return [
             GapInfo(
-                start_time=current_gap_start,
-                end_time=current_gap_end,
-                missing_slots=count,
+                start_time=g["start_time"], end_time=g["end_time"], missing_slots=g["missing_slots"]
             )
-        )
-
-        return gaps
+            for g in gaps
+        ]
 
     except Exception as e:
         logger.exception("Failed to detect gaps")

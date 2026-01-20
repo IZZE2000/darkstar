@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 # Ensure backend module is found
 sys.path.append(str(Path.cwd()))
 
+
 from backend.learning.store import LearningStore
 from inputs import load_yaml  # helper to load config
 
@@ -57,14 +58,31 @@ async def test_get_gaps(client):
 
     while current < end_time:
         # Check if current is in gap window
-        # Use precise comparison
-        if not (gap_start <= current < gap_end):
+        # Create a "partial" gap effectively by having a slot with MISSING sensor data
+        # Logic: detected gap should include this slot.
+        if gap_start <= current < gap_end:
             slots.append(
                 {
                     "slot_start": current,
                     "slot_end": current + timedelta(minutes=15),
                     "import_kwh": 0.1,
                     "export_kwh": 0.1,
+                    # MISSING SoC (None). PV/Load must be 0.0 (not null) but checking soc should be enough to trigger gap.
+                    "soc_end_percent": None,
+                    "pv_kwh": 0.0,
+                    "load_kwh": 0.0,
+                }
+            )
+        else:
+            slots.append(
+                {
+                    "slot_start": current,
+                    "slot_end": current + timedelta(minutes=15),
+                    "import_kwh": 0.1,
+                    "export_kwh": 0.1,
+                    "soc_end_percent": 50.0,
+                    "pv_kwh": 0.5,
+                    "load_kwh": 0.5,
                 }
             )
         current += timedelta(minutes=15)

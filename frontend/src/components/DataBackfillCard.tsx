@@ -12,24 +12,39 @@ export default function DataBackfillCard() {
     const [successMsg, setSuccessMsg] = useState<string | null>(null)
 
     const fetchGaps = async () => {
+        console.log('🔍 fetchGaps() called at:', new Date().toISOString())
         setLoading(true)
         setError(null)
         try {
+            console.log('📡 About to call Api.learningGaps(10)...')
             const data = await Api.learningGaps(10)
+            console.log('✅ API response received:', data)
+            console.log('📊 Gaps count:', data.length)
+            if (data.length > 0) console.log('📊 First gap:', data[0])
             setGaps(data)
+            console.log('✅ State updated with gaps')
         } catch (err) {
-            console.error('Failed to fetch data gaps:', err)
+            console.error('❌ API call failed:', err)
+            console.error('❌ Error details:', JSON.stringify(err, null, 2))
             setError('Failed to detect gaps.')
         } finally {
             setLoading(false)
+            console.log('✅ fetchGaps() completed')
         }
     }
 
     useEffect(() => {
+        console.log('🚀 DataBackfillCard mounted, calling fetchGaps...')
         fetchGaps()
         // Auto-refresh every 5 minutes
-        const interval = setInterval(fetchGaps, 5 * 60 * 1000)
-        return () => clearInterval(interval)
+        const interval = setInterval(() => {
+            console.log('🔄 Auto-refresh triggered')
+            fetchGaps()
+        }, 5 * 60 * 1000)
+        return () => {
+            console.log('🛑 DataBackfillCard unmounting, clearing interval')
+            clearInterval(interval)
+        }
     }, [])
 
     const handleBackfill = async () => {
@@ -56,11 +71,27 @@ export default function DataBackfillCard() {
     const isHealthy = gaps.length === 0 && !error
     const hasError = !!error
 
+    const testAPI = async () => {
+        console.log('🧪 Testing API directly...')
+        try {
+            const response = await fetch('/api/learning/gaps?days=10')
+            console.log('📡 Raw response status:', response.status)
+            const data = await response.json()
+            console.log('📊 Raw response data:', data)
+        } catch (err) {
+            console.error('❌ Direct API test failed:', err)
+        }
+    }
+
     return (
         <Card className="p-4 md:p-5 flex flex-col h-full min-h-0 overflow-hidden relative">
             <div className="flex items-center gap-2 mb-4 shrink-0">
                 <Database className={`h-4 w-4 ${hasError ? 'text-red-400' : isHealthy ? 'text-emerald-400' : 'text-amber-400'}`} />
                 <span className="text-xs font-medium text-text">Data Integrity</span>
+                {/* DEBUG BUTTON */}
+                <button onClick={testAPI} className="ml-auto text-[10px] bg-red-500/20 text-red-400 px-2 py-0.5 rounded hover:bg-red-500/30">
+                    Test API
+                </button>
             </div>
 
             <div className="flex-1 flex flex-col justify-center items-center gap-3">
@@ -113,8 +144,8 @@ export default function DataBackfillCard() {
                             onClick={handleBackfill}
                             disabled={backfilling}
                             className={`mt-2 w-full flex items-center justify-center gap-2 py-2 rounded-lg text-[11px] font-semibold transition-all ${backfilling
-                                    ? 'bg-amber-500/20 text-amber-400 cursor-not-allowed'
-                                    : 'bg-amber-500 hover:bg-amber-400 text-[#0F1216]'
+                                ? 'bg-amber-500/20 text-amber-400 cursor-not-allowed'
+                                : 'bg-amber-500 hover:bg-amber-400 text-[#0F1216]'
                                 }`}
                         >
                             {backfilling ? (

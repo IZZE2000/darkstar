@@ -17,8 +17,6 @@ def mock_engine(tmp_path):
     with patch("backend.learning.backfill.get_learning_engine") as mock_get:
         mock_le = MagicMock()
         mock_le.store.get_last_observation_time = AsyncMock(return_value=None)
-        mock_le.store.get_last_execution_time = AsyncMock(return_value=None)
-        mock_le.store.store_execution_logs_from_df = AsyncMock()
         mock_le.store_slot_observations = AsyncMock()
         mock_le.sensor_map = {"sensor.test": "test_sensor"}
         mock_le.learning_config = {"sensor_map": {"sensor.test": "test_sensor"}}
@@ -48,7 +46,6 @@ async def test_backfill_no_gap(mock_engine):
     # Last obs was 5 mins ago
     now = datetime.now(pytz.UTC)
     mock_le.store.get_last_observation_time.return_value = now - timedelta(minutes=5)
-    mock_le.store.get_last_execution_time.return_value = now - timedelta(minutes=5)
 
     await engine.run()
 
@@ -65,7 +62,6 @@ async def test_backfill_with_gap(mock_engine):
     now = datetime.now(pytz.UTC)
     last_obs = now - timedelta(hours=2)
     mock_le.store.get_last_observation_time.return_value = last_obs
-    mock_le.store.get_last_execution_time.return_value = last_obs
 
     # Mock fetch_history
     with patch.object(engine, "_fetch_history", new_callable=AsyncMock) as mock_fetch:
@@ -92,7 +88,6 @@ async def test_backfill_empty_db(mock_engine):
 
     # No last obs
     mock_le.store.get_last_observation_time.return_value = None
-    mock_le.store.get_last_execution_time.return_value = None
 
     with patch.object(engine, "_fetch_history", new_callable=AsyncMock) as mock_fetch:
         mock_fetch.return_value = []

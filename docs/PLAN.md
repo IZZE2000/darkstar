@@ -252,6 +252,25 @@ Currently, the charts can become cluttered when mixing planned and actual data. 
 #### Phase 3: Bugfixes [DONE]
 * [x] Fix gap detection API to use correct timezone-aware isoformat.
 * [x] Fix gap detection to query unbounded `ExecutionLog` appropriately (added `< now` bound).
-* [x] Fix gap detection to target `ExecutionLog` instead of `SlotObservation` (Root Cause).
-* [x] Fix BackfillEngine to verify `ExecutionLog` gaps and populate them.
-* [x] **Verified**: Test ensures `200` OK and correct gap count instead of empty list. Verified BackfillEngine populates DB correctly.
+* [x] **Archectural Fix**: Reverted gap detection to `SlotObservation` to align with ChartCard historical data.
+* [x] **Refinement**: Gap detection now treats `SlotObservation` rows with missing sensor data (`SoC`, `PV`, `Load` is NULL/NaN) as gaps.
+* [x] **Archectural Fix**: Reverted BackfillEngine to populate `SlotObservation` as source of truth.
+* [x] **Verified**: Test ensures `200` OK and correct gap count. Verified system uses consistent `SlotObservation` for history.
+
+---
+
+### [DONE] REV // F33 — BackfillEngine Gap Detection Fix
+
+**Goal:** Fix `BackfillEngine` to detect and target historical gaps even if recent data exists.
+
+**Plan:**
+
+#### Phase 1: Engine Logic [DONE]
+* [x] Refactor gap detection from API into `BackfillEngine.detect_gaps()`.
+* [x] Optimize `BackfillEngine.run()` to target specific 15-minute gap ranges.
+* [x] Ensure gaps are detected when sensor data (`SoC`, `PV`, `Load`) is `NULL` or `NaN`.
+
+#### Phase 2: API & Verification [DONE]
+* [x] Update `GET /api/learning/gaps` to use the engine's new detection logic.
+* [x] Verify targeting with new test suite `tests/test_backfill_engine_gaps.py`.
+* [x] **Verification**: All tests passed; historical gaps are correctly identified and backfilled.
