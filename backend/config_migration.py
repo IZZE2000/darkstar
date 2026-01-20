@@ -103,7 +103,13 @@ def soft_merge_defaults(config: Any) -> bool:
             changed = True
 
         # 2. Recursive Soft Merge
-        def recursive_merge(user_node: dict, default_node: dict, path: str = "") -> bool:
+        def recursive_merge(user_node: Any, default_node: dict, path: str = "") -> bool:
+            if not isinstance(user_node, dict):
+                logger.warning(
+                    f"Expected dict at {path or 'root'}, but found {type(user_node).__name__}. Cannot merge defaults here."
+                )
+                return False
+
             node_changed = False
             for key, default_val in default_node.items():
                 current_path = f"{path}.{key}" if path else key
@@ -113,7 +119,7 @@ def soft_merge_defaults(config: Any) -> bool:
                     user_node[key] = default_val
                     logger.info(f"Added missing key: {current_path}")
                     node_changed = True
-                elif isinstance(user_node[key], dict) and isinstance(default_val, dict):
+                elif isinstance(user_node.get(key), dict) and isinstance(default_val, dict):
                     # Both are dicts -> Recurse
                     if recursive_merge(user_node[key], default_val, current_path):
                         node_changed = True
@@ -234,6 +240,13 @@ async def migrate_config(config_path: str = "config.yaml") -> None:
     if config is None:
         return
 
+    if not isinstance(config, dict):
+        logger.error(
+            f"❌ Config migration aborted: Expected dictionary root in {config_path}, "
+            f"but found {type(config).__name__}. File might be corrupted."
+        )
+        return
+
     try:
         any_changed = False
         for step in MIGRATIONS:
@@ -244,6 +257,13 @@ async def migrate_config(config_path: str = "config.yaml") -> None:
                 logger.error(f"❌ Migration step {step.__name__} failed: {step_error}")
 
         if any_changed:
+            # SAFETY VALIDATION: Ensure we aren't about to write a non-dict or empty structure
+            if not isinstance(config, dict) or "version" not in config:
+                logger.error(
+                    "❌ Config migration produced an invalid structure! Aborting write to prevent corruption."
+                )
+                return
+
             # Write back atomically
             temp_path = path.with_suffix(".tmp")
             log_prefix = "[CONTAINER]" if Path("/.dockerenv").exists() else "[HOST]"

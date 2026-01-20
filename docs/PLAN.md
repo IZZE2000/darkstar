@@ -188,3 +188,8 @@ Currently, the charts can become cluttered when mixing planned and actual data. 
  * [x] Make `b40631944987` idempotent (column checks).
  * [x] Implement automated DB backup in `docker-entrypoint.sh`.
  * [x] Improve error handling and recovery instructions.
+
+ #### Phase 3: YAML Structure Validation [DONE]
+ * [x] Add root-level dictionary validation to `migrate_config`.
+ * [x] Fix `recursive_merge` type-mismatch handling.
+ * [x] Add pre-write schema validation (version check).
