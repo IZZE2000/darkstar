@@ -586,3 +586,26 @@ The `LoadDisaggregator` uses a **Registry Pattern**, allowing different types of
 
 ### 12.3 Kepler Integration
 Kepler receives the clean base load forecast and adds its own decision variables (or forced constraints) for controllable loads (like water heating) to satisfy the house energy balance. This ensures the solver can trade off battery energy vs. appliance shifting with 100% accuracy.
+
+---
+
+## 13. Configuration Persistence & Environment Variations
+
+Darkstar supports automated configuration migration across versions. However, the underlying file writing strategy varies depending on the deployment environment.
+
+### 13.1 Docker Bind Mount Limitation
+In Docker Compose environments where `config.yaml` is mounted from the host filesystem as a single-file bind mount, the Linux kernel prevents **atomic replacement** (`os.replace`). Atomic replacement requires moving a new file over the old one, which would break the bind mount link.
+
+### 13.2 Migration Strategy (Rev F31)
+To ensure reliability across all environments, the migration system implements a dual-layer writing strategy:
+
+1.  **Atomic Strategy (Preferred)**: Used on standard filesystems (and Home Assistant Add-ons). It writes to a temporary file and atomically replaces the original, ensuring no partial writes if the system crashes.
+2.  **Direct Write Fallback (Docker-Safe)**: Triggered automatically when `EBUSY` or `EXDEV` errors are detected (indicating a bind mount).
+    - **Mechanism**:
+        1.  Create a `.bak` backup of the existing config.
+        2.  Open the existing file in truncate mode (preserving the inode and the Docker bind mount).
+        3.  Write the new YAML content directly.
+        4.  Perform a **verification read** to ensure the YAML is valid.
+        5.  **Rollback**: If writing or verification fails, the `.bak` is automatically restored to prevent data loss.
+
+This ensures that Docker users can persist their settings across upgrades without manual intervention or mount-breaking errors.

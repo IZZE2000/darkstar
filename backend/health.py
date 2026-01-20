@@ -382,6 +382,10 @@ class HealthChecker:
         # Input sensors
         input_sensors = self._config.get("input_sensors", {})
 
+        # Grid meter configuration
+        grid_meter_type = system_cfg.get("grid_meter_type", "net")
+        is_net_metering = grid_meter_type == "net"
+
         # Define which sensors are HARD requirements for core functionality
         # If False, a missing entity is a WARNING, not a CRITICAL error.
         sensor_requirements = {
@@ -389,7 +393,9 @@ class HealthChecker:
             "battery_soc": has_battery,
             "load_power": True,
             "pv_power": has_solar,
-            "grid_power": True,
+            "grid_power": is_net_metering,
+            "grid_import_power": not is_net_metering,
+            "grid_export_power": not is_net_metering,
             # Features (WARNING if missing but enabled)
             "water_power": has_water_heater,
             "water_heater_consumption": has_water_heater,
@@ -397,7 +403,17 @@ class HealthChecker:
             "vacation_mode": False,  # Optional
         }
 
+        # Sensors that should be completely skipped if not relevant for current meter type
+        sensors_to_skip = []
+        if is_net_metering:
+            sensors_to_skip = ["grid_import_power", "grid_export_power"]
+        else:
+            sensors_to_skip = ["grid_power"]
+
         for key, entity_id in input_sensors.items():
+            if key in sensors_to_skip:
+                continue
+
             if entity_id and isinstance(entity_id, str):
                 # Is this sensor tied to a hardware toggle?
                 hardware_enabled = sensor_requirements.get(key, True)
@@ -443,6 +459,22 @@ class HealthChecker:
                 entity_id = executor.get(key)
                 if entity_id:
                     entities_to_check.append((entity_id, f"executor.{key}", True))
+
+        # NEW: Check for MISSING required sensors that aren't even in input_sensors
+        for req_key, is_required in sensor_requirements.items():
+            if is_required and req_key not in input_sensors:
+                # Core sensor is missing from config entirely
+                issues.append(
+                    HealthIssue(
+                        category="config",
+                        severity="critical",
+                        message=f"Missing required sensor: {req_key}",
+                        guidance=(
+                            f"Add '{req_key}' to input_sensors in config.yaml. "
+                            f"This is required for {grid_meter_type} metering."
+                        ),
+                    )
+                )
 
         # Check each entity
         headers = {"Authorization": f"Bearer {token}"}

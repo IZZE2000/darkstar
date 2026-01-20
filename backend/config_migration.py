@@ -285,8 +285,9 @@ async def migrate_config(config_path: str = "config.yaml") -> None:
 
                     # If it's a bind mount (EBUSY) or across filesystems (EXDEV), fallback to non-atomic
                     if e.errno in (errno.EBUSY, errno.EXDEV, errno.ETXTBSY):
-                        logger.warning(
-                            f"⚠️  {log_prefix} Atomic replace failed ({e.strerror}), falling back to direct write strategy (Bind Mount detected)"
+                        logger.info(
+                            f"[INFO] {log_prefix} {config_path} is likely a Docker bind mount (Atomic replace failed: {e.strerror}). "
+                            "Switching to direct write strategy to preserve the mount."
                         )
 
                         # Non-atomic fallback for Bind Mounts:

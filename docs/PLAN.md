@@ -212,3 +212,21 @@ Currently, the charts can become cluttered when mixing planned and actual data. 
 * [x] Create `tests/conftest.py` for automatic DB initialization.
 * [x] Add graceful error handling for missing DB/tables in API routers.
 * [x] **Verification**: API tests pass in CI-like environment.
+
+---
+
+### [DONE] REV // F32 — Migration UX & Grid Validation Refinements
+
+**Goal:** Improve migration transparency for Docker users and fix false grid sensor warnings.
+
+**Plan:**
+
+#### Phase 1: UX Improvements [DONE]
+* [x] Update `config_migration.py` with friendly Docker bind mount message.
+* [x] Document Docker bind mount limitations in `ARCHITECTURE.md`.
+* [x] **Verification**: Logs show informative `ℹ️` instead of alarming `⚠️`.
+
+#### Phase 2: Health Check Refinement [DONE]
+* [x] Update `health.py` to respect `grid_meter_type` (`net` vs `dual`).
+* [x] Implement explicit check for missing required sensors.
+* [x] **Verification**: `dual` mode correctly warns for missing import/export sensors; `net` mode does not.
