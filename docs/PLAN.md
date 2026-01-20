@@ -260,17 +260,24 @@ Currently, the charts can become cluttered when mixing planned and actual data. 
 ---
 
 ### [DONE] REV // F33 — BackfillEngine Gap Detection Fix
+...
+* [x] **Verification**: All tests passed; historical gaps are correctly identified and backfilled.
 
-**Goal:** Fix `BackfillEngine` to detect and target historical gaps even if recent data exists.
+---
+
+### [DONE] REV // F34 — Backfill Sensor Mapping & ETL Robustness
+
+**Goal:** Fix incorrect sensor mapping in `BackfillEngine` and ensure the ETL process handles power data correctly for historical visualization.
 
 **Plan:**
 
-#### Phase 1: Engine Logic [DONE]
-* [x] Refactor gap detection from API into `BackfillEngine.detect_gaps()`.
-* [x] Optimize `BackfillEngine.run()` to target specific 15-minute gap ranges.
-* [x] Ensure gaps are detected when sensor data (`SoC`, `PV`, `Load`) is `NULL` or `NaN`.
+#### Phase 1: Engine Fixes [DONE]
+* [x] **BackfillEngine:** Added explicit filtering for power sensors and detailed logging of the mapping process.
+* [x] **BackfillEngine:** Implemented chunking for large gaps to prevent HA timeouts and overloading.
+* [x] **LearningEngine:** Standardized timestamp handling (flooring to minutes) in `etl_power_to_slots` to ensure data alignment.
+* [x] **LearningEngine:** Implemented heuristic unit detection (Watts vs. kW) to calculate energy (kWh) correctly from various sensor types.
 
-#### Phase 2: API & Verification [DONE]
-* [x] Update `GET /api/learning/gaps` to use the engine's new detection logic.
-* [x] Verify targeting with new test suite `tests/test_backfill_engine_gaps.py`.
-* [x] **Verification**: All tests passed; historical gaps are correctly identified and backfilled.
+#### Phase 2: Persistence & UI [DONE]
+* [x] **LearningStore:** Added `store_execution_logs_from_df` to populate historical energy data as "Actual" bars in the UI.
+* [x] **Deduplication:** Ensured that backfilled logs do not create duplicate entries in the `execution_log` table.
+* [x] **Verification**: Confirmed with a deep-dive test that 4000W over 15m correctly yields 1.0kWh.

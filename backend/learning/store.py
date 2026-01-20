@@ -167,6 +167,60 @@ class LearningStore:
                 await session.execute(stmt)
             await session.commit()
 
+    async def store_execution_logs_from_df(self, observations_df: pd.DataFrame) -> None:
+        """
+        Store execution logs from a DataFrame (used during backfill to populate bars).
+        """
+        if observations_df.empty:
+            return
+
+        async with self.AsyncSession() as session:
+            records = observations_df.to_dict("records")
+            slot_starts = []
+            objects_to_add = []
+
+            for record in records:
+                slot_start = record["slot_start"]
+                if isinstance(slot_start, datetime | pd.Timestamp):
+                    slot_start = slot_start.astimezone(self.timezone).isoformat()
+                else:
+                    slot_start = pd.to_datetime(slot_start).astimezone(self.timezone).isoformat()
+
+                slot_starts.append(slot_start)
+                duration_hours = float(record.get("duration_minutes", 15)) / 60.0
+
+                objects_to_add.append(
+                    ExecutionLog(
+                        executed_at=slot_start,
+                        slot_start=slot_start,
+                        planned_charge_kw=float(record.get("batt_charge_kwh", 0.0) or 0.0)
+                        / duration_hours,
+                        planned_discharge_kw=float(record.get("batt_discharge_kwh", 0.0) or 0.0)
+                        / duration_hours,
+                        planned_export_kw=float(record.get("export_kwh", 0.0) or 0.0)
+                        / duration_hours,
+                        planned_water_kw=float(record.get("water_kwh", 0.0) or 0.0)
+                        / duration_hours,
+                        before_soc_percent=record.get("soc_start_percent"),
+                        before_pv_kw=float(record.get("pv_kwh", 0.0) or 0.0) / duration_hours,
+                        before_load_kw=float(record.get("load_kwh", 0.0) or 0.0) / duration_hours,
+                        success=1,
+                        source="backfill",
+                    )
+                )
+
+            # Cleanup existing backfill logs for these slots to avoid duplicates
+            from sqlalchemy import delete
+
+            stmt = delete(ExecutionLog).where(
+                ExecutionLog.slot_start.in_(slot_starts), ExecutionLog.source == "backfill"
+            )
+            await session.execute(stmt)
+
+            # Bulk add
+            session.add_all(objects_to_add)
+            await session.commit()
+
     async def store_forecasts(self, forecasts: list[dict], forecast_version: str) -> None:
         """Store forecast data using Async SQLAlchemy."""
         if not forecasts:
