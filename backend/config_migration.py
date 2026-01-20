@@ -1,3 +1,4 @@
+import contextlib
 import logging
 from collections.abc import Callable
 from pathlib import Path
@@ -238,13 +239,35 @@ async def migrate_config(config_path: str = "config.yaml") -> None:
         if any_changed:
             # Write back atomically
             temp_path = path.with_suffix(".tmp")
-            with temp_path.open("w", encoding="utf-8") as f:
-                yaml.dump(config, f)
+            try:
+                with temp_path.open("w", encoding="utf-8") as f:
+                    yaml.dump(config, f)
 
-            # Backup original if not already backed up today?
-            # For simplicity, just replace.
-            temp_path.replace(path)
-            logger.info(f"✅ Successfully migrated {config_path} to newest version structure")
+                # Retry logic for file replacement (handles "Device or resource busy")
+                max_retries = 5
+                for i in range(max_retries):
+                    try:
+                        temp_path.replace(path)
+                        logger.info(
+                            f"✅ Successfully migrated {config_path} to newest version structure"
+                        )
+                        break
+                    except OSError as e:
+                        if i == max_retries - 1:
+                            raise
+                        wait_time = 0.5 * (2**i)
+                        logger.warning(
+                            f"⚠️ File replacement failed (attempt {i + 1}/{max_retries}): {e}. "
+                            f"Retrying in {wait_time:.1f}s..."
+                        )
+                        import time
+
+                        time.sleep(wait_time)
+            finally:
+                # Cleanup temp file if it still exists
+                if temp_path.exists():
+                    with contextlib.suppress(Exception):
+                        temp_path.unlink()
         else:
             logger.debug("Config is already up to date")
 

@@ -86,12 +86,16 @@ async def lifespan(app: FastAPI):
         # Inherit env to ensure credentials/paths are preserved
         run_env = os.environ.copy()
 
+        # Ensure we run from the project root (where alembic.ini is)
+        project_root = Path(__file__).parent.parent
+
         result = subprocess.run(
             [sys.executable, "-m", "alembic", "upgrade", "head"],
             capture_output=True,
             text=True,
             timeout=60,
             env=run_env,
+            cwd=str(project_root),
         )
 
         if result.returncode == 0:
@@ -107,8 +111,13 @@ async def lifespan(app: FastAPI):
                 logger.error(f"Alembic error: {result.stderr.strip()}")
             if result.stdout:
                 logger.error(f"Alembic output: {result.stdout.strip()}")
-            # In production, we might want to exit here, but for now we'll allow
-            # partial startup to let the user see logs via the Debug page.
+
+            # CRITICAL: If database is incompatible, it's safer to stop than to run with corrupt state
+            # However, we check if it's a "No such table" or schema error specifically?
+            # For now, if migrations fail, we halt if it's more than a simple warning.
+            if result.returncode != 0:
+                logger.critical("🛑 APPLICATION STOPPED: Database schema is incompatible.")
+                sys.exit(1)
     except Exception as e:
         logger.error(f"❌ Failed to run database migrations: {e}")
 
