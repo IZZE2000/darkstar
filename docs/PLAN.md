@@ -276,3 +276,6 @@ Currently, the charts can become cluttered when mixing planned and actual data. 
 #### Phase 4: Data Recovery [x]
 * [x] **Bug Fix:** Resolve `BackfillEngine` sensor detection and `LearningEngine` mapping inversion.
 * [x] **Recovery:** Successfully backfill 400+ historical slots for accurate Cost Reality comparison.
+
+#### Phase 5: Data Cleanup [x]
+* [x] **Jan 13 Fix:** Zeroed out anomalous slot (7,500 SEK spike) caused by sensor counter jump.
