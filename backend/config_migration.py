@@ -264,64 +264,75 @@ async def migrate_config(config_path: str = "config.yaml") -> None:
                 )
                 return
 
-            # Write back atomically
+            # Write strategy: Try atomic replacement, fallback to direct write for bind mounts
             temp_path = path.with_suffix(".tmp")
+            backup_path = path.with_suffix(".bak")
             log_prefix = "[CONTAINER]" if Path("/.dockerenv").exists() else "[HOST]"
 
             try:
-                logger.info(f"{log_prefix} Atomic write requested for {path}")
-
-                # Check file status before attempting replacement
-                if path.exists():
-                    logger.debug(
-                        f"  Existing file: size={path.stat().st_size}, mode={oct(path.stat().st_mode)}"
-                    )
-
+                logger.info(f"{log_prefix} Migration: Writing updated config to {temp_path}")
                 with temp_path.open("w", encoding="utf-8") as f:
                     yaml.dump(config, f)
 
-                # Retry logic for file replacement (handles "Device or resource busy")
-                max_retries = 5
-                success = False
-                for i in range(max_retries):
-                    try:
-                        # Path.replace use os.replace() which is atomic on Linux
-                        # but can fail with EBUSY if the file is a mount point or active
-                        temp_path.replace(path)
-                        logger.info(
-                            f"✅ {log_prefix} Successfully migrated {config_path} to newest version structure"
-                        )
-                        success = True
-                        break
-                    except OSError as e:
-                        import errno
+                # Attempt 1: Atomic Replace (Safest)
+                try:
+                    # Path.replace use os.replace() which is atomic on Linux
+                    # but fails with EBUSY on Docker bind mounts or EXDEV if across mount points.
+                    temp_path.replace(path)
+                    logger.info(f"✅ {log_prefix} Successfully migrated {config_path} (Atomic)")
+                except OSError as e:
+                    import errno
 
-                        if i == max_retries - 1:
-                            # Final attempt failed - log detailed error
-                            logger.error(
-                                f"❌ {log_prefix} Migration failed after {max_retries} attempts: {e}"
-                            )
-                            if e.errno == errno.EBUSY:
-                                logger.error(
-                                    "  HINT: This often happens in Docker if config.yaml is a directory mount or locked by host."
-                                )
-                            raise
-
-                        wait_time = 0.5 * (2**i)
+                    # If it's a bind mount (EBUSY) or across filesystems (EXDEV), fallback to non-atomic
+                    if e.errno in (errno.EBUSY, errno.EXDEV, errno.ETXTBSY):
                         logger.warning(
-                            f"⚠️  {log_prefix} File replacement failed (attempt {i + 1}/{max_retries}): {e}. "
-                            f"Retrying in {wait_time:.1f}s..."
+                            f"⚠️  {log_prefix} Atomic replace failed ({e.strerror}), falling back to direct write strategy (Bind Mount detected)"
                         )
-                        import time
 
-                        time.sleep(wait_time)
+                        # Non-atomic fallback for Bind Mounts:
+                        # 1. Create backup of current file
+                        if path.exists():
+                            import shutil
 
-                if not success:
-                    # Fallback (less safe but maybe necessary if replace() keeps failing)
-                    # Use copy + unlink ONLY as last resort if we can't replace
-                    logger.warning(
-                        f"⚠️  {log_prefix} Atomic replace failed, config may be out of date."
-                    )
+                            shutil.copy2(path, backup_path)
+
+                        try:
+                            # 2. Open current file for writing (truncates it)
+                            # This works on bind mounts because we preserve the inode.
+                            with path.open("w", encoding="utf-8") as f:
+                                yaml.dump(config, f)
+
+                            # 3. Verify it's actually written and valid
+                            with path.open("r", encoding="utf-8") as f:
+                                check_config = yaml.load(f)
+                                if not check_config or not isinstance(check_config, dict):
+                                    raise ValueError(
+                                        "Verification failed: Written config is empty or invalid"
+                                    )
+
+                            logger.info(
+                                f"✅ {log_prefix} Successfully migrated {config_path} (Direct Write)"
+                            )
+
+                            # Cleanup backup on success
+                            if backup_path.exists():
+                                backup_path.unlink()
+
+                        except Exception as write_error:
+                            logger.error(f"❌ {log_prefix} Direct write failed: {write_error}")
+                            # 4. Restore from backup if we failed midway
+                            if backup_path.exists():
+                                logger.warning(
+                                    f"🔄 {log_prefix} Restoring {config_path} from backup..."
+                                )
+                                import shutil
+
+                                shutil.copy2(backup_path, path)
+                            raise
+                    else:
+                        # Some other OS error - re-raise
+                        logger.error(f"❌ {log_prefix} Migration failed with OS error: {e}")
+                        raise
 
             finally:
                 # Cleanup temp file if it still exists

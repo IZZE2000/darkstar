@@ -106,21 +106,29 @@ async def historic_soc(date: str = Query("today")) -> dict[str, Any]:
         end_iso_str = day_end.isoformat()
 
         async with engine.store.AsyncSession() as session:
-            stmt = (
-                select(
-                    SlotObservation.slot_start,
-                    SlotObservation.soc_end_percent,
-                    SlotObservation.quality_flags,
+            try:
+                stmt = (
+                    select(
+                        SlotObservation.slot_start,
+                        SlotObservation.soc_end_percent,
+                        SlotObservation.quality_flags,
+                    )
+                    .where(
+                        SlotObservation.slot_start >= start_iso_str,
+                        SlotObservation.slot_start < end_iso_str,
+                        SlotObservation.soc_end_percent.is_not(None),
+                    )
+                    .order_by(SlotObservation.slot_start)
                 )
-                .where(
-                    SlotObservation.slot_start >= start_iso_str,
-                    SlotObservation.slot_start < end_iso_str,
-                    SlotObservation.soc_end_percent.is_not(None),
-                )
-                .order_by(SlotObservation.slot_start)
-            )
-            result = await session.execute(stmt)
-            rows = result.all()
+                result = await session.execute(stmt)
+                rows = result.all()
+            except Exception as db_err:
+                logger.warning(f"Database query failed in historic_soc: {db_err}")
+                return {
+                    "date": target_date.isoformat(),
+                    "slots": [],
+                    "message": f"Historical data unavailable: {db_err!s}",
+                }
 
         if not rows:
             return {

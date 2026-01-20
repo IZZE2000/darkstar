@@ -71,8 +71,8 @@ async def learning_history(limit: int = Query(20, ge=1, le=100)) -> dict[str, An
                 )
             return {"runs": results, "count": len(results)}
     except Exception as e:
-        logger.exception("Failed to get learning history")
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        logger.warning(f"Failed to get learning history (DB may be uninitialized): {e}")
+        return {"runs": [], "count": 0, "message": f"Learning history unavailable: {e!s}"}
 
 
 @router.post(
@@ -171,8 +171,8 @@ async def learning_daily_metrics():
                 "s_index_base_factor": row.s_index_base_factor,
             }
     except Exception as e:
-        logger.exception("Failed to get daily metrics")
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        logger.warning(f"Failed to get daily metrics: {e}")
+        return {"message": f"Daily metrics unavailable: {e!s}"}
 
 
 @router.get(
@@ -204,8 +204,8 @@ async def learning_changes(limit: int = Query(10, ge=1, le=50)) -> dict[str, Any
                 )
             return {"changes": changes}
     except Exception as e:
-        logger.exception("Failed to get learning changes")
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        logger.warning(f"Failed to get learning changes: {e}")
+        return {"changes": [], "message": f"Learning changes unavailable: {e!s}"}
 
 
 @router.post(

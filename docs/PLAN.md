@@ -193,3 +193,22 @@ Currently, the charts can become cluttered when mixing planned and actual data. 
  * [x] Add root-level dictionary validation to `migrate_config`.
  * [x] Fix `recursive_merge` type-mismatch handling.
  * [x] Add pre-write schema validation (version check).
+
+---
+
+### [DONE] REV // F31 — Config Migration (Bind Mounts) & CI Stability
+
+**Goal:** Fix config migration failures on Docker bind mounts and stabilize CI tests.
+
+**Plan:**
+
+#### Phase 1: Bind Mount Support [DONE]
+* [x] Detect bind mount vs atomic replacement scenarios.
+* [x] Implement direct write fallback with backup/restore logic.
+* [x] Add verification check after write.
+* [x] **Verification**: Test migration with integration script.
+
+#### Phase 2: CI & Database Stability [DONE]
+* [x] Create `tests/conftest.py` for automatic DB initialization.
+* [x] Add graceful error handling for missing DB/tables in API routers.
+* [x] **Verification**: API tests pass in CI-like environment.
