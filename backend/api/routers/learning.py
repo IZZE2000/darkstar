@@ -1,12 +1,15 @@
 import asyncio
 import json
 import logging
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, cast
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy import desc, select
 
-from backend.learning.models import ConfigVersion, LearningDailyMetric, LearningRun
+from backend.learning.backfill import BackfillEngine
+from backend.learning.models import ConfigVersion, LearningDailyMetric, LearningRun, SlotObservation
 
 if TYPE_CHECKING:
     from backend.learning.store import LearningStore
@@ -224,3 +227,120 @@ async def record_observation() -> dict[str, str]:
     except Exception as e:
         logger.exception("Failed to record observation")
         raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+class GapInfo(BaseModel):
+    start_time: str
+    end_time: str
+    missing_slots: int
+
+
+class BackfillStatus(BaseModel):
+    status: str
+    message: str
+
+
+@router.get(
+    "/api/learning/gaps",
+    summary="Detect Data Gaps",
+    response_model=list[GapInfo],
+)
+async def get_gaps(days: int = 10):
+    """Detect missing observation slots in the last N days."""
+    try:
+        engine = _get_learning_engine()
+        store: LearningStore = engine.store
+        tz = store.timezone
+        now = datetime.now(tz)
+        start_time = now - timedelta(days=days)
+
+        # Truncate to 15-minute boundaries
+        start_time = start_time.replace(
+            minute=start_time.minute - (start_time.minute % 15), second=0, microsecond=0
+        )
+
+        # Generate expected slots
+        expected_slots = set()
+        current = start_time
+        while current < now:
+            expected_slots.add(current.isoformat())
+            current += timedelta(minutes=15)
+
+        # Query existing slots
+        existing_slots = set()
+        async with store.AsyncSession() as session:
+            stmt = select(SlotObservation.slot_start).where(
+                SlotObservation.slot_start >= start_time.isoformat()
+            )
+            result = await session.execute(stmt)
+            for row in result.scalars():
+                existing_slots.add(row)
+
+        # Find missing
+        missing = sorted(expected_slots - existing_slots)
+
+        if not missing:
+            return []
+
+        # Group into contiguous ranges
+        gaps = []
+        current_gap_start = missing[0]
+        current_gap_end = missing[0]
+        count = 1
+
+        for i in range(1, len(missing)):
+            curr_dt = datetime.fromisoformat(missing[i])
+            prev_dt = datetime.fromisoformat(missing[i - 1])
+
+            if (curr_dt - prev_dt) == timedelta(minutes=15):
+                current_gap_end = missing[i]
+                count += 1
+            else:
+                gaps.append(
+                    GapInfo(
+                        start_time=current_gap_start,
+                        end_time=current_gap_end,
+                        missing_slots=count,
+                    )
+                )
+                current_gap_start = missing[i]
+                current_gap_end = missing[i]
+                count = 1
+
+        # Append last gap
+        gaps.append(
+            GapInfo(
+                start_time=current_gap_start,
+                end_time=current_gap_end,
+                missing_slots=count,
+            )
+        )
+
+        return gaps
+
+    except Exception as e:
+        logger.exception("Failed to detect gaps")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+async def _run_backfill_task():
+    """Background task wrapper for backfill."""
+    try:
+        # Use existing engine if possible, or create new one
+        # Because this is a long running task, better to instantiate fresh to avoid binding issues?
+        # But instructions said "Reuse BackfillEngine".
+        engine = BackfillEngine()
+        await engine.run()
+    except Exception:
+        logger.exception("Background backfill failed")
+
+
+@router.post(
+    "/api/learning/backfill",
+    summary="Trigger Backfill",
+    response_model=BackfillStatus,
+)
+async def trigger_backfill(background_tasks: BackgroundTasks):
+    """Trigger the backfill process in the background."""
+    background_tasks.add_task(_run_backfill_task)
+    return BackfillStatus(status="started", message="Backfill process started in background")

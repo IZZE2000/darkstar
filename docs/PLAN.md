@@ -230,3 +230,21 @@ Currently, the charts can become cluttered when mixing planned and actual data. 
 * [x] Update `health.py` to respect `grid_meter_type` (`net` vs `dual`).
 * [x] Implement explicit check for missing required sensors.
 * [x] **Verification**: `dual` mode correctly warns for missing import/export sensors; `net` mode does not.
+
+---
+
+### [DONE] REV // UI8 — Data Backfill Card
+
+**Goal:** Implement UI for data gap detection and manual backfilling from Home Assistant history.
+
+**Plan:**
+
+#### Phase 1: Backend APIs [DONE]
+* [x] Implement `GET /api/learning/gaps` for 10-day gap detection.
+* [x] Implement `POST /api/learning/backfill` to trigger background backfill engine.
+* [x] **Verification**: Verify gap detection covers expected ranges in test suite.
+
+#### Phase 2: Frontend Integration [DONE]
+* [x] Create `DataBackfillCard` component with health status and action button.
+* [x] Integrate into `Aurora` dashboard between System Health and Controls.
+* [x] Add real-time status updates/polling.

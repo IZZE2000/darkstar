@@ -413,6 +413,18 @@ export type SystemHealthResponse = {
     }
 }
 
+export type GapInfo = {
+    start_time: string
+    end_time: string
+    missing_slots: number
+}
+
+export type BackfillStatusResponse = {
+    status: string
+    message: string
+}
+
+
 async function getJSON<T>(path: string, method: 'GET' | 'POST' | 'DELETE' = 'GET', body?: unknown): Promise<T> {
     // Strip leading slash to make paths relative - works with base href for HA Ingress
     const relativePath = path.startsWith('/') ? path.slice(1) : path
@@ -481,6 +493,8 @@ export const Api = {
     learningRun: () => getJSON<LearningRunResponse>('/api/learning/run', 'POST'),
     learningLoops: () => getJSON<LearningLoopsResponse>('/api/learning/loops'),
     learningTrain: () => getJSON<{ status: string; message: string }>('/api/learning/train', 'POST'),
+    learningGaps: (days = 10) => getJSON<GapInfo[]>(`/api/learning/gaps?days=${days}`),
+    learningBackfill: () => getJSON<BackfillStatusResponse>('/api/learning/backfill', 'POST'),
     theme: () => getJSON<ThemeResponse>('/api/themes'),
     runPlanner: () => getJSON<{ status: string; message?: string }>('/api/run_planner', 'POST'),
     resetToOptimal: () => getJSON<{ status: string }>('/api/schedule/save', 'POST'),
