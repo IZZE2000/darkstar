@@ -475,6 +475,52 @@ As of **REV ARC11**, Darkstar has successfully completed its transition to a ful
 
 ---
 
+### 9.3 SQLite Concurrent Access (Rev ARC12)
+
+To prevent `database is locked` errors, Darkstar uses **WAL (Write-Ahead Logging)** mode for all SQLite databases.
+
+**Problem:** Multiple components write to `planner_learning.db`:
+- `ExecutionHistory` (sync engine, executor thread)
+- `LearningStore` (async engine, FastAPI services)
+- `Recorder`, `BackfillEngine`, `Analyst` (async engines)
+
+SQLite's default journal mode (`DELETE`) only allows one writer at a time, causing lock contention.
+
+**Solution: WAL Mode**
+```python
+# Enables concurrent reads during writes
+PRAGMA journal_mode=WAL
+```
+
+**Benefits:**
+- **Concurrent Access:** Readers don't block writers, writers don't block readers
+- **Better Performance:** Typically 2-3x faster writes
+- **Crash-Safe:** Same durability guarantees as default mode
+- **Persistent:** Once enabled, mode survives database restarts
+
+**Implementation:**
+
+1. **ExecutionHistory** (`executor/history.py`):
+   - 30-second timeout for lock acquisition
+   - `check_same_thread: False` for multi-threaded access
+   - `StaticPool` for connection reuse
+   - WAL mode enabled on engine initialization
+
+2. **LearningStore** (`backend/learning/store.py`):
+   - 30-second timeout (already configured)
+   - `ensure_wal_mode()` method for async initialization
+   - WAL mode inherited from sync engine or migration script
+
+3. **Migration:** Run `scripts/enable_wal_mode.py` once to convert existing databases
+
+**Verification:**
+```bash
+$ sqlite3 planner_learning.db "PRAGMA journal_mode"
+wal
+```
+
+---
+
 ## 10. Performance Optimizations (Rev ARC7)
 
 To ensure the Dashboard loads instantly (<200ms) even on limited hardware, a multi-layered optimization strategy is implemented:

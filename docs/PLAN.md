@@ -246,3 +246,29 @@ Currently, the charts can become cluttered when mixing planned and actual data. 
 * [x] Add SQLAlchemy `case()` import.
 * [x] Change energy field upserts to only overwrite when new value > 0.
 * [x] **Verification**: Lint passed, import verified.
+
+---
+
+### [DONE] REV // ARC12 — SQLite WAL Mode (Concurrency Fix)
+
+**Goal:** Eliminate `database is locked` errors by enabling WAL (Write-Ahead Logging) mode for SQLite, allowing concurrent reads/writes.
+
+**Root Cause:** Two separate SQLAlchemy engines (`ExecutorHistory` sync, `LearningStore` async) compete for write access to `planner_learning.db`. SQLite's default journal mode only allows one writer at a time, causing lock contention.
+
+**Plan:**
+
+#### Phase 1: Add Timeouts (Quick Fix) [DONE]
+* [x] Add `timeout: 30.0` to `ExecutorHistory` engine in `executor/history.py`.
+* [x] Add `check_same_thread: False` to `ExecutorHistory` for thread safety.
+* [x] **Verification**: Error frequency should decrease.
+
+#### Phase 2: Enable WAL Mode [DONE]
+* [x] Add WAL pragma execution after engine creation in `executor/history.py`.
+* [x] Add WAL pragma execution after engine creation in `backend/learning/store.py`.
+* [x] Create one-time migration script to convert existing databases to WAL.
+* [x] **Verification**: `PRAGMA journal_mode` returns `wal`.
+
+#### Phase 3: Documentation & Testing [DONE]
+* [x] Document WAL mode in `ARCHITECTURE.md` section 9.3.
+* [x] Verify linting passes for all modified files.
+* [x] **Verification**: No `database is locked` errors under load.

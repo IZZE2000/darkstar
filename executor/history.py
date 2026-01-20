@@ -14,6 +14,7 @@ from typing import Any
 import pytz
 from sqlalchemy import create_engine, delete, desc, func, select, text
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from backend.learning.models import ExecutionLog
 
@@ -75,7 +76,23 @@ class ExecutionHistory:
     def __init__(self, db_path: str, timezone: str = "Europe/Stockholm"):
         self.db_path = db_path
         self.timezone = pytz.timezone(timezone)
-        self.engine = create_engine(f"sqlite:///{db_path}")
+
+        # ARC12: Configure engine with timeout and thread safety
+        connect_args = {
+            "check_same_thread": False,  # Allow multi-threaded access
+            "timeout": 30.0,  # Wait up to 30s for lock release
+        }
+        self.engine = create_engine(
+            f"sqlite:///{db_path}",
+            connect_args=connect_args,
+            poolclass=StaticPool,  # Reuse single connection
+        )
+
+        # ARC12: Enable WAL mode for concurrent read/write access
+        with self.engine.connect() as conn:
+            conn.execute(text("PRAGMA journal_mode=WAL"))
+            conn.commit()
+
         self.Session = sessionmaker(bind=self.engine)
 
     def log_execution(self, record: ExecutionRecord) -> int:

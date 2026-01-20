@@ -40,9 +40,18 @@ class LearningStore:
         )
         self.AsyncSession = async_sessionmaker(self.async_engine, expire_on_commit=False)
 
+        # ARC12: WAL mode will be enabled on first connection
+        # (Can't use async in __init__, so we rely on the sync ExecutorHistory
+        # or migration script to enable WAL. Once enabled, mode persists.)
+
     async def close(self):
         """Dispose of the async engine."""
         await self.async_engine.dispose()
+
+    async def ensure_wal_mode(self):
+        """ARC12: Ensure WAL mode is enabled (idempotent, call once on startup)."""
+        async with self.async_engine.begin() as conn:
+            await conn.execute(text("PRAGMA journal_mode=WAL"))
 
     # _init_schema was removed as Alembic handles migrations.
 
