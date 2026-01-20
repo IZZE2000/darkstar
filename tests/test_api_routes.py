@@ -14,7 +14,8 @@ def client():
     app = create_app()
     # Unwrap Socket.IO wrapper to get raw FastAPI app
     fastapi_app = app.other_asgi_app if hasattr(app, "other_asgi_app") else app
-    return TestClient(fastapi_app)
+    with TestClient(fastapi_app) as client:
+        yield client
 
 
 def test_health_endpoint(client):

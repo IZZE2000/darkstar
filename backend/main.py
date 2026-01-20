@@ -230,9 +230,11 @@ def create_app() -> socketio.ASGIApp:
     """Factory to create the ASGI app."""
 
     # 1. Create FastAPI App
+    from backend.api.routers.system import _get_git_version
+
     app = FastAPI(
         title="Darkstar Energy Manager",
-        version="2.0.0",
+        version=_get_git_version(),
         description="Next-Gen AI Energy Manager",
         lifespan=lifespan,
     )
