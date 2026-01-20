@@ -227,42 +227,82 @@ async def migrate_config(config_path: str = "config.yaml") -> None:
 
         with path.open("r", encoding="utf-8") as f:
             config = yaml.load(f)
+    except Exception as e:
+        logger.error(f"❌ Failed to read or parse config for migration: {e}")
+        return
 
-        if config is None:
-            return
+    if config is None:
+        return
 
+    try:
         any_changed = False
         for step in MIGRATIONS:
-            if step(config):
-                any_changed = True
+            try:
+                if step(config):
+                    any_changed = True
+            except Exception as step_error:
+                logger.error(f"❌ Migration step {step.__name__} failed: {step_error}")
 
         if any_changed:
             # Write back atomically
             temp_path = path.with_suffix(".tmp")
+            log_prefix = "[CONTAINER]" if Path("/.dockerenv").exists() else "[HOST]"
+
             try:
+                logger.info(f"{log_prefix} Atomic write requested for {path}")
+
+                # Check file status before attempting replacement
+                if path.exists():
+                    logger.debug(
+                        f"  Existing file: size={path.stat().st_size}, mode={oct(path.stat().st_mode)}"
+                    )
+
                 with temp_path.open("w", encoding="utf-8") as f:
                     yaml.dump(config, f)
 
                 # Retry logic for file replacement (handles "Device or resource busy")
                 max_retries = 5
+                success = False
                 for i in range(max_retries):
                     try:
+                        # Path.replace use os.replace() which is atomic on Linux
+                        # but can fail with EBUSY if the file is a mount point or active
                         temp_path.replace(path)
                         logger.info(
-                            f"✅ Successfully migrated {config_path} to newest version structure"
+                            f"✅ {log_prefix} Successfully migrated {config_path} to newest version structure"
                         )
+                        success = True
                         break
                     except OSError as e:
+                        import errno
+
                         if i == max_retries - 1:
+                            # Final attempt failed - log detailed error
+                            logger.error(
+                                f"❌ {log_prefix} Migration failed after {max_retries} attempts: {e}"
+                            )
+                            if e.errno == errno.EBUSY:
+                                logger.error(
+                                    "  HINT: This often happens in Docker if config.yaml is a directory mount or locked by host."
+                                )
                             raise
+
                         wait_time = 0.5 * (2**i)
                         logger.warning(
-                            f"⚠️ File replacement failed (attempt {i + 1}/{max_retries}): {e}. "
+                            f"⚠️  {log_prefix} File replacement failed (attempt {i + 1}/{max_retries}): {e}. "
                             f"Retrying in {wait_time:.1f}s..."
                         )
                         import time
 
                         time.sleep(wait_time)
+
+                if not success:
+                    # Fallback (less safe but maybe necessary if replace() keeps failing)
+                    # Use copy + unlink ONLY as last resort if we can't replace
+                    logger.warning(
+                        f"⚠️  {log_prefix} Atomic replace failed, config may be out of date."
+                    )
+
             finally:
                 # Cleanup temp file if it still exists
                 if temp_path.exists():

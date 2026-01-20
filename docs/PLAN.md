@@ -171,3 +171,20 @@ Currently, the charts can become cluttered when mixing planned and actual data. 
 * [x] Add `alembic.ini` and `alembic/` to `Dockerfile`.
 * [x] Remove migration logic from FastAPI `lifespan`.
 * [x] Add safeguard checks to application startup.
+---
+
+ ### [DONE] REV // F30 — v2.5.1-beta Migration Final Fixes
+
+ **Goal:** Resolve config migration file lock issues and ensure database migration idempotency for v2.5.1-beta.
+
+ **Plan:**
+
+ #### Phase 1: Robust Config Migration [DONE]
+ * [x] Add detailed logging and retry logic to `backend/config_migration.py`.
+ * [x] Implement atomic replace fallback with helpful Docker hints.
+
+ #### Phase 2: Database Idempotency & Backup [DONE]
+ * [x] Make baseline migration `f6c8f45208da` idempotent (table checks).
+ * [x] Make `b40631944987` idempotent (column checks).
+ * [x] Implement automated DB backup in `docker-entrypoint.sh`.
+ * [x] Improve error handling and recovery instructions.

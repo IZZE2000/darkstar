@@ -82,17 +82,38 @@ fi
 log "Config migration complete."
 
 # 2. Database Migration
-log "Running database migrations (Alembic)..."
+log "Checking database state..."
 # Ensure data directory exists for SQLite
-mkdir -p /data
+mkdir -p /data/backups
+
+DB_FILE="/data/planner_learning.db"
+# Try to detect DB path from config/env if possible, but /data/planner_learning.db is standard
+if [ -f "$DB_FILE" ]; then
+    BACKUP_FILE="/data/backups/planner_learning_$(date +%Y%m%d_%H%M%S).db.bak"
+    log "Backing up database to $BACKUP_FILE..."
+    if cp "$DB_FILE" "$BACKUP_FILE"; then
+        log "✅ Database backup created successfully."
+    else
+        log "WARNING: Database backup failed! Proceeding with caution."
+    fi
+fi
+
+log "Running database migrations (Alembic)..."
 if [ -f "/app/alembic.ini" ]; then
     if ! alembic upgrade head; then
         log "ERROR: Database migration failed!"
+        log "--------------------------------------------------------"
+        log "HINT: If this is a 'table already exists' error, we've"
+        log "attempted to make the baseline idempotent. Check logs above."
+        log "RECOVERY: You can restore from the backup in /data/backups/"
+        log "by running: cp $BACKUP_FILE $DB_FILE"
+        log "--------------------------------------------------------"
         exit 1
     fi
     log "Database migration complete."
 else
     log "WARNING: /app/alembic.ini not found, skipping DB migrations."
+    log "HINT: Ensure alembic.ini is present in the container root."
 fi
 
 # Initialize schedule.json if missing or corrupted (e.g., was a directory)
