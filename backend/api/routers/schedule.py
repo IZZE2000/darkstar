@@ -174,8 +174,8 @@ async def schedule_today_with_history(
     exec_map: dict[datetime, dict[str, Any]] = {}
     try:
         today_start = tz.localize(datetime.combine(today_local, datetime.min.time()))
-
-        rows = await store.get_executions_range(today_start)
+        today_end = today_start + timedelta(days=1)
+        rows = await store.get_history_range(today_start, today_end)
 
         for row in rows:
             try:
