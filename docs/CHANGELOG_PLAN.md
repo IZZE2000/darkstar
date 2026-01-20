@@ -11,6 +11,57 @@ This document contains the archive of all completed revisions. It serves as the 
 
 This era focused on advanced load disaggregation (ML2), critical bug fixes (F22-F26), and system stability improvements.
 
+### [OBSOLETE] REV // F34 — Backfill Sensor Mapping & ETL Robustness
+
+**Goal:** Fix incorrect sensor mapping in `BackfillEngine` and ensure the ETL process handles power data correctly for historical visualization.
+
+**Plan:**
+
+#### Phase 1: Engine Fixes [DONE]
+* [x] **BackfillEngine:** Added explicit filtering for power sensors and detailed logging of the mapping process.
+* [x] **BackfillEngine:** Implemented chunking for large gaps to prevent HA timeouts and overloading.
+* [x] **LearningEngine:** Standardized timestamp handling (flooring to minutes) in `etl_power_to_slots` to ensure data alignment.
+* [x] **LearningEngine:** Implemented heuristic unit detection (Watts vs. kW) to calculate energy (kWh) correctly from various sensor types.
+
+#### Phase 2: Persistence & UI [DONE]
+* [x] **LearningStore:** Added `store_execution_logs_from_df` to populate historical energy data as "Actual" bars in the UI.
+* [x] **Deduplication:** Ensured that backfilled logs do not create duplicate entries in the `execution_log` table.
+* [x] **Verification**: Confirmed with a deep-dive test that 4000W over 15m correctly yields 1.0kWh.
+
+---
+
+### [OBSOLETE] REV // F33 — BackfillEngine Gap Detection Fix
+...
+* [x] **Verification**: All tests passed; historical gaps are correctly identified and backfilled.
+
+---
+
+### [OBSOLETE] REV // UI8 — Data Backfill Card
+
+**Goal:** Implement UI for data gap detection and manual backfilling from Home Assistant history.
+
+**Plan:**
+
+#### Phase 1: Backend APIs [DONE]
+* [x] Implement `GET /api/learning/gaps` for 10-day gap detection.
+* [x] Implement `POST /api/learning/backfill` to trigger background backfill engine.
+* [x] **Verification**: Verify gap detection covers expected ranges in test suite.
+
+#### Phase 2: Frontend Integration [DONE]
+* [x] Create `DataBackfillCard` component with health status and action button.
+* [x] Integrate into `Aurora` dashboard between System Health and Controls.
+* [x] Add real-time status updates/polling.
+
+#### Phase 3: Bugfixes [DONE]
+* [x] Fix gap detection API to use correct timezone-aware isoformat.
+* [x] Fix gap detection to query unbounded `ExecutionLog` appropriately (added `< now` bound).
+* [x] **Archectural Fix**: Reverted gap detection to `SlotObservation` to align with ChartCard historical data.
+* [x] **Refinement**: Gap detection now treats `SlotObservation` rows with missing sensor data (`SoC`, `PV`, `Load` is NULL/NaN) as gaps.
+* [x] **Archectural Fix**: Reverted BackfillEngine to populate `SlotObservation` as source of truth.
+* [x] **Verified**: Test ensures `200` OK and correct gap count. Verified system uses consistent `SlotObservation` for history.
+
+---
+
 ### [DONE] REV // F26 — Recorder Lifecycle & Price Integration [DONE]
 
 **Goal:** Integrate the recorder into the backend lifecycle and ensure price data is captured/backfilled for Cost Reality accuracy.
