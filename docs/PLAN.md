@@ -128,3 +128,21 @@ Currently, the charts can become cluttered when mixing planned and actual data. 
 * [ ] **Positioning:** Ensure tooltips do not overflow off-screen or obscure the data point being pressed.
 
 ---
+
+### [DONE] REV // F7 — Recorder & History Fixes
+
+**Goal:** Fix critical bugs in Recorder, Backfill, and History Overlay to ensure data integrity and correct visualization.
+
+**Plan:**
+
+#### Phase 1: Backend Fixes [DONE]
+* [x] Fix `TypeError` in `recorder.py` (missing config).
+* [x] Fix `BackfillEngine` initialization of `learning_config`.
+* [x] Fix `store.get_executions_range` keys (compatibility with `schedule.py`) and SoC bug.
+
+#### Phase 2: Test Suite Stabilization [DONE]
+* [x] Fix `tests/test_grid_meter_logic.py`.
+* [x] Fix `tests/test_schedule_history_overlay.py` schema and assertions.
+* [x] Fix `tests/test_reflex.py` fixture usage (asyncio) and SQL data version.
+* [x] Fix `tests/test_learning_k6.py` fixture usage.
+* [x] Fix `tests/test_store_plan_mapping.py` fixture usage.

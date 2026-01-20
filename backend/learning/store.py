@@ -799,11 +799,13 @@ class LearningStore:
                         "slot_start": ss,
                         "slot_end": slot_end,
                         # Map to names expected by schedule API (mocking SlotObservation fields)
-                        "planned_charge_kw": avg_charge_kw,
-                        "planned_discharge_kw": avg_discharge_kw,
-                        "planned_water_kw": avg_water_kw,
-                        "planned_export_kw": avg_export_kw,
-                        "soc_end_percent": last_entry.soc_end_percent,
+                        # schedule.py expects kWh fields (and divides by duration), so we provide kWh.
+                        "batt_charge_kwh": avg_charge_kw * 0.25,
+                        "batt_discharge_kwh": avg_discharge_kw * 0.25,
+                        "water_kwh": avg_water_kw * 0.25,
+                        "export_kwh": avg_export_kw * 0.25,
+                        "import_price_sek_kwh": None,
+                        "soc_end_percent": float(last_entry.planned_soc_projected or 0.0),
                     }
                 )
 

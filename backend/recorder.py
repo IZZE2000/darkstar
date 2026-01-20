@@ -27,7 +27,7 @@ def _load_config():
 
 
 async def record_observation_from_current_state(
-    config: dict, disaggregator: LoadDisaggregator | None = None
+    config: dict | None = None, disaggregator: LoadDisaggregator | None = None
 ):
     """Capture current system state and store as an observation."""
     if not config:

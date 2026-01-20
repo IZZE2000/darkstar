@@ -24,6 +24,7 @@ class BackfillEngine:
         self.store = self.engine.store
         self.ha_config = self._load_ha_config()
         self.timezone = pytz.timezone(self.config.get("timezone", "Europe/Stockholm"))
+        self.learning_config = self.config.get("learning", {})
 
         # Load secrets for backfill fallback (HA)
         self.secrets = self._load_secrets()

@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 
 import pandas as pd
 import pytest
+import pytest_asyncio
 import pytz
 
 from backend.learning.models import Base
@@ -17,7 +18,7 @@ def memory_db_path(tmp_path):
     return str(tmp_path / "test_learning.db")
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def store(memory_db_path):
     store = LearningStore(memory_db_path, TZ)
     # Manually create schema for tests using async engine

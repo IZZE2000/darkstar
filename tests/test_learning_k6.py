@@ -9,11 +9,13 @@ import pytest
 sys.path.append(str(Path(__file__).parent.parent))
 from datetime import datetime, timedelta
 
+import pytest_asyncio
+
 from backend.learning.engine import LearningEngine
 from backend.learning.models import Base
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def learning_engine(tmp_path):
     """Create a LearningEngine with a temporary database."""
     db_path = tmp_path / "test_learning.db"

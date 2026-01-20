@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from 'react'
 import { Activity, Database, CheckCircle, AlertTriangle, AlertCircle, Clock, Server } from 'lucide-react'
 import { Api, SystemHealthResponse } from '../lib/api'
@@ -101,7 +100,8 @@ export default function SystemHealthCard() {
                         <div>
                             <div className="text-[11px] font-medium text-text">System</div>
                             <div className="text-[9px] text-muted">
-                                Uptime: {Math.floor(health.system.uptime_hours / 24)}d {Math.round(health.system.uptime_hours % 24)}h
+                                Uptime: {Math.floor(health.system.uptime_hours / 24)}d{' '}
+                                {Math.round(health.system.uptime_hours % 24)}h
                             </div>
                         </div>
                     </div>
@@ -114,7 +114,9 @@ export default function SystemHealthCard() {
                 <span className="text-[10px] text-muted">Planner Status</span>
                 <div className="flex items-center gap-1.5">
                     <span className="text-[10px] text-text capitalize">{health.planner.status}</span>
-                    <div className={`h-1.5 w-1.5 rounded-full ${health.planner.status === 'success' ? 'bg-emerald-400' : 'bg-rose-400'} animate-pulse`} />
+                    <div
+                        className={`h-1.5 w-1.5 rounded-full ${health.planner.status === 'success' ? 'bg-emerald-400' : 'bg-rose-400'} animate-pulse`}
+                    />
                 </div>
             </div>
         </Card>

@@ -16,6 +16,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 from unittest.mock import MagicMock, patch
 
 import pytest
+import pytest_asyncio
 import pytz
 
 from backend.learning.models import Base
@@ -34,7 +35,7 @@ from backend.learning.reflex import (
 from backend.learning.store import LearningStore
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def temp_db():
     """Create a temporary SQLite database for testing."""
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
@@ -404,7 +405,7 @@ class TestForecastVsActualQuery:
                 INSERT INTO slot_forecasts (slot_start, pv_forecast_kwh, forecast_version)
                 VALUES (?, ?, ?)
                 """,
-                (slot_time.isoformat(), 3.0, "test"),
+                (slot_time.isoformat(), 3.0, "aurora"),
             )
             conn.commit()
 
@@ -439,7 +440,7 @@ class TestAnalyzeConfidence:
                 INSERT OR REPLACE INTO slot_forecasts (slot_start, pv_forecast_kwh, forecast_version)
                 VALUES (?, ?, ?)
                 """,
-                (slot_time.isoformat(), forecast, "test"),
+                (slot_time.isoformat(), forecast, "aurora"),
             )
         conn.commit()
 

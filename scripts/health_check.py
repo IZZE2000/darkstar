@@ -504,7 +504,7 @@ class HealthChecker:
 
         # Calculate overall health
         health_scores = []
-        for component, result in all_results.items():
+        for _component, result in all_results.items():
             if isinstance(result, dict) and "status" in result:
                 if result["status"] in ["healthy", "success"]:
                     health_scores.append(100)

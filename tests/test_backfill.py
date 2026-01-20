@@ -25,7 +25,10 @@ def mock_engine(tmp_path):
 
         # Mock config load
         with patch("backend.learning.backfill.BackfillEngine._load_config") as mock_conf:
-            mock_conf.return_value = {"timezone": "UTC"}
+            mock_conf.return_value = {
+                "timezone": "UTC",
+                "learning": {"sensor_map": {"sensor.test": "test_sensor"}},
+            }
 
             # Mock HA config load
             with patch("backend.learning.backfill.BackfillEngine._load_ha_config") as mock_ha:

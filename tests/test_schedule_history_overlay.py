@@ -12,6 +12,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from backend.api.routers.schedule import schedule_today_with_history
+from backend.learning.models import Base
 from backend.learning.store import LearningStore
 
 
@@ -20,49 +21,10 @@ async def test_today_with_history_includes_planned_actions(tmp_path):
     # Setup temp DB
     db_path = tmp_path / "planner_learning.db"
 
-    # Create the slots_forecasts and slot_observations tables too because the code queries them
-    # and might fail or warn if missing (though the try/except blocks should handle it).
-    # But slot_plans is what we care about.
-
+    # Create tables using Base metadata for correctness
     engine = create_async_engine(f"sqlite+aiosqlite:///{db_path}")
-    async with engine.connect() as conn:
-        await conn.execute(
-            text("""
-            CREATE TABLE slot_plans (
-                slot_start TEXT PRIMARY KEY,
-                planned_charge_kwh REAL,
-                planned_discharge_kwh REAL,
-                planned_soc_percent REAL,
-                planned_export_kwh REAL,
-                planned_water_heating_kwh REAL
-            )
-        """)
-        )
-        await conn.execute(
-            text("""
-             CREATE TABLE slot_observations (
-                slot_start TEXT PRIMARY KEY,
-                slot_end TEXT,
-                batt_charge_kwh REAL,
-                batt_discharge_kwh REAL,
-                soc_end_percent REAL,
-                water_kwh REAL,
-                import_kwh REAL,
-                export_kwh REAL,
-                import_price_sek_kwh REAL
-            )
-        """)
-        )
-        await conn.execute(
-            text("""
-             CREATE TABLE slot_forecasts (
-                slot_start TEXT PRIMARY KEY,
-                pv_forecast_kwh REAL,
-                load_forecast_kwh REAL,
-                forecast_version TEXT
-            )
-        """)
-        )
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
 
         # Insert test data for today (UTC to avoid timezone confusion in test)
         # Using UTC as the configured timezone
@@ -89,8 +51,6 @@ async def test_today_with_history_includes_planned_actions(tmp_path):
             """),
             {"slot_start": slot_11},
         )
-
-        await conn.commit()
 
     # Mock config to point to temp DB
     mock_config = {"learning": {"sqlite_path": str(db_path)}, "timezone": "UTC"}
@@ -164,58 +124,28 @@ async def test_today_with_history_sets_executed_flag(tmp_path):
     db_path = tmp_path / "planner_learning.db"
 
     engine = create_async_engine(f"sqlite+aiosqlite:///{db_path}")
-    async with engine.connect() as conn:
-        await conn.execute(
-            text("""
-            CREATE TABLE slot_observations (
-                slot_start TEXT PRIMARY KEY,
-                slot_end TEXT,
-                batt_charge_kwh REAL,
-                batt_discharge_kwh REAL,
-                soc_end_percent REAL,
-                water_kwh REAL,
-                import_kwh REAL,
-                export_kwh REAL,
-                import_price_sek_kwh REAL
-            )
-        """)
-        )
-        await conn.execute(
-            text("""
-            CREATE TABLE slot_forecasts (
-                slot_start TEXT PRIMARY KEY,
-                pv_forecast_kwh REAL,
-                load_forecast_kwh REAL,
-                forecast_version TEXT
-            )
-        """)
-        )
-        await conn.execute(
-            text("""
-            CREATE TABLE slot_plans (
-                slot_start TEXT PRIMARY KEY,
-                planned_charge_kwh REAL,
-                planned_discharge_kwh REAL,
-                planned_soc_percent REAL,
-                planned_export_kwh REAL,
-                planned_water_heating_kwh REAL
-            )
-        """)
-        )
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
 
-        # Insert historical observation for "now - 1 hour"
+        # Insert historical execution for "today start + 1 hour"
         tz = pytz.UTC
         now = datetime.now(tz)
-        past_start = (now - timedelta(minutes=60)).replace(minute=0, second=0, microsecond=0)
-        past_end = past_start + timedelta(minutes=15)
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        past_start = today_start + timedelta(hours=1)
 
-        await conn.execute(
-            text(
-                "INSERT INTO slot_observations (slot_start, slot_end, batt_charge_kwh, batt_discharge_kwh, soc_end_percent, water_kwh, import_kwh, export_kwh, import_price_sek_kwh) VALUES (:start, :end, 0.5, 0.0, 50.0, 0.0, 0.0, 0.0, 0.5)"
-            ),
-            {"start": past_start.isoformat(), "end": past_end.isoformat()},
-        )
-        await conn.commit()
+        # Insert 15 entries (one per minute) to simulate a full slot
+        for i in range(15):
+            t = past_start + timedelta(minutes=i)
+            await conn.execute(
+                text(
+                    """
+                    INSERT INTO execution_log
+                    (executed_at, slot_start, planned_charge_kw, planned_discharge_kw, planned_export_kw, planned_water_kw, planned_soc_projected, success, override_active, source, commanded_unit)
+                    VALUES (:at, :slot, 2.0, 0.0, 0.0, 0.0, 50, 1, 0, 'test', 'A')
+                    """
+                ),
+                {"at": t.isoformat(), "slot": past_start.isoformat()},
+            )
 
     # Mock config
     mock_config = {"learning": {"sqlite_path": str(db_path)}, "timezone": "UTC"}
