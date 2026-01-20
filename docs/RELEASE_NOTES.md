@@ -1,20 +1,11 @@
-## [v2.5.2-beta] - Critical Startup Hotfixes - 2026-01-20
-
-This hotfix resolves critical issues discovered in the v2.5.1-beta release that prevented application startup for existing users.
-
-### 🐛 Critical Bug Fixes
-
-- **Config Migration**: Added retry logic with exponential backoff for the atomic config migration replacement. This resolves the "Device or resource busy" error encountered on some filesystems when multiple processes or locks were active.
-- **Database Schema**: Created a new Alembic migration to ensure the `commanded_unit` column exists in the `execution_log` table. This fixes crashes for users whose databases were in an intermediate state missing this column.
-- **Alembic Path Resolution**: Fixed a path resolution issue where Alembic could not find its configuration script when run as a subprocess during startup.
-- **Startup Safeguards**: Added mandatory startup halting if critical database migrations fail, preventing the application from running in an inconsistent state.
-
----
-
 ## [v2.5.1-beta] - Recorder & Data Integrity Fixes - 2026-01-20
 
 This maintenance release focuses on resolving critical data integrity issues in the
 Recorder and ensuring accurate historical visualization and analysis.
+
+> [!IMPORTANT]
+> **v2.5.1-beta Startup Stabilization Update**
+> This version includes critical fixes for config migration and database path resolution reported in early v2.5.1 testing.
 
 > [!WARNING]
 > **Database Migration Required**

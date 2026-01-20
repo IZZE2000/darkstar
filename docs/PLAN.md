@@ -148,22 +148,3 @@ Currently, the charts can become cluttered when mixing planned and actual data. 
 * [x] Fix `tests/test_store_plan_mapping.py` fixture usage.
 
 ---
-
-### [DONE] REV // F28 — v2.5.2-beta Critical Hotfixes
-
-**Goal:** Resolve critical startup failures in v2.5.1-beta (config migration, database schema, alembic path).
-
-**Plan:**
-
-#### Phase 1: Config & Alembic Fixes [DONE]
-* [x] Add retry logic to `config_migration.py` to handle file locking.
-* [x] Fix Alembic working directory in `main.py`.
-* [x] Add startup safeguards for failed migrations.
-
-#### Phase 2: Database Migration [DONE]
-* [x] Create new migration `cc7e520017af` to add missing `commanded_unit` column.
-* [x] Verify migration applies correctly to existing databases.
-
-#### Phase 3: Release [DONE]
-* [x] Update version to v2.5.2-beta across all files.
-* [x] Update RELEASE_NOTES.md.

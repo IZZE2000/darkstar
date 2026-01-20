@@ -50,7 +50,28 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("🚀 Darkstar ASGI Server Starting...")
 
-    # Run config migration (Rev F17)
+    # 1. Container/Environment Debugging (Task 4)
+    import os
+    import sys
+
+    cwd = Path.cwd()
+    logger.info("📍 Startup Context:")
+    logger.info(f"   CWD: {cwd}")
+    logger.info(f"   Python: {sys.executable}")
+
+    # Check for Alembic Config (Task 3)
+    alembic_ini_path = cwd / "alembic.ini"
+    if not alembic_ini_path.exists():
+        # Fallback for HA add-on /app directory
+        if Path("/app/alembic.ini").exists():
+            alembic_ini_path = Path("/app/alembic.ini")
+        # Fallback for relative to this file
+        elif (Path(__file__).parent.parent / "alembic.ini").exists():
+            alembic_ini_path = Path(__file__).parent.parent / "alembic.ini"
+
+    logger.info(f"   Alembic Config: {alembic_ini_path} (exists: {alembic_ini_path.exists()})")
+
+    # 2. Config Migration (Task 2) - Run BEFORE any other service starts
     try:
         from backend.config_migration import migrate_config
 
@@ -71,11 +92,9 @@ async def lifespan(app: FastAPI):
 
     await recorder_service.start()
 
-    # Run database migrations (REV ARC9)
+    # 3. Database migrations (REV ARC9) - Task 3 Fix
     try:
-        import os
         import subprocess
-        import sys
 
         logger.info("📦 Checking database schema...")
 
@@ -83,26 +102,29 @@ async def lifespan(app: FastAPI):
         db_path = os.getenv("DB_PATH", "data/planner_learning.db")
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
 
-        # Inherit env to ensure credentials/paths are preserved
+        # Inherit env and set ALEMBIC_CONFIG explicitly
         run_env = os.environ.copy()
+        if alembic_ini_path.exists():
+            run_env["ALEMBIC_CONFIG"] = str(alembic_ini_path)
 
-        # Ensure we run from the project root (where alembic.ini is)
-        project_root = Path(__file__).parent.parent
+        # Build command with explicit config path
+        cmd = [sys.executable, "-m", "alembic"]
+        if alembic_ini_path.exists():
+            cmd.extend(["-c", str(alembic_ini_path)])
+        cmd.extend(["upgrade", "head"])
 
         result = subprocess.run(
-            [sys.executable, "-m", "alembic", "upgrade", "head"],
+            cmd,
             capture_output=True,
             text=True,
             timeout=60,
             env=run_env,
-            cwd=str(project_root),
+            cwd=str(alembic_ini_path.parent) if alembic_ini_path.exists() else str(cwd),
         )
 
         if result.returncode == 0:
             if "Running upgrade" in result.stdout or "Running upgrade" in result.stderr:
                 logger.info("✅ Database migrations applied successfully.")
-                if result.stdout:
-                    logger.debug(f"Migration stdout: {result.stdout.strip()}")
             else:
                 logger.info("✅ Database schema is up to date.")
         else:
@@ -111,13 +133,7 @@ async def lifespan(app: FastAPI):
                 logger.error(f"Alembic error: {result.stderr.strip()}")
             if result.stdout:
                 logger.error(f"Alembic output: {result.stdout.strip()}")
-
-            # CRITICAL: If database is incompatible, it's safer to stop than to run with corrupt state
-            # However, we check if it's a "No such table" or schema error specifically?
-            # For now, if migrations fail, we halt if it's more than a simple warning.
-            if result.returncode != 0:
-                logger.critical("🛑 APPLICATION STOPPED: Database schema is incompatible.")
-                sys.exit(1)
+            # We allow startup even if migrations fail to let user see logs in UI
     except Exception as e:
         logger.error(f"❌ Failed to run database migrations: {e}")
 
