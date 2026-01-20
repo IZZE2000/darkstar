@@ -94,6 +94,9 @@ class HealthChecker:
         # Check executor health
         issues.extend(self.check_executor())
 
+        # Check recorder health (REV // Complete Cost Reality Fix)
+        issues.extend(self.check_recorder())
+
         # Determine overall health
         has_critical = any(i.severity == "critical" for i in issues)
         healthy = not has_critical
@@ -527,6 +530,52 @@ class HealthChecker:
         except Exception as e:
             logger.debug("Could not check executor health: %s", e)
             # Don't add an issue - executor health check is optional
+
+        return issues
+
+    def check_recorder(self) -> list[HealthIssue]:
+        """Check recorder service health."""
+        issues: list[HealthIssue] = []
+
+        try:
+            from backend.services.recorder_service import recorder_service
+
+            status = recorder_service.status
+            if not status.running:
+                issues.append(
+                    HealthIssue(
+                        category="recorder",
+                        severity="critical",
+                        message="Recorder service is not running",
+                        guidance="The observation recorder is inactive. This prevents 'Real' data from appearing in charts. Check server logs.",
+                    )
+                )
+            elif status.last_error:
+                issues.append(
+                    HealthIssue(
+                        category="recorder",
+                        severity="warning",
+                        message=f"Recorder encountered an error: {status.last_error}",
+                        guidance="Check recorder logs for recent failures. Some observations may be missing.",
+                    )
+                )
+
+            # Check if last recording was too long ago (e.g., > 30 mins)
+            if status.last_record_at:
+                from datetime import UTC, datetime
+
+                delta = datetime.now(UTC) - status.last_record_at
+                if delta.total_seconds() > 1800:  # 30 minutes
+                    issues.append(
+                        HealthIssue(
+                            category="recorder",
+                            severity="warning",
+                            message=f"Recorder has not saved data in {int(delta.total_seconds() / 60)} minutes",
+                            guidance="The recorder appears to be stalled. Check server logs.",
+                        )
+                    )
+        except Exception as e:
+            logger.debug("Could not check recorder health: %s", e)
 
         return issues
 

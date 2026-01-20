@@ -218,6 +218,34 @@ async def get_nordpool_data(config_path: str = "config.yaml") -> list[dict[str, 
         return []
 
 
+def calculate_import_export_prices(
+    spot_price_mwh: float, config: dict[str, Any]
+) -> tuple[float, float]:
+    """
+    Calculate import and export prices from spot price.
+
+    Args:
+        spot_price_mwh: Spot price in SEK/MWh
+        config: Configuration dictionary
+
+    Returns:
+        tuple: (import_price_sek_kwh, export_price_sek_kwh)
+    """
+    pricing_config = config.get("pricing", {})
+    vat_percent = pricing_config.get("vat_percent", 25.0)
+    grid_transfer_fee_sek = pricing_config.get("grid_transfer_fee_sek", 0.2456)
+    energy_tax_sek = pricing_config.get("energy_tax_sek", 0.439)
+
+    spot_price_sek_kwh = spot_price_mwh / 1000.0
+    export_price_sek_kwh = spot_price_sek_kwh
+
+    import_price_sek_kwh = (spot_price_sek_kwh + grid_transfer_fee_sek + energy_tax_sek) * (
+        1 + vat_percent / 100.0
+    )
+
+    return import_price_sek_kwh, export_price_sek_kwh
+
+
 def _process_nordpool_data(
     all_entries: list[dict[str, Any]],
     config: dict[str, Any],
@@ -234,12 +262,6 @@ def _process_nordpool_data(
         list: Processed list of dictionaries with standardized format
     """
     result: list[dict[str, Any]] = []
-
-    # Load pricing configuration
-    pricing_config = config.get("pricing", {})
-    vat_percent = pricing_config.get("vat_percent", 25.0)
-    grid_transfer_fee_sek = pricing_config.get("grid_transfer_fee_sek", 0.2456)
-    energy_tax_sek = pricing_config.get("energy_tax_sek", 0.439)
 
     # Get local timezone
     local_tz = pytz.timezone(config.get("timezone", "Europe/Stockholm"))
@@ -263,23 +285,14 @@ def _process_nordpool_data(
                 start_time = entry["start"].astimezone(local_tz)
                 end_time = entry["end"].astimezone(local_tz)
 
-        # Calculate base spot price (convert from MWh to kWh)
-        spot_price_sek_kwh = entry["value"] / 1000.0
-
-        # Export price is exactly the spot price
-        export_price_sek_kwh = spot_price_sek_kwh
-
-        # Import price includes all fees and taxes
-        import_price_sek_kwh = (spot_price_sek_kwh + grid_transfer_fee_sek + energy_tax_sek) * (
-            1 + vat_percent / 100.0
-        )
+        import_price, export_price = calculate_import_export_prices(entry["value"], config)
 
         result.append(
             {
                 "start_time": start_time,
                 "end_time": end_time,
-                "import_price_sek_kwh": import_price_sek_kwh,
-                "export_price_sek_kwh": export_price_sek_kwh,
+                "import_price_sek_kwh": import_price,
+                "export_price_sek_kwh": export_price,
             }
         )
 
@@ -287,6 +300,31 @@ def _process_nordpool_data(
     result.sort(key=lambda x: x["start_time"])
 
     return result
+
+
+async def get_current_slot_prices(config: dict[str, Any]) -> dict[str, float] | None:
+    """
+    Fetch prices for the current 15-minute slot.
+    """
+    try:
+        price_data = await get_nordpool_data()
+        if not price_data:
+            return None
+
+        local_tz = pytz.timezone(config.get("timezone", "Europe/Stockholm"))
+        now = datetime.now(local_tz)
+
+        # Find the slot containing 'now'
+        for slot in price_data:
+            if slot["start_time"] <= now < slot["end_time"]:
+                return {
+                    "import_price_sek_kwh": slot["import_price_sek_kwh"],
+                    "export_price_sek_kwh": slot["export_price_sek_kwh"],
+                }
+        return None
+    except Exception as exc:
+        print(f"Warning: Failed to get current slot prices: {exc}")
+        return None
 
 
 async def get_forecast_data(

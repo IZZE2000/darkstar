@@ -126,11 +126,6 @@ async def get_schedule() -> dict[str, Any]:
     return result
 
 
-# ... Porting schedule_today_with_history ...
-# This logic is complex (merging SQLite, MariaDB, and Schedule).
-# I will port it carefully.
-
-
 @router.get(
     "/api/schedule/today_with_history",
     summary="Get Today's Schedule & History",

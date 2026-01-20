@@ -125,9 +125,33 @@ class BackfillEngine:
                 logger.warning("Gap too large, capping backfill to last 10 days.")
 
             # 2. Identify sensors to fetch
-            raw_map = self.engine.learning_config.get("sensor_map", {})
-            cumulative_data: dict[str, list[tuple[datetime, float]]] = {}
+            # REV // F26: Fallback to input_sensors if sensor_map is empty
+            raw_map = self.learning_config.get("sensor_map")
+            if not raw_map:
+                logger.info("sensor_map is empty. Auto-detecting from input_sensors...")
+                input_sensors = self.config.get("input_sensors", {})
+                raw_map = {}
+                # Map cumulative sensors
+                mapping = {
+                    "total_grid_import": "import",
+                    "total_grid_export": "export",
+                    "total_pv_production": "pv",
+                    "total_load_consumption": "load",
+                    "water_heater_consumption": "water",
+                    "battery_soc": "soc",
+                }
+                for config_key, canonical in mapping.items():
+                    entity_id = input_sensors.get(config_key)
+                    if entity_id:
+                        raw_map[entity_id] = canonical
 
+            if not raw_map:
+                logger.warning(
+                    "No sensors identified for backfill (sensor_map and input_sensors empty)."
+                )
+                return
+
+            cumulative_data: dict[str, list[tuple[datetime, float]]] = {}
             count = 0
             for entity_id, canonical in raw_map.items():
                 logger.info(f"Backfilling {canonical} ({entity_id})...")

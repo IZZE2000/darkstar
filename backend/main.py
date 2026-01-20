@@ -66,6 +66,11 @@ async def lifespan(app: FastAPI):
 
     await scheduler_service.start()
 
+    # Start observation recorder (REV // Complete Cost Reality Fix)
+    from backend.services.recorder_service import recorder_service
+
+    await recorder_service.start()
+
     # Run database migrations (REV ARC9)
     try:
         import os
@@ -168,6 +173,10 @@ async def lifespan(app: FastAPI):
             logger.error("Failed to stop executor: %s", e, exc_info=True)
 
     await scheduler_service.stop()
+
+    from backend.services.recorder_service import recorder_service
+
+    await recorder_service.stop()
 
 
 def get_base_path(request: Request) -> str:

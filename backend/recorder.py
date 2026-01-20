@@ -12,7 +12,7 @@ from backend.learning.backfill import BackfillEngine
 # Local imports
 from backend.learning.store import LearningStore
 from backend.loads.service import LoadDisaggregator
-from inputs import get_ha_sensor_float
+from inputs import get_current_slot_prices, get_ha_sensor_float
 
 logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
 logger = logging.getLogger("recorder")
@@ -110,6 +110,16 @@ async def record_observation_from_current_state(
     soc_entity = input_sensors.get("battery_soc")
     soc_percent = (await get_ha_sensor_float(soc_entity)) or 0.0 if soc_entity else 0.0
 
+    # Fetch Price Data (REV // Complete Cost Reality Fix)
+    prices = await get_current_slot_prices(config)
+    import_price = prices.get("import_price_sek_kwh") if prices else None
+    export_price = prices.get("export_price_sek_kwh") if prices else None
+
+    if prices:
+        logger.info(f"Price data fetched: Import={import_price:.4f}, Export={export_price:.4f}")
+    else:
+        logger.warning("Failed to fetch price data for current observation")
+
     # Construct Record
     record = {
         "slot_start": slot_start,
@@ -122,6 +132,8 @@ async def record_observation_from_current_state(
         "batt_charge_kwh": batt_charge_kwh,
         "batt_discharge_kwh": batt_discharge_kwh,
         "soc_end_percent": soc_percent,
+        "import_price_sek_kwh": import_price,
+        "export_price_sek_kwh": export_price,
         "created_at": datetime.now(UTC).isoformat(),
     }
 
@@ -159,6 +171,82 @@ async def _run_analyst() -> None:
         print(f"[recorder] Analyst failed: {e}")
 
 
+async def backfill_missing_prices():
+    """Backfill missing price data for historical observations."""
+    try:
+        from inputs import get_nordpool_data
+
+        config = _load_config()
+        db_path = config.get("learning", {}).get("sqlite_path", "data/planner_learning.db")
+        tz_name = config.get("timezone", "Europe/Stockholm")
+        tz = pytz.timezone(tz_name)
+
+        store = LearningStore(db_path, tz)
+        observations = await store.get_history_range(
+            datetime.now(tz) - timedelta(days=30), datetime.now(tz)
+        )
+
+        missing_any = any(obs.get("import_price_sek_kwh") is None for obs in observations)
+        if not missing_any:
+            logger.info("[recorder] No missing prices to backfill.")
+            await store.close()
+            return
+
+        logger.info("[recorder] Backfilling missing prices...")
+        price_data = await get_nordpool_data()
+        if not price_data:
+            logger.error("[recorder] Failed to fetch price data for backfill.")
+            await store.close()
+            return
+
+        indexed_prices = {p["start_time"]: p for p in price_data}
+        updated_count = 0
+
+        for obs in observations:
+            if obs.get("import_price_sek_kwh") is None:
+                slot_start_raw = obs["slot_start"]
+                if isinstance(slot_start_raw, str):
+                    slot_start = datetime.fromisoformat(slot_start_raw)
+                else:
+                    slot_start = slot_start_raw
+
+                if slot_start.tzinfo is None:
+                    slot_start = tz.localize(slot_start)
+                else:
+                    slot_start = slot_start.astimezone(tz)
+
+                # Round to nearest 15/60 min boundary if needed, but get_nordpool_data handles it
+                # We need exact match or closest previous
+                price_slot = indexed_prices.get(slot_start)
+                if price_slot:
+                    obs["import_price_sek_kwh"] = price_slot["import_price_sek_kwh"]
+                    obs["export_price_sek_kwh"] = price_slot["export_price_sek_kwh"]
+                    updated_count += 1
+
+        if updated_count > 0:
+            # We need a way to update specific observations.
+            # store.store_slot_prices handles upsert by slot_start.
+            # Convert back to list of dicts with required fields
+            rows_to_update = [
+                {
+                    "slot_start": obs["slot_start"],
+                    "import_price_sek_kwh": obs["import_price_sek_kwh"],
+                    "export_price_sek_kwh": obs["export_price_sek_kwh"],
+                }
+                for obs in observations
+                if obs.get("import_price_sek_kwh") is not None
+            ]
+            await store.store_slot_prices(rows_to_update)
+            logger.info(f"[recorder] Backfilled {updated_count} observation prices.")
+
+        await store.close()
+    except Exception as e:
+        logger.error(f"[recorder] Price backfill failed: {e}")
+        import traceback
+
+        traceback.print_exc()
+
+
 async def main() -> int:
     """Background recorder loop: capture observations every 15 minutes."""
     print("[recorder] Starting live observation recorder (15m cadence)")
@@ -177,6 +265,9 @@ async def main() -> int:
 
     # Run Analyst on startup
     await _run_analyst()
+
+    # Run Price Backfill on startup
+    await backfill_missing_prices()
 
     # Track last analyst run date to run once daily at ~6 AM local
     last_analyst_date = datetime.now(tz).date()

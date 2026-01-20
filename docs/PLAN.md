@@ -250,3 +250,29 @@ Currently, the charts can become cluttered when mixing planned and actual data. 
 * [x] **Missing Import:** Add `import asyncio` to `inputs.py` (Fixes `NameError: name 'asyncio' is not defined`).
 * [x] **Async Logic:** Correctly await `run_inference` in `inputs.py` instead of using `to_thread`.
 * [x] **Verification:** Verify planner completes full execution cycle.
+
+---
+
+### [DONE] REV // F26 — Recorder Lifecycle & Price Integration [DONE]
+
+**Goal:** Integrate the recorder into the backend lifecycle and ensure price data is captured/backfilled for Cost Reality accuracy.
+
+**Plan:**
+
+#### Phase 1: Engine Refactor [x]
+* [x] **Price Logic:** Extract reusable price calculation into `inputs.py`.
+* [x] **Recorder Update:** Modify `recorder.py` to fetch and store slot prices.
+* [x] **Price Backfill:** Implement automatic price backfill for historical observations.
+
+#### Phase 2: Lifecycle Integration [x]
+* [x] **Recorder Service:** Create `RecorderService` background task in `backend/services/`.
+* [x] **Lifespan:** Integrate service start/stop in `backend/main.py`.
+* [x] **Health:** Add recorder health monitoring to `/api/health`.
+
+#### Phase 3: Verification [x]
+* [x] **Audit:** Verify price data population via `scripts/audit_prices.py`.
+* [x] **Live Data:** Confirm new observations include prices in learned DB.
+
+#### Phase 4: Data Recovery [x]
+* [x] **Bug Fix:** Resolve `BackfillEngine` sensor detection and `LearningEngine` mapping inversion.
+* [x] **Recovery:** Successfully backfill 400+ historical slots for accurate Cost Reality comparison.

@@ -30,7 +30,8 @@ class LearningEngine:
         self.store = LearningStore(self.db_path, self.timezone)
 
         raw_map = self.learning_config.get("sensor_map", {}) or {}
-        self.sensor_map = {str(v).lower(): str(k).lower() for k, v in raw_map.items()}
+        # Corrected: {entity_id: canonical} -> {entity_id: canonical}
+        self.sensor_map = {str(k).lower(): str(v).lower() for k, v in raw_map.items()}
 
     def _load_config(self, config_path: str) -> dict:
         """Load configuration from YAML file"""
@@ -87,27 +88,41 @@ class LearningEngine:
             return self.sensor_map[key]
 
         stripped = key.replace("sensor.", "")
-        for token in ("energy", "power", "total", "_cumulative", "_kw", "_kwh"):
+        # Remove common inverter/brand prefixes
+        for brand in ("inverter_", "sungrow_", "goodwe_", "victron_", "fronius_"):
+            stripped = stripped.replace(brand, "")
+
+        for token in (
+            "energy_",
+            "power_",
+            "total_",
+            "cumulative_",
+            "_kw",
+            "_kwh",
+            "_current",
+            "_production",
+            "_consumption",
+        ):
             stripped = stripped.replace(token, "")
         stripped = stripped.strip("_")
 
         # Explicit handling for compound names often found in HA
-        if stripped == "load_consumption":
+        if stripped in ("load_consumption", "house_load"):
             return "load"
-        if stripped == "pv_production":
+        if stripped in ("pv_production", "solar_yield", "solar"):
             return "pv"
-        if stripped == "grid_import":
+        if stripped in ("grid_import", "energy_import", "from_grid"):
             return "import"
-        if stripped == "grid_export":
+        if stripped in ("grid_export", "energy_export", "to_grid"):
             return "export"
 
         aliases = {
-            "import": {"grid_import", "gridin", "import", "grid", "from_grid"},
-            "export": {"grid_export", "gridout", "export", "to_grid"},
-            "pv": {"pv", "solar", "pvproduction", "production", "yield"},
-            "load": {"load", "consumption", "house", "usage", "load_consumption"},
+            "import": {"grid_import", "gridin", "import", "grid", "from_grid", "energy_import"},
+            "export": {"grid_export", "gridout", "export", "to_grid", "energy_export"},
+            "pv": {"pv", "solar", "pvproduction", "production", "yield", "solar_yield"},
+            "load": {"load", "consumption", "house", "usage", "load_consumption", "house_load"},
             "water": {"water", "vvb", "waterheater", "heater"},
-            "soc": {"soc", "battery_soc", "socpercent"},
+            "soc": {"soc", "battery_soc", "socpercent", "battery"},
         }
         for canonical, names in aliases.items():
             if stripped in names:
