@@ -1,3 +1,89 @@
+## [v2.5.1-beta] - Recorder & Data Integrity Fixes - 2026-01-20
+
+This maintenance release focuses on resolving critical data integrity issues in the
+Recorder and ensuring accurate historical visualization and analysis.
+
+> [!WARNING]
+> **Database Migration Required**
+> This release includes significant database architecture changes (SQLAlchemy + Alembic
+> migration). The system will automatically migrate your database on first startup, but this
+> process may take a bit extra time for installations with large historical datasets. Backup
+> your data/planner_learning.db file before updating as a precaution if you care about your recorded data.
+
+## 🐛 Major Bug Fixes
+
+### **Recorder & Data Pipeline**
+- **Grid Meter Logic (REV F7)**: Fixed critical recorder crashes when referencing
+configuration for specific grid meter types
+- **Backfill Engine**: Resolved initialization failures that prevented historical data
+backfilling on startup
+- **Data Capture**: Improved robustness of battery power sign handling and grid import/
+export recording
+
+### **Historical Visualization**
+- **History Overlay**: Fixed a major data mapping issue where historical planned actions (
+charge/discharge bars, SoC targets) appeared as zero or missing in the "Schedule >
+History" view
+- **Forecast Comparison**: Corrected logical errors in the "Forecast vs Actual"
+correlation analysis used by the Reflex learning engine
+
+### **System Architecture & Performance**
+- **Database Modernization (REV ARC9-ARC11)**: Complete migration to SQLAlchemy ORM with
+Alembic migrations and full async/await implementation for all database operations
+- **Kepler Optimization**: Upgraded water heating spacing constraint from O(T×S) to O(T)
+linear complexity for faster planning
+- **API Stability**: Fixed critical API routes that used blocking database calls, unified
+router prefixes, and restored lost Aurora ML functionality
+
+## 🚀 New Features
+
+### **Machine Learning Pipeline (REV ML2)**
+- **Load Disaggregation Framework**: Production-grade system to separate base load from
+controllable appliances (water heater, EV, heat pump) for improved ML forecast accuracy
+- **Smart Fallback**: Graceful degradation when individual sensors fail, with automatic
+data quality monitoring
+
+### **Structured Logging System (REV H2)**
+- **JSON Logging**: Professional structured logging with rotation and management
+- **Live Log Viewer**: Real-time log streaming in Debug UI with auto-scroll and viewport-
+adaptive height
+
+### **Developer Experience (REV DX4-DX5)**
+- **Conventional Commits**: Enforced commit message standards with automated validation
+- **UV Package Manager**: High-performance Python dependency management
+- **Advanced Benchmarking**: Professional-grade performance analysis tools
+
+## 🎨 User Experience Improvements
+
+### **Chart & Visualization**
+- **Dynamic Scaling**: Chart Y-axes now scale based on actual system configuration (solar
+capacity, inverter limits)
+- **Unit Conversion**: Fixed energy (kWh) to power (kW) conversion for consistent 15-
+minute slot display
+- **Price Visualization**: Improved price line rendering with step-line interpolation
+
+### **Configuration & Stability**
+- **Type Safety**: Robust type coercion prevents configuration corruption
+- **Config Cleanup**: Removed leaked configuration keys and fixed YAML formatting issues
+- **Entity Validation**: Conditional validation that respects hardware toggles (battery/
+solar/water heater)
+- **Executor Resilience**: Fixed pause/boost button logic flaws and UI synchronization
+issues
+
+## 🧪 Quality Assurance
+- **Test Suite Stabilization**: Addressed async/sync fixture incompatibilities and schema
+mismatches in the automated test suite, ensuring reliable CI/CD checks for future updates
+- **Performance Monitoring**: Integrated benchmarking into development workflow
+- **Documentation**: Updated architecture documentation to reflect async migration
+
+## 🔄 Migration Notes
+- **Backward Compatibility**: All changes maintain full compatibility with existing
+configurations
+- **Automatic Migration**: Database schema migrations handle structural changes
+automatically
+- **Config Soft-Merge**: New configuration keys are added without overwriting user
+settings
+
 ## [v2.5.0-beta] - Configuration & Compatibility - 2026-01-16
 
 This release solidifies the **Configuration Architecture**. It introduces a unified battery configuration, finalizes the Settings UI visibility logic, and improves startup resilience.
