@@ -5,7 +5,7 @@ Recorder and ensuring accurate historical visualization and analysis.
 
 > [!IMPORTANT]
 > **v2.5.1-beta Startup Stabilization Update**
-> This version includes critical fixes for config migration and database path resolution reported in early v2.5.1 testing.
+> This version includes critical fixes for config migration and database path resolution.
 
 > [!WARNING]
 > **Database Migration Required**
