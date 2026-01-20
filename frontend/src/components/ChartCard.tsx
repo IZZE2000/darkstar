@@ -759,6 +759,7 @@ export default function ChartCard({
         socTarget: false,
         socProjected: false,
         socActual: true,
+        showActual: false,
     })
     const [showOverlayMenu, setShowOverlayMenu] = useState(false)
     const [pricingConfig, setPricingConfig] = useState<{ vat: number; fees: number } | undefined>()
@@ -809,12 +810,13 @@ export default function ChartCard({
                         // Only override SoC Actual if config explicitly mentions it;
                         // otherwise keep the initial default (true).
                         socActual: hasSocActualToken ? true : overlays.socActual,
+                        showActual: overlays.showActual,
                     }
                     setOverlays(parsedOverlays)
                 }
             })
             .catch((err) => console.error('Failed to load overlay defaults:', err))
-    }, [overlays.socActual])
+    }, [overlays.socActual, overlays.showActual])
 
     useEffect(() => {
         // Fetch theme colors on mount
@@ -1309,6 +1311,12 @@ function buildLiveData(
         const socTarget: (number | null)[] = []
         const socProjected: (number | null)[] = []
         const socActual: (number | null)[] = []
+        const actualPv: (number | null)[] = []
+        const actualLoad: (number | null)[] = []
+        const actualCharge: (number | null)[] = []
+        const actualDischarge: (number | null)[] = []
+        const actualExport: (number | null)[] = []
+        const actualWater: (number | null)[] = []
 
         let nowIndex: number | null = null
         const now = new Date()
@@ -1359,6 +1367,15 @@ function buildLiveData(
                 socTarget.push(slot.soc_target_percent ?? null)
                 socProjected.push(slot.projected_soc_percent ?? null)
                 socActual.push(slot.actual_soc != null ? slot.actual_soc : null)
+
+                // Populate actual* arrays
+                const hourFrac = resolutionMinutes / 60
+                actualPv.push(slot.actual_pv_kwh != null ? slot.actual_pv_kwh / hourFrac : null)
+                actualLoad.push(slot.actual_load_kwh != null ? slot.actual_load_kwh / hourFrac : null)
+                actualCharge.push(slot.actual_charge_kw ?? null)
+                actualDischarge.push(slot.actual_discharge_kw ?? null)
+                actualExport.push(slot.actual_export_kw ?? null)
+                actualWater.push(slot.actual_water_kw ?? null)
             } else {
                 price.push(null)
                 pv.push(null)
@@ -1370,6 +1387,12 @@ function buildLiveData(
                 socTarget.push(null)
                 socProjected.push(null)
                 socActual.push(null)
+                actualPv.push(null)
+                actualLoad.push(null)
+                actualCharge.push(null)
+                actualDischarge.push(null)
+                actualExport.push(null)
+                actualWater.push(null)
             }
 
             if (now >= bucketStart && now < bucketEnd) {
