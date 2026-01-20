@@ -6,7 +6,7 @@ from typing import Any
 
 import pandas as pd
 import pytz
-from sqlalchemy import Integer, cast, desc, func, select, text
+from sqlalchemy import Integer, case, cast, desc, func, select, text
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
@@ -138,11 +138,27 @@ class LearningStore:
                     index_elements=["slot_start"],
                     set_={
                         "slot_end": func.coalesce(stmt.excluded.slot_end, SlotObservation.slot_end),
-                        "import_kwh": stmt.excluded.import_kwh,
-                        "export_kwh": stmt.excluded.export_kwh,
-                        "pv_kwh": stmt.excluded.pv_kwh,
-                        "load_kwh": stmt.excluded.load_kwh,
-                        "water_kwh": stmt.excluded.water_kwh,
+                        # REV F35: Only overwrite energy if new value > 0 (prevents backfill from wiping data)
+                        "import_kwh": case(
+                            (stmt.excluded.import_kwh > 0, stmt.excluded.import_kwh),
+                            else_=SlotObservation.import_kwh,
+                        ),
+                        "export_kwh": case(
+                            (stmt.excluded.export_kwh > 0, stmt.excluded.export_kwh),
+                            else_=SlotObservation.export_kwh,
+                        ),
+                        "pv_kwh": case(
+                            (stmt.excluded.pv_kwh > 0, stmt.excluded.pv_kwh),
+                            else_=SlotObservation.pv_kwh,
+                        ),
+                        "load_kwh": case(
+                            (stmt.excluded.load_kwh > 0, stmt.excluded.load_kwh),
+                            else_=SlotObservation.load_kwh,
+                        ),
+                        "water_kwh": case(
+                            (stmt.excluded.water_kwh > 0, stmt.excluded.water_kwh),
+                            else_=SlotObservation.water_kwh,
+                        ),
                         "batt_charge_kwh": func.coalesce(
                             stmt.excluded.batt_charge_kwh, SlotObservation.batt_charge_kwh
                         ),
