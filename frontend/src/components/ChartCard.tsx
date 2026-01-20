@@ -995,36 +995,53 @@ export default function ChartCard({
                 )}
             </div>
             {showOverlayMenu && (
-                <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
-                    {(
-                        [
-                            ['Price', 'price'],
-                            ['PV', 'pv'],
-                            ['Load', 'load'],
-                            ['Charge', 'charge'],
-                            ['Discharge', 'discharge'],
-                            ['Export', 'export'],
-                            ['Water', 'water'],
-                            ['SoC Target', 'socTarget'],
-                            ['SoC Projected', 'socProjected'],
-                            ['SoC Actual', 'socActual'],
-                        ] as const
-                    ).map(([label, key]) => (
-                        <button
-                            key={key}
-                            onClick={(e) => {
-                                e.preventDefault()
-                                setOverlays((o) => ({ ...o, [key]: !o[key as keyof typeof o] }))
-                            }}
-                            className={`rounded-pill px-3 py-1 border ${
-                                overlays[key as keyof typeof overlays]
-                                    ? 'bg-accent text-canvas border-accent'
-                                    : 'border-line/60 text-muted hover:border-accent'
-                            }`}
-                        >
-                            {label}
-                        </button>
-                    ))}
+                <div className="mt-2 flex items-center justify-between gap-4">
+                    {/* Main overlay toggles */}
+                    <div className="flex flex-wrap gap-1.5 text-[10px]">
+                        {(
+                            [
+                                ['Price', 'price', 'bg-grid/20 border-grid'],
+                                ['PV', 'pv', 'bg-accent/20 border-accent'],
+                                ['Load', 'load', 'bg-house/20 border-house'],
+                                ['Charge', 'charge', 'bg-bad/20 border-bad'],
+                                ['Discharge', 'discharge', 'bg-peak/20 border-peak'],
+                                ['Export', 'export', 'bg-good/20 border-good'],
+                                ['Water', 'water', 'bg-water/20 border-water'],
+                                ['SoC Target', 'socTarget', 'bg-night/20 border-night'],
+                                ['SoC Proj', 'socProjected', 'bg-night/20 border-night'],
+                                ['SoC Act', 'socActual', 'bg-night/20 border-night'],
+                            ] as const
+                        ).map(([label, key, activeClass]) => (
+                            <button
+                                key={key}
+                                onClick={(e) => {
+                                    e.preventDefault()
+                                    setOverlays((o) => ({ ...o, [key]: !o[key as keyof typeof o] }))
+                                }}
+                                className={`rounded-full px-2.5 py-0.5 border transition-all duration-150 font-medium ${
+                                    overlays[key as keyof typeof overlays]
+                                        ? `${activeClass} shadow-sm`
+                                        : 'border-line/40 text-muted/60 hover:border-line hover:text-muted'
+                                }`}
+                            >
+                                {label}
+                            </button>
+                        ))}
+                    </div>
+                    {/* Show Actual toggle - separated on right */}
+                    <button
+                        onClick={(e) => {
+                            e.preventDefault()
+                            setOverlays((o) => ({ ...o, showActual: !o.showActual }))
+                        }}
+                        className={`rounded-full px-3 py-1 border text-[10px] font-semibold transition-all duration-150 whitespace-nowrap ${
+                            overlays.showActual
+                                ? 'bg-accent text-canvas border-accent shadow-md shadow-accent/30'
+                                : 'border-line/40 text-muted/60 hover:border-accent hover:text-accent'
+                        }`}
+                    >
+                        📊 Actual
+                    </button>
                 </div>
             )}
             <div className="h-[310px] relative mt-1">
