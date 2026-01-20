@@ -211,6 +211,12 @@ type ChartValues = {
     day?: DaySel
     nowIndex?: number | null
     nowPct?: number | null
+    actualPv?: (number | null)[]
+    actualLoad?: (number | null)[]
+    actualCharge?: (number | null)[]
+    actualDischarge?: (number | null)[]
+    actualExport?: (number | null)[]
+    actualWater?: (number | null)[]
 }
 
 interface ExtendedChartData extends ChartData {
@@ -452,7 +458,85 @@ const createChartData = (
                 borderWidth: 3,
                 tension: 0.3,
                 hidden: true,
-            },
+            } as ChartDataset,
+            {
+                type: 'line',
+                label: 'Actual PV (kW)',
+                data: values.actualPv ?? values.labels.map(() => null),
+                borderColor: DS.accent,
+                borderDash: [2, 4],
+                pointRadius: 0,
+                borderWidth: 2,
+                yAxisID: 'y4',
+                stepped: 'after',
+                hidden: true,
+                order: 1,
+            } as ChartDataset,
+            {
+                type: 'line',
+                label: 'Actual Load (kW)',
+                data: values.actualLoad ?? values.labels.map(() => null),
+                borderColor: DS.house,
+                borderDash: [2, 4],
+                pointRadius: 0,
+                borderWidth: 2,
+                yAxisID: 'y1',
+                stepped: 'after',
+                hidden: true,
+                order: 1,
+            } as ChartDataset,
+            {
+                type: 'line',
+                label: 'Actual Charge (kW)',
+                data: values.actualCharge ?? values.labels.map(() => null),
+                borderColor: DS.bad,
+                borderDash: [2, 4],
+                pointRadius: 0,
+                borderWidth: 2,
+                yAxisID: 'y1',
+                stepped: 'after',
+                hidden: true,
+                order: 1,
+            } as ChartDataset,
+            {
+                type: 'line',
+                label: 'Actual Discharge (kW)',
+                data: values.actualDischarge ?? values.labels.map(() => null),
+                borderColor: DS.peak,
+                borderDash: [2, 4],
+                pointRadius: 0,
+                borderWidth: 2,
+                yAxisID: 'y1',
+                stepped: 'after',
+                hidden: true,
+                order: 1,
+            } as ChartDataset,
+            {
+                type: 'line',
+                label: 'Actual Export (kW)',
+                data: values.actualExport ?? values.labels.map(() => null),
+                borderColor: DS.good,
+                borderDash: [2, 4],
+                pointRadius: 0,
+                borderWidth: 2,
+                yAxisID: 'y2',
+                stepped: 'after',
+                hidden: true,
+                order: 1,
+            } as ChartDataset,
+            {
+                type: 'line',
+                label: 'Actual Water (kW)',
+                data: values.actualWater ?? values.labels.map(() => null),
+                borderColor: DS.water,
+                borderDash: [2, 4],
+                pointRadius: 0,
+                borderWidth: 2,
+                yAxisID: 'y1',
+                stepped: 'after',
+                hidden: true,
+                order: 1,
+            } as ChartDataset,
         ],
     }
 
@@ -829,6 +913,13 @@ export default function ChartCard({
             if (ds[8]) ds[8].hidden = !overlays.socProjected
             if (ds[9]) ds[9].hidden = !overlays.socActual
 
+            // Actual Overlays
+            if (ds[10]) ds[10].hidden = !overlays.showActual || !overlays.pv
+            if (ds[11]) ds[11].hidden = !overlays.showActual || !overlays.load
+            if (ds[12]) ds[12].hidden = !overlays.showActual || !overlays.charge
+            if (ds[13]) ds[13].hidden = !overlays.showActual || !overlays.discharge
+            if (ds[14]) ds[14].hidden = !overlays.showActual || !overlays.export
+            if (ds[15]) ds[15].hidden = !overlays.showActual || !overlays.water
             try {
                 if (!isChartUsable(chartRef.current)) return
                 if (chartRef.current) {
@@ -1309,6 +1400,12 @@ function buildLiveData(
                 socProjected,
                 socActual,
                 nowIndex,
+                actualPv,
+                actualLoad,
+                actualCharge,
+                actualDischarge,
+                actualExport,
+                actualWater,
                 nowPct,
             },
             themeColors,

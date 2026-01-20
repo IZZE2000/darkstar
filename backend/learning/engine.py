@@ -1,6 +1,7 @@
 import json
+import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -9,6 +10,8 @@ import pytz
 import yaml
 
 from backend.learning.store import LearningStore
+
+logger = logging.getLogger(__name__)
 
 
 class LearningEngine:
@@ -228,6 +231,185 @@ class LearningEngine:
             "db_path": self.db_path,
             "timezone": str(self.timezone),
         }
+
+    def _canonical_sensor_name(self, name: str) -> str:
+        """Map incoming sensor names to canonical identifiers."""
+        key = str(name).lower()
+        if key in self.sensor_map:
+            return self.sensor_map[key]
+
+        stripped = key.replace("sensor.", "")
+        # Remove common inverter/brand prefixes
+        for brand in ("inverter_", "sungrow_", "goodwe_", "victron_", "fronius_"):
+            stripped = stripped.replace(brand, "")
+
+        for token in (
+            "energy_",
+            "power_",
+            "total_",
+            "cumulative_",
+            "_kw",
+            "_kwh",
+            "_current",
+            "_production",
+            "_consumption",
+        ):
+            stripped = stripped.replace(token, "")
+        stripped = stripped.strip("_")
+
+        # Explicit handling for compound names often found in HA
+        if stripped in ("load_consumption", "house_load"):
+            return "load"
+        if stripped in ("pv_production", "solar_yield", "solar"):
+            return "pv"
+        if stripped in ("grid_import", "energy_import", "from_grid"):
+            return "import"
+        if stripped in ("grid_export", "energy_export", "to_grid"):
+            return "export"
+
+        aliases = {
+            "import": {"grid_import", "gridin", "import", "grid", "from_grid", "energy_import"},
+            "export": {"grid_export", "gridout", "export", "to_grid", "energy_export"},
+            "pv": {"pv", "solar", "pvproduction", "production", "yield", "solar_yield"},
+            "load": {"load", "consumption", "house", "usage", "load_consumption", "house_load"},
+            "water": {"water", "vvb", "waterheater", "heater"},
+            "soc": {"soc", "battery_soc", "socpercent", "battery"},
+        }
+        for canonical, names in aliases.items():
+            if stripped in names:
+                return canonical
+        return stripped or key
+
+    def etl_power_to_slots(
+        self,
+        power_data: dict[str, list[tuple[datetime, float]]],
+        resolution_minutes: int = 15,
+    ) -> pd.DataFrame:
+        """
+        Convert instantaneous power sensor data (W) to energy (kWh) per slot.
+        Specifically optimized for backfill to populate bars in ChartCard.
+        """
+
+        slot_records: dict[str, pd.DataFrame] = {}
+        for sensor_name, data in power_data.items():
+            if data:
+                df = pd.DataFrame(data, columns=["timestamp", "power_value"])
+                df["timestamp"] = pd.to_datetime(df["timestamp"])
+                if df["timestamp"].dt.tz is None:
+                    df["timestamp"] = df["timestamp"].dt.tz_localize(self.timezone)
+                else:
+                    df["timestamp"] = df["timestamp"].dt.tz_convert(self.timezone)
+                df = df.sort_values("timestamp").drop_duplicates(subset=["timestamp"], keep="last")
+                slot_records[sensor_name] = df
+
+        if not slot_records:
+            return pd.DataFrame()
+
+        all_timestamps = []
+        for df in slot_records.values():
+            all_timestamps.extend(df["timestamp"].tolist())
+
+        if not all_timestamps:
+            return pd.DataFrame()
+
+        min_ts = min(all_timestamps)
+        max_ts = max(all_timestamps)
+        min_ts = min_ts.astimezone(self.timezone)
+
+        floored_minute = (min_ts.minute // resolution_minutes) * resolution_minutes
+        start_time = min_ts.replace(minute=floored_minute, second=0, microsecond=0)
+
+        # Round end_time UP to the next resolution boundary
+        # If we have data up to 14:14, we want to include the 14:00-14:15 slot.
+        rem = max_ts.minute % resolution_minutes
+        end_time = max_ts.replace(second=0, microsecond=0)
+        if rem != 0 or max_ts.second > 0:
+            end_time += timedelta(minutes=(resolution_minutes - rem))
+
+        slots = pd.date_range(
+            start=start_time,
+            end=end_time,
+            freq=f"{resolution_minutes}min",
+            tz=self.timezone,
+            inclusive="both",
+        )
+        if len(slots) < 2:
+            return pd.DataFrame()
+
+        slot_df = pd.DataFrame({"slot_start": slots[:-1], "slot_end": slots[1:]})
+        hours_per_slot = resolution_minutes / 60.0
+
+        for sensor_name, df in slot_records.items():
+            canonical = self._canonical_sensor_name(sensor_name)
+
+            if canonical == "soc":
+                # SoC is a level, handled at the end
+                continue
+
+            # Average power over the slot
+            # We use 'resample' to get the mean power in each 15min bucket
+            resampled = (
+                df.set_index("timestamp")["power_value"]
+                .resample(f"{resolution_minutes}min")
+                .mean()
+                .reindex(slot_df["slot_start"].dt.floor("min"))
+                .fillna(0)
+            )
+
+            # Heuristic detection for kW vs Watts
+            # If the mean power is consistently very small (e.g., max < 100),
+            # but the system capacity is large, it might be kW.
+            # Most users have > 3kW systems. If we see 5.0, it's likely kW.
+            # If we see 5000.0, it's likely Watts.
+            is_kw = resampled.max() < 100.0 and resampled.max() > 0
+
+            if is_kw:
+                energy_kwh = resampled * hours_per_slot
+                logger.info(f"Detected kW units for {canonical} (max={resampled.max()})")
+            else:
+                energy_kwh = (resampled / 1000.0) * hours_per_slot
+                if resampled.max() > 0:
+                    logger.info(f"Detected Watt units for {canonical} (max={resampled.max()})")
+
+            # Determine column names based on canonical ID
+            if canonical == "battery":
+                # Battery sign: + discharge, - charge
+                slot_df["batt_discharge_kwh"] = energy_kwh.clip(lower=0).values
+                slot_df["batt_charge_kwh"] = energy_kwh.clip(upper=0).abs().values
+            elif canonical in ("grid", "import", "export"):
+                if canonical == "grid":
+                    # Grid sign: + import, - export
+                    slot_df["import_kwh"] = energy_kwh.clip(lower=0).values
+                    slot_df["export_kwh"] = energy_kwh.clip(upper=0).abs().values
+                elif canonical == "import":
+                    slot_df["import_kwh"] = energy_kwh.values
+                elif canonical == "export":
+                    slot_df["export_kwh"] = energy_kwh.values
+            else:
+                # Standard consumption/production (PV, Load, Water)
+                col_name = f"{canonical}_kwh"
+                slot_df[col_name] = energy_kwh.values
+
+        # Handle SoC (which is a level, not power)
+        soc_name = next(
+            (name for name in slot_records if self._canonical_sensor_name(name) == "soc"), None
+        )
+        if soc_name:
+            soc_df = slot_records[soc_name].drop_duplicates(subset=["timestamp"], keep="last")
+            soc_series = (
+                soc_df.set_index("timestamp")["power_value"].reindex(slots, method="ffill").ffill()
+            )
+            slot_df["soc_start_percent"] = soc_series.iloc[:-1].values
+            slot_df["soc_end_percent"] = soc_series.iloc[1:].values
+
+        # Ensure all expected columns exist (even if 0) to avoid SQLAlchemy issues
+        for col in ["pv_kwh", "load_kwh", "import_kwh", "export_kwh", "water_kwh"]:
+            if col not in slot_df.columns:
+                slot_df[col] = 0.0
+
+        slot_df["duration_minutes"] = resolution_minutes
+
+        return slot_df
 
     async def get_performance_series(self, days_back: int = 7) -> dict[str, list[dict]]:
         """
