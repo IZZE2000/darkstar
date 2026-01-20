@@ -452,6 +452,7 @@ const createChartData = (
                 pointRadius: 0,
                 borderWidth: 2,
                 yAxisID: 'y4',
+                stepped: 'after',
                 hidden: true,
                 order: 1,
             } as ChartDataset,
@@ -464,6 +465,7 @@ const createChartData = (
                 pointRadius: 0,
                 borderWidth: 2,
                 yAxisID: 'y1',
+                stepped: 'after',
                 hidden: true,
                 order: 1,
             } as ChartDataset,
@@ -476,6 +478,7 @@ const createChartData = (
                 pointRadius: 0,
                 borderWidth: 2,
                 yAxisID: 'y1',
+                stepped: 'after',
                 hidden: true,
                 order: 1,
             } as ChartDataset,
@@ -488,6 +491,7 @@ const createChartData = (
                 pointRadius: 0,
                 borderWidth: 2,
                 yAxisID: 'y1',
+                stepped: 'after',
                 hidden: true,
                 order: 1,
             } as ChartDataset,
@@ -500,6 +504,7 @@ const createChartData = (
                 pointRadius: 0,
                 borderWidth: 2,
                 yAxisID: 'y2',
+                stepped: 'after',
                 hidden: true,
                 order: 1,
             } as ChartDataset,
@@ -512,6 +517,7 @@ const createChartData = (
                 pointRadius: 0,
                 borderWidth: 2,
                 yAxisID: 'y1',
+                stepped: 'after',
                 hidden: true,
                 order: 1,
             } as ChartDataset,
@@ -895,6 +901,7 @@ export default function ChartCard({
             if (ds[12]) ds[12].hidden = !overlays.showActual || !overlays.charge
             if (ds[13]) ds[13].hidden = !overlays.showActual || !overlays.discharge
             if (ds[14]) ds[14].hidden = !overlays.showActual || !overlays.export
+            if (ds[15]) ds[15].hidden = !overlays.showActual || !overlays.water
 
             try {
                 if (!isChartUsable(chartRef.current)) return
@@ -1279,6 +1286,14 @@ function buildLiveData(
             }
         }
 
+        let nowPct: number | null = null
+        const now = new Date()
+        const totalMs = steps * stepMs
+        const elapsed = now.getTime() - firstTs
+        if (elapsed >= 0 && elapsed <= totalMs) {
+            nowPct = elapsed / totalMs
+        }
+
         return createChartData(
             {
                 labels,
@@ -1298,6 +1313,7 @@ function buildLiveData(
                 actualDischarge,
                 actualExport,
                 actualWater,
+                nowPct,
             },
             themeColors,
             pricing,
