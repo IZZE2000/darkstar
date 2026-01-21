@@ -363,3 +363,16 @@ Root cause identified: `/api/schedule/today_with_history` loads future battery a
 * [x] Ensure proper error handling when database history unavailable
 * [x] Add logging to distinguish data source for debugging
 * [x] **Verification**: Robust handling of missing data sources, clear debugging info
+
+---
+
+### [DONE] REV // F37 — Fix asyncio.run RuntimeWarning in Executor
+
+**Goal:** Fix `RuntimeWarning: coroutine 'get_nordpool_data' was never awaited` caused by calling `asyncio.run()` inside an existing event loop in `executor/engine.py`.
+
+**Plan:**
+
+#### Phase 1: Fix Safe Async Execution [DONE]
+* [x] Detect running event loop in `executor/engine.py`.
+* [x] Skip `asyncio.run()` if loop exists to avoid `RuntimeError` and deadlock.
+* [x] Add proper error logging.

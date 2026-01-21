@@ -1319,7 +1319,21 @@ class ExecutorEngine:
             try:
                 from inputs import get_nordpool_data
 
-                prices = asyncio.run(get_nordpool_data("config.yaml"))
+                # Rev Fix: Safe async execution
+                # Check for existing event loop to avoid RuntimeError
+                try:
+                    loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    loop = None
+
+                if loop and loop.is_running():
+                    logger.warning(
+                        "Event loop already running in Executor thread - skipping Nordpool fetch to avoid deadlock"
+                    )
+                    prices = []
+                else:
+                    prices = asyncio.run(get_nordpool_data("config.yaml"))
+
                 if prices:
                     # Get current slot's price
                     import pytz
@@ -1331,8 +1345,8 @@ class ExecutorEngine:
                         if st and st <= now < st + timedelta(hours=1):
                             import_price = p.get("import_price_sek_kwh", 0.5)
                             break
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Failed to fetch import price: %s", e)
 
             # Always update to keep energy state synced (cost only changes during charge)
             tracker.update_cost(
