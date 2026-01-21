@@ -64,6 +64,8 @@ entity_id: select.solinteg_inverter_working_mode
 option: "General"
 https://github.com/springfall2008/batpred/discussions/2529
 "
+- Add improved progress indicators to UI so 75-second solves don't feel frozen.
+- Can we simplify the water constraints? It is extremely slow right now, and will get worse when we add more heat sources etc. (BRAINSTORM!)
 
 ---
 
