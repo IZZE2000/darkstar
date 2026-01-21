@@ -283,9 +283,16 @@ async def schedule_today_with_history(
         logger.warning(f"Failed to load planned map: {e}")
 
     # 5. Merge
-    # [REV F36] Only include historical planned_map keys, not future ones
-    historical_planned_keys = {k for k in planned_map if k < now_naive}
-    all_keys = sorted(set(schedule_map.keys()) | set(exec_map.keys()) | historical_planned_keys)
+    # [REV F36] Match Api.schedule() rounding for the starting slot (only return from now forward)
+    now = datetime.now(tz)
+    planned_start_naive = now.replace(
+        minute=now.minute - (now.minute % 15), second=0, microsecond=0
+    ).replace(tzinfo=None)
+
+    # Collect all keys and filter to ensure we only return from current time forward
+    raw_keys = set(schedule_map.keys()) | set(exec_map.keys()) | set(planned_map.keys())
+    all_keys = sorted({k for k in raw_keys if k >= planned_start_naive})
+
     merged_slots: list[dict[str, Any]] = []
 
     for key in all_keys:
