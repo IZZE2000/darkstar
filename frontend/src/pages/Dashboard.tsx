@@ -729,13 +729,7 @@ export default function Dashboard() {
 
             {/* Row 1: Schedule Overview (24h / 48h) */}
             <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-                <ChartCard
-                    useHistoryForToday={true}
-                    refreshToken={chartRefreshToken}
-                    slotsOverride={slotsOverride}
-                    range="48h"
-                    showDayToggle={true}
-                />
+                <ChartCard useHistoryForToday={true} refreshToken={chartRefreshToken} slotsOverride={slotsOverride} />
             </motion.div>
 
             {/* Row 2: Controls & Advisor & Quick Actions */}

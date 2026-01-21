@@ -271,4 +271,53 @@ Currently, the charts can become cluttered when mixing planned and actual data. 
 #### Phase 3: Documentation & Testing [DONE]
 * [x] Document WAL mode in `ARCHITECTURE.md` section 9.3.
 * [x] Verify linting passes for all modified files.
-* [x] **Verification**: No `database is locked` errors under load.
+---
+
+ ### [DONE] REV // DX2 — Silence Noisy HTTPX Logs
+
+ **Goal:** Reduce log clutter by silencing verbose `httpx` and `httpcore` logs at the `INFO` level.
+
+ **Plan:**
+
+ #### Phase 1: Logging Configuration [DONE]
+ * [x] Modify `backend/core/logging.py` to set `httpx` and `httpcore` loggers to `WARNING` level.
+ * [x] **Verification**: Logs no longer show daily sensor polling requests.
+
+---
+
+### [PLANNED] REV // UI8 — Remove 24h/48h Toggle, Implement Smart Auto-Zoom
+
+**Goal:** Fix chart action visibility issues by removing problematic 24h/48h toggle and implementing intelligent auto-zoom on single 48h chart.
+
+**Context:**
+The 24h/48h toggle is causing chart rendering issues where battery actions disappear in 48h mode but show in 24h mode. Console logs show excessive chart rebuilds (12+ times) causing actions to be overwritten. User can see discharge actions in 24h but missing charge actions, indicating data processing inconsistencies between modes.
+
+**Plan:**
+
+#### Phase 1: Remove Toggle UI [DONE]
+* [x] Remove `showDayToggle` prop from ChartCard component interface
+* [x] Remove toggle buttons from ChartCard render method
+* [x] Remove `rangeState` useState and related state management
+* [x] Update Dashboard to remove `showDayToggle={true}` prop
+* [x] **STOP - Verification**: Chart shows no toggle buttons, always processes 48h data
+
+#### Phase 2: Simplify Data Processing [PLANNED]
+* [ ] Always pass `range="48h"` to buildLiveData function
+* [ ] Remove all `range === 'day'` conditional logic from buildLiveData
+* [ ] Remove day-specific data processing paths that cause action visibility issues
+* [ ] Clean up useEffect dependencies to prevent excessive re-renders
+* [ ] **STOP - Verification**: Single data processing path, reduced console log spam
+
+#### Phase 3: Implement Smart Auto-Zoom [PLANNED]
+* [ ] Add function to detect tomorrow's price availability: `hasTomorrowPrices = slots.some(slot => isTomorrow(slot.start_time) && slot.import_price_sek_kwh != null)`
+* [ ] Implement auto-zoom logic after chart data is applied: `if (!hasTomorrowPrices) chart.zoomScale('x', {min: 0, max: 95})`
+* [ ] Ensure zoom happens after chart update, not during data processing
+* [ ] Maintain manual zoom functionality for user control
+* [ ] **STOP - Verification**: Chart auto-zooms to ~24h view when only today's prices available, shows full 48h when tomorrow's prices exist
+
+#### Phase 4: Debug Action Visibility [PLANNED]
+* [ ] Add debugging to identify what triggers excessive useEffect calls
+* [ ] Verify all battery actions (charge/discharge) are visible consistently
+* [ ] Test that actions remain visible during live metric updates
+* [ ] Ensure socket.io reconnections don't cause action loss
+* [ ] **STOP - Verification**: All future battery actions visible and stable, no disappearing after brief appearance

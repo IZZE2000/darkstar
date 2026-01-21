@@ -78,6 +78,10 @@ def setup_logging():
     # Explicitly set darkstar loggers
     logging.getLogger("darkstar").setLevel(log_level)
 
+    # Silence noisy library loggers (Rev ARC13)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+
 
 def get_ring_buffer() -> RingBufferHandler:
     """Return the global ring buffer handler instance."""

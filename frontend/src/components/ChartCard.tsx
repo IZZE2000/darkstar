@@ -1,4 +1,5 @@
 import Card from './Card'
+console.log('🔥 ChartCard.tsx loaded - TIMESTAMP:', Date.now())
 import { useEffect, useRef, useState } from 'react'
 import {
     Chart as ChartJS,
@@ -727,41 +728,64 @@ type ChartRange = 'day' | '48h'
 
 type ChartCardProps = {
     day?: DaySel
-    range?: ChartRange
     refreshToken?: number
-    showDayToggle?: boolean
     useHistoryForToday?: boolean
     slotsOverride?: ScheduleSlot[]
 }
 
 export default function ChartCard({
     day = 'today',
-    range = '48h',
     refreshToken = 0,
     slotsOverride,
     useHistoryForToday = false,
-    showDayToggle = false,
 }: ChartCardProps) {
     const [hasNoDataMessage, setHasNoDataMessage] = useState(false)
+    const [hasRealData, setHasRealData] = useState(false) // Track when real data has been loaded
     const currentDay = day || 'today'
-    const [rangeState, setRangeState] = useState<ChartRange>(range)
     const ref = useRef<HTMLCanvasElement | null>(null)
     const chartRef = useRef<Chart | null>(null)
     const [themeColors, setThemeColors] = useState<Record<string, string>>({})
     const [overlays, setOverlays] = useState(() => {
         // Load from localStorage if available, otherwise use defaults
         const STORAGE_KEY = 'darkstar-chart-overlays'
+        const STORAGE_VERSION = 2 // Increment to force migration
+
         try {
             const saved = localStorage.getItem(STORAGE_KEY)
             if (saved) {
                 const parsed = JSON.parse(saved)
+
+                // Check version - if missing or old, use new defaults
+                if (parsed._version !== STORAGE_VERSION) {
+                    console.log(`Migrating overlay preferences from v${parsed._version || 1} to v${STORAGE_VERSION}`)
+                    // Use new defaults, but preserve user's explicit customizations if they match new defaults
+                    const newDefaults = {
+                        _version: STORAGE_VERSION,
+                        price: true,
+                        pv: true,
+                        load: true,
+                        charge: true,
+                        discharge: true,
+                        export: true,
+                        water: false,
+                        socTarget: false,
+                        socProjected: false,
+                        socActual: true,
+                        showActual: false,
+                    }
+                    // Save migrated version immediately
+                    localStorage.setItem(STORAGE_KEY, JSON.stringify(newDefaults))
+                    return newDefaults
+                }
+
                 return {
+                    _version: STORAGE_VERSION,
                     price: parsed.price ?? true,
                     pv: parsed.pv ?? true,
                     load: parsed.load ?? true,
-                    charge: parsed.charge ?? false,
-                    discharge: parsed.discharge ?? false,
-                    export: parsed.export ?? false,
+                    charge: parsed.charge ?? true,
+                    discharge: parsed.discharge ?? true,
+                    export: parsed.export ?? true,
                     water: parsed.water ?? false,
                     socTarget: parsed.socTarget ?? false,
                     socProjected: parsed.socProjected ?? false,
@@ -773,12 +797,13 @@ export default function ChartCard({
             console.warn('Failed to load overlay preferences:', e)
         }
         return {
+            _version: STORAGE_VERSION,
             price: true,
             pv: true,
             load: true,
-            charge: false,
-            discharge: false,
-            export: false,
+            charge: true,
+            discharge: true,
+            export: true,
             water: false,
             socTarget: false,
             socProjected: false,
@@ -804,10 +829,14 @@ export default function ChartCard({
     }, [overlays])
 
     // Load overlay defaults and scaling values from config
+    // IMPORTANT: Only apply config overlay_defaults for NEW users (no localStorage)
     useEffect(() => {
+        const STORAGE_KEY = 'darkstar-chart-overlays'
+        const hasStoredPreferences = localStorage.getItem(STORAGE_KEY) !== null
+
         Api.config()
             .then((config) => {
-                // Scaling values
+                // Scaling values - always apply
                 const solarKwp = config?.system?.solar_array?.kwp ?? 10
                 const gridMaxKw = config?.system?.grid?.max_power_kw ?? 8
                 const inverterMaxKw = config?.system?.inverter?.max_power_kw ?? 8
@@ -817,7 +846,7 @@ export default function ChartCard({
                     inverterMaxKw: Number(inverterMaxKw),
                 })
 
-                // Parse pricing for tooltips
+                // Parse pricing for tooltips - always apply
                 if (config.pricing) {
                     const p = config.pricing
                     const vat = p.vat_percent ?? 25
@@ -825,32 +854,35 @@ export default function ChartCard({
                     setPricingConfig({ vat, fees })
                 }
 
-                const overlayDefaults = config?.dashboard?.overlay_defaults
-                if (overlayDefaults && typeof overlayDefaults === 'string') {
-                    const defaultOverlays = overlayDefaults.split(',').map((s) => s.trim().toLowerCase())
-                    const hasSocActualToken =
-                        defaultOverlays.includes('socactual') || defaultOverlays.includes('soc_actual')
-                    const parsedOverlays = {
-                        price: !defaultOverlays.includes('price_off'),
-                        pv: !defaultOverlays.includes('pv_off'),
-                        load: !defaultOverlays.includes('load_off'),
-                        charge: defaultOverlays.includes('charge'),
-                        discharge: defaultOverlays.includes('discharge'),
-                        export: defaultOverlays.includes('export'),
-                        water: defaultOverlays.includes('water'),
-                        socTarget: defaultOverlays.includes('soctarget') || defaultOverlays.includes('soc_target'),
-                        socProjected:
-                            defaultOverlays.includes('socprojected') || defaultOverlays.includes('soc_projected'),
-                        // Only override SoC Actual if config explicitly mentions it;
-                        // otherwise keep the initial default (true).
-                        socActual: hasSocActualToken ? true : overlays.socActual,
-                        showActual: overlays.showActual,
+                // ONLY apply config overlay_defaults if user has NO stored preferences
+                // This prevents config from overwriting user's explicit toggle changes
+                if (!hasStoredPreferences) {
+                    const overlayDefaults = config?.dashboard?.overlay_defaults
+                    if (overlayDefaults && typeof overlayDefaults === 'string') {
+                        const defaultOverlays = overlayDefaults.split(',').map((s) => s.trim().toLowerCase())
+                        const hasSocActualToken =
+                            defaultOverlays.includes('socactual') || defaultOverlays.includes('soc_actual')
+                        const parsedOverlays = {
+                            _version: 2,
+                            price: !defaultOverlays.includes('price_off'),
+                            pv: !defaultOverlays.includes('pv_off'),
+                            load: !defaultOverlays.includes('load_off'),
+                            charge: defaultOverlays.includes('charge'),
+                            discharge: defaultOverlays.includes('discharge'),
+                            export: defaultOverlays.includes('export'),
+                            water: defaultOverlays.includes('water'),
+                            socTarget: defaultOverlays.includes('soctarget') || defaultOverlays.includes('soc_target'),
+                            socProjected:
+                                defaultOverlays.includes('socprojected') || defaultOverlays.includes('soc_projected'),
+                            socActual: hasSocActualToken ? true : true, // Default to true
+                            showActual: false,
+                        }
+                        setOverlays(parsedOverlays)
                     }
-                    setOverlays(parsedOverlays)
                 }
             })
             .catch((err) => console.error('Failed to load overlay defaults:', err))
-    }, [overlays.socActual, overlays.showActual])
+    }, []) // No dependencies - only run once on mount
 
     useEffect(() => {
         // Fetch theme colors on mount
@@ -871,8 +903,12 @@ export default function ChartCard({
             .catch((err) => console.error('Failed to load theme colors:', err))
     }, [])
 
+    // Chart initialization: only runs ONCE when canvas ref is available
     useEffect(() => {
         if (!ref.current || Object.keys(themeColors).length === 0) return
+        // Skip re-initialization if real data has already been loaded
+        if (hasRealData && chartRef.current) return
+
         const cfg: ChartConfiguration = {
             type: 'bar',
             data: createChartData(
@@ -881,6 +917,8 @@ export default function ChartCard({
                     price: sampleChart.price,
                     pv: sampleChart.pv,
                     load: sampleChart.load,
+                    charge: sampleChart.charge,
+                    discharge: sampleChart.discharge,
                 },
                 themeColors,
                 pricingConfig,
@@ -913,7 +951,30 @@ export default function ChartCard({
                 chartRef.current = null
             }
         }
-    }, [themeColors, pricingConfig, scaling]) // Re-create chart when theme colors or scaling are loaded
+    }, [themeColors, pricingConfig, hasRealData, scaling.gridMaxKw, scaling.inverterMaxKw, scaling.solarKwp]) // Re-create chart only for initial creation or theme/pricing changes (but not after real data loads)
+
+    // Dynamically update chart scales when scaling configuration changes
+    // This prevents chart re-initialization and preserves loaded data
+    useEffect(() => {
+        if (!chartRef.current || !hasRealData) return
+
+        const chart = chartRef.current
+        if (chart.options?.scales) {
+            const gridInverterMax = Math.max(scaling.gridMaxKw, scaling.inverterMaxKw)
+
+            if (chart.options.scales.y1) {
+                chart.options.scales.y1.max = gridInverterMax
+            }
+            if (chart.options.scales.y2) {
+                chart.options.scales.y2.max = gridInverterMax
+            }
+            if (chart.options.scales.y4) {
+                chart.options.scales.y4.max = scaling.solarKwp
+            }
+
+            chart.update('none') // Update without animation for instant response
+        }
+    }, [scaling.gridMaxKw, scaling.inverterMaxKw, scaling.solarKwp, hasRealData])
 
     const isChartUsable = (chartInstance: Chart | null) => {
         if (!chartInstance) return false
@@ -924,15 +985,11 @@ export default function ChartCard({
     }
 
     useEffect(() => {
-        setRangeState(range)
-    }, [range])
-
-    useEffect(() => {
         const chartInstance = chartRef.current
         if (!isChartUsable(chartInstance) || Object.keys(themeColors).length === 0) return
         const applyData = (slots: ScheduleSlot[]) => {
             if (!isChartUsable(chartRef.current)) return
-            const liveData = buildLiveData(slots, currentDay, rangeState, themeColors, pricingConfig)
+            const liveData = buildLiveData(slots, currentDay, '48h', themeColors, pricingConfig)
             if (!liveData) return
 
             setHasNoDataMessage(!!liveData.hasNoData)
@@ -972,8 +1029,7 @@ export default function ChartCard({
             return
         }
 
-        const shouldLoadHistory =
-            useHistoryForToday && currentDay === 'today' && (rangeState === 'day' || rangeState === '48h')
+        const shouldLoadHistory = useHistoryForToday && currentDay === 'today'
 
         const loader = shouldLoadHistory
             ? Api.scheduleTodayWithHistory().then((res) => ({ schedule: res.slots }))
@@ -982,55 +1038,33 @@ export default function ChartCard({
         loader
             .then((data) => {
                 applyData(data.schedule ?? [])
+                // Mark that real data has been loaded successfully
+                setHasRealData(true)
             })
             .catch((err) => {
                 console.error('Failed to load schedule:', err)
                 // Show an explicit "no data" overlay instead of leaving stale/mock data visible
                 setHasNoDataMessage(true)
             })
-    }, [currentDay, overlays, themeColors, rangeState, refreshToken, slotsOverride, useHistoryForToday, pricingConfig])
+    }, [currentDay, overlays, themeColors, refreshToken, slotsOverride, useHistoryForToday, pricingConfig])
 
     // Memoize theme colors to prevent unnecessary re-computations
     return (
         <Card className="p-4 md:p-6 h-[380px]">
             <div className="flex items-baseline justify-between pb-2">
                 <div className="text-sm text-muted">Schedule Overview</div>
-                {showDayToggle && (
-                    <div className="flex items-center gap-2">
-                        <div className="flex gap-1">
-                            <button
-                                className={`rounded-pill px-3 py-1 text-[11px] font-semibold uppercase tracking-wide transition ${
-                                    rangeState === 'day'
-                                        ? 'bg-accent text-canvas'
-                                        : 'bg-surface border border-line/60 text-muted'
-                                }`}
-                                onClick={() => setRangeState('day')}
-                            >
-                                24h
-                            </button>
-                            <button
-                                className={`rounded-pill px-3 py-1 text-[11px] font-semibold uppercase tracking-wide transition ${
-                                    rangeState === '48h'
-                                        ? 'bg-accent text-canvas'
-                                        : 'bg-surface border border-line/60 text-muted'
-                                }`}
-                                onClick={() => setRangeState('48h')}
-                            >
-                                48h
-                            </button>
-                        </div>
-                        <button
-                            className="rounded-pill px-3 py-1 text-[11px] font-semibold uppercase tracking-wide border border-line/60 text-muted hover:border-accent hover:text-accent transition"
-                            onClick={() => setShowOverlayMenu((v) => !v)}
-                        >
-                            Overlays
-                        </button>
-                    </div>
-                )}
+                <div className="flex items-center gap-2">
+                    <button
+                        className="rounded-pill px-3 py-1 text-[11px] font-semibold uppercase tracking-wide border border-line/60 text-muted hover:border-accent hover:text-accent transition"
+                        onClick={() => setShowOverlayMenu((v) => !v)}
+                    >
+                        Overlays
+                    </button>
+                </div>
             </div>
             {showOverlayMenu && (
                 <div className="mt-2 flex items-center justify-between gap-4">
-                    {/* Main overlay toggles */}
+                    {/* Main overlay toggles  */}
                     <div className="flex flex-wrap gap-1.5 text-[10px]">
                         {(
                             [
@@ -1112,14 +1146,16 @@ function buildLiveData(
         console.log(`[48h DEBUG] Filtered ${filtered.length} slots from ${slots.length} total slots`)
         if (filtered.length > 0) {
             console.log(
-                `[48h DEBUG] First slot: ${filtered[0].start_time}, charge: ${filtered[0].battery_charge_kw ?? filtered[0].charge_kw}`,
+                `[48h DEBUG] First slot: ${filtered[0].start_time}, charge: ${filtered[0].battery_charge_kw ?? filtered[0].charge_kw}, discharge: ${filtered[0].battery_discharge_kw ?? filtered[0].discharge_kw}`,
             )
             console.log(
-                `[48h DEBUG] Sample charge values:`,
+                `[48h DEBUG] Sample action values:`,
                 filtered.slice(0, 10).map((s) => ({
                     time: s.start_time,
                     charge: s.battery_charge_kw ?? s.charge_kw,
+                    discharge: s.battery_discharge_kw ?? s.discharge_kw,
                     actual_charge: s.actual_charge_kw,
+                    actual_discharge: s.actual_discharge_kw,
                     is_executed: s.is_executed,
                 })),
             )
@@ -1458,6 +1494,17 @@ function buildLiveData(
         // For 48h view, we show "now" if it's within the window (which starts at 00:00 today)
         if (elapsed >= 0 && elapsed <= totalMs) {
             nowPct = elapsed / totalMs
+        }
+
+        // DEBUG: Log non-zero action values
+        const nonZeroCharge = charge.map((v, i) => ({ i, v })).filter((x) => x.v && x.v > 0)
+        const nonZeroDischarge = discharge.map((v, i) => ({ i, v })).filter((x) => x.v && x.v > 0)
+        if (nonZeroCharge.length > 0 || nonZeroDischarge.length > 0) {
+            console.log('[48h CHART DATA] Non-zero actions:', {
+                charge: nonZeroCharge,
+                discharge: nonZeroDischarge,
+                totalSlots: charge.length,
+            })
         }
 
         return createChartData(

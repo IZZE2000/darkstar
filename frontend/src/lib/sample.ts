@@ -3,6 +3,16 @@ export const sampleChart = {
     load: Array.from({ length: 24 }, () => +(Math.random() * 2.2 + 0.6).toFixed(2)),
     pv: Array.from({ length: 24 }, (__, i) => +(Math.max(0, Math.sin((i - 6) / 4)) * 2.4).toFixed(2)),
     price: Array.from({ length: 24 }, () => +(Math.random() * 3.2 + 0.8).toFixed(2)),
+    // Realistic charging pattern: overnight hours (23:00-05:00) with 3-5 kW
+    charge: Array.from({ length: 24 }, (_, i) => {
+        if (i >= 23 || i <= 5) return +(Math.random() * 2 + 3).toFixed(2) // 3-5 kW
+        return 0
+    }),
+    // Realistic discharging pattern: peak hours (17:00-20:00) with 2-4 kW
+    discharge: Array.from({ length: 24 }, (_, i) => {
+        if (i >= 17 && i <= 20) return +(Math.random() * 2 + 2).toFixed(2) // 2-4 kW
+        return 0
+    }),
 }
 
 /** Mock lanes for Planning */
