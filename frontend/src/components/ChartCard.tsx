@@ -1018,6 +1018,32 @@ export default function ChartCard({
             if (ds[13]) ds[13].hidden = !overlays.showActual || !overlays.discharge
             if (ds[14]) ds[14].hidden = !overlays.showActual || !overlays.export
             if (ds[15]) ds[15].hidden = !overlays.showActual || !overlays.water
+
+            // DEBUG: Check if chart datasets contain the action data
+            if (ds[3] || ds[4]) {
+                const chargeData = (ds[3]?.data as any[]) || []
+                const dischargeData = (ds[4]?.data as any[]) || []
+                const nonZeroCharge = chargeData.filter((v: any) => v && v > 0)
+                const nonZeroDischarge = dischargeData.filter((v: any) => v && v > 0)
+
+                console.log('[CHART RENDER DEBUG]', {
+                    chargeDataset: {
+                        exists: !!ds[3],
+                        hidden: ds[3]?.hidden,
+                        totalPoints: chargeData.length,
+                        nonZeroPoints: nonZeroCharge.length,
+                        maxValue: Math.max(...chargeData.filter((v) => v != null)),
+                    },
+                    dischargeDataset: {
+                        exists: !!ds[4],
+                        hidden: ds[4]?.hidden,
+                        totalPoints: dischargeData.length,
+                        nonZeroPoints: nonZeroDischarge.length,
+                        maxValue: Math.max(...dischargeData.filter((v) => v != null)),
+                    },
+                    overlays: { charge: overlays.charge, discharge: overlays.discharge },
+                })
+            }
             try {
                 if (chartRef.current) {
                     console.log('[ChartCard DEBUG] Applying chart data', {
@@ -1102,8 +1128,8 @@ export default function ChartCard({
                                     setOverlays((o) => ({ ...o, [key]: !o[key as keyof typeof o] }))
                                 }}
                                 className={`rounded-full px-2.5 py-0.5 border transition-all duration-150 font-medium ${overlays[key as keyof typeof overlays]
-                                        ? `${activeClass} shadow-sm`
-                                        : 'border-line/40 text-muted/60 hover:border-line hover:text-muted'
+                                    ? `${activeClass} shadow-sm`
+                                    : 'border-line/40 text-muted/60 hover:border-line hover:text-muted'
                                     }`}
                             >
                                 {label}
@@ -1117,8 +1143,8 @@ export default function ChartCard({
                             setOverlays((o) => ({ ...o, showActual: !o.showActual }))
                         }}
                         className={`rounded-full px-3 py-1 border text-[10px] font-semibold transition-all duration-150 whitespace-nowrap ${overlays.showActual
-                                ? 'bg-accent text-canvas border-accent shadow-md shadow-accent/30'
-                                : 'border-line/40 text-muted/60 hover:border-accent hover:text-accent'
+                            ? 'bg-accent text-canvas border-accent shadow-md shadow-accent/30'
+                            : 'border-line/40 text-muted/60 hover:border-accent hover:text-accent'
                             }`}
                     >
                         📊 Actual
