@@ -1016,6 +1016,13 @@ export default function ChartCard({
 
             setHasNoDataMessage(!!liveData.hasNoData)
 
+            console.log('[OVERLAY BUG DEBUG]', {
+                overlaysDischarge: overlays.discharge,
+                overlaysType: typeof overlays.discharge,
+                ds4Exists: !!liveData.datasets[4],
+                ds4WillBeHidden: !overlays.discharge,
+            })
+
             const ds = liveData.datasets
             if (ds[0]) ds[0].hidden = !overlays.price
             if (ds[1]) ds[1].hidden = !overlays.pv
