@@ -85,12 +85,15 @@ export default function ModelTrainingCard() {
     }
 
     // Stale lock detection using backend provided status (or fallback)
-    // ARC11 Fix: use lock_status object if available
-    const isStaleTraining = status?.lock_status?.stale ?? ((status?.lock_age_seconds || 0) > 3600)
+    // ARC11 Fix: Replace existing lock detection with robust check
+    const isTrainingLocked = status?.lock_status?.locked && !status?.lock_status?.stale
 
     // Use either API status or realtime progress status
     // If backend says is_training=false (because stale), we respect that.
-    const isTraining = ((status?.is_training ?? false) && !isStaleTraining) || (progress?.status === 'busy')
+    const isTraining = isTrainingLocked || (progress?.status === 'busy')
+
+    // Helper for button state
+    // const canTrain = !isTrainingLocked && !isTraining // Used in render
 
 
     return (

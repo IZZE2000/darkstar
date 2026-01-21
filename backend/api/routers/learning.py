@@ -242,10 +242,31 @@ async def record_observation() -> dict[str, str]:
 async def learning_training_status() -> dict[str, Any]:
     """Get current ML training status."""
     try:
+        import time
+        from pathlib import Path
+
         from ml.corrector import _determine_graduation_level, _get_engine
         from ml.training_orchestrator import get_training_status
 
+        LOCK_FILE = Path("ml/models/.training.lock")
+
+        def _is_lock_stale() -> bool:
+            """Check if training lock is stale (older than 1 hour)."""
+            if not LOCK_FILE.exists():
+                return False
+            return time.time() - LOCK_FILE.stat().st_mtime > 3600
+
         status = await asyncio.to_thread(get_training_status)
+
+        # ARC11 Fix: Explicitly add lock status structure
+        # Even if get_training_status has it, we ensure it matches the requested format
+        status["lock_status"] = {
+            "locked": LOCK_FILE.exists(),
+            "stale": _is_lock_stale() if LOCK_FILE.exists() else False,
+            "lock_age_seconds": time.time() - LOCK_FILE.stat().st_mtime
+            if LOCK_FILE.exists()
+            else None,
+        }
 
         # Add graduation level
         try:
