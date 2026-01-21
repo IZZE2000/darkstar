@@ -1303,18 +1303,33 @@ function buildLiveData(
     // This ensures we align with the actual data being returned, shielding against timezone/date mismatches
     const anchor = new Date()
     if (ordered.length > 0) {
-        anchor.setTime(new Date(ordered[0].start_time).getTime())
-        // Ensure we anchor to the start of the day if we want a full 48h view from midnight
-        // OR align to the first slot if we are showing a sliding window.
-        // For the ChartCard 48h view, we typically want to start at 00:00 of the current day.
+        // Parse the ISO string to extract Date and Offset, resetting time to 00:00:00
+        // Format: YYYY-MM-DDTHH:MM:SS+HH:MM or YYYY-MM-DDTHH:MM:SSZ
+        // We want: YYYY-MM-DDT00:00:00+HH:MM
+        const startStr = ordered[0].start_time;
+        try {
+            // Assume ISO 8601 standard length for YYYY-MM-DD
+            const datePart = startStr.substring(0, 10);
 
-        // CORRECTION: The loop iterates 'steps' (192) times from 'anchor'.
-        // If anchor is "now" (which new Date() is), then we are looking for slots STARTING NOW.
-        // But the previous logic did anchor.setHours(0,0,0,0).
-        // If 'isToday' logic filtered slots correctly, we should just use midnight of the first slot's day.
-        const firstSlotDate = new Date(ordered[0].start_time)
-        anchor.setTime(firstSlotDate.getTime())
-        anchor.setHours(0, 0, 0, 0)
+            // Robust offset extraction: match Z or +HH:MM or -HH:MM
+            const offsetMatch = startStr.match(/(Z|[+-]\d{2}:?\d{2})$/);
+            const offset = offsetMatch ? offsetMatch[0] : 'Z';
+
+            const midnightIso = `${datePart}T00:00:00${offset}`;
+            anchor.setTime(new Date(midnightIso).getTime());
+
+            console.log('[ANCHOR DEBUG]', {
+                original: startStr,
+                midnightIso,
+                anchorTime: anchor.getTime(),
+                anchorIso: anchor.toISOString()
+            });
+        } catch (e) {
+            console.error('Failed to parse anchor time from string:', startStr, e);
+            const d = new Date(startStr);
+            d.setHours(0, 0, 0, 0);
+            anchor.setTime(d.getTime());
+        }
     } else {
         anchor.setHours(0, 0, 0, 0)
     }
