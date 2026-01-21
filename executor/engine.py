@@ -112,6 +112,9 @@ class ExecutorEngine:
         # Water boost state
         self._water_boost_until: datetime | None = None
 
+        # Override notification deduplication (Issue 3 fix)
+        self._last_override_type: str | None = None
+
         # System profile toggles (Rev O1)
         system_cfg = self._full_config.get("system", {})
         self._has_solar = system_cfg.get("has_solar", True)
@@ -357,9 +360,10 @@ class ExecutorEngine:
 
     def pause(self, duration_minutes: int = 60) -> dict[str, Any]:
         """
-        Pause the executor - enters idle mode.
+        Pause the executor - stops all automated control.
 
-        Idle mode: zero export, min_soc target, no grid charging, no water heating.
+        The executor will stop running and will not make any changes to HA entities.
+        This allows full manual control of all devices.
         A reminder will be scheduled based on configuration or duration.
         """
         tz = pytz.timezone(self.config.timezone)
@@ -376,22 +380,16 @@ class ExecutorEngine:
             self._paused_at = now
             self._pause_reminder_sent = False
             self.status.is_paused = True
-            # Rev update: You could store duration_minutes here if you wanted dynamic reminders
-            # For now just accepting the arg avoids the 500 error.
 
-        logger.info("Executor PAUSED at %s - entering idle mode", now.isoformat())
+        logger.info("Executor PAUSED at %s - manual control enabled", now.isoformat())
 
-        # Immediately execute a tick to apply idle mode
-        if self.ha_client:
-            try:
-                self._apply_idle_mode()
-            except Exception as e:
-                logger.error("Failed to apply idle mode: %s", e)
+        # Issue 5 fix: Do NOT apply any settings when pausing
+        # User has full manual control while paused
 
         return {
             "success": True,
             "paused_at": now.isoformat(),
-            "message": "Executor paused - idle mode active",
+            "message": "Executor paused - you have full manual control",
         }
 
     def resume(self, token: str | None = None) -> dict[str, Any]:
@@ -906,18 +904,43 @@ class ExecutorEngine:
                     actions=actions,
                 )
             elif water_boost:
-                # Water Boost Logic (Rev Fix)
+                # Water Boost Logic with battery protection (Issue 2 fix)
                 from .override import OverrideResult, OverrideType
 
-                override = OverrideResult(
-                    override_needed=True,
-                    override_type=OverrideType.FORCE_HEAT,
-                    priority=8.0,  # High priority
-                    reason=f"Water Boost active until {water_boost['expires_at']}",
-                    actions={
-                        "water_temp": self.config.water_heater.temp_boost,
-                    },
-                )
+                battery_cfg = self._full_config.get("battery", {})
+                min_soc = float(battery_cfg.get("min_soc_percent", 10.0))
+                min_boost_soc = min_soc + 10.0  # 10% buffer above min_soc
+
+                if state.current_soc_percent < min_boost_soc:
+                    # Battery too low - disable boost to protect battery
+                    logger.warning(
+                        "Water boost cancelled: SoC %.1f%% < required %.1f%%",
+                        state.current_soc_percent,
+                        min_boost_soc,
+                    )
+                    # Clear the boost
+                    with self._lock:
+                        self._water_boost_until = None
+                    # Send notification
+                    if self.dispatcher:
+                        self.dispatcher._send_notification(
+                            f"Water boost cancelled - battery too low ({state.current_soc_percent:.0f}% < {min_boost_soc:.0f}%)",
+                            title="Darkstar Water Boost",
+                        )
+                    override = OverrideResult(override_needed=False)
+                else:
+                    # Battery healthy - allow boost with SoC protection
+                    protected_soc = max(int(state.current_soc_percent - 10), int(min_boost_soc))
+                    override = OverrideResult(
+                        override_needed=True,
+                        override_type=OverrideType.FORCE_HEAT,
+                        priority=8.0,
+                        reason=f"Water Boost active until {water_boost['expires_at']}",
+                        actions={
+                            "soc_target": protected_soc,  # Protect from excessive drain
+                            "water_temp": self.config.water_heater.temp_boost,
+                        },
+                    )
             else:
                 # Normal override evaluation
                 # Read override thresholds from config (with sensible defaults)
@@ -947,6 +970,11 @@ class ExecutorEngine:
                 override.override_type.value if override.override_needed else None
             )
 
+            # Issue 3 fix: Only notify on override state transitions
+            current_override_type = (
+                override.override_type.value if override.override_needed else None
+            )
+
             if override.override_needed:
                 logger.info(
                     "Override active: %s - %s",
@@ -958,8 +986,13 @@ class ExecutorEngine:
                     "reason": override.reason,
                     "priority": override.priority,
                 }
-                if self.dispatcher:
+                # Only send notification on state transition (not every tick)
+                if current_override_type != self._last_override_type and self.dispatcher:
                     self.dispatcher.notify_override(override.override_type.value, override.reason)
+                    logger.info("Override notification sent (state transition)")
+
+            # Update state tracking
+            self._last_override_type = current_override_type
 
             # 5. Make controller decision
             if slot is None:

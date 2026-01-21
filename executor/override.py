@@ -150,7 +150,7 @@ class OverrideEvaluator:
                 actions={
                     "work_mode": "Zero Export To CT",
                     "grid_charging": True,
-                    "soc_target": max(30, int(self.min_soc_floor + 20)),
+                    "soc_target": int(self.min_soc_floor + 5),  # min_soc + 5%
                     "water_temp": self.water_temp_off,
                 },
             )
@@ -172,17 +172,16 @@ class OverrideEvaluator:
             )
 
         # Priority 8: Slot failure fallback
-        # If no valid slot exists, fall back to safe defaults
+        # If no valid slot exists, preserve current battery state
         if not state.slot_exists or not state.slot_valid:
             return OverrideResult(
                 override_needed=True,
                 override_type=OverrideType.SLOT_FAILURE_FALLBACK,
                 priority=8.0,
-                reason="No valid slot plan found - using safe defaults (zero export, no charge)",
+                reason="No valid slot plan found - preserving current battery state",
                 actions={
                     "work_mode": "Zero Export To CT",
-                    "grid_charging": False,
-                    "soc_target": int(self.min_soc_floor),
+                    "soc_target": int(state.current_soc_percent),  # Keep current SoC
                     "water_temp": self.water_temp_off,
                 },
             )
