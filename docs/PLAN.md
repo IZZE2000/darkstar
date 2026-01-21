@@ -184,14 +184,14 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 
 **Plan:**
 
-#### Phase 1: Unified Training Orchestrator [PLANNED]
-* [ ] **Create Training Orchestrator:** New `ml/training_orchestrator.py` module with `train_all_models()` function
-* [ ] **Training Lock System:** Add simple file-based training lock to prevent concurrent training
-* [ ] **Model Backup System:** Copy existing models to `ml/models/backup/` with timestamp before training, keep only last 2 backups
-* [ ] **Graduation Level Integration:** Check graduation level using existing `ml.corrector._determine_graduation_level()`
-* [ ] **Unified Training Flow:** Train main models (load/PV) using `ml.train.train_models()`, then error correction models using `ml.corrector.train()` only if Graduate level (14+ days)
-* [ ] **Detailed Status Return:** Return status including which models were trained, errors, training duration, and partial failure handling
-* [ ] **Auto-restore on Failure:** Restore from backup if training fails completely
+#### Phase 1: Unified Training Orchestrator [DONE]
+* [x] Create Training Orchestrator: New `ml/training_orchestrator.py` module with `train_all_models()` function
+* [x] Training Lock System: Add simple file-based training lock to prevent concurrent training
+* [x] Model Backup System: Copy existing models to `ml/models/backup/` with timestamp before training, keep only last 2 backups
+* [x] Graduation Level Integration: Check graduation level using existing `ml.corrector._determine_graduation_level()`
+* [x] Unified Training Flow: Train main models (load/PV) using `ml.train.train_models()`, then error correction models using `ml.corrector.train()` only if Graduate level (14+ days)
+* [x] Detailed Status Return: Return status including which models were trained, errors, training duration, and partial failure handling
+* [x] Auto-restore on Failure: Restore from backup if training fails completely
 
 #### Phase 2: Database Schema & Tracking [PLANNED]
 * [ ] **Extend learning_runs Table:** Add migration with new columns:
@@ -283,3 +283,82 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [ ] **Backup Logging:** Log backup restore failures and continue with broken models
 
 ---
+
+## **REV // XX - BACKLOG TASK: Data Quality Spike Filtering** (Rewrite title!)
+
+### **Problem Statement**
+Home Assistant sensors occasionally report unrealistic spikes (e.g., 0W → 15,000W → 2,500W
+) that corrupt ML training data and forecasting accuracy. Need intelligent filtering to
+remove obvious sensor glitches while preserving legitimate rapid changes.
+
+### **Requirements**
+1. Filter obvious sensor spikes and glitches from HA data
+2. Preserve legitimate rapid changes (heat pump startup, etc.)
+3. Apply sensor-specific filtering rules based on physical limits
+4. Configurable filtering parameters per sensor type
+5. Minimal performance impact on data collection pipeline
+
+### **Proposed Solution**
+Implement hybrid filtering approach in inputs.py with:
+- Simple threshold filter for obvious spikes (>500% change)
+- Sensor-specific physical limits (min/max values)
+- Rate-of-change limits per sensor type
+- Configurable settings in config.yaml
+
+### **Implementation Plan**
+
+Task 1: Create Data Quality Filter Module
+- Add backend/data_quality/filters.py with filtering functions
+- Implement threshold, median, and rate-of-change filters
+- Add sensor-specific limit definitions
+- Demo: Filter functions remove spikes while preserving legitimate changes
+
+Task 2: Add Configuration Schema
+- Extend config.yaml with data_quality section
+- Define sensor limits for battery_soc, pv_power, load_power, grid_power, temperature
+- Add enable/disable toggle for filtering
+- Demo: Configurable filtering parameters per sensor type
+
+Task 3: Integrate Filtering in Data Pipeline
+- Modify inputs.py to apply filters after HA data collection
+- Add filtering to get_ha_sensor_data() function
+- Log filtering activity for monitoring
+- Demo: Sensor data cleaned before ML processing
+
+Task 4: Add Filtering Metrics
+- Track filtering statistics (spikes removed, data quality scores)
+- Add filtering metrics to health check script
+- Include data quality indicators in Aurora dashboard
+- Demo: Visibility into data quality and filtering effectiveness
+
+Task 5: Testing & Validation
+- Test with historical spike data
+- Validate ML model accuracy improvement
+- Ensure legitimate rapid changes preserved
+- Demo: Improved forecast accuracy with filtered data
+
+### **Configuration Example**
+yaml
+data_quality:
+  enable_filtering: true
+  sensor_limits:
+    battery_soc:
+      min: 0
+      max: 100
+      max_change_per_minute: 10
+    pv_power:
+      min: 0
+      max: 15000
+      max_change_per_minute: 5000
+    load_power:
+      min: 0
+      max: 20000
+      max_change_per_minute: 8000
+
+
+### **Success Criteria**
+1. ✅ Sensor spikes automatically filtered from data pipeline
+2. ✅ Legitimate rapid changes preserved (heat pump, EV charging)
+3. ✅ Configurable filtering per sensor type
+4. ✅ Improved ML model accuracy with cleaner training data
+5. ✅ Data quality metrics visible in monitoring
