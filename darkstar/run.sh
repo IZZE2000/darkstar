@@ -280,6 +280,29 @@ mkdir -p /share/darkstar
 ln -sf /share/darkstar /app/data
 
 # -----------------------------------------------------------------------------
+# DATABASE MIGRATION (ALEMBIC)
+# -----------------------------------------------------------------------------
+# Run Alembic migrations to ensure database schema is current.
+# This prevents "no such column" errors when upgrading to versions with new schema.
+log "Running database migrations..."
+export DB_PATH=/share/darkstar/planner_learning.db
+
+if [ -f /app/alembic.ini ]; then
+    # Run migration with proper error handling and logging
+    if /usr/local/bin/python3.12 -m alembic upgrade head 2>&1 | while read -r line; do log "[ALEMBIC] $line"; done; then
+        log "✅ Database migrations complete."
+    else
+        log "❌ ERROR: Database migration failed!"
+        log "Recovery: Check the logs above for detailed error information."
+        log "The container will now exit to prevent starting with an inconsistent database state."
+        exit 1
+    fi
+else
+    log "⚠️  WARNING: /app/alembic.ini not found, skipping database migrations."
+    log "HINT: This may cause errors if the database schema is outdated."
+fi
+
+# -----------------------------------------------------------------------------
 # LEGACY CODE DETECTION (REV ARC11)
 # -----------------------------------------------------------------------------
 # Ensure we aren't accidentally running old sync code after the ARC11 migration

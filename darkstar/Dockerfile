@@ -51,6 +51,10 @@ COPY config.default.yaml ./
 COPY secrets.example.yaml ./
 COPY VERSION ./
 
+# Copy Alembic migration files for automatic database schema updates
+COPY alembic.ini ./
+COPY alembic/ ./alembic/
+
 # Copy HA Add-on entrypoint (note: path from repo root context)
 COPY darkstar/run.sh /run.sh
 RUN chmod +x /run.sh
