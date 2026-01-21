@@ -247,11 +247,11 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] **UI Progress Indicators:** Show live progress spinner
 * [x] **Real-time Updates:** Update training history in real-time
 
-#### Phase 9: Config Migration & Validation [PLANNED]
+#### Phase 9: Config Migration & Validation [IN PROGRESS]
 * [ ] **Config Migration:** Update `backend/config_migration.py` to add default `ml_training` config if missing (keys exist in `config.default.yaml`)
 * [x] **Default Values:** Set defaults: `enabled: true`, `run_days: [1, 4]`, `run_time: "03:00"`
-* [ ] **Future Flexibility:** Add optional `error_correction_enabled: true` config key for future flexibility
-* [ ] **Migration Validation:** Validate config values during migration and log warnings for invalid values
+* [ ] **Future Flexibility:** Add `error_correction_enabled: true` config key for future flexibility
+* [ ] **Migration Validation:** Validate config values during migration and log warnings for invalid values (Is this already implemented?)
 
 #### Phase 10: Scheduler Status Integration [PLANNED]
 * [ ] **Extend Scheduler Status:** Extend `SchedulerStatus` dataclass to include training schedule info

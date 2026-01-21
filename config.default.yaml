@@ -136,6 +136,7 @@ automation:
     enabled: true                      # Enable automatic ML model retraining
     run_days: [1, 4]                   # Days of week to train (0=Mon, 6=Sun)
     run_time: "03:00"                  # Time of day to run training (HH:MM)
+    error_correction_enabled: true     # Enable training of error correction models (requires graduated models)
 
 # Learning Engine (Aurora Reflex)
 learning:
