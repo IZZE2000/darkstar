@@ -47,6 +47,15 @@ async def get_scheduler_status():
         "last_run_status": status.last_run_status,
         "last_error": status.last_error,
         "current_task": status.current_task,
+        # ARC11 Training Info
+        "training_enabled": status.training_enabled,
+        "next_training_at": status.next_training_at.isoformat()
+        if status.next_training_at
+        else None,
+        "last_training_at": status.last_training_at.isoformat()
+        if status.last_training_at
+        else None,
+        "last_training_status": status.last_training_status,
     }
 
 
