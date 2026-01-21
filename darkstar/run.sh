@@ -251,7 +251,7 @@ ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 prefix = f"[{ts}]"
 
 print(f"{prefix} ==========================================")
-print(f"{prefix}   Darkstar Energy Manager v2.5.2-beta")
+print(f"{prefix}   Darkstar Energy Manager v2.5.3-beta")
 print(f"{prefix} ==========================================")
 print(f"{prefix}   Timezone:      {config.get('timezone', 'Europe/Stockholm')}")
 print(f"{prefix}   Log Level:     {os.environ.get('LOG_LEVEL', 'info')}")

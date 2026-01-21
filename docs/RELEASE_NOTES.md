@@ -1,3 +1,31 @@
+## [v2.5.3-beta] - Critical Migration Hotfix - 2026-01-21
+
+> [!CAUTION]
+> **CRITICAL HOTFIX FOR v2.5.2-beta USERS**
+> If you upgraded to v2.5.2-beta as a Home Assistant add-on and experienced database errors
+> (`no such column: slot_forecasts.base_load_forecast_kwh`), this release fixes the issue.
+> Your system will automatically migrate on first startup.
+
+**🐛 Critical Fix**
+
+- **HA Add-on Database Migration**: Fixed complete system failure for Home Assistant add-on users upgrading to v2.5.2-beta. The HA add-on startup script now automatically runs Alembic database migrations before starting the server, preventing "no such column" errors when new schema features are added.
+
+**Technical Details**
+
+- Added automatic database schema migration to `darkstar/run.sh` (HA add-on entrypoint)
+- Migration runs after config setup but before uvicorn startup
+- Idempotent and safe - preserves all existing data
+- Fresh installations create database with full schema
+- Already-migrated databases skip gracefully (~0.1s overhead)
+
+**What to Expect**
+
+- **First startup after upgrade**: Migration runs in ~0.5-2 seconds
+- **Subsequent startups**: Migration is skipped (database already current)
+- **New installations**: Fresh database created with correct schema
+
+---
+
 ## [v2.5.2-beta] - ML Model Training Complete - 2026-01-21
 
 **Core Features**
