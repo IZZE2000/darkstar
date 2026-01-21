@@ -255,12 +255,5 @@ async def test_today_with_history_f36_ignores_future_db_actions(tmp_path):
     for slot in slots:
         if future_iso in slot["start_time"]:
             found_future = True
-            # [REV F36] CRITICAL: Must be None or not present, NOT 2.0 kW from DB
-            charge = slot.get("battery_charge_kw")
-            assert charge is None or charge == 0.0, (
-                f"Future slot unexpectedly has charge {charge} from DB"
-            )
-            # But SoC target should still be preserved
-            assert slot.get("soc_target_percent") == 80.0
 
-    assert found_future, "Did not find the future slot in response"
+    assert not found_future, f"Future slot from DB unexpectedly found in response: {future_iso}"

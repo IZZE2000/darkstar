@@ -283,7 +283,9 @@ async def schedule_today_with_history(
         logger.warning(f"Failed to load planned map: {e}")
 
     # 5. Merge
-    all_keys = sorted(set(schedule_map.keys()) | set(exec_map.keys()) | set(planned_map.keys()))
+    # [REV F36] Only include historical planned_map keys, not future ones
+    historical_planned_keys = {k for k in planned_map if k < now_naive}
+    all_keys = sorted(set(schedule_map.keys()) | set(exec_map.keys()) | historical_planned_keys)
     merged_slots: list[dict[str, Any]] = []
 
     for key in all_keys:
@@ -364,6 +366,34 @@ async def schedule_today_with_history(
     logger.info(
         f"Returning {len(merged_slots)} slots, {historical_with_planned} historical with planned actions"
     )
+
+    # 6. Price Overlay (Ensure future prices are visible even if schedule.json missing them)
+    try:
+        price_slots = await get_nordpool_data("config.yaml")
+        price_map_overlay: dict[datetime, float] = {}
+        for p in price_slots:
+            st = p["start_time"]
+            local_naive = st if st.tzinfo is None else st.astimezone(tz).replace(tzinfo=None)
+            price_map_overlay[local_naive] = float(p.get("import_price_sek_kwh") or 0.0)
+
+        for slot in merged_slots:
+            if "import_price_sek_kwh" not in slot or slot.get("import_price_sek_kwh") is None:
+                try:
+                    start_str = slot.get("start_time")
+                    if start_str:
+                        start = datetime.fromisoformat(str(start_str).replace("Z", "+00:00"))
+                        local_naive = (
+                            start
+                            if start.tzinfo is None
+                            else start.astimezone(tz).replace(tzinfo=None)
+                        )
+                        price = price_map_overlay.get(local_naive)
+                        if price is not None:
+                            slot["import_price_sek_kwh"] = round(price, 4)
+                except Exception:
+                    pass
+    except Exception as exc:
+        logger.warning("Price overlay unavailable in today_with_history: %s", exc)
 
     result_data = {"date": today_local.isoformat(), "slots": merged_slots}
     return cast("dict[str, Any]", _clean_nans(result_data))
