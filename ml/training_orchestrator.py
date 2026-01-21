@@ -154,18 +154,22 @@ async def train_all_models(
     store = engine.store
 
     # Notify start
+    logger.info(f"[ML-TRAIN] Starting unified training pipeline (Type: {training_type.upper()})")
     await ws_manager.emit(
         "training_progress",
         {
             "type": "training_progress",
             "status": "busy",
             "stage": "starting",
-            "message": "Initializing training...",
+            "message": f"Initializing {training_type} training...",
             "progress": 0.05,
         },
     )
 
     if not _acquire_lock():
+        logger.warning(
+            f"[ML-TRAIN] Training skipped: Another instance is running (Type: {training_type})"
+        )
         await ws_manager.emit(
             "training_progress",
             {
@@ -193,9 +197,10 @@ async def train_all_models(
     try:
         # 1. Backup
         _backup_models()
+        logger.info("[ML-TRAIN] Model backup completed")
 
         # 2. Train Main Models (AURORA)
-        logger.info("Starting Main Model training...")
+        logger.info("[ML-TRAIN] Step 1/2: Training Main Models (AURORA)...")
         await ws_manager.emit(
             "training_progress",
             {
@@ -215,18 +220,22 @@ async def train_all_models(
         results["trained_models"] = [f.name for f in main_models]
 
         if not main_models:
-            logger.warning("Main model training did not produce any models.")
+            logger.warning("[ML-TRAIN] Main model training did not produce any models.")
+        else:
+            logger.info(f"[ML-TRAIN] Main models trained: {len(main_models)} found")
 
         # 3. Train Corrector Models (if graduate AND enabled)
         level = _determine_graduation_level(engine)
-        logger.info(f"Current graduation level: {level.label} (days: {level.days_of_data})")
+        logger.info(
+            f"[ML-TRAIN] Graduation Status: {level.label.upper()} (Data: {level.days_of_data:.1f} days)"
+        )
 
         # ARC11 Fix: Check if error correction is enabled in config
         config = _load_config()
         error_correction_enabled = config.get("learning", {}).get("error_correction_enabled", True)
 
         if level.level >= 2 and error_correction_enabled:
-            logger.info("Starting Corrector training...")
+            logger.info("[ML-TRAIN] Step 2/2: Training Corrector Models...")
             await ws_manager.emit(
                 "training_progress",
                 {
@@ -243,10 +252,19 @@ async def train_all_models(
             results["corrector_status"] = corr_res
             if corr_res.get("status") == "trained":
                 results["trained_models"].extend(corr_res.get("models_trained", []))
+                logger.info(
+                    f"[ML-TRAIN] Corrector training successful. Models: {corr_res.get('models_trained', [])}"
+                )
+            else:
+                logger.warning(f"[ML-TRAIN] Corrector training info: {corr_res.get('status')}")
+
         elif level.level >= 2 and not error_correction_enabled:
-            logger.info("Corrector training skipped (disabled in config)")
+            logger.info("[ML-TRAIN] Corrector training SKIPPED: Disabled in config")
             results["corrector_status"] = {"status": "disabled", "reason": "disabled in config"}
         else:
+            logger.info(
+                f"[ML-TRAIN] Corrector training SKIPPED: Insufficient graduation level (Need >= Graduate, have {level.label})"
+            )
             results["corrector_status"] = {
                 "status": "skipped",
                 "reason": f"insufficient data (level: {level.label}, days: {level.days_of_data})",

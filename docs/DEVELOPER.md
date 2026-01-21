@@ -107,6 +107,15 @@ Darkstar uses SQLite (`data/planner_learning.db`) managed via **SQLAlchemy ORM**
 - **Profile:** Run `python scripts/profile_db.py` to analyze table sizes and performance.
 - **Planner Profile:** Run `python scripts/profile_planner.py` to benchmark the planner pipeline.
 
+### Manual ML Training
+You can manually trigger training using the script:
+```bash
+python scripts/train_corrector.py [--force]
+```
+- **Standard Run**: Respects graduation level logic (needs 14 days of data).
+- **Force Run** (`--force`): Bypasses checks and trains models immediately (useful for testing).
+
+
 For a deep dive into the solver logic, see [architecture.md](architecture.md).
 
 ### Configuration & Migrations
@@ -144,6 +153,17 @@ System parameters are defined in `config.yaml`. Credentials live in `secrets.yam
 *   **System**: Battery capacity (kWh), Max Charge/Discharge (kW), Inverter Efficiency.
 *   **Automation**: Configure the internal scheduler interval (e.g., `every_minutes: 60`).
 *   **Aurora**: Toggle ML forecasting (`active_forecast_version`).
+    *   **ML Training**: Configure the automatic training schedule.
+        ```yaml
+        automation:
+          ml_training:
+            enabled: true
+            run_days: [1, 4]  # 0=Monday, 6=Sunday. Default: Tue, Fri
+            run_time: "03:00" # Local time (24h format)
+        ```
+        *   **Automatic Training**: Retrains the model periodically (default: twice a week).
+        *   **Training Lock**: Uses a lock file (`ml/models/.training.lock`) to prevent concurrent runs.
+        *   **Error Correction**: Automatically trains "Correction Models" if the system has enough data ("Graduate" level, >14 days).
 *   **Advanced Parameters**:
     *   **Charging Strategy**: `price_smoothing_sek_kwh` (hysteresis), `block_consolidation_tolerance` (merging adjacent slots), `gap_allowance`.
     *   **Export Controls**: `export_percentile_threshold` (peak-only export), `export_profit_margin_sek`, `export_future_price_guard`, `future_price_guard_buffer_sek`, and `protective_soc_strategy` (`gap_based` vs `fixed_protective_soc_percent`).
