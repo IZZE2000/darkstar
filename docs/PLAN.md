@@ -193,24 +193,24 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] Detailed Status Return: Return status including which models were trained, errors, training duration, and partial failure handling
 * [x] Auto-restore on Failure: Restore from backup if training fails completely
 
-#### Phase 2: Database Schema & Tracking [PLANNED]
-* [ ] **Extend learning_runs Table:** Add migration with new columns:
+#### Phase 2: Database Schema & Tracking [DONE]
+* [x] **Extend learning_runs Table:** Add migration with new columns:
   * `training_type` VARCHAR ("automatic", "manual")
   * `models_trained` TEXT (JSON array of trained model types)
   * `training_duration_seconds` INTEGER
   * `partial_failure` BOOLEAN (true if some models failed)
-* [ ] **Training History Cleanup:** Add cleanup job to keep only last 30 days of training records
-* [ ] **Update Learning Queries:** Modify existing learning history queries to include new training fields
+* [x] **Training History Cleanup:** Add cleanup job to keep only last 30 days of training records
+* [x] **Update Learning Queries:** Modify existing learning history queries to include new training fields
 
-#### Phase 3: Automatic Training Implementation [PLANNED]
-* [ ] **Scheduler Service Integration:** Modify `backend/services/scheduler_service.py` to add ML training logic to `_loop()` method
-* [ ] **Training Schedule Logic:** Add `_should_run_training()` method to check schedule based on `config.ml_training` section
-* [ ] **Config Validation:** Validate `run_days` (0-6) and `run_time` (HH:MM format), log warnings and use defaults for invalid values
-* [ ] **Training Execution:** Add `_run_ml_training()` method that calls unified training orchestrator
-* [ ] **Timezone Handling:** Use local timezone for `run_time` parsing and comparison
-* [ ] **Task Status Tracking:** Set `current_task = "ml_training"` during training execution
-* [ ] **Retry Logic:** Add retry logic (2 attempts) for failed automatic training with exponential backoff
-* [ ] **Training Logging:** Log training trigger reason ("automatic_schedule") and detailed results
+#### Phase 3: Automatic Training Implementation [DONE]
+* [x] **Scheduler Service Integration:** Modify `backend/services/scheduler_service.py` to add ML training logic to `_loop()` method
+* [x] **Training Schedule Logic:** Add `_should_run_training()` method to check schedule based on `config.ml_training` section
+* [x] **Config Validation:** Validate `run_days` (0-6) and `run_time` (HH:MM format), log warnings and use defaults for invalid values
+* [x] **Training Execution:** Add `_run_ml_training()` method that calls unified training orchestrator
+* [x] **Timezone Handling:** Use local timezone for `run_time` parsing and comparison
+* [x] **Task Status Tracking:** Set `current_task = "ml_training"` during training execution
+* [x] **Retry Logic:** Add retry logic (2 attempts) for failed automatic training with exponential backoff
+* [x] **Training Logging:** Log training trigger reason ("automatic_schedule") and detailed results
 
 #### Phase 4: Manual Training API Updates [PLANNED]
 * [ ] **Update Training Endpoint:** Modify `/api/learning/train` in `backend/api/routers/learning.py`

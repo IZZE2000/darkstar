@@ -86,14 +86,14 @@ async def learning_history(limit: int = Query(20, ge=1, le=100)) -> dict[str, An
     summary="Trigger ML Training",
     description="Trigger manual ML model retraining now.",
 )
-async def learning_train() -> dict[str, str]:
-    """Trigger ML model retraining manually."""
+async def learning_train() -> dict[str, Any]:
+    """Trigger ML model retraining manually using the unified orchestrator."""
     try:
-        from ml.train import train_models
+        from ml.training_orchestrator import train_all_models
 
-        # Offload to thread since train_models is heavy/sync
-        await asyncio.to_thread(train_models)
-        return {"status": "success", "message": "ML models retrained successfully"}
+        # train_all_models is async and handles locking/logging
+        result = await train_all_models(training_type="manual")
+        return result
     except Exception as e:
         logger.exception("Failed to train models")
         raise HTTPException(status_code=500, detail=str(e)) from e
@@ -101,36 +101,33 @@ async def learning_train() -> dict[str, str]:
 
 @router.post(
     "/api/learning/run",
-    summary="Trigger Learning Run",
-    description="Trigger learning orchestration manually.",
+    summary="Trigger Learning Run (Full)",
+    description="Trigger full learning suite (Reflex + Training).",
 )
 async def learning_run() -> dict[str, Any]:
-    """Trigger learning orchestration manually."""
+    """Trigger full learning run (Sync Reflex + Async Training)."""
     try:
         from backend.learning.reflex import AuroraReflex
-        from ml.train import train_models
+        from ml.training_orchestrator import train_all_models
 
-        # NOTE: Reflex and ML Training are CPU-intensive and sync.
-        # We still use to_thread for these.
-        def _run_heavy_tasks():
-            # Run Reflex
+        # Reflex is still sync
+        def _run_reflex():
             reflex = AuroraReflex()
-            report = reflex.run(dry_run=False)
+            return reflex.run(dry_run=False)
 
-            # Run Training
-            train_models(days_back=90, min_samples=100)
-            return report
+        reflex_report = await asyncio.to_thread(_run_reflex)
 
-        # Offload to thread to avoid blocking event loop
-        reflex_report = await asyncio.to_thread(_run_heavy_tasks)
+        # Training is async
+        training_result = await train_all_models(training_type="manual")
 
         return {
             "status": "success",
             "reflex_report": reflex_report,
-            "message": "Learning run completed (Reflex + Train)",
+            "training_result": training_result,
+            "message": "Full learning run completed ",
         }
     except Exception as e:
-        logger.exception("Failed to run learning")
+        logger.exception("Failed to run full learning cycle")
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 

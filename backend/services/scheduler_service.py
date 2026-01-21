@@ -33,6 +33,12 @@ class SchedulerStatus:
     last_error: str | None = None
     current_task: str = "idle"  # "idle", "planning", "ml_training"
 
+    # ARC11: ML Training Status
+    training_enabled: bool = False
+    last_training_at: datetime | None = None
+    next_training_at: datetime | None = None
+    last_training_status: str | None = None
+
 
 class SchedulerService:
     """Async scheduler service running as FastAPI background task."""
@@ -93,6 +99,11 @@ class SchedulerService:
             # Run 10 seconds after startup instead of waiting full interval
             self._status.next_run_at = datetime.now(UTC) + timedelta(seconds=10)
 
+        # Initial training schedule
+        self._status.training_enabled = config.get("ml_training", {}).get("enabled", False)
+        if self._status.training_enabled:
+            self._status.next_training_at = self._compute_next_training(config["ml_training"])
+
         while self._running:
             try:
                 await asyncio.sleep(30)  # Check every 30 seconds
@@ -100,14 +111,23 @@ class SchedulerService:
                 # Reload config (allows live enable/disable)
                 config = self._load_config()
                 self._status.enabled = config.get("enabled", False)
+                self._status.training_enabled = config.get("ml_training", {}).get("enabled", False)
 
-                if not self._status.enabled:
-                    continue
+                # Check Planning
+                if self._status.enabled:
+                    now = datetime.now(UTC)
+                    if self._status.next_run_at and now >= self._status.next_run_at:
+                        await self._run_scheduled(config)
 
-                # Check if it's time to run
-                now = datetime.now(UTC)
-                if self._status.next_run_at and now >= self._status.next_run_at:
-                    await self._run_scheduled(config)
+                # Check Training (ARC11)
+                if self._status.training_enabled:
+                    now = datetime.now(UTC)
+                    if (
+                        self._status.next_training_at
+                        and now >= self._status.next_training_at
+                        and self._status.current_task == "idle"
+                    ):
+                        await self._run_ml_training(config["ml_training"])
 
             except asyncio.CancelledError:
                 logger.info("Scheduler loop cancelled")
@@ -162,6 +182,92 @@ class SchedulerService:
         self._status.last_run_status = "success" if result.success else "error"
         self._status.last_error = result.error
 
+    async def _run_ml_training(self, config: dict[str, Any]) -> None:
+        """Execute a scheduled ML training run (ARC11) with retry logic."""
+        from ml.training_orchestrator import train_all_models
+
+        self._status.current_task = "ml_training"
+        logger.info("Starting automatic ML training...")
+
+        max_attempts = 2
+        for attempt in range(1, max_attempts + 1):
+            try:
+                result = await train_all_models(training_type="automatic")
+                self._status.last_training_at = datetime.now(UTC)
+                self._status.last_training_status = result.get("status", "unknown")
+
+                if result.get("status") == "error":
+                    error_msg = result.get("error", "Unknown error")
+                    if attempt < max_attempts:
+                        logger.warning(
+                            f"Automatic training failed (attempt {attempt}/{max_attempts}): {error_msg}. Retrying in 5 min..."
+                        )
+                        await asyncio.sleep(300)
+                        continue
+                    else:
+                        logger.error(
+                            f"Automatic training failed after {max_attempts} attempts: {error_msg}"
+                        )
+                else:
+                    logger.info(f"Automatic training completed: {result.get('status')}")
+                    break
+
+            except Exception as e:
+                if attempt < max_attempts:
+                    logger.warning(
+                        f"Error during automatic ML training (attempt {attempt}/{max_attempts}): {e}. Retrying in 5 min..."
+                    )
+                    await asyncio.sleep(300)
+                else:
+                    logger.exception(
+                        f"Critical error during automatic ML training after {max_attempts} attempts: {e}"
+                    )
+                    self._status.last_training_status = "error"
+
+        self._status.current_task = "idle"
+        # Schedule next run regardless of success/failure (don't get stuck)
+        self._status.next_training_at = self._compute_next_training(config)
+
+    def _compute_next_training(self, config: dict[str, Any]) -> datetime:
+        """Calculate next training date based on run_days and run_time."""
+        import pytz
+
+        try:
+            # Load timezone from global config or default
+            with Path("config.yaml").open() as f:
+                glob_cfg = yaml.safe_load(f) or {}
+            tz_str = glob_cfg.get("timezone", "Europe/Stockholm")
+            tz = pytz.timezone(tz_str)
+
+            run_days = config.get("run_days", [1, 4])
+            run_time_str = config.get("run_time", "03:00")
+            hour, minute = map(int, run_time_str.split(":"))
+
+            now_local = datetime.now(tz)
+
+            # Try to find the next occurrence
+            days_checked = 0
+            check_date = now_local.replace(hour=hour, minute=minute, second=0, microsecond=0)
+
+            # If today matches but run_time has passed, start checking from tomorrow
+            if check_date <= now_local:
+                check_date += timedelta(days=1)
+                days_checked = 1
+
+            while days_checked < 8:
+                if check_date.weekday() in run_days:
+                    # Convert back to UTC for internal storage
+                    return check_date.astimezone(pytz.UTC)
+                check_date += timedelta(days=1)
+                days_checked += 1
+
+            # Fallback (should not happen with valid run_days)
+            return now_local.astimezone(pytz.UTC) + timedelta(days=1)
+
+        except Exception as e:
+            logger.error(f"Failed to compute next training time: {e}")
+            return datetime.now(UTC) + timedelta(days=1)
+
     def _compute_next_run(
         self, from_time: datetime, every_minutes: int, jitter_minutes: int
     ) -> datetime:
@@ -185,10 +291,16 @@ class SchedulerService:
                 "enabled": bool(automation.get("enable_scheduler", False)),
                 "every_minutes": int(schedule.get("every_minutes", 60)),
                 "jitter_minutes": int(schedule.get("jitter_minutes", 0)),
+                "ml_training": automation.get("ml_training", {}),
             }
         except Exception as e:
             logger.warning(f"Failed to load scheduler config: {e}")
-            return {"enabled": False, "every_minutes": 60, "jitter_minutes": 0}
+            return {
+                "enabled": False,
+                "every_minutes": 60,
+                "jitter_minutes": 0,
+                "ml_training": {"enabled": False},
+            }
 
 
 # Global singleton
