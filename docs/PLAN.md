@@ -324,7 +324,7 @@ The 24h/48h toggle is causing chart rendering issues where battery actions disap
 
 ---
 
-### [PLANNED] REV // F36 — Fix Future Actions Data Source (Schedule.json vs Database)
+### [DONE] REV // F36 — Fix Future Actions Data Source (Schedule.json vs Database)
 
 **Goal:** Fix missing future battery actions by ensuring they come from schedule.json only, not stale database data, with proper time-based splitting at "now" marker.
 
@@ -343,23 +343,23 @@ Root cause identified: `/api/schedule/today_with_history` loads future battery a
 * [x] Keep price and forecast data sources unchanged (Nordpool cache + DB forecasts)
 * [x] **Verification**: Future actions come from schedule.json, historical from database
 
-#### Phase 2: Preserve Non-Action Data [PLANNED]
-* [ ] Ensure price data (Nordpool cache) continues working for both past and future
-* [ ] Ensure forecast data (pv_forecast_kwh, load_forecast_kwh) continues from database
-* [ ] Ensure SoC targets and projections work correctly across time split
-* [ ] Keep historical overlays (actual_pv_kwh, actual_load_kwh) from database
-* [ ] **Verification**: Only battery actions split by time, other data sources unchanged
+#### Phase 2: Preserve Non-Action Data [DONE]
+* [x] Ensure price data (Nordpool cache) continues working for both past and future
+* [x] Ensure forecast data (pv_forecast_kwh, load_forecast_kwh) continues from database
+* [x] Ensure SoC targets and projections work correctly across time split
+* [x] Keep historical overlays (actual_pv_kwh, actual_load_kwh) from database
+* [x] **Verification**: Only battery actions split by time, other data sources unchanged
 
-#### Phase 3: Frontend Validation [PLANNED]
-* [ ] Test that future actions are immediately visible and stable
-* [ ] Verify historical actions show when available in database
-* [ ] Confirm "now" marker correctly separates data sources
-* [ ] Test that missing schedule.json shows as missing future actions (desired behavior)
-* [ ] **Verification**: Chart shows live future actions from schedule.json, historical from DB
+#### Phase 3: Frontend Validation [DONE]
+* [x] Test that future actions are immediately visible and stable
+* [x] Verify historical actions show when available in database
+* [x] Confirm "now" marker correctly separates data sources
+* [x] Test that missing schedule.json shows as missing future actions (desired behavior)
+* [x] **Verification**: Chart shows live future actions from schedule.json, historical from DB
 
-#### Phase 4: Edge Case Handling [PLANNED]
-* [ ] Handle missing schedule.json gracefully (show empty future actions)
-* [ ] Handle timezone edge cases around "now" marker calculation
-* [ ] Ensure proper error handling when database history unavailable
-* [ ] Add logging to distinguish data source for debugging
-* [ ] **Verification**: Robust handling of missing data sources, clear debugging info
+#### Phase 4: Edge Case Handling [DONE]
+* [x] Handle missing schedule.json gracefully (show empty future actions)
+* [x] Handle timezone edge cases around "now" marker calculation
+* [x] Ensure proper error handling when database history unavailable
+* [x] Add logging to distinguish data source for debugging
+* [x] **Verification**: Robust handling of missing data sources, clear debugging info
