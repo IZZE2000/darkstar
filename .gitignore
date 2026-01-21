@@ -58,7 +58,7 @@ data/cache/
 /yaml
 
 # Performance Reports
-tests/performance/reports/performance_*.json
+tests/performance/reports/
 
 
 # OS
