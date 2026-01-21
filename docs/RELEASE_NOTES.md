@@ -1,3 +1,19 @@
+## [v2.5.2-beta] - ML Model Training Complete - 2026-01-21
+
+**Core Features**
+*   **Automatic ML Training (REV ARC11)**: The system now autonomously trains and updates both Main and Error Correction models based on a configurable schedule (default: Mon/Thu at 03:00).
+*   **Training Orchestrator**: A unified engine (`training_orchestrator.py`) handles model lifecycle, including safety backups, graduation level checks, and partial failure recovery.
+*   **Training UI**: New `ModelTrainingCard` provides real-time visibility into training status, history, and schedule.
+*   **Corrector Training**: Integrated flow to train error correction models (requires "Graduate" maturity level).
+
+**Fixes & Improvements**
+*   **Chart Reliability**: Fixed history data merging and implemented smart auto-scaling that dynamically adjusts the chart window (24h vs 48h) based on available price data. Fixed timezone display issues.
+*   **DevEx**: Performance reports are now correctly ignored in git to preventing repo bloat. Enforced ISO 24h date formats in UI.
+*   **CI/CD**: Fixed frontend linting and backend test configuration.
+*   **Documentation**: Updated docs with ARC11 completion.
+
+---
+
 ## [v2.5.1-beta] - Recorder & Data Integrity Fixes - 2026-01-20
 
 This maintenance release focuses on resolving critical data integrity issues in the
