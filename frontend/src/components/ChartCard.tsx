@@ -1082,6 +1082,15 @@ export default function ChartCard({
                     chartRef.current.data = liveData
                     chartRef.current.update()
 
+                    const actualDataset = chartRef.current?.data?.datasets?.[4]
+                    console.log('[POST-UPDATE DEBUG]', {
+                        datasetExists: !!actualDataset,
+                        datasetHidden: actualDataset?.hidden,
+                        datasetLabel: actualDataset?.label,
+                        datasetDataLength: actualDataset?.data?.length,
+                        chartUpdateCalled: true,
+                    })
+
                     console.log('[CHART CONFIG DEBUG]', {
                         yAxisVisible: chartRef.current?.scales?.y1?.options?.display,
                         datasetVisible: chartRef.current?.data?.datasets?.[4]?.hidden,
