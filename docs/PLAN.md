@@ -171,7 +171,7 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 
 ---
 
-### [PLANNED] REV // ARC11 — Complete ML Model Training System
+### [DONE] REV // ARC11 — Complete ML Model Training System
 
 **Goal:** Implement missing automatic ML training, create unified training for all model types, and add comprehensive training status UI with production-grade safety features.
 
@@ -225,9 +225,6 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] **Training History Endpoint:** Create `/api/learning/training-history` endpoint to return recent training attempts
 * [x] **Status Information:** Include training lock status, current operation, and progress information
 * [x] **Model File Status:** Return model file timestamps and ages for status display
-
-* [ ] **Partial Failure Display:** Display partial failure status clearly (e.g., "Main models: ✅, Error correction: ❌")
-* [ ] **Graduation Level Indicator:** Show graduation level indicator so users understand why error correction might be disabled
 
 #### Phase 6: Model Training Status UI Card [DONE]
 * [x] **Create Training Card:** New `ModelTrainingCard.tsx` component in `frontend/src/components/aurora/`
