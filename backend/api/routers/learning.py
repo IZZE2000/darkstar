@@ -1,4 +1,3 @@
-import asyncio
 import json
 import logging
 from typing import TYPE_CHECKING, Any, cast
@@ -91,9 +90,17 @@ async def learning_train() -> dict[str, Any]:
     try:
         from ml.training_orchestrator import train_all_models
 
+        logger.info("Manual training triggered via API")
+
         # train_all_models is async and handles locking/logging
         result = await train_all_models(training_type="manual")
+
+        if result.get("status") == "busy":
+            raise HTTPException(status_code=409, detail="Training already in progress")
+
         return result
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception("Failed to train models")
         raise HTTPException(status_code=500, detail=str(e)) from e
@@ -110,12 +117,9 @@ async def learning_run() -> dict[str, Any]:
         from backend.learning.reflex import AuroraReflex
         from ml.training_orchestrator import train_all_models
 
-        # Reflex is still sync
-        def _run_reflex():
-            reflex = AuroraReflex()
-            return reflex.run(dry_run=False)
+        logger.info("Full learning run triggered via API")
 
-        reflex_report = await asyncio.to_thread(_run_reflex)
+        reflex_report = await AuroraReflex().run(dry_run=False)
 
         # Training is async
         training_result = await train_all_models(training_type="manual")

@@ -212,13 +212,13 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] **Retry Logic:** Add retry logic (2 attempts) for failed automatic training with exponential backoff
 * [x] **Training Logging:** Log training trigger reason ("automatic_schedule") and detailed results
 
-#### Phase 4: Manual Training API Updates [PLANNED]
-* [ ] **Update Training Endpoint:** Modify `/api/learning/train` in `backend/api/routers/learning.py`
-* [ ] **Unified Training Call:** Replace `ml.train.train_models()` call with new unified `train_all_models()`
-* [ ] **Concurrency Control:** Check training lock and return appropriate status if training already in progress
-* [ ] **Detailed Response:** Return detailed status including individual model training results and duration
-* [ ] **Error Handling:** Add proper error handling for partial failures
-* [ ] **Manual Training Logging:** Log training trigger reason ("manual") and results
+#### Phase 4: Manual Training API Updates [DONE]
+* [x] **Update Training Endpoint:** Modify `/api/learning/train` in `backend/api/routers/learning.py`
+* [x] **Unified Training Call:** Replace `ml.train.train_models()` call with new unified `train_all_models()`
+* [x] **Concurrency Control:** Check training lock and return appropriate status if training already in progress
+* [x] **Detailed Response:** Return detailed status including individual model training results and duration
+* [x] **Error Handling:** Add proper error handling for partial failures
+* [x] **Manual Training Logging:** Log training trigger reason ("manual") and results
 
 #### Phase 5: Training Status APIs [PLANNED]
 * [ ] **Training Status Endpoint:** Create `/api/learning/training-status` endpoint to return current training state
