@@ -38,7 +38,8 @@ COPY planner/ ./planner/
 COPY executor/ ./executor/
 COPY bin/ ./bin/
 COPY ml/*.py ./ml/
-COPY ml/models/*.lgb ./ml/models/
+# Models are generated at runtime (Clean Slate strategy)
+RUN mkdir -p ml/models
 COPY inputs.py ./
 
 # Copy frontend source and build (AFTER copying backend to avoid overwriting static assets)
