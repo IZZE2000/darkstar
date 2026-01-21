@@ -145,6 +145,8 @@ async def schedule_today_with_history(
         config = {}
 
     today_local = datetime.now(tz).date()
+    now = datetime.now(tz)
+    now_naive = now.replace(tzinfo=None)
 
     # 1. Load schedule.json
     schedule_map: dict[datetime, dict[str, Any]] = {}
@@ -326,17 +328,31 @@ async def schedule_today_with_history(
         # Attach planned actions from slot_plans database (Historical Overlay)
         if key in planned_map:
             p = planned_map[key]
-            # Only add if not already present from schedule.json (schedule.json takes priority for future)
-            if "battery_charge_kw" not in slot or slot.get("battery_charge_kw") is None:
-                slot["battery_charge_kw"] = p["battery_charge_kw"]
-            if "battery_discharge_kw" not in slot or slot.get("battery_discharge_kw") is None:
-                slot["battery_discharge_kw"] = p["battery_discharge_kw"]
-            if "soc_target_percent" not in slot or slot.get("soc_target_percent") is None:
-                slot["soc_target_percent"] = p["soc_target_percent"]
-            if "export_kwh" not in slot or slot.get("export_kwh") is None:
-                slot["export_kwh"] = p.get("export_kwh", 0.0)
-            if "water_heating_kw" not in slot or slot.get("water_heating_kw") is None:
-                slot["water_heating_kw"] = p.get("water_heating_kw", 0.0)
+            # [REV F36] Only source battery actions from DB for historical slots.
+            # Future slots (>= now) MUST come from schedule.json only to avoid stale DB data.
+            is_future = key >= now_naive
+
+            if not is_future:
+                # Historical: Add from DB if missing (though schedule_today_with_history prioritizes schedule.json)
+                if "battery_charge_kw" not in slot or slot.get("battery_charge_kw") is None:
+                    slot["battery_charge_kw"] = p["battery_charge_kw"]
+                if "battery_discharge_kw" not in slot or slot.get("battery_discharge_kw") is None:
+                    slot["battery_discharge_kw"] = p["battery_discharge_kw"]
+                if "soc_target_percent" not in slot or slot.get("soc_target_percent") is None:
+                    slot["soc_target_percent"] = p["soc_target_percent"]
+                if "export_kwh" not in slot or slot.get("export_kwh") is None:
+                    slot["export_kwh"] = p.get("export_kwh", 0.0)
+                if "water_heating_kw" not in slot or slot.get("water_heating_kw") is None:
+                    slot["water_heating_kw"] = p.get("water_heating_kw", 0.0)
+            else:
+                # Future: Only take non-action data from planned_map if not in slot
+                # (Actually, for future, schedule.json should really have everything, but we can preserve
+                # SoC target if it's missing for some reason, though schedule.json should be the master).
+                # To fix F36, we EXPLICITLY do NOT pull battery_charge_kw / battery_discharge_kw from DB for future.
+                if "soc_target_percent" not in slot or slot.get("soc_target_percent") is None:
+                    slot["soc_target_percent"] = p["soc_target_percent"]
+                if "water_heating_kw" not in slot or slot.get("water_heating_kw") is None:
+                    slot["water_heating_kw"] = p.get("water_heating_kw", 0.0)
 
         merged_slots.append(slot)
 
