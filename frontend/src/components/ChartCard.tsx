@@ -1337,6 +1337,26 @@ function buildLiveData(
         const bucketEnd = new Date(bucketStart.getTime() + stepMs)
         const slot = slotByTime.get(bucketStart.getTime())
 
+        // DEBUG: Check if we are finding the slot for the expected action time (approx 14:45)
+        if (!slot && bucketStart.getHours() === 14 && bucketStart.getMinutes() === 45) {
+            console.log('[BUILDLIVEDATA DEBUG] 14:45 slot MISSING from map', {
+                bucketStart: bucketStart.getTime(),
+                bucketISO: bucketStart.toISOString(),
+                mapKeys: Array.from(slotByTime.keys()).slice(0, 5), // First 5 keys
+                hasExactMatch: slotByTime.has(bucketStart.getTime())
+            });
+        }
+        if (slot) {
+            if ((slot.battery_discharge_kw ?? 0) > 0) {
+                console.log('[BUILDLIVEDATA DEBUG] Found DISCHARGE slot', {
+                    time: slot.start_time,
+                    val: slot.battery_discharge_kw,
+                    bucket: bucketStart.toISOString(),
+                    index: i
+                });
+            }
+        }
+
         labels.push(formatHour(bucketStart.toISOString()))
 
         if (slot) {
