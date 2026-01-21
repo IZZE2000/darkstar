@@ -15,7 +15,7 @@ ChartJS.register(zoomPlugin)
 import { sampleChart } from '../lib/sample'
 import { Api } from '../lib/api'
 import type { ScheduleSlot } from '../lib/types'
-import { filterSlotsByDay, formatHour, DaySel, isToday, isTomorrow } from '../lib/time'
+import { formatHour, DaySel, isToday, isTomorrow } from '../lib/time'
 // Note: We use a custom plugin for the NOW marker to support zooming.
 // CSS overlays don't work well with pan/zoom.
 
@@ -724,8 +724,6 @@ const glowPlugin: Plugin = {
 
 // Chart configuration helpers removed and consolidated into applyData
 
-type ChartRange = 'day' | '48h'
-
 type ChartCardProps = {
     day?: DaySel
     refreshToken?: number
@@ -985,11 +983,18 @@ export default function ChartCard({
     }
 
     useEffect(() => {
+        console.log('[ChartCard DEBUG] useEffect triggered', {
+            currentDay,
+            refreshToken,
+            slotsOverrideLength: slotsOverride?.length,
+            useHistoryForToday,
+            themeColorsStatus: Object.keys(themeColors).length > 0 ? 'loaded' : 'missing',
+        })
         const chartInstance = chartRef.current
         if (!isChartUsable(chartInstance) || Object.keys(themeColors).length === 0) return
         const applyData = (slots: ScheduleSlot[]) => {
             if (!isChartUsable(chartRef.current)) return
-            const liveData = buildLiveData(slots, currentDay, '48h', themeColors, pricingConfig)
+            const liveData = buildLiveData(slots, currentDay, themeColors, pricingConfig)
             if (!liveData) return
 
             setHasNoDataMessage(!!liveData.hasNoData)
@@ -1014,10 +1019,23 @@ export default function ChartCard({
             if (ds[14]) ds[14].hidden = !overlays.showActual || !overlays.export
             if (ds[15]) ds[15].hidden = !overlays.showActual || !overlays.water
             try {
-                if (!isChartUsable(chartRef.current)) return
                 if (chartRef.current) {
+                    console.log('[ChartCard DEBUG] Applying chart data', {
+                        datasets: liveData.datasets.length,
+                        hasTomorrowPrices: liveData.hasTomorrowPrices,
+                        hasRealData,
+                    })
                     chartRef.current.data = liveData
                     chartRef.current.update()
+
+                    // Auto-zoom if no tomorrow prices available
+                    if (!liveData.hasTomorrowPrices) {
+                        // Zoom to show roughly first 24h (approx slots 0-96 for 15m resolution)
+                        // A value of 95 represents the 24th hour for 15min slots
+                        chartRef.current.zoomScale('x', { min: 0, max: 95 }, 'default')
+                    } else {
+                        chartRef.current.resetZoom()
+                    }
                 }
             } catch (err) {
                 console.error('Chart update error:', err)
@@ -1030,7 +1048,6 @@ export default function ChartCard({
         }
 
         const shouldLoadHistory = useHistoryForToday && currentDay === 'today'
-
         const loader = shouldLoadHistory
             ? Api.scheduleTodayWithHistory().then((res) => ({ schedule: res.slots }))
             : Api.schedule()
@@ -1038,15 +1055,13 @@ export default function ChartCard({
         loader
             .then((data) => {
                 applyData(data.schedule ?? [])
-                // Mark that real data has been loaded successfully
                 setHasRealData(true)
             })
             .catch((err) => {
                 console.error('Failed to load schedule:', err)
-                // Show an explicit "no data" overlay instead of leaving stale/mock data visible
                 setHasNoDataMessage(true)
             })
-    }, [currentDay, overlays, themeColors, refreshToken, slotsOverride, useHistoryForToday, pricingConfig])
+    }, [currentDay, overlays, themeColors, refreshToken, slotsOverride, useHistoryForToday, pricingConfig, hasRealData])
 
     // Memoize theme colors to prevent unnecessary re-computations
     return (
@@ -1132,214 +1147,41 @@ export default function ChartCard({
 function buildLiveData(
     slots: ScheduleSlot[],
     day: DaySel,
-    range: ChartRange,
     themeColors: Record<string, string> = {},
     pricing?: { vat: number; fees: number },
-): ExtendedChartData | null {
-    const filtered =
-        range === 'day'
-            ? filterSlotsByDay(slots, day)
-            : slots.filter((slot) => isToday(slot.start_time) || isTomorrow(slot.start_time))
+): (ExtendedChartData & { hasTomorrowPrices: boolean }) | null {
+    const hasTomorrowPrices = slots.some((slot) => isTomorrow(slot.start_time) && slot.import_price_sek_kwh != null)
+    const filtered = slots.filter((slot) => isToday(slot.start_time) || isTomorrow(slot.start_time))
+
+    console.log(`[CHART DEBUG] Processing ${filtered.length} slots for 48h view`)
 
     // DEBUG: Track filtered slots for 48h view
-    if (range === '48h') {
-        console.log(`[48h DEBUG] Filtered ${filtered.length} slots from ${slots.length} total slots`)
-        if (filtered.length > 0) {
-            console.log(
-                `[48h DEBUG] First slot: ${filtered[0].start_time}, charge: ${filtered[0].battery_charge_kw ?? filtered[0].charge_kw}, discharge: ${filtered[0].battery_discharge_kw ?? filtered[0].discharge_kw}`,
-            )
-            console.log(
-                `[48h DEBUG] Sample action values:`,
-                filtered.slice(0, 10).map((s) => ({
-                    time: s.start_time,
-                    charge: s.battery_charge_kw ?? s.charge_kw,
-                    discharge: s.battery_discharge_kw ?? s.discharge_kw,
-                    actual_charge: s.actual_charge_kw,
-                    actual_discharge: s.actual_discharge_kw,
-                    is_executed: s.is_executed,
-                })),
-            )
-        }
-    }
-
-    // Special handling for full-day views: always show 00:00–24:00,
-    // padding with nulls where the schedule has no data.
-    if (range === 'day') {
-        if (!filtered.length) {
-            // No slots at all for this day → show explicit "no data" state
-            const labels = Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2, '0')}:00`)
-            const nulls = Array(24).fill(null)
-            return createChartData(
-                {
-                    labels,
-                    price: nulls.slice(),
-                    pv: nulls.slice(),
-                    load: nulls.slice(),
-                    charge: nulls.slice(),
-                    discharge: nulls.slice(),
-                    export: nulls.slice(),
-                    water: nulls.slice(),
-                    socTarget: nulls.slice(),
-                    socProjected: nulls.slice(),
-                    socActual: nulls.slice(),
-                    hasNoData: true,
-                    day,
-                },
-                themeColors,
-            )
-        }
-
-        const ordered = [...filtered].sort((a, b) => {
-            const aTime = new Date(a.start_time).getTime()
-            const bTime = new Date(b.start_time).getTime()
-            return aTime - bTime
-        })
-
-        // Infer resolution from consecutive slots; default to 15 minutes.
-        let resolutionMinutes = 15
-        if (ordered.length >= 2) {
-            const dt0 = new Date(ordered[0].start_time).getTime()
-            const dt1 = new Date(ordered[1].start_time).getTime()
-            const deltaMinutes = Math.max(1, Math.round((dt1 - dt0) / 60000))
-            if (deltaMinutes === 15 || deltaMinutes === 30 || deltaMinutes === 60) {
-                resolutionMinutes = deltaMinutes
-            }
-        }
-
-        // Build a full-day time grid from 00:00–24:00 local time
-        const anchor = new Date()
-        if (day === 'today') {
-            anchor.setHours(0, 0, 0, 0)
-        } else {
-            anchor.setDate(anchor.getDate() + 1)
-            anchor.setHours(0, 0, 0, 0)
-        }
-
-        const stepMs = resolutionMinutes * 60 * 1000
-        const steps = Math.round((24 * 60) / resolutionMinutes)
-
-        // Index slots by exact start timestamp for quick lookup
-        const slotByTime = new Map<number, ScheduleSlot>()
-        for (const s of ordered) {
-            const t = new Date(s.start_time).getTime()
-            slotByTime.set(t, s)
-        }
-
-        const labels: string[] = []
-        const price: (number | null)[] = []
-        const pv: (number | null)[] = []
-        const load: (number | null)[] = []
-        const charge: (number | null)[] = []
-        const discharge: (number | null)[] = []
-        const exp: (number | null)[] = []
-        const water: (number | null)[] = []
-        const socTarget: (number | null)[] = []
-        const socProjected: (number | null)[] = []
-        const socActual: (number | null)[] = []
-
-        let nowIndex: number | null = null
-        const now = new Date()
-
-        for (let i = 0; i < steps; i++) {
-            const bucketStart = new Date(anchor.getTime() + i * stepMs)
-            const bucketEnd = new Date(bucketStart.getTime() + stepMs)
-            const slot = slotByTime.get(bucketStart.getTime())
-
-            labels.push(formatHour(bucketStart.toISOString()))
-
-            if (slot) {
-                const isExec = slot.is_executed === true
-                const hourFraction = resolutionMinutes / 60
-
-                price.push(slot.import_price_sek_kwh ?? null)
-
-                // Convert kWh to kW: kW = kWh / hourFraction
-                const rawPvKwh =
-                    isExec && slot.actual_pv_kwh != null ? slot.actual_pv_kwh : (slot.pv_forecast_kwh ?? null)
-                pv.push(rawPvKwh != null ? rawPvKwh / hourFraction : null)
-
-                const rawLoadKwh =
-                    isExec && slot.actual_load_kwh != null ? slot.actual_load_kwh : (slot.load_forecast_kwh ?? null)
-                load.push(rawLoadKwh != null ? rawLoadKwh / hourFraction : null)
-
-                // For charge/export, prefer actual_* when executed; discharge/water remain planned.
-                charge.push(
-                    isExec && slot.actual_charge_kw != null
-                        ? slot.actual_charge_kw
-                        : (slot.battery_charge_kw ?? slot.charge_kw ?? null),
-                )
-                discharge.push(slot.battery_discharge_kw ?? slot.discharge_kw ?? null)
-
-                const rawExportKwh =
-                    isExec && slot.actual_export_kw != null ? slot.actual_export_kw : (slot.export_kwh ?? null)
-                // If it's actual_export_kw, it's already kW. If export_kwh, convert.
-                if (isExec && slot.actual_export_kw != null) {
-                    exp.push(slot.actual_export_kw)
-                } else {
-                    exp.push(rawExportKwh != null ? rawExportKwh / hourFraction : null)
-                }
-
-                water.push(slot.water_heating_kw ?? null)
-                socTarget.push(slot.soc_target_percent ?? null)
-                socProjected.push(slot.projected_soc_percent ?? null)
-                socActual.push(slot.actual_soc != null ? slot.actual_soc : null)
-            } else {
-                price.push(null)
-                pv.push(null)
-                load.push(null)
-                charge.push(null)
-                discharge.push(null)
-                exp.push(null)
-                water.push(null)
-                socTarget.push(null)
-                socProjected.push(null)
-                socActual.push(null)
-            }
-
-            if (day === 'today' && now >= bucketStart && now < bucketEnd) {
-                nowIndex = i
-            }
-        }
-
-        // Calculate precise time percentage for "Now Line"
-        let nowPct: number | null = null
-        if (day === 'today') {
-            const totalMs = steps * stepMs
-            const elapsed = now.getTime() - anchor.getTime()
-            if (elapsed >= 0 && elapsed <= totalMs) {
-                nowPct = elapsed / totalMs
-            }
-        }
-
-        return createChartData(
-            {
-                labels,
-                price,
-                pv,
-                load,
-                charge,
-                discharge,
-                export: exp,
-                water,
-                socTarget,
-                socProjected,
-                socActual,
-                nowIndex,
-                nowPct,
-            },
-            themeColors,
+    console.log(`[48h DEBUG] Filtered ${filtered.length} slots from ${slots.length} total slots`)
+    if (filtered.length > 0) {
+        console.log(
+            `[48h DEBUG] First slot: ${filtered[0].start_time}, charge: ${filtered[0].battery_charge_kw ?? filtered[0].charge_kw}, discharge: ${filtered[0].battery_discharge_kw ?? filtered[0].discharge_kw}`,
+        )
+        console.log(
+            `[48h DEBUG] Sample action values:`,
+            filtered.slice(0, 10).map((s) => ({
+                time: s.start_time,
+                charge: s.battery_charge_kw ?? s.charge_kw,
+                discharge: s.battery_discharge_kw ?? s.discharge_kw,
+                actual_charge: s.actual_charge_kw,
+                actual_discharge: s.actual_discharge_kw,
+                is_executed: s.is_executed,
+            })),
         )
     }
 
-    // 48h / multi-day range: build a fixed 48-hour window (today+tomorrow)
-    if (range === '48h') {
-        if (!filtered.length) {
-            console.log('[buildLiveData] No slots found for 48h range, creating fallback')
-            const labels = Array.from({ length: 48 }, (_, i) => {
-                const hour = i % 24
-                return `${String(hour).padStart(2, '0')}:00`
-            })
-            return createChartData(
+    if (!filtered.length) {
+        console.log('[buildLiveData] No slots found for 48h range, creating fallback')
+        const labels = Array.from({ length: 48 }, (_, i) => {
+            const hour = i % 24
+            return `${String(hour).padStart(2, '0')}:00`
+        })
+        return {
+            ...createChartData(
                 {
                     labels,
                     price: Array(labels.length).fill(null),
@@ -1355,159 +1197,161 @@ function buildLiveData(
                     day,
                 },
                 themeColors,
+            ),
+            hasTomorrowPrices,
+        }
+    }
+
+    const ordered = [...filtered].sort((a, b) => {
+        const aTime = new Date(a.start_time).getTime()
+        const bTime = new Date(b.start_time).getTime()
+        return aTime - bTime
+    })
+
+    // Infer resolution from consecutive slots; default to 15 minutes.
+    let resolutionMinutes = 15
+    if (ordered.length >= 2) {
+        const dt0 = new Date(ordered[0].start_time).getTime()
+        const dt1 = new Date(ordered[1].start_time).getTime()
+        const deltaMinutes = Math.max(1, Math.round((dt1 - dt0) / 60000))
+        if (deltaMinutes === 15 || deltaMinutes === 30 || deltaMinutes === 60) {
+            resolutionMinutes = deltaMinutes
+        }
+    }
+
+    const anchor = new Date()
+    anchor.setHours(0, 0, 0, 0)
+
+    const stepMs = resolutionMinutes * 60 * 1000
+    const steps = Math.round((48 * 60) / resolutionMinutes)
+
+    const slotByTime = new Map<number, ScheduleSlot>()
+    for (const s of ordered) {
+        const t = new Date(s.start_time).getTime()
+        slotByTime.set(t, s)
+    }
+
+    const labels: string[] = []
+    const price: (number | null)[] = []
+    const pv: (number | null)[] = []
+    const load: (number | null)[] = []
+    const charge: (number | null)[] = []
+    const discharge: (number | null)[] = []
+    const exp: (number | null)[] = []
+    const water: (number | null)[] = []
+    const socTarget: (number | null)[] = []
+    const socProjected: (number | null)[] = []
+    const socActual: (number | null)[] = []
+    const actualPv: (number | null)[] = []
+    const actualLoad: (number | null)[] = []
+    const actualCharge: (number | null)[] = []
+    const actualDischarge: (number | null)[] = []
+    const actualExport: (number | null)[] = []
+    const actualWater: (number | null)[] = []
+
+    let nowIndex: number | null = null
+    const now = new Date()
+
+    for (let i = 0; i < steps; i++) {
+        const bucketStart = new Date(anchor.getTime() + i * stepMs)
+        const bucketEnd = new Date(bucketStart.getTime() + stepMs)
+        const slot = slotByTime.get(bucketStart.getTime())
+
+        labels.push(formatHour(bucketStart.toISOString()))
+
+        if (slot) {
+            const isExec = slot.is_executed === true
+            const hourFraction = resolutionMinutes / 60
+
+            price.push(slot.import_price_sek_kwh ?? null)
+            // For pv/load: prefer actual if available, fallback to forecast. Convert kWh to kW.
+            const rawPvKwh = isExec && slot.actual_pv_kwh != null ? slot.actual_pv_kwh : (slot.pv_forecast_kwh ?? null)
+            pv.push(rawPvKwh != null ? rawPvKwh / hourFraction : null)
+
+            const rawLoadKwh =
+                isExec && slot.actual_load_kwh != null ? slot.actual_load_kwh : (slot.load_forecast_kwh ?? null)
+            load.push(rawLoadKwh != null ? rawLoadKwh / hourFraction : null)
+
+            // For charge: only use actual if executed AND not null, otherwise use planned
+            charge.push(
+                isExec && slot.actual_charge_kw != null
+                    ? slot.actual_charge_kw
+                    : (slot.battery_charge_kw ?? slot.charge_kw ?? null),
             )
-        }
+            discharge.push(
+                isExec && slot.actual_discharge_kw != null
+                    ? slot.actual_discharge_kw
+                    : (slot.battery_discharge_kw ?? slot.discharge_kw ?? null),
+            )
 
-        const ordered = [...filtered].sort((a, b) => {
-            const aTime = new Date(a.start_time).getTime()
-            const bTime = new Date(b.start_time).getTime()
-            return aTime - bTime
-        })
-
-        // Infer resolution from consecutive slots; default to 15 minutes.
-        let resolutionMinutes = 15
-        if (ordered.length >= 2) {
-            const dt0 = new Date(ordered[0].start_time).getTime()
-            const dt1 = new Date(ordered[1].start_time).getTime()
-            const deltaMinutes = Math.max(1, Math.round((dt1 - dt0) / 60000))
-            if (deltaMinutes === 15 || deltaMinutes === 30 || deltaMinutes === 60) {
-                resolutionMinutes = deltaMinutes
-            }
-        }
-
-        const anchor = new Date()
-        anchor.setHours(0, 0, 0, 0)
-
-        const stepMs = resolutionMinutes * 60 * 1000
-        const steps = Math.round((48 * 60) / resolutionMinutes)
-
-        const slotByTime = new Map<number, ScheduleSlot>()
-        for (const s of ordered) {
-            const t = new Date(s.start_time).getTime()
-            slotByTime.set(t, s)
-        }
-
-        const labels: string[] = []
-        const price: (number | null)[] = []
-        const pv: (number | null)[] = []
-        const load: (number | null)[] = []
-        const charge: (number | null)[] = []
-        const discharge: (number | null)[] = []
-        const exp: (number | null)[] = []
-        const water: (number | null)[] = []
-        const socTarget: (number | null)[] = []
-        const socProjected: (number | null)[] = []
-        const socActual: (number | null)[] = []
-        const actualPv: (number | null)[] = []
-        const actualLoad: (number | null)[] = []
-        const actualCharge: (number | null)[] = []
-        const actualDischarge: (number | null)[] = []
-        const actualExport: (number | null)[] = []
-        const actualWater: (number | null)[] = []
-
-        let nowIndex: number | null = null
-        const now = new Date()
-
-        for (let i = 0; i < steps; i++) {
-            const bucketStart = new Date(anchor.getTime() + i * stepMs)
-            const bucketEnd = new Date(bucketStart.getTime() + stepMs)
-            const slot = slotByTime.get(bucketStart.getTime())
-
-            labels.push(formatHour(bucketStart.toISOString()))
-
-            if (slot) {
-                const isExec = slot.is_executed === true
-                const hourFraction = resolutionMinutes / 60
-
-                price.push(slot.import_price_sek_kwh ?? null)
-                // For pv/load: prefer actual if available, fallback to forecast. Convert kWh to kW.
-                const rawPvKwh =
-                    isExec && slot.actual_pv_kwh != null ? slot.actual_pv_kwh : (slot.pv_forecast_kwh ?? null)
-                pv.push(rawPvKwh != null ? rawPvKwh / hourFraction : null)
-
-                const rawLoadKwh =
-                    isExec && slot.actual_load_kwh != null ? slot.actual_load_kwh : (slot.load_forecast_kwh ?? null)
-                load.push(rawLoadKwh != null ? rawLoadKwh / hourFraction : null)
-
-                // For charge: only use actual if executed AND not null, otherwise use planned
-                charge.push(
-                    isExec && slot.actual_charge_kw != null
-                        ? slot.actual_charge_kw
-                        : (slot.battery_charge_kw ?? slot.charge_kw ?? null),
-                )
-                discharge.push(
-                    isExec && slot.actual_discharge_kw != null
-                        ? slot.actual_discharge_kw
-                        : (slot.battery_discharge_kw ?? slot.discharge_kw ?? null),
-                )
-
-                const rawExportKwh =
-                    isExec && slot.actual_export_kw != null ? slot.actual_export_kw : (slot.export_kwh ?? null)
-                // If it's actual_export_kw, it's already kW. If export_kwh, convert.
-                if (isExec && slot.actual_export_kw != null) {
-                    exp.push(slot.actual_export_kw)
-                } else {
-                    exp.push(rawExportKwh != null ? rawExportKwh / hourFraction : null)
-                }
-
-                water.push(slot.water_heating_kw ?? null)
-                socTarget.push(slot.soc_target_percent ?? null)
-                socProjected.push(slot.projected_soc_percent ?? null)
-                socActual.push(slot.actual_soc != null ? slot.actual_soc : null)
-
-                // Populate actual* arrays
-                const hourFrac = resolutionMinutes / 60
-                actualPv.push(slot.actual_pv_kwh != null ? slot.actual_pv_kwh / hourFrac : null)
-                actualLoad.push(slot.actual_load_kwh != null ? slot.actual_load_kwh / hourFrac : null)
-                actualCharge.push(slot.actual_charge_kw ?? null)
-                actualDischarge.push(slot.actual_discharge_kw ?? null)
-                actualExport.push(slot.actual_export_kw ?? null)
-                actualWater.push(slot.actual_water_kw ?? null)
+            const rawExportKwh =
+                isExec && slot.actual_export_kw != null ? slot.actual_export_kw : (slot.export_kwh ?? null)
+            // If it's actual_export_kw, it's already kW. If export_kwh, convert.
+            if (isExec && slot.actual_export_kw != null) {
+                exp.push(slot.actual_export_kw)
             } else {
-                price.push(null)
-                pv.push(null)
-                load.push(null)
-                charge.push(null)
-                discharge.push(null)
-                exp.push(null)
-                water.push(null)
-                socTarget.push(null)
-                socProjected.push(null)
-                socActual.push(null)
-                actualPv.push(null)
-                actualLoad.push(null)
-                actualCharge.push(null)
-                actualDischarge.push(null)
-                actualExport.push(null)
-                actualWater.push(null)
+                exp.push(rawExportKwh != null ? rawExportKwh / hourFraction : null)
             }
 
-            if (now >= bucketStart && now < bucketEnd) {
-                nowIndex = i
-            }
+            water.push(slot.water_heating_kw ?? null)
+            socTarget.push(slot.soc_target_percent ?? null)
+            socProjected.push(slot.projected_soc_percent ?? null)
+            socActual.push(slot.actual_soc != null ? slot.actual_soc : null)
+
+            // Populate actual* arrays
+            const hourFrac = resolutionMinutes / 60
+            actualPv.push(slot.actual_pv_kwh != null ? slot.actual_pv_kwh / hourFrac : null)
+            actualLoad.push(slot.actual_load_kwh != null ? slot.actual_load_kwh / hourFrac : null)
+            actualCharge.push(slot.actual_charge_kw ?? null)
+            actualDischarge.push(slot.actual_discharge_kw ?? null)
+            actualExport.push(slot.actual_export_kw ?? null)
+            actualWater.push(slot.actual_water_kw ?? null)
+        } else {
+            price.push(null)
+            pv.push(null)
+            load.push(null)
+            charge.push(null)
+            discharge.push(null)
+            exp.push(null)
+            water.push(null)
+            socTarget.push(null)
+            socProjected.push(null)
+            socActual.push(null)
+            actualPv.push(null)
+            actualLoad.push(null)
+            actualCharge.push(null)
+            actualDischarge.push(null)
+            actualExport.push(null)
+            actualWater.push(null)
         }
 
-        // Calculate precise time percentage for "Now Line"
-        let nowPct: number | null = null
-        const totalMs = steps * stepMs
-        const elapsed = now.getTime() - anchor.getTime()
-        // For 48h view, we show "now" if it's within the window (which starts at 00:00 today)
-        if (elapsed >= 0 && elapsed <= totalMs) {
-            nowPct = elapsed / totalMs
+        if (now >= bucketStart && now < bucketEnd) {
+            nowIndex = i
         }
+    }
 
-        // DEBUG: Log non-zero action values
-        const nonZeroCharge = charge.map((v, i) => ({ i, v })).filter((x) => x.v && x.v > 0)
-        const nonZeroDischarge = discharge.map((v, i) => ({ i, v })).filter((x) => x.v && x.v > 0)
-        if (nonZeroCharge.length > 0 || nonZeroDischarge.length > 0) {
-            console.log('[48h CHART DATA] Non-zero actions:', {
-                charge: nonZeroCharge,
-                discharge: nonZeroDischarge,
-                totalSlots: charge.length,
-            })
-        }
+    // Calculate precise time percentage for "Now Line"
+    let nowPct: number | null = null
+    const totalMs = steps * stepMs
+    const elapsed = now.getTime() - anchor.getTime()
+    // For 48h view, we show "now" if it's within the window (which starts at 00:00 today)
+    if (elapsed >= 0 && elapsed <= totalMs) {
+        nowPct = elapsed / totalMs
+    }
 
-        return createChartData(
+    // DEBUG: Log non-zero action values
+    const nonZeroCharge = charge.map((v, i) => ({ i, v })).filter((x) => x.v && x.v > 0)
+    const nonZeroDischarge = discharge.map((v, i) => ({ i, v })).filter((x) => x.v && x.v > 0)
+    if (nonZeroCharge.length > 0 || nonZeroDischarge.length > 0) {
+        console.log('[48h CHART DATA] Non-zero actions:', {
+            charge: nonZeroCharge,
+            discharge: nonZeroDischarge,
+            totalSlots: charge.length,
+        })
+    }
+
+    return {
+        ...createChartData(
             {
                 labels,
                 price,
@@ -1531,70 +1375,7 @@ function buildLiveData(
             },
             themeColors,
             pricing,
-        )
+        ),
+        hasTomorrowPrices,
     }
-
-    // Fallback for any other future range types (none today)
-    const ordered = [...filtered].sort((a, b) => {
-        const aTime = new Date(a.start_time).getTime()
-        const bTime = new Date(b.start_time).getTime()
-        return aTime - bTime
-    })
-
-    // For the fallback, we assume 15-min resolution if not specified.
-    // However, fallback usually has only a few slots, so we default to 0.25 (15 min).
-    const hourFraction = 0.25
-
-    const price = ordered.map((slot) => slot.import_price_sek_kwh ?? null)
-    const pv = ordered.map((slot) => {
-        const val = slot.pv_forecast_kwh ?? null
-        return val != null ? val / hourFraction : null
-    })
-    const load = ordered.map((slot) => {
-        const val = slot.load_forecast_kwh ?? null
-        return val != null ? val / hourFraction : null
-    })
-    const charge = ordered.map((slot) => slot.battery_charge_kw ?? slot.charge_kw ?? null)
-    const discharge = ordered.map((slot) => slot.battery_discharge_kw ?? slot.discharge_kw ?? null)
-    const exp = ordered.map((slot) => {
-        const val = slot.export_kwh ?? null
-        return val != null ? val / hourFraction : null
-    })
-    const water = ordered.map((slot) => slot.water_heating_kw ?? null)
-    const socTarget = ordered.map((slot) => slot.soc_target_percent ?? null)
-    const socProjected = ordered.map((slot) => slot.projected_soc_percent ?? null)
-    const socActual = ordered.map((slot) => slot.actual_soc ?? null)
-
-    const labels = ordered.map((slot) => formatHour(slot.start_time))
-
-    let nowIndex: number | null = null
-    if (day === 'today') {
-        const now = new Date()
-        for (let i = 0; i < ordered.length; i++) {
-            const start = new Date(ordered[i].start_time || '')
-            const end = new Date(start.getTime() + 30 * 60 * 1000)
-            if (now >= start && now < end) {
-                nowIndex = i
-                break
-            }
-        }
-    }
-
-    return createChartData(
-        {
-            labels,
-            price,
-            pv,
-            load,
-            charge,
-            discharge,
-            export: exp,
-            water,
-            socTarget,
-            socProjected,
-            socActual,
-            nowIndex,
-        },
-        themeColors,
-    )
 }

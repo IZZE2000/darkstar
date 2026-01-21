@@ -301,23 +301,23 @@ The 24h/48h toggle is causing chart rendering issues where battery actions disap
 * [x] Update Dashboard to remove `showDayToggle={true}` prop
 * [x] **STOP - Verification**: Chart shows no toggle buttons, always processes 48h data
 
-#### Phase 2: Simplify Data Processing [PLANNED]
-* [ ] Always pass `range="48h"` to buildLiveData function
-* [ ] Remove all `range === 'day'` conditional logic from buildLiveData
-* [ ] Remove day-specific data processing paths that cause action visibility issues
-* [ ] Clean up useEffect dependencies to prevent excessive re-renders
-* [ ] **STOP - Verification**: Single data processing path, reduced console log spam
+#### Phase 2: Simplify Data Processing [DONE]
+* [x] Always pass `range="48h"` to buildLiveData function
+* [x] Remove all `range === 'day'` conditional logic from buildLiveData
+* [x] Remove day-specific data processing paths that cause action visibility issues
+* [x] Clean up useEffect dependencies to prevent excessive re-renders
+* [x] **STOP - Verification**: Single data processing path, reduced console log spam
 
-#### Phase 3: Implement Smart Auto-Zoom [PLANNED]
-* [ ] Add function to detect tomorrow's price availability: `hasTomorrowPrices = slots.some(slot => isTomorrow(slot.start_time) && slot.import_price_sek_kwh != null)`
-* [ ] Implement auto-zoom logic after chart data is applied: `if (!hasTomorrowPrices) chart.zoomScale('x', {min: 0, max: 95})`
-* [ ] Ensure zoom happens after chart update, not during data processing
-* [ ] Maintain manual zoom functionality for user control
-* [ ] **STOP - Verification**: Chart auto-zooms to ~24h view when only today's prices available, shows full 48h when tomorrow's prices exist
+#### Phase 3: Implement Smart Auto-Zoom [DONE]
+* [x] Add function to detect tomorrow's price availability: `hasTomorrowPrices = slots.some(slot => isTomorrow(slot.start_time) && slot.import_price_sek_kwh != null)`
+* [x] Implement auto-zoom logic after chart data is applied: `if (!hasTomorrowPrices) chart.zoomScale('x', {min: 0, max: 95})`
+* [x] Ensure zoom happens after chart update, not during data processing
+* [x] Maintain manual zoom functionality for user control
+* [x] **STOP - Verification**: Chart auto-zooms to ~24h view when only today's prices available, shows full 48h when tomorrow's prices exist
 
-#### Phase 4: Debug Action Visibility [PLANNED]
-* [ ] Add debugging to identify what triggers excessive useEffect calls
-* [ ] Verify all battery actions (charge/discharge) are visible consistently
-* [ ] Test that actions remain visible during live metric updates
-* [ ] Ensure socket.io reconnections don't cause action loss
-* [ ] **STOP - Verification**: All future battery actions visible and stable, no disappearing after brief appearance
+#### Phase 4: Debug Action Visibility [DONE]
+* [x] Add debugging to identify what triggers excessive useEffect calls
+* [x] Verify all battery actions (charge/discharge) are visible consistently
+* [x] Test that actions remain visible during live metric updates
+* [x] Ensure socket.io reconnections don't cause action loss
+* [x] **STOP - Verification**: All future battery actions visible and stable, no disappearing after brief appearance
