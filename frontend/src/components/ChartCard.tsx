@@ -569,6 +569,13 @@ const createChartData = (
         });
     }
 
+    // DEBUG: Final positioning check
+    const dischargeDataset = baseData.datasets[4] as any;
+    if (dischargeDataset) {
+        const dischargeIndices = dischargeDataset.data.map((v: any, i: number) => (v !== null && v > 0) ? { index: i, value: v } : null).filter(Boolean);
+        console.log('[DISCHARGE POSITIONS]', dischargeIndices);
+    }
+
     // Preserve nowIndex on the returned object so runtime
     // logic can position the "NOW" marker.
     return {
@@ -1037,9 +1044,9 @@ export default function ChartCard({
                     dataLength: ds[3].data?.length,
                     nonZeroCount: ds[3].data?.filter((v: any) => v && v > 0).length,
                     firstFewValues: ds[3].data?.slice(0, 10),
-                    maxValue: ds[3].data ? Math.max(...ds[3].data.filter((v: any) => v != null && v > 0)) : 'no data',
+                    maxValue: ds[3].data ? Math.max(...(ds[3].data as any[]).filter((v: any) => v != null && v > 0)) : 'no data',
                     type: ds[3].type,
-                    yAxisID: ds[3].yAxisID
+                    yAxisID: (ds[3] as any).yAxisID
                 } : 'MISSING CHARGE DATASET',
                 dischargeDataset: ds[4] ? {
                     label: ds[4].label,
@@ -1047,9 +1054,9 @@ export default function ChartCard({
                     dataLength: ds[4].data?.length,
                     nonZeroCount: ds[4].data?.filter((v: any) => v && v > 0).length,
                     firstFewValues: ds[4].data?.slice(0, 10),
-                    maxValue: ds[4].data ? Math.max(...ds[4].data.filter((v: any) => v != null && v > 0)) : 'no data',
+                    maxValue: ds[4].data ? Math.max(...(ds[4].data as any[]).filter((v: any) => v != null && v > 0)) : 'no data',
                     type: ds[4].type,
-                    yAxisID: ds[4].yAxisID
+                    yAxisID: (ds[4] as any).yAxisID
                 } : 'MISSING DISCHARGE DATASET',
                 overlayState: {
                     charge: overlays.charge,
@@ -1067,6 +1074,12 @@ export default function ChartCard({
                     })
                     chartRef.current.data = liveData
                     chartRef.current.update()
+
+                    console.log('[CHART CONFIG DEBUG]', {
+                        yAxisVisible: chartRef.current?.scales?.y1?.options?.display,
+                        datasetVisible: chartRef.current?.data?.datasets?.[4]?.hidden,
+                        chartType: (chartRef.current?.config as any)?.type
+                    });
 
                     // Auto-zoom if no tomorrow prices available
                     if (!liveData.hasTomorrowPrices) {
