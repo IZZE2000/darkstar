@@ -114,7 +114,11 @@ export default function ModelTrainingCard() {
                         <CalendarClock className="h-3 w-3" />
                         <span>
                             Next:{' '}
-                            {new Date(scheduler.next_training_at).toISOString().slice(11, 16)}
+                            {new Date(scheduler.next_training_at).toLocaleString('sv-SE', {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                                hour12: false,
+                            })}
                         </span>
                     </div>
                 )}
@@ -171,7 +175,14 @@ export default function ModelTrainingCard() {
                                             <AlertTriangle className="h-3 w-3 text-amber-400" />
                                         )}
                                         <span className="text-text">
-                                            {new Date(run.run_date).toISOString().slice(0, 10)} {new Date(run.run_date).toISOString().slice(11, 16)}
+                                            {new Date(run.run_date).toLocaleString('sv-SE', {
+                                                year: 'numeric',
+                                                month: '2-digit',
+                                                day: '2-digit',
+                                                hour: '2-digit',
+                                                minute: '2-digit',
+                                                hour12: false
+                                            })}
                                         </span>
                                     </div>
                                     <span className="text-muted">{Math.round(run.training_duration_seconds)}s</span>
