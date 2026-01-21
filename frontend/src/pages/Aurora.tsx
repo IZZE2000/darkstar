@@ -243,7 +243,7 @@ export default function Aurora() {
             {/* 1. THE BRIDGE (Top Section) */}
             <div className="grid gap-4 lg:grid-cols-12">
                 {/* Identity & Status Card */}
-                <Card className={`lg:col-span-5 p-4 md:p-5 bg-gradient-to-br ${heroGradient} relative overflow-hidden`}>
+                <Card className={`lg:col-span-3 p-4 md:p-5 bg-gradient-to-br ${heroGradient} relative overflow-hidden`}>
                     <div className="relative z-10 flex flex-col md:flex-row gap-6">
                         {/* Avatar & Pulse */}
                         <div className="flex items-center gap-4">
@@ -300,8 +300,13 @@ export default function Aurora() {
                     <SystemHealthCard />
                 </div>
 
+                {/* Training Status Card */}
+                <div className="lg:col-span-3 h-full">
+                    <ModelTrainingCard />
+                </div>
+
                 {/* Controls Card (Auto-Tuner) */}
-                <Card className="lg:col-span-4 p-4 md:p-5 flex flex-col">
+                <Card className="lg:col-span-3 p-4 md:p-5 flex flex-col">
                     <div className="flex items-center gap-2 mb-4">
                         <Zap className="h-4 w-4 text-accent" />
                         <span className="text-xs font-medium text-text">Controls</span>
@@ -377,7 +382,7 @@ export default function Aurora() {
             {/* 2. THE DASHBOARD (Middle Section) */}
             <div className="grid gap-4 lg:grid-cols-12 lg:h-[450px]">
                 {/* Context Radar */}
-                <Card className="lg:col-span-3 p-4 flex flex-col h-full min-h-0 overflow-hidden">
+                <Card className="lg:col-span-4 p-4 flex flex-col h-full min-h-0 overflow-hidden">
                     <div className="mb-4 flex items-center justify-between shrink-0">
                         <div className="flex items-center gap-2">
                             <Activity className="h-4 w-4 text-accent" />
@@ -404,7 +409,7 @@ export default function Aurora() {
                 </Card>
 
                 {/* Activity Log */}
-                <Card className="lg:col-span-3 p-4 flex flex-col h-full min-h-0 overflow-hidden">
+                <Card className="lg:col-span-4 p-4 flex flex-col h-full min-h-0 overflow-hidden">
                     <div className="mb-4 flex items-center justify-between shrink-0">
                         <div className="flex items-center gap-2">
                             <Brain className="h-4 w-4 text-accent" />
@@ -467,13 +472,8 @@ export default function Aurora() {
         </Card>
         */}
 
-                {/* Training Status */}
-                <div className="lg:col-span-3 h-full min-h-0">
-                    <ModelTrainingCard />
-                </div>
-
                 {/* Cost Reality (Moved here) */}
-                <Card className="lg:col-span-3 p-4 md:p-5 flex flex-col h-full min-h-0 overflow-hidden">
+                <Card className="lg:col-span-4 p-4 md:p-5 flex flex-col h-full min-h-0 overflow-hidden">
                     <div className="mb-4 shrink-0">
                         <div className="text-xs font-medium text-text">Cost Reality</div>
                         <div className="text-[11px] text-muted">Daily financial outcome</div>
