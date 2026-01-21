@@ -559,6 +559,16 @@ const createChartData = (
         }
     }
 
+    // DEBUG: Time alignment check
+    if (baseData.datasets[3] && baseData.datasets[4]) {
+        console.log('[CREATECHARTDATA DEBUG]', {
+            inputChargeNonZero: values.charge?.filter(v => v !== null && (v as number) > 0).length || 0,
+            inputDischargeNonZero: values.discharge?.filter(v => v !== null && (v as number) > 0).length || 0,
+            outputChargeNonZero: (baseData.datasets[3].data as (number | null)[]).filter(v => v !== null && (v as number) > 0).length,
+            outputDischargeNonZero: (baseData.datasets[4].data as (number | null)[]).filter(v => v !== null && (v as number) > 0).length
+        });
+    }
+
     // Preserve nowIndex on the returned object so runtime
     // logic can position the "NOW" marker.
     return {
