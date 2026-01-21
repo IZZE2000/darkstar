@@ -82,3 +82,6 @@ data/planner_learning.db.*
 data/darkstar.log.*
 
 gsd-template/
+data/planner_learning.db-shm
+.gitignore
+data/planner_learning.db-wal

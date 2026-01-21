@@ -284,14 +284,18 @@ async def schedule_today_with_history(
 
     # 5. Merge
     # [REV F36] Match Api.schedule() rounding for the starting slot (only return from now forward)
+    # [REV F36] Match Api.schedule() rounding for the starting slot (only return from now forward)
     now = datetime.now(tz)
-    planned_start_naive = now.replace(
-        minute=now.minute - (now.minute % 15), second=0, microsecond=0
-    ).replace(tzinfo=None)
+    # planned_start_naive removed (unused)
 
-    # Collect all keys and filter to ensure we only return from current time forward
+    # Collect all keys for the entire day (History + Future)
+    # [REV F36] FIX: Do NOT filter by 'now'. tailored_schedule needs full day context.
+    # We filter by today's start (00:00) to ensure we get the full history.
+    today_start_dt = tz.localize(datetime.combine(today_local, datetime.min.time()))
+    today_start_naive = today_start_dt.replace(tzinfo=None)
+
     raw_keys = set(schedule_map.keys()) | set(exec_map.keys()) | set(planned_map.keys())
-    all_keys = sorted({k for k in raw_keys if k >= planned_start_naive})
+    all_keys = sorted({k for k in raw_keys if k >= today_start_naive})
 
     merged_slots: list[dict[str, Any]] = []
 
@@ -308,7 +312,11 @@ async def schedule_today_with_history(
         slot["is_historical"] = False
 
         # Attach history
-        if key in exec_map:
+        # [REV F36] FIX: Ensure we never mark future slots as 'executed' even if DB has rogue entries.
+        # This prevents 'actuals' (0.0) from hiding 'planned' (e.g. 5.0) in the chart.
+        is_future_check = key >= now_naive
+
+        if key in exec_map and not is_future_check:
             h = exec_map[key]
             slot["is_executed"] = True
             slot["is_historical"] = True

@@ -544,7 +544,7 @@ const createChartData = (
     // Add no-data message if needed
     if (values.hasNoData) {
         // cast to ExtendedChartData here to avoid ChartData strictness while manipulating plugins
-        ; (baseData as ExtendedChartData).plugins = {
+        ;(baseData as ExtendedChartData).plugins = {
             tooltip: {
                 enabled: true,
                 external: true,
@@ -562,18 +562,24 @@ const createChartData = (
     // DEBUG: Time alignment check
     if (baseData.datasets[3] && baseData.datasets[4]) {
         console.log('[CREATECHARTDATA DEBUG]', {
-            inputChargeNonZero: values.charge?.filter(v => v !== null && (v as number) > 0).length || 0,
-            inputDischargeNonZero: values.discharge?.filter(v => v !== null && (v as number) > 0).length || 0,
-            outputChargeNonZero: (baseData.datasets[3].data as (number | null)[]).filter(v => v !== null && (v as number) > 0).length,
-            outputDischargeNonZero: (baseData.datasets[4].data as (number | null)[]).filter(v => v !== null && (v as number) > 0).length
-        });
+            inputChargeNonZero: values.charge?.filter((v) => v !== null && (v as number) > 0).length || 0,
+            inputDischargeNonZero: values.discharge?.filter((v) => v !== null && (v as number) > 0).length || 0,
+            outputChargeNonZero: (baseData.datasets[3].data as (number | null)[]).filter(
+                (v) => v !== null && (v as number) > 0,
+            ).length,
+            outputDischargeNonZero: (baseData.datasets[4].data as (number | null)[]).filter(
+                (v) => v !== null && (v as number) > 0,
+            ).length,
+        })
     }
 
     // DEBUG: Final positioning check
-    const dischargeDataset = baseData.datasets[4] as any;
+    const dischargeDataset = baseData.datasets[4] as any
     if (dischargeDataset) {
-        const dischargeIndices = dischargeDataset.data.map((v: any, i: number) => (v !== null && v > 0) ? { index: i, value: v } : null).filter(Boolean);
-        console.log('[DISCHARGE POSITIONS]', dischargeIndices);
+        const dischargeIndices = dischargeDataset.data
+            .map((v: any, i: number) => (v !== null && v > 0 ? { index: i, value: v } : null))
+            .filter(Boolean)
+        console.log('[DISCHARGE POSITIONS]', dischargeIndices)
     }
 
     // Preserve nowIndex on the returned object so runtime
@@ -1000,13 +1006,6 @@ export default function ChartCard({
     }
 
     useEffect(() => {
-        console.log('[ChartCard DEBUG] useEffect triggered', {
-            currentDay,
-            refreshToken,
-            slotsOverrideLength: slotsOverride?.length,
-            useHistoryForToday,
-            themeColorsStatus: Object.keys(themeColors).length > 0 ? 'loaded' : 'missing',
-        })
         const chartInstance = chartRef.current
         if (!isChartUsable(chartInstance) || Object.keys(themeColors).length === 0) return
         const applyData = (slots: ScheduleSlot[]) => {
@@ -1015,13 +1014,6 @@ export default function ChartCard({
             if (!liveData) return
 
             setHasNoDataMessage(!!liveData.hasNoData)
-
-            console.log('[OVERLAY BUG DEBUG]', {
-                overlaysDischarge: overlays.discharge,
-                overlaysType: typeof overlays.discharge,
-                ds4Exists: !!liveData.datasets[4],
-                ds4WillBeHidden: !overlays.discharge,
-            })
 
             const ds = liveData.datasets
             if (ds[0]) ds[0].hidden = !overlays.price
@@ -1043,72 +1035,10 @@ export default function ChartCard({
             if (ds[14]) ds[14].hidden = !overlays.showActual || !overlays.export
             if (ds[15]) ds[15].hidden = !overlays.showActual || !overlays.water
 
-            // DEBUG: Full dataset inspection
-            console.log('[CHART RENDER DEBUG EXPANDED]', {
-                chargeDataset: ds[3] ? {
-                    label: ds[3].label,
-                    hidden: ds[3].hidden,
-                    dataLength: ds[3].data?.length,
-                    nonZeroCount: ds[3].data?.filter((v: any) => v && v > 0).length,
-                    firstFewValues: ds[3].data?.slice(0, 10),
-                    maxValue: ds[3].data ? Math.max(...(ds[3].data as any[]).filter((v: any) => v != null && v > 0)) : 'no data',
-                    type: ds[3].type,
-                    yAxisID: (ds[3] as any).yAxisID
-                } : 'MISSING CHARGE DATASET',
-                dischargeDataset: ds[4] ? {
-                    label: ds[4].label,
-                    hidden: ds[4].hidden,
-                    dataLength: ds[4].data?.length,
-                    nonZeroCount: ds[4].data?.filter((v: any) => v && v > 0).length,
-                    firstFewValues: ds[4].data?.slice(0, 10),
-                    maxValue: ds[4].data ? Math.max(...(ds[4].data as any[]).filter((v: any) => v != null && v > 0)) : 'no data',
-                    type: ds[4].type,
-                    yAxisID: (ds[4] as any).yAxisID
-                } : 'MISSING DISCHARGE DATASET',
-                overlayState: {
-                    charge: overlays.charge,
-                    discharge: overlays.discharge
-                },
-                totalDatasets: ds.length,
-                datasetLabels: ds.map((d: any) => d.label)
-            });
             try {
                 if (chartRef.current) {
-                    console.log('[ChartCard DEBUG] Applying chart data', {
-                        datasets: liveData.datasets.length,
-                        hasTomorrowPrices: liveData.hasTomorrowPrices,
-                        hasRealData,
-                    })
                     chartRef.current.data = liveData
                     chartRef.current.update()
-
-                    const actualDataset = chartRef.current?.data?.datasets?.[4]
-                    console.log('[POST-UPDATE DEBUG]', {
-                        datasetExists: !!actualDataset,
-                        datasetHidden: actualDataset?.hidden,
-                        datasetLabel: actualDataset?.label,
-                        datasetDataLength: actualDataset?.data?.length,
-                        chartUpdateCalled: true,
-                    })
-
-                    const nonZeroIndices = (actualDataset?.data as any[])
-                        ?.map((v, i) => (v != null && v > 0 ? { i, v } : null))
-                        .filter(Boolean)
-                    console.log('[CHART VISUAL DEBUG]', {
-                        nonZeroValues: nonZeroIndices,
-                        backgroundColor: (actualDataset as any)?.backgroundColor,
-                        borderColor: (actualDataset as any)?.borderColor,
-                        yAxisID: (actualDataset as any)?.yAxisID,
-                        yAxisMin: chartRef.current?.scales?.y1?.min,
-                        yAxisMax: chartRef.current?.scales?.y1?.max,
-                        barThickness: (actualDataset as any)?.barThickness,
-                    })
-
-                    console.log('[CHART CONFIG DEBUG]', {
-                        yAxisVisible: chartRef.current?.scales?.y1?.options?.display,
-                        datasetVisible: chartRef.current?.data?.datasets?.[4]?.hidden,
-                        chartType: (chartRef.current?.config as any)?.type
-                    });
 
                     // Auto-zoom if no tomorrow prices available
                     if (!liveData.hasTomorrowPrices) {
@@ -1183,10 +1113,11 @@ export default function ChartCard({
                                     e.preventDefault()
                                     setOverlays((o) => ({ ...o, [key]: !o[key as keyof typeof o] }))
                                 }}
-                                className={`rounded-full px-2.5 py-0.5 border transition-all duration-150 font-medium ${overlays[key as keyof typeof overlays]
-                                    ? `${activeClass} shadow-sm`
-                                    : 'border-line/40 text-muted/60 hover:border-line hover:text-muted'
-                                    }`}
+                                className={`rounded-full px-2.5 py-0.5 border transition-all duration-150 font-medium ${
+                                    overlays[key as keyof typeof overlays]
+                                        ? `${activeClass} shadow-sm`
+                                        : 'border-line/40 text-muted/60 hover:border-line hover:text-muted'
+                                }`}
                             >
                                 {label}
                             </button>
@@ -1198,10 +1129,11 @@ export default function ChartCard({
                             e.preventDefault()
                             setOverlays((o) => ({ ...o, showActual: !o.showActual }))
                         }}
-                        className={`rounded-full px-3 py-1 border text-[10px] font-semibold transition-all duration-150 whitespace-nowrap ${overlays.showActual
-                            ? 'bg-accent text-canvas border-accent shadow-md shadow-accent/30'
-                            : 'border-line/40 text-muted/60 hover:border-accent hover:text-accent'
-                            }`}
+                        className={`rounded-full px-3 py-1 border text-[10px] font-semibold transition-all duration-150 whitespace-nowrap ${
+                            overlays.showActual
+                                ? 'bg-accent text-canvas border-accent shadow-md shadow-accent/30'
+                                : 'border-line/40 text-muted/60 hover:border-accent hover:text-accent'
+                        }`}
                     >
                         📊 Actual
                     </button>
@@ -1232,27 +1164,6 @@ function buildLiveData(
 ): (ExtendedChartData & { hasTomorrowPrices: boolean }) | null {
     const hasTomorrowPrices = slots.some((slot) => isTomorrow(slot.start_time) && slot.import_price_sek_kwh != null)
     const filtered = slots.filter((slot) => isToday(slot.start_time) || isTomorrow(slot.start_time))
-
-    console.log(`[CHART DEBUG] Processing ${filtered.length} slots for 48h view`)
-
-    // DEBUG: Track filtered slots for 48h view
-    console.log(`[48h DEBUG] Filtered ${filtered.length} slots from ${slots.length} total slots`)
-    if (filtered.length > 0) {
-        console.log(
-            `[48h DEBUG] First slot: ${filtered[0].start_time}, charge: ${filtered[0].battery_charge_kw ?? filtered[0].charge_kw}, discharge: ${filtered[0].battery_discharge_kw ?? filtered[0].discharge_kw}`,
-        )
-        console.log(
-            `[48h DEBUG] Sample action values:`,
-            filtered.slice(0, 10).map((s) => ({
-                time: s.start_time,
-                charge: s.battery_charge_kw ?? s.charge_kw,
-                discharge: s.battery_discharge_kw ?? s.discharge_kw,
-                actual_charge: s.actual_charge_kw,
-                actual_discharge: s.actual_discharge_kw,
-                is_executed: s.is_executed,
-            })),
-        )
-    }
 
     if (!filtered.length) {
         console.log('[buildLiveData] No slots found for 48h range, creating fallback')
@@ -1306,29 +1217,22 @@ function buildLiveData(
         // Parse the ISO string to extract Date and Offset, resetting time to 00:00:00
         // Format: YYYY-MM-DDTHH:MM:SS+HH:MM or YYYY-MM-DDTHH:MM:SSZ
         // We want: YYYY-MM-DDT00:00:00+HH:MM
-        const startStr = ordered[0].start_time;
+        const startStr = ordered[0].start_time
         try {
             // Assume ISO 8601 standard length for YYYY-MM-DD
-            const datePart = startStr.substring(0, 10);
+            const datePart = startStr.substring(0, 10)
 
             // Robust offset extraction: match Z or +HH:MM or -HH:MM
-            const offsetMatch = startStr.match(/(Z|[+-]\d{2}:?\d{2})$/);
-            const offset = offsetMatch ? offsetMatch[0] : 'Z';
+            const offsetMatch = startStr.match(/(Z|[+-]\d{2}:?\d{2})$/)
+            const offset = offsetMatch ? offsetMatch[0] : 'Z'
 
-            const midnightIso = `${datePart}T00:00:00${offset}`;
-            anchor.setTime(new Date(midnightIso).getTime());
-
-            console.log('[ANCHOR DEBUG]', {
-                original: startStr,
-                midnightIso,
-                anchorTime: anchor.getTime(),
-                anchorIso: anchor.toISOString()
-            });
+            const midnightIso = `${datePart}T00:00:00${offset}`
+            anchor.setTime(new Date(midnightIso).getTime())
         } catch (e) {
-            console.error('Failed to parse anchor time from string:', startStr, e);
-            const d = new Date(startStr);
-            d.setHours(0, 0, 0, 0);
-            anchor.setTime(d.getTime());
+            console.error('Failed to parse anchor time from string:', startStr, e)
+            const d = new Date(startStr)
+            d.setHours(0, 0, 0, 0)
+            anchor.setTime(d.getTime())
         }
     } else {
         anchor.setHours(0, 0, 0, 0)
@@ -1369,26 +1273,6 @@ function buildLiveData(
         const bucketStart = new Date(anchor.getTime() + i * stepMs)
         const bucketEnd = new Date(bucketStart.getTime() + stepMs)
         const slot = slotByTime.get(bucketStart.toISOString())
-
-        // DEBUG: Check if we are finding the slot for the expected action time (approx 14:45)
-        if (!slot && bucketStart.getHours() === 14 && bucketStart.getMinutes() === 45) {
-            console.log('[BUILDLIVEDATA DEBUG] 14:45 slot MISSING from map', {
-                bucketStart: bucketStart.getTime(),
-                bucketISO: bucketStart.toISOString(),
-                mapKeys: Array.from(slotByTime.keys()).slice(0, 5), // First 5 keys
-                hasExactMatch: slotByTime.has(bucketStart.toISOString())
-            });
-        }
-        if (slot) {
-            if ((slot.battery_discharge_kw ?? 0) > 0) {
-                console.log('[BUILDLIVEDATA DEBUG] Found DISCHARGE slot', {
-                    time: slot.start_time,
-                    val: slot.battery_discharge_kw,
-                    bucket: bucketStart.toISOString(),
-                    index: i
-                });
-            }
-        }
 
         labels.push(formatHour(bucketStart.toISOString()))
 

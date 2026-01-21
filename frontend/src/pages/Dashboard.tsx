@@ -390,9 +390,9 @@ export default function Dashboard() {
                         setTodayStats((prev) =>
                             prev
                                 ? {
-                                    ...prev,
-                                    pvForecast: parseFloat(dailyTotal.toFixed(1)),
-                                }
+                                      ...prev,
+                                      pvForecast: parseFloat(dailyTotal.toFixed(1)),
+                                  }
                                 : null,
                         )
                     }
@@ -478,17 +478,9 @@ export default function Dashboard() {
 
     // Build slotsOverride for the chart (and badge)
     let slotsOverride: ScheduleSlot[] | undefined
-    if (historySlots) {
-        console.log('[DASHBOARD DEBUG] historySlots:', {
-            count: historySlots.length,
-            first: historySlots[0],
-            last: historySlots[historySlots.length - 1]
-        })
-    }
     if (localSchedule && localSchedule.length > 0) {
         const todayAndTomorrow = localSchedule.filter((slot) => isToday(slot.start_time) || isTomorrow(slot.start_time))
-        // FIX: Re-disabled history merge until data is verified.
-        if (false && historySlots && historySlots.length > 0) {
+        if (historySlots && historySlots.length > 0) {
             const tomorrowSlots = todayAndTomorrow.filter((slot) => isTomorrow(slot.start_time))
             slotsOverride = [...historySlots, ...tomorrowSlots]
         } else {
@@ -737,7 +729,7 @@ export default function Dashboard() {
 
             {/* Row 1: Schedule Overview (24h / 48h) */}
             <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-                <ChartCard useHistoryForToday={false} refreshToken={chartRefreshToken} slotsOverride={slotsOverride} />
+                <ChartCard useHistoryForToday={true} refreshToken={chartRefreshToken} slotsOverride={slotsOverride} />
             </motion.div>
 
             {/* Row 2: Controls & Advisor & Quick Actions */}
@@ -806,10 +798,11 @@ export default function Dashboard() {
                                 <div className="flex items-center gap-2">
                                     <div className="flex items-center gap-2 text-[10px] text-muted">
                                         <span
-                                            className={`inline-flex h-2 w-2 rounded-full ${automationConfig?.enable_scheduler
-                                                ? 'bg-good shadow-[0_0_0_2px_rgba(var(--color-good),0.4)]'
-                                                : 'bg-line'
-                                                }`}
+                                            className={`inline-flex h-2 w-2 rounded-full ${
+                                                automationConfig?.enable_scheduler
+                                                    ? 'bg-good shadow-[0_0_0_2px_rgba(var(--color-good),0.4)]'
+                                                    : 'bg-line'
+                                            }`}
                                         />
                                         <span>{automationConfig?.enable_scheduler ? 'Active' : 'Disabled'}</span>
                                     </div>
@@ -830,8 +823,9 @@ export default function Dashboard() {
                                 <button
                                     onClick={() => fetchAllData()}
                                     disabled={isRefreshing}
-                                    className={`rounded-full p-1 transition ${isRefreshing ? 'bg-surface2 text-muted' : 'text-muted hover:text-accent'
-                                        }`}
+                                    className={`rounded-full p-1 transition ${
+                                        isRefreshing ? 'bg-surface2 text-muted' : 'text-muted hover:text-accent'
+                                    }`}
                                     title="Manual sync"
                                 >
                                     <span className={`inline-block text-[10px] ${isRefreshing ? 'animate-spin' : ''}`}>
