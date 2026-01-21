@@ -85,7 +85,9 @@ def _restore_latest_backup() -> bool:
     return True
 
 
-async def train_all_models(days_back: int = 90, min_samples: int = 100) -> dict:
+async def train_all_models(
+    days_back: int = 90, min_samples: int = 100, training_type: str = "automatic"
+) -> dict:
     """
     Train all ML models (AURORA main + Antares Corrector) with safety features.
 
@@ -123,7 +125,8 @@ async def train_all_models(days_back: int = 90, min_samples: int = 100) -> dict:
 
         # 2. Train Main Models (AURORA)
         logger.info("Starting Main Model training...")
-        train_models(days_back=days_back, min_samples=min_samples)
+        # train_models is heavy and synchronous, offload to thread
+        await asyncio.to_thread(train_models, days_back=days_back, min_samples=min_samples)
 
         # Check if main models were actually created/updated
         main_models = list(MODELS_DIR.glob("*model*.lgb"))
@@ -138,7 +141,8 @@ async def train_all_models(days_back: int = 90, min_samples: int = 100) -> dict:
 
         if level.level >= 2:
             logger.info("Starting Corrector training...")
-            corr_res = train_corrector(models_dir=str(MODELS_DIR))
+            # train_corrector is also heavy/sync
+            corr_res = await asyncio.to_thread(train_corrector, models_dir=str(MODELS_DIR))
             results["corrector_status"] = corr_res
             if corr_res.get("status") == "trained":
                 results["trained_models"].extend(corr_res.get("models_trained", []))
@@ -179,7 +183,7 @@ async def train_all_models(days_back: int = 90, min_samples: int = 100) -> dict:
                     ),
                     "corrector_status": results["corrector_status"].get("status"),
                 },
-                training_type="automatic",
+                training_type=training_type,
                 models_trained=results["trained_models"],
                 duration_seconds=int(duration),
                 partial_failure=results["status"] == "success" and not results["trained_models"],

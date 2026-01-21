@@ -87,3 +87,29 @@ def test_compute_next_training_today_future(scheduler):
             # Should be Tuesday Jan 2, 23:00
             expected_local = stockholm.localize(datetime(2024, 1, 2, 23, 0))
             assert next_run == expected_local.astimezone(pytz.UTC)
+
+
+def test_compute_next_training_invalid_config(scheduler):
+    """Test that invalid config falls back to defaults."""
+    # Invalid run_days and run_time
+    config = {"run_days": "invalid", "run_time": "99:99"}
+
+    with (
+        patch("yaml.safe_load", return_value={"timezone": "Europe/Stockholm"}),
+        patch("pathlib.Path.open", MagicMock()),
+    ):
+        stockholm = pytz.timezone("Europe/Stockholm")
+        # Mock current time to Tuesday Jan 2, 10:00 AM
+        now = stockholm.localize(datetime(2024, 1, 2, 10, 0))
+
+        with patch("backend.services.scheduler_service.datetime") as mock_dt:
+            mock_dt.now.return_value = now
+            mock_dt.UTC = UTC
+
+            # Should fallback to [1, 4] and 03:00.
+            # Jan 2 is Tuesday (1). Since 03:00 has passed, and defaults are [1, 4] (Tue, Fri),
+            # it should pick the next available day: Friday Jan 5 (4).
+            next_run = scheduler._compute_next_training(config)
+
+            expected_local = stockholm.localize(datetime(2024, 1, 5, 3, 0))
+            assert next_run == expected_local.astimezone(pytz.UTC)

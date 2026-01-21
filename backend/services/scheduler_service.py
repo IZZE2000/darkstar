@@ -239,9 +239,24 @@ class SchedulerService:
             tz_str = glob_cfg.get("timezone", "Europe/Stockholm")
             tz = pytz.timezone(tz_str)
 
+            # Validate run_days (0-6)
             run_days = config.get("run_days", [1, 4])
+            if not isinstance(run_days, list) or not all(
+                isinstance(d, int) and 0 <= d <= 6 for d in run_days
+            ):
+                logger.warning(f"Invalid run_days {run_days}, using default [1, 4]")
+                run_days = [1, 4]
+
+            # Validate run_time (HH:MM)
             run_time_str = config.get("run_time", "03:00")
-            hour, minute = map(int, run_time_str.split(":"))
+            try:
+                hour, minute = map(int, run_time_str.split(":"))
+                if not (0 <= hour <= 23 and 0 <= minute <= 59):
+                    raise ValueError
+            except (ValueError, IndexError, AttributeError):
+                logger.warning(f"Invalid run_time {run_time_str}, using default 03:00")
+                run_time_str = "03:00"
+                hour, minute = 3, 0
 
             now_local = datetime.now(tz)
 
