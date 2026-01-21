@@ -280,8 +280,8 @@ Currently, the charts can become cluttered when mixing planned and actual data. 
  **Plan:**
 
  #### Phase 1: Logging Configuration [DONE]
- * [x] Modify `backend/core/logging.py` to set `httpx` and `httpcore` loggers to `WARNING` level.
- * [x] **Verification**: Logs no longer show daily sensor polling requests.
+ * [x] Modify `backend/core/logging.py` to set `httpx`, `httpcore`, `uvicorn.access`, and `darkstar.api` loggers to `WARNING` level.
+ * [x] **Verification**: Logs no longer show daily sensor polling or repetitive API access/loading messages.
 
 ---
 
@@ -321,3 +321,45 @@ The 24h/48h toggle is causing chart rendering issues where battery actions disap
 * [x] Test that actions remain visible during live metric updates
 * [x] Ensure socket.io reconnections don't cause action loss
 * [x] **STOP - Verification**: All future battery actions visible and stable, no disappearing after brief appearance
+
+---
+
+### [PLANNED] REV // F36 — Fix Future Actions Data Source (Schedule.json vs Database)
+
+**Goal:** Fix missing future battery actions by ensuring they come from schedule.json only, not stale database data, with proper time-based splitting at "now" marker.
+
+**Context:**
+Root cause identified: `/api/schedule/today_with_history` loads future battery actions from database `slot_plans` table (stale data) instead of live `schedule.json`. This causes future actions to disappear because database has old planned values while schedule.json has current optimized actions. Actions appear briefly on refresh when `Api.schedule()` loads first, then disappear when `Api.scheduleTodayWithHistory()` overwrites with stale DB data.
+
+**Plan:**
+
+#### Phase 1: Fix Backend Data Source Logic [DONE]
+* [x] Modify `/api/schedule/today_with_history` in `backend/api/routers/schedule.py`
+* [x] Split data sources at current time ("now" marker):
+  - **Past slots (< now)**: Use database history data (actual_charge_kw, actual_discharge_kw)
+  - **Future slots (>= now)**: Use schedule.json data (battery_charge_kw, battery_discharge_kw)
+* [x] Remove database `planned_map` lookup for future slots (lines 250-275)
+* [x] Fix synthetic future slot creation from DB keys (prevent creating slots from stale DB records)
+* [x] Keep price and forecast data sources unchanged (Nordpool cache + DB forecasts)
+* [x] **Verification**: Future actions come from schedule.json, historical from database
+
+#### Phase 2: Preserve Non-Action Data [PLANNED]
+* [ ] Ensure price data (Nordpool cache) continues working for both past and future
+* [ ] Ensure forecast data (pv_forecast_kwh, load_forecast_kwh) continues from database
+* [ ] Ensure SoC targets and projections work correctly across time split
+* [ ] Keep historical overlays (actual_pv_kwh, actual_load_kwh) from database
+* [ ] **Verification**: Only battery actions split by time, other data sources unchanged
+
+#### Phase 3: Frontend Validation [PLANNED]
+* [ ] Test that future actions are immediately visible and stable
+* [ ] Verify historical actions show when available in database
+* [ ] Confirm "now" marker correctly separates data sources
+* [ ] Test that missing schedule.json shows as missing future actions (desired behavior)
+* [ ] **Verification**: Chart shows live future actions from schedule.json, historical from DB
+
+#### Phase 4: Edge Case Handling [PLANNED]
+* [ ] Handle missing schedule.json gracefully (show empty future actions)
+* [ ] Handle timezone edge cases around "now" marker calculation
+* [ ] Ensure proper error handling when database history unavailable
+* [ ] Add logging to distinguish data source for debugging
+* [ ] **Verification**: Robust handling of missing data sources, clear debugging info

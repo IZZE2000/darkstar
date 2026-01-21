@@ -81,6 +81,10 @@ def setup_logging():
     # Silence noisy library loggers (Rev ARC13)
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
+    logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+
+    # Silence repetitive API data loading (Rev DX2)
+    logging.getLogger("darkstar.api").setLevel(logging.WARNING)
 
 
 def get_ring_buffer() -> RingBufferHandler:
