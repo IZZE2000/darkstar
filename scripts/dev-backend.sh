@@ -11,6 +11,11 @@ fuser -k 5000/tcp > /dev/null 2>&1 || true
 if command -v uv >/dev/null 2>&1; then
     echo "⚡ Starting Backend with uv..."
     export PORT=${PORT:-5000}
+
+    # Run config migration
+    echo "Running config migrations..."
+    uv run python -m backend.config_migration
+
     # uv run automatically handles venv and environment
     uv run uvicorn backend.main:app --host 0.0.0.0 --port $PORT --reload --log-level info
 else
@@ -27,5 +32,10 @@ else
 
     # Run with hot reload
     export PORT=${PORT:-5000}
+
+    # Run config migration
+    echo "Running config migrations..."
+    python -m backend.config_migration
+
     uvicorn backend.main:app --host 0.0.0.0 --port $PORT --reload --log-level info
 fi

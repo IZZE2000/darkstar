@@ -8,7 +8,7 @@ import { useSocket } from '../../lib/hooks'
 export default function ModelTrainingCard() {
     const [status, setStatus] = useState<TrainingStatusResponse | null>(null)
     const [history, setHistory] = useState<TrainingHistoryResponse | null>(null)
-    const [scheduler, setScheduler] = useState<{ next_run_at?: string } | null>(null)
+    const [scheduler, setScheduler] = useState<{ next_run_at?: string; next_training_at?: string } | null>(null)
     const [loading, setLoading] = useState(false)
     const [triggering, setTriggering] = useState(false)
     const [progress, setProgress] = useState<{
@@ -109,12 +109,12 @@ export default function ModelTrainingCard() {
                         <span className="text-[10px] font-medium text-accent">Running</span>
                     </div>
                 )}
-                {scheduler?.next_run_at && !isTraining && (
+                {scheduler?.next_training_at && !isTraining && (
                     <div className="flex items-center gap-1.5 text-[10px] text-muted">
                         <CalendarClock className="h-3 w-3" />
                         <span>
                             Next:{' '}
-                            {new Date(scheduler.next_run_at).toISOString().slice(11, 16)}
+                            {new Date(scheduler.next_training_at).toISOString().slice(11, 16)}
                         </span>
                     </div>
                 )}
