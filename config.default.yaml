@@ -145,6 +145,7 @@ learning:
   min_improvement_threshold: 0.015
   auto_tune_enabled: true
   reflex_enabled: true
+  error_correction_enabled: true  # Enable ML error correction models
   min_sample_threshold: 2
   default_battery_cost_sek_per_kwh: 0.02  # Conservative default until dynamic cost is recorded
   sensor_map: {}

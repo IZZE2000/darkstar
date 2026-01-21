@@ -44,6 +44,8 @@ export default function Aurora() {
     const [togglingReflex, setTogglingReflex] = useState(false)
     const [probabilisticMode, setProbabilisticMode] = useState<boolean>(false)
     const [togglingProbabilistic, setTogglingProbabilistic] = useState(false)
+    const [errorCorrectionEnabled, setErrorCorrectionEnabled] = useState<boolean>(false)
+    const [togglingErrorCorrection, setTogglingErrorCorrection] = useState(false)
 
     // Performance Data State
     const [perfData, setPerfData] = useState<AuroraPerformanceData | null>(null)
@@ -59,6 +61,7 @@ export default function Aurora() {
             }
             setAutoTuneEnabled(!!res.state?.auto_tune_enabled)
             setReflexEnabled(!!res.state?.reflex_enabled)
+            setErrorCorrectionEnabled(!!res.state?.learning?.error_correction_enabled)
             setProbabilisticMode(res.state?.risk_profile?.mode === 'probabilistic')
         } catch (err) {
             console.error('Failed to load Aurora dashboard:', err)
@@ -133,6 +136,20 @@ export default function Aurora() {
             setReflexEnabled(!newValue) // Revert on error
         } finally {
             setTogglingReflex(false)
+        }
+    }
+
+    const handleErrorCorrectionToggle = async () => {
+        const newValue = !errorCorrectionEnabled
+        setErrorCorrectionEnabled(newValue)
+        setTogglingErrorCorrection(true)
+        try {
+            await Api.aurora.toggleErrorCorrection(newValue)
+        } catch (err) {
+            console.error('Failed to toggle error correction:', err)
+            setErrorCorrectionEnabled(!newValue)
+        } finally {
+            setTogglingErrorCorrection(false)
         }
     }
 
@@ -348,6 +365,26 @@ export default function Aurora() {
                                 <span
                                     className={`${
                                         reflexEnabled ? 'translate-x-5' : 'translate-x-1'
+                                    } inline-block h-3 w-3 transform rounded-full bg-white transition-transform`}
+                                />
+                            </button>
+                        </div>
+
+                        <div className="flex items-center justify-between p-2 rounded-lg bg-surface2/50 border border-line/50">
+                            <div className="flex flex-col">
+                                <span className="text-[11px] font-medium text-text">Error Correction</span>
+                                <span className="text-[9px] text-muted">ML bias correction</span>
+                            </div>
+                            <button
+                                onClick={handleErrorCorrectionToggle}
+                                disabled={togglingErrorCorrection}
+                                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 focus:ring-offset-surface ${
+                                    errorCorrectionEnabled ? 'bg-accent' : 'bg-surface2'
+                                }`}
+                            >
+                                <span
+                                    className={`${
+                                        errorCorrectionEnabled ? 'translate-x-5' : 'translate-x-1'
                                     } inline-block h-3 w-3 transform rounded-full bg-white transition-transform`}
                                 />
                             </button>

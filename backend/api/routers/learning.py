@@ -242,9 +242,32 @@ async def record_observation() -> dict[str, str]:
 async def learning_training_status() -> dict[str, Any]:
     """Get current ML training status."""
     try:
+        from ml.corrector import _determine_graduation_level, _get_engine
         from ml.training_orchestrator import get_training_status
 
-        return await asyncio.to_thread(get_training_status)
+        status = await asyncio.to_thread(get_training_status)
+
+        # Add graduation level
+        try:
+            # We recreate engine here to fetch fresh stats
+            # In a long running process `get_learning_engine` is cached lru,
+            # but _determine_graduation_level queries DB directly so it's fine.
+            engine = _get_engine()
+            level = _determine_graduation_level(engine)
+            status["graduation_level"] = {
+                "level": level.level,
+                "label": level.label,
+                "days_of_data": level.days_of_data,
+            }
+        except Exception as e:
+            logger.warning(f"Failed to determine graduation level: {e}")
+            status["graduation_level"] = {
+                "level": 0,
+                "label": "unknown",
+                "days_of_data": 0,
+            }
+
+        return status
     except Exception as e:
         logger.exception("Failed to get training status")
         raise HTTPException(status_code=500, detail=str(e)) from e

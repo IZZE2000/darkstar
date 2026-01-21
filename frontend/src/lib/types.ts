@@ -113,6 +113,9 @@ export type AuroraDashboardResponse = {
         weather_volatility: AuroraWeatherVolatility
         auto_tune_enabled: boolean
         reflex_enabled?: boolean
+        learning?: {
+            error_correction_enabled?: boolean
+        }
     }
     horizon: AuroraHorizon
     history: {

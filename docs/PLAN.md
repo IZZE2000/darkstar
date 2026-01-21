@@ -235,32 +235,36 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] **Manual Trigger:** Replace existing "Train Model Now" button with invalidation/progress indicator
 * [x] **History List:** Show recent training outcomes (success/failure, duration)
 
-#### Phase 7: Training Progress Feedback [PLANNED]
-* [ ] **WebSocket Events:** Add WebSocket events for training progress updates (`training_started`, `training_progress`, `training_completed`)
-* [ ] **Progress Percentages:** Include progress percentages in WebSocket events
-* [ ] **UI Progress Indicators:** Show progress spinner and disable button during training
-* [ ] **Error Message Display:** Display specific error messages for failed model types
-* [ ] **Real-time Updates:** Update training history in real-time
-* [ ] **Duration Display:** Show training duration and completion status
+#### Phase 7: Critical Fixes & Enhancements [DONE]
+* [x] **System Maturity:** Add graduation level indicator to UI and API
+* [x] **Next Schedule:** Show next automated training time in UI
+* [x] **Error Correction Toggle:** Add config toggle for error correction models
+* [x] **Model Detection Fix:** Correctly identify corrector models by filename
+* [x] **Stale Lock Fix:** Ignore training locks older than 1 hour
 
-#### Phase 8: Config Migration & Validation [PLANNED]
+#### Phase 8: Training Progress Feedback [PLANNED]
+* [ ] **WebSocket Events:** Add WebSocket events for training progress updates
+* [ ] **UI Progress Indicators:** Show live progress spinner
+* [ ] **Real-time Updates:** Update training history in real-time
+
+#### Phase 9: Config Migration & Validation [PLANNED]
 * [ ] **Config Migration:** Update `backend/config_migration.py` to add default `ml_training` config if missing
 * [ ] **Default Values:** Set defaults: `enabled: true`, `run_days: [1, 4]`, `run_time: "03:00"`
 * [ ] **Future Flexibility:** Add optional `error_correction_enabled: true` config key for future flexibility
 * [ ] **Migration Validation:** Validate config values during migration and log warnings for invalid values
 
-#### Phase 9: Scheduler Status Integration [PLANNED]
+#### Phase 10: Scheduler Status Integration [PLANNED]
 * [ ] **Extend Scheduler Status:** Extend `SchedulerStatus` dataclass to include training schedule info
 * [ ] **Training Status Fields:** Add `next_training_at`, `last_training_at`, `last_training_status`, `training_enabled` fields
 * [ ] **API Updates:** Update `/api/scheduler/status` endpoint to return training information
 * [ ] **Lock Status:** Include training lock status for UI feedback
 
-#### Phase 10: Immediate Error Correction Fix [PLANNED]
+#### Phase 11: Immediate Error Correction Fix [PLANNED]
 * [ ] **Quick Fix Script:** Create temporary script or API endpoint to manually train error correction models
 * [ ] **Graduation Check:** Check graduation level before attempting error correction training
 * [ ] **Clear Feedback:** Provide clear feedback about why error correction training was skipped (if not Graduate level)
 
-#### Phase 11: Integration Testing [PLANNED]
+#### Phase 12: Integration Testing [PLANNED]
 * [ ] **Schedule Testing:** Test automatic training schedule calculation across timezone changes and DST transitions
 * [ ] **Concurrency Testing:** Test manual training during automatic training (should show progress or disable button)
 * [ ] **Failure Scenarios:** Test partial failure scenarios (main models succeed, error correction fails)
@@ -270,7 +274,7 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [ ] **WebSocket Events:** Verify WebSocket events work correctly for training progress
 * [ ] **History Cleanup:** Test training history cleanup (30-day retention)
 
-#### Phase 12: Logging & Documentation [PLANNED]
+#### Phase 13: Logging & Documentation [PLANNED]
 * [ ] **Comprehensive Logging:** Add comprehensive logging for all training operations with clear prefixes
 * [ ] **Trigger Logging:** Log training trigger reasons (automatic_schedule vs manual)
 * [ ] **Graduation Logging:** Log graduation level decisions for error correction training

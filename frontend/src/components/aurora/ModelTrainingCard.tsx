@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Brain, RotateCw, AlertTriangle, CheckCircle2, Play } from 'lucide-react'
+import { Brain, RotateCw, AlertTriangle, CheckCircle2, Play, CalendarClock } from 'lucide-react'
 import Card from '../Card'
 import { Api } from '../../lib/api'
 import type { TrainingStatusResponse, TrainingHistoryResponse } from '../../lib/api'
@@ -7,18 +7,21 @@ import type { TrainingStatusResponse, TrainingHistoryResponse } from '../../lib/
 export default function ModelTrainingCard() {
     const [status, setStatus] = useState<TrainingStatusResponse | null>(null)
     const [history, setHistory] = useState<TrainingHistoryResponse | null>(null)
+    const [scheduler, setScheduler] = useState<{ next_run_at?: string } | null>(null)
     const [loading, setLoading] = useState(false)
     const [triggering, setTriggering] = useState(false)
 
     const fetchData = async () => {
         setLoading(true)
         try {
-            const [statusRes, historyRes] = await Promise.all([
+            const [statusRes, historyRes, schedulerRes] = await Promise.all([
                 Api.learningTrainingStatus(),
                 Api.learningTrainingHistory(3),
+                Api.schedulerStatus(),
             ])
             setStatus(statusRes)
             setHistory(historyRes)
+            setScheduler(schedulerRes)
         } catch (err) {
             console.error('Failed to fetch training data:', err)
         } finally {
@@ -49,10 +52,10 @@ export default function ModelTrainingCard() {
     }
 
     const mainModel = status?.models
-        ? Object.values(status.models).find((m) => !m.last_modified.includes('corrector'))
+        ? Object.values(status.models).find((m) => !m.last_modified.includes('error'))
         : null
     const correctorModel = status?.models
-        ? Object.values(status.models).find((m) => m.last_modified.includes('corrector'))
+        ? Object.entries(status.models).find(([filename]) => filename.includes('error'))?.[1]
         : null
 
     // Helper to format age
@@ -63,7 +66,9 @@ export default function ModelTrainingCard() {
         return `${hours}h ago`
     }
 
-    const isTraining = status?.is_training ?? false
+    // Stale lock detection (ignore lock if older than 1 hour)
+    const isStaleTraining = (status?.lock_age_seconds || 0) > 3600
+    const isTraining = (status?.is_training ?? false) && !isStaleTraining
 
     return (
         <Card className="p-4 md:p-5 flex flex-col h-full">
@@ -76,6 +81,18 @@ export default function ModelTrainingCard() {
                     <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-accent/10 border border-accent/20">
                         <RotateCw className="h-3 w-3 text-accent animate-spin" />
                         <span className="text-[10px] font-medium text-accent">Running</span>
+                    </div>
+                )}
+                {scheduler?.next_run_at && !isTraining && (
+                    <div className="flex items-center gap-1.5 text-[10px] text-muted">
+                        <CalendarClock className="h-3 w-3" />
+                        <span>
+                            Next:{' '}
+                            {new Date(scheduler.next_run_at).toLocaleTimeString([], {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                            })}
+                        </span>
                     </div>
                 )}
             </div>

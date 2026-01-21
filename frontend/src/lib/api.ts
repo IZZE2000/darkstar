@@ -416,6 +416,11 @@ export type SystemHealthResponse = {
 export type TrainingStatusResponse = {
     is_training: boolean
     lock_age_seconds: number | null
+    graduation_level?: {
+        level: number
+        label: string
+        days_of_data: number
+    }
     models: Record<
         string,
         {
@@ -544,6 +549,10 @@ export const Api = {
             getJSON<AuroraBriefingResponse>('/api/aurora/briefing', 'POST', payload),
         toggleReflex: (enabled: boolean) =>
             getJSON<{ status: string; enabled: boolean }>('/api/aurora/config/toggle_reflex', 'POST', { enabled }),
+        toggleErrorCorrection: (enabled: boolean) =>
+            getJSON<{ status: string; enabled: boolean }>('/api/aurora/config/toggle_error_correction', 'POST', {
+                enabled,
+            }),
     },
     performanceData: (days = 7) => getJSON<AuroraPerformanceData>(`/api/performance/data?days=${days}`),
     // Executor controls
