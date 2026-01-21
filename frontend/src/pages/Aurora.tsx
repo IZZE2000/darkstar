@@ -7,6 +7,7 @@ import ActivityLog from '../components/ActivityLog'
 import KPIStrip from '../components/KPIStrip'
 import ProbabilisticChart from '../components/ProbabilisticChart'
 import SystemHealthCard from '../components/SystemHealthCard'
+import ModelTrainingCard from '../components/aurora/ModelTrainingCard'
 import { Line, Bar } from 'react-chartjs-2'
 import { Api } from '../lib/api'
 import type { AuroraDashboardResponse, SchedulerStatusResponse, AuroraPerformanceData } from '../lib/api'
@@ -43,7 +44,6 @@ export default function Aurora() {
     const [togglingReflex, setTogglingReflex] = useState(false)
     const [probabilisticMode, setProbabilisticMode] = useState<boolean>(false)
     const [togglingProbabilistic, setTogglingProbabilistic] = useState(false)
-    const [training, setTraining] = useState(false)
 
     // Performance Data State
     const [perfData, setPerfData] = useState<AuroraPerformanceData | null>(null)
@@ -147,19 +147,6 @@ export default function Aurora() {
             setProbabilisticMode(!newValue)
         } finally {
             setTogglingProbabilistic(false)
-        }
-    }
-
-    const handleTrain = async () => {
-        setTraining(true)
-        try {
-            await Api.learningTrain()
-            fetchDashboard()
-        } catch (err) {
-            console.error('Failed to trigger ML training:', err)
-            alert('Failed to trigger ML training. Check logs.')
-        } finally {
-            setTraining(false)
         }
     }
 
@@ -381,26 +368,6 @@ export default function Aurora() {
                             </button>
                         </div>
                     </div>
-
-                    <div className="mt-4 pt-3 border-t border-line/30">
-                        <button
-                            onClick={handleTrain}
-                            disabled={training}
-                            className={`w-full flex items-center justify-center gap-2 py-2 rounded-lg bg-accent text-[#0F1216] text-[11px] font-semibold transition-all hover:bg-accent/90 disabled:opacity-50 disabled:cursor-not-allowed`}
-                        >
-                            {training ? (
-                                <>
-                                    <div className="h-3 w-3 border-2 border-[#0F1216]/20 border-t-[#0F1216] rounded-full animate-spin" />
-                                    <span>Training...</span>
-                                </>
-                            ) : (
-                                <>
-                                    <Brain className="h-3.5 w-3.5" />
-                                    <span>Train Model Now</span>
-                                </>
-                            )}
-                        </button>
-                    </div>
                 </Card>
             </div>
 
@@ -410,7 +377,7 @@ export default function Aurora() {
             {/* 2. THE DASHBOARD (Middle Section) */}
             <div className="grid gap-4 lg:grid-cols-12 lg:h-[450px]">
                 {/* Context Radar */}
-                <Card className="lg:col-span-4 p-4 flex flex-col h-full min-h-0 overflow-hidden">
+                <Card className="lg:col-span-3 p-4 flex flex-col h-full min-h-0 overflow-hidden">
                     <div className="mb-4 flex items-center justify-between shrink-0">
                         <div className="flex items-center gap-2">
                             <Activity className="h-4 w-4 text-accent" />
@@ -437,7 +404,7 @@ export default function Aurora() {
                 </Card>
 
                 {/* Activity Log */}
-                <Card className="lg:col-span-4 p-4 flex flex-col h-full min-h-0 overflow-hidden">
+                <Card className="lg:col-span-3 p-4 flex flex-col h-full min-h-0 overflow-hidden">
                     <div className="mb-4 flex items-center justify-between shrink-0">
                         <div className="flex items-center gap-2">
                             <Brain className="h-4 w-4 text-accent" />
@@ -500,8 +467,13 @@ export default function Aurora() {
         </Card>
         */}
 
+                {/* Training Status */}
+                <div className="lg:col-span-3 h-full min-h-0">
+                    <ModelTrainingCard />
+                </div>
+
                 {/* Cost Reality (Moved here) */}
-                <Card className="lg:col-span-4 p-4 md:p-5 flex flex-col h-full min-h-0 overflow-hidden">
+                <Card className="lg:col-span-3 p-4 md:p-5 flex flex-col h-full min-h-0 overflow-hidden">
                     <div className="mb-4 shrink-0">
                         <div className="text-xs font-medium text-text">Cost Reality</div>
                         <div className="text-[11px] text-muted">Daily financial outcome</div>

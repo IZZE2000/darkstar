@@ -226,18 +226,14 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] **Status Information:** Include training lock status, current operation, and progress information
 * [x] **Model File Status:** Return model file timestamps and ages for status display
 
-#### Phase 6: Model Training Status UI Card [PLANNED]
-* [ ] **Create Training Card:** New `ModelTrainingCard.tsx` component in `frontend/src/components/aurora/`
-* [ ] **Card Positioning:** Position between "System Health" and "Controls" cards in Aurora tab
-* [ ] **Model Status Display:** Show separate status for main models vs error correction models with file timestamps
-* [ ] **Age Indicators:** Display "Last trained: X days ago" for each model type
-* [ ] **Schedule Display:** Show next scheduled automatic training time
-* [ ] **Unified Training Button:** Include "Train Models Now" button with progress indicator
-* [ ] **Training History:** Show training history (last 5 training attempts with timestamps, type, and status)
-* [ ] **Loading States:** Handle loading states and error messages for individual model types
-* [ ] **Concurrency Feedback:** Show "Training in progress..." message and disable button when automatic training is running
 * [ ] **Partial Failure Display:** Display partial failure status clearly (e.g., "Main models: ✅, Error correction: ❌")
 * [ ] **Graduation Level Indicator:** Show graduation level indicator so users understand why error correction might be disabled
+
+#### Phase 6: Model Training Status UI Card [DONE]
+* [x] **Create Training Card:** New `ModelTrainingCard.tsx` component in `frontend/src/components/aurora/`
+* [x] **Status Visualization:** Show training status (idle/training), last run info, and main/corrector model status
+* [x] **Manual Trigger:** Replace existing "Train Model Now" button with invalidation/progress indicator
+* [x] **History List:** Show recent training outcomes (success/failure, duration)
 
 #### Phase 7: Training Progress Feedback [PLANNED]
 * [ ] **WebSocket Events:** Add WebSocket events for training progress updates (`training_started`, `training_progress`, `training_completed`)

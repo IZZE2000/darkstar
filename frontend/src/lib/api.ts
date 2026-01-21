@@ -413,6 +413,32 @@ export type SystemHealthResponse = {
     }
 }
 
+export type TrainingStatusResponse = {
+    is_training: boolean
+    lock_age_seconds: number | null
+    models: Record<
+        string,
+        {
+            last_modified: string
+            age_seconds: number
+            size_bytes: number
+        }
+    >
+}
+
+export type TrainingHistoryResponse = {
+    runs: {
+        id: number
+        run_date: string
+        status: string
+        training_type: string
+        models_trained: string[]
+        training_duration_seconds: number
+        partial_failure: boolean
+    }[]
+    count: number
+}
+
 async function getJSON<T>(path: string, method: 'GET' | 'POST' | 'DELETE' = 'GET', body?: unknown): Promise<T> {
     // Strip leading slash to make paths relative - works with base href for HA Ingress
     const relativePath = path.startsWith('/') ? path.slice(1) : path
@@ -477,6 +503,9 @@ export const Api = {
         ),
     learningStatus: () => getJSON<LearningStatusResponse>('/api/learning/status'),
     learningHistory: () => getJSON<LearningHistoryResponse>('/api/learning/history'),
+    learningTrainingStatus: () => getJSON<TrainingStatusResponse>('/api/learning/training-status'),
+    learningTrainingHistory: (limit = 5) =>
+        getJSON<TrainingHistoryResponse>(`/api/learning/training-history?limit=${limit}`),
     learningDailyMetrics: () => getJSON<LearningDailyMetricsResponse>('/api/learning/daily_metrics'),
     learningRun: () => getJSON<LearningRunResponse>('/api/learning/run', 'POST'),
     learningLoops: () => getJSON<LearningLoopsResponse>('/api/learning/loops'),
