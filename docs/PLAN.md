@@ -249,3 +249,84 @@ data_quality:
 3. ✅ Configurable filtering per sensor type
 4. ✅ Improved ML model accuracy with cleaner training data
 5. ✅ Data quality metrics visible in monitoring
+
+---
+
+### [DONE] REV // PERS1 — HA Add-on Persistent Storage
+
+**Goal:** Fix critical bug where ML models and schedule.json are not persisted across container restarts in the HA add-on deployment, making debugging impossible and causing planner to fall back to heuristics.
+
+**Context:**
+- HA add-on uses `/share/darkstar/` for persistent storage, symlinked to `/app/data/`
+- Models were being saved to ephemeral `/app/ml/models/` → Lost on restart
+- Schedule was being saved to ephemeral `/app/schedule.json` → Lost on restart
+- Database (`planner_learning.db`) was already correctly using `data/` → Working fine
+
+**Changes:**
+* [x] Update `ml/train.py` L28: `models_dir = Path("data/ml/models")`
+* [x] Update `ml/train.py` L57: `delete_trained_models()` default path
+* [x] Update `ml/forward.py` L19: `_load_models()` default path
+* [x] Update `ml/training_orchestrator.py` L18: `MODELS_DIR` constant
+* [x] Update `ml/corrector.py` L133,185,210,288: All function default paths
+* [x] Update `planner/output/schedule.py` L46: `output_path = "data/schedule.json"`
+* [x] Update `executor/config.py` L117,331: `schedule_path` defaults
+* [x] Update `darkstar/Dockerfile` L42: Create `data/ml/models` at build time
+* [x] Document persistence architecture in `docs/ARCHITECTURE.md` (New Section 14)
+
+**Impact:**
+- ✅ ML models now persist across restarts
+- ✅ Schedule.json visible in `/share/darkstar/` for debugging
+- ✅ Training runs successfully update models in persistent location
+- ✅ Executor can always find current schedule
+- ✅ Database, models, and schedule all in same persistent directory
+
+**Files Modified:**
+- `ml/train.py` - Training models directory
+- `ml/forward.py` - Forward inference models directory
+- `ml/training_orchestrator.py` - Training orchestrator constants
+- `ml/corrector.py` - Error correction models directory
+- `planner/output/schedule.py` - Schedule output path
+- `executor/config.py` - Schedule path defaults
+- `darkstar/Dockerfile` - Build-time directory creation
+- `docs/ARCHITECTURE.md` - New Section 14: Persistence Architecture
+- `docs/PLAN.md` - This revision entry
+
+---
+
+### [DONE] REV // PERS2 — HA Add-on Planner Regression Fix
+
+**Goal:** Fix critical planner regression where HA Add-on produces flat schedules (no charge/discharge) because ML models fail to load silently.
+
+**Root Cause:**
+1. **Path Inconsistencies** - Several files used old `ml/models/` path while core ML code used `data/ml/models/`. Training saved to `data/`, but some code loaded from `ml/`.
+2. **Silent Failure** - `_load_models()` returns empty dict `{}` on failure with just an "Info" log. Empty models → zero forecasts → trivial MILP → 0.2s solve time.
+3. **Dockerfile Bug** - Only copied `ml/*.py`, not `ml/models/*.lgb`. Images shipped without models.
+
+**Plan:**
+
+#### Phase 1: Ship Baseline Models [DONE]
+* [x] Remove `ml/models/` from `.gitignore` (only `antares_*` subdirs ignored)
+* [x] Add `ml/models/*.lgb` files to git tracking (10 models)
+
+#### Phase 2: Fix Path Inconsistencies [DONE]
+* [x] Update `ml/evaluate.py` L31 → `data/ml/models`
+* [x] Update `scripts/health_check.py` L320,389,391,432 → `data/ml/models`, `data/schedule.json`
+* [x] Update `scripts/train_corrector.py` L21,91 → `data/ml/models`
+* [x] Update `scripts/diagnose_ml.py` L56 → `data/ml/models`
+* [x] Update `backend/api/routers/learning.py` L251 → LOCK_FILE path fix
+
+#### Phase 3: Robust Model Loading [DONE]
+* [x] Update `ml/forward.py`: Log CRITICAL error when no models loaded
+* [x] Update `ml/forward.py`: Load fallback (0.5 kWh baseline average)
+* [x] Update `ml/forward.py`: PV fallback (Open-Meteo radiation-based)
+
+#### Phase 4: Startup Model Copy [DONE]
+* [x] Update `darkstar/Dockerfile`: Ship `ml/models/*.lgb` with image
+* [x] Update `darkstar/run.sh`: Copy models to persistent storage on first boot
+
+**Impact:**
+- ✅ Models now tracked in git → shipped with Docker image
+- ✅ All code paths use consistent `data/ml/models` location
+- ✅ Fallback ensures planner never silently runs with zero forecasts
+- ✅ First-boot model copy ensures fresh installs work immediately
+- ✅ User-trained models are never overwritten

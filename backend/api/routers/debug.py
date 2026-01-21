@@ -33,7 +33,7 @@ _ring_buffer_handler = get_ring_buffer()
 async def debug_data() -> dict[str, Any]:
     """Return comprehensive planner debug data from schedule.json."""
     try:
-        schedule_path = Path("schedule.json")
+        schedule_path = Path("data/schedule.json")
         with schedule_path.open() as f:
             data = json.load(f)
 

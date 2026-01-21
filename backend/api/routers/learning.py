@@ -248,7 +248,7 @@ async def learning_training_status() -> dict[str, Any]:
         from ml.corrector import _determine_graduation_level, _get_engine
         from ml.training_orchestrator import get_training_status
 
-        LOCK_FILE = Path("ml/models/.training.lock")
+        LOCK_FILE = Path("data/ml/models/.training.lock")
 
         def _is_lock_stale() -> bool:
             """Check if training lock is stale (older than 1 hour)."""

@@ -43,7 +43,7 @@ async def save_schedule_to_json(
     s_index_debug: dict[str, Any] | None,
     window_responsibilities: list[dict[str, Any]],
     planner_state: dict[str, Any],
-    output_path: str = "schedule.json",
+    output_path: str = "data/schedule.json",
 ) -> None:
     """
     Save the final schedule to schedule.json in the required format.

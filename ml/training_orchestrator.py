@@ -15,7 +15,7 @@ from ml.train import train_models
 
 logger = logging.getLogger(__name__)
 
-MODELS_DIR = Path("ml/models")
+MODELS_DIR = Path("data/ml/models")
 BACKUP_DIR = MODELS_DIR / "backup"
 LOCK_FILE = MODELS_DIR / ".training.lock"
 

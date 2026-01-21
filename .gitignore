@@ -68,9 +68,9 @@ Thumbs.db
 # Syncthing conflict files
 *.sync-conflict-*
 
-# ML models (ignored)
-ml/models/
-!ml/models/.gitkeep
+# RL models (ignored)
+ml/models/antares_*
+ml/models/backup
 
 # Legacy n8n workflows (not needed in Darkstar)
 pytz

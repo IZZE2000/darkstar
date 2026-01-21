@@ -317,7 +317,7 @@ class HealthChecker:
         """Check ML model availability and freshness."""
         self.print_section("Machine Learning Models", Symbols.BRAIN)
 
-        models_dir = Path("ml/models")
+        models_dir = Path("data/ml/models")
         if not models_dir.exists():
             self.print_table(
                 ["Status", "Check", "Result"], [[Symbols.CROSS, "Models Directory", "NOT FOUND"]]
@@ -386,9 +386,9 @@ class HealthChecker:
         critical_files = [
             ("config.yaml", "Main Configuration"),
             ("secrets.yaml", "Secrets Configuration"),
-            ("schedule.json", "Current Schedule"),
+            ("data/schedule.json", "Current Schedule"),
             ("data/planner_learning.db", "Learning Database"),
-            ("ml/models/", "ML Models Directory"),
+            ("data/ml/models/", "ML Models Directory"),
         ]
 
         results = []
@@ -429,7 +429,7 @@ class HealthChecker:
         """Check if schedule is recent and valid."""
         self.print_section("Schedule Health", Symbols.CLOCK)
 
-        schedule_path = Path("schedule.json")
+        schedule_path = Path("data/schedule.json")
         if not schedule_path.exists():
             self.print_table(
                 ["Status", "Check", "Result"], [[Symbols.CROSS, "Schedule File", "NOT FOUND"]]

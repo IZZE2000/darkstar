@@ -75,7 +75,7 @@ async def get_schedule() -> dict[str, Any]:
         return cached
 
     try:
-        schedule_path = Path("schedule.json")
+        schedule_path = Path("data/schedule.json")
         if schedule_path.exists():
             with schedule_path.open() as f:
                 data = json.load(f)
@@ -160,7 +160,7 @@ async def schedule_today_with_history(
     # 1. Load schedule.json
     schedule_map: dict[datetime, dict[str, Any]] = {}
     try:
-        schedule_path = Path("schedule.json")
+        schedule_path = Path("data/schedule.json")
         if schedule_path.exists():
             with schedule_path.open() as f:
                 payload = json.load(f)
@@ -433,7 +433,7 @@ async def schedule_today_with_history(
 async def save_schedule(request_body: dict[str, Any]) -> dict[str, str]:
     """Save manual schedule overrides."""
     try:
-        schedule_path = Path("schedule.json")
+        schedule_path = Path("data/schedule.json")
 
         # Load existing schedule
         if schedule_path.exists():

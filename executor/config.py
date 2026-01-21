@@ -114,7 +114,7 @@ class ExecutorConfig:
     controller: ControllerConfig = field(default_factory=ControllerConfig)
 
     history_retention_days: int = 30
-    schedule_path: str = "schedule.json"
+    schedule_path: str = "data/schedule.json"
     timezone: str = "Europe/Stockholm"
     pause_reminder_minutes: int = 30  # Send notification after N minutes paused
 
@@ -328,7 +328,7 @@ def load_executor_config(config_path: str = "config.yaml") -> ExecutorConfig:
         notifications=notifications,
         controller=controller,
         history_retention_days=int(executor_data.get("history_retention_days", 30)),
-        schedule_path=str(executor_data.get("schedule_path", "schedule.json")),
+        schedule_path=str(executor_data.get("schedule_path", "data/schedule.json")),
         timezone=timezone,
         pause_reminder_minutes=int(executor_data.get("pause_reminder_minutes", 30)),
         has_solar=has_solar,

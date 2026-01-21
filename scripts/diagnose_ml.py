@@ -53,7 +53,7 @@ def diagnose():
 
         # Try dry-run training
         print("\nAttempting dry-run training...")
-        res = train(models_dir="ml/models")
+        res = train(models_dir="data/ml/models")
         print("Train result:", res)
 
     except Exception as e:

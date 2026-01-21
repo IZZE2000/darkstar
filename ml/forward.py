@@ -4,6 +4,7 @@ Main entry point for calculating forecasted states for the next window (Aurora).
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -15,9 +16,16 @@ from ml.context_features import get_alarm_armed_series, get_vacation_mode_series
 from ml.train import _build_time_features
 from ml.weather import get_weather_series
 
+logger = logging.getLogger("darkstar.ml.forward")
 
-def _load_models(models_dir: str = "ml/models") -> dict[str, lgb.Booster]:
-    """Load trained LightGBM models for AURORA forward inference (Probabilistic)."""
+
+def _load_models(models_dir: str = "data/ml/models") -> dict[str, lgb.Booster]:
+    """Load trained LightGBM models for AURORA forward inference (Probabilistic).
+
+    Returns:
+        dict mapping model names to Booster objects.
+        Empty dict if no models could be loaded.
+    """
     models: dict[str, lgb.Booster] = {}
 
     # Quantiles to load
@@ -35,9 +43,9 @@ def _load_models(models_dir: str = "ml/models") -> dict[str, lgb.Booster]:
                 try:
                     models[f"load_{q}"] = lgb.Booster(model_file=f"{models_dir}/load_model.lgb")
                 except Exception as exc:
-                    print(f"Info: Could not load load_model ({q}): {exc}")
+                    logger.debug(f"Could not load load_model ({q}): {exc}")
             else:
-                print(f"Info: Could not load load_model_{q}.lgb")
+                logger.debug(f"Could not load load_model_{q}.lgb")
 
     # Load PV Models
     for q in quantiles:
@@ -49,9 +57,20 @@ def _load_models(models_dir: str = "ml/models") -> dict[str, lgb.Booster]:
                 try:
                     models[f"pv_{q}"] = lgb.Booster(model_file=f"{models_dir}/pv_model.lgb")
                 except Exception as exc:
-                    print(f"Info: Could not load pv_model ({q}): {exc}")
+                    logger.debug(f"Could not load pv_model ({q}): {exc}")
             else:
-                print(f"Info: Could not load pv_model_{q}.lgb")
+                logger.debug(f"Could not load pv_model_{q}.lgb")
+
+    # REV PERS2: Log CRITICAL if no models loaded (planner will fail silently otherwise)
+    if not models:
+        logger.critical(
+            "❌ NO ML MODELS LOADED from %s! "
+            "Forecasting will use fallback (Open-Meteo for PV, baseline avg for Load). "
+            "Train models or ensure baseline models are deployed.",
+            models_dir,
+        )
+    else:
+        logger.info(f"✅ Loaded {len(models)} ML models from {models_dir}")
 
     return models
 
@@ -149,7 +168,7 @@ async def generate_forward_slots(
         "alarm_armed_flag",
     ]
 
-    print("   Running LightGBM inference (Probabilistic)...")
+    logger.info("   Running LightGBM inference (Probabilistic)...")
     X = df[feature_cols]
     models = _load_models()
 
@@ -161,17 +180,33 @@ async def generate_forward_slots(
         predictions[f"load_{q}"] = pd.Series(0.0, index=df.index)
         predictions[f"pv_{q}"] = pd.Series(0.0, index=df.index)
 
-    # --- LOAD INFERENCE ---
-    for q in quantiles:
-        model_key = f"load_{q}"
-        if model_key in models:
-            raw_pred = models[model_key].predict(X)
-            # Apply guardrails (same for all bands)
-            # Floor at 0.01, Ceiling at 16kW
-            cleaned = [max(0.01, min(float(x), 16.0)) for x in raw_pred]
-            predictions[model_key] = pd.Series(cleaned, index=df.index)
+    # REV PERS2: Fallback logic when no ML models available
+    has_load_models = any(f"load_{q}" in models for q in quantiles)
+    has_pv_models = any(f"pv_{q}" in models for q in quantiles)
 
-    # --- PV INFERENCE ---
+    # --- LOAD INFERENCE (or fallback) ---
+    if has_load_models:
+        for q in quantiles:
+            model_key = f"load_{q}"
+            if model_key in models:
+                raw_pred = models[model_key].predict(X)
+                # Apply guardrails (same for all bands)
+                # Floor at 0.01, Ceiling at 16kW
+                cleaned = [max(0.01, min(float(x), 16.0)) for x in raw_pred]
+                predictions[model_key] = pd.Series(cleaned, index=df.index)
+    else:
+        # Fallback: Use baseline average load (0.5 kWh per 15-min slot = 2 kW avg)
+        logger.warning("⚠️ Load models not available, using baseline average (0.5 kWh/slot)")
+        baseline_load = 0.5  # kWh per 15-min slot
+        for q in quantiles:
+            if q == "p10":
+                predictions[f"load_{q}"] = pd.Series(baseline_load * 0.7, index=df.index)
+            elif q == "p50":
+                predictions[f"load_{q}"] = pd.Series(baseline_load, index=df.index)
+            else:  # p90
+                predictions[f"load_{q}"] = pd.Series(baseline_load * 1.3, index=df.index)
+
+    # --- PV INFERENCE (or fallback) ---
     # Setup Astro Clamping
     sun_calc = None
     try:
@@ -181,40 +216,83 @@ async def generate_forward_slots(
         lon = engine.config.get("system", {}).get("location", {}).get("longitude", 18.0686)
         sun_calc = SunCalculator(latitude=lat, longitude=lon, timezone=str(tz))
     except Exception as e:
-        print(f"⚠️ Astro init failed: {e}")
+        logger.warning(f"⚠️ Astro init failed: {e}")
 
-    for q in quantiles:
-        model_key = f"pv_{q}"
-        if model_key in models:
-            raw_pred = models[model_key].predict(X)
+    # Get PV capacity for fallback scaling (default 10kW)
+    pv_capacity_kw = engine.config.get("system", {}).get("solar", {}).get("capacity_kw", 10.0)
 
+    if has_pv_models:
+        for q in quantiles:
+            model_key = f"pv_{q}"
+            if model_key in models:
+                raw_pred = models[model_key].predict(X)
+
+                series = pd.Series(0.0, index=df.index)
+                for idx, row in df.iterrows():
+                    val = float(max(raw_pred[idx], 0.0))
+                    slot_ts = row["slot_start"]
+
+                    # 1. Astro Clamp
+                    is_sun_up = False
+                    if sun_calc:
+                        is_sun_up = sun_calc.is_sun_up(slot_ts, buffer_minutes=30)
+                    else:
+                        # Fallback
+                        h = slot_ts.hour
+                        is_sun_up = 5 <= h < 22
+
+                    if not is_sun_up:
+                        val = 0.0
+
+                    # 2. Radiation Clamp
+                    rad = row.get("shortwave_radiation_w_m2")
+                    if rad is not None and rad < 1.0:
+                        val = 0.0
+
+                    series[idx] = val
+
+                # 3. Smoothing (Rolling Average)
+                # Apply to all bands to prevent sawtooth
+                predictions[model_key] = (
+                    series.rolling(window=3, center=True, min_periods=1).mean().fillna(0.0)
+                )
+    else:
+        # REV PERS2 Fallback: Use Open-Meteo radiation to estimate PV output
+        logger.warning("⚠️ PV models not available, using radiation-based fallback (Open-Meteo)")
+        for q in quantiles:
             series = pd.Series(0.0, index=df.index)
             for idx, row in df.iterrows():
-                val = float(max(raw_pred[idx], 0.0))
                 slot_ts = row["slot_start"]
 
-                # 1. Astro Clamp
+                # Check if sun is up
                 is_sun_up = False
                 if sun_calc:
                     is_sun_up = sun_calc.is_sun_up(slot_ts, buffer_minutes=30)
                 else:
-                    # Fallback
                     h = slot_ts.hour
                     is_sun_up = 5 <= h < 22
 
                 if not is_sun_up:
-                    val = 0.0
+                    series[idx] = 0.0
+                    continue
 
-                # 2. Radiation Clamp
-                rad = row.get("shortwave_radiation_w_m2")
-                if rad is not None and rad < 1.0:
-                    val = 0.0
+                # Use radiation to estimate PV output
+                # Formula: kWh = radiation_w_m2 * efficiency * area * hours
+                # Simplified: pv_kw ≈ radiation / 1000 * capacity * efficiency
+                rad = row.get("shortwave_radiation_w_m2") or 0.0
+                efficiency = 0.15  # 15% system efficiency (panel + inverter)
+                pv_kw = (rad / 1000.0) * pv_capacity_kw * efficiency
+                pv_kwh = pv_kw * 0.25  # 15-min slot = 0.25 hours
 
-                series[idx] = val
+                # Apply uncertainty bands
+                if q == "p10":
+                    series[idx] = max(0.0, pv_kwh * 0.7)
+                elif q == "p50":
+                    series[idx] = max(0.0, pv_kwh)
+                else:  # p90
+                    series[idx] = max(0.0, pv_kwh * 1.3)
 
-            # 3. Smoothing (Rolling Average)
-            # Apply to all bands to prevent sawtooth
-            predictions[model_key] = (
+            predictions[f"pv_{q}"] = (
                 series.rolling(window=3, center=True, min_periods=1).mean().fillna(0.0)
             )
 

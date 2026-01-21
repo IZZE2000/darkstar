@@ -655,3 +655,115 @@ To ensure reliability across all environments, the migration system implements a
         5.  **Rollback**: If writing or verification fails, the `.bak` is automatically restored to prevent data loss.
 
 This ensures that Docker users can persist their settings across upgrades without manual intervention or mount-breaking errors.
+
+---
+
+## 14. Home Assistant Add-on Persistence Architecture (Rev PERS1)
+
+For the Home Assistant Add-on deployment, Darkstar requires careful management of persistent vs. ephemeral storage to ensure critical data survives container restarts.
+
+### 14.1 Storage Locations
+
+| Path | Type | Purpose | Mapped To |
+|------|------|---------|-----------|
+| `/app/` | **Ephemeral** | Application code, built at image build time | Container filesystem |
+| `/config/darkstar/` | **Persistent** | User configuration files | HA `/config/` |
+| `/share/darkstar/` | **Persistent** | Runtime data (DB, models, schedules) | HA `/share/` |
+| `/app/data/` | **Symlink** | Points to `/share/darkstar/` | Symlink target |
+
+### 14.2 Persistent Data Hierarchy
+
+All runtime data is stored in the persistent `/share/darkstar/` directory, accessed via the `/app/data/` symlink:
+
+```
+/share/darkstar/  (persistent volume)
+├── planner_learning.db          # Learning engine database
+├── schedule.json                # Current active schedule
+└── ml/
+    └── models/                  # Trained ML models
+        ├── load_model_p10.lgb
+        ├── load_model_p50.lgb
+        ├── load_model_p90.lgb
+        ├── pv_model_p10.lgb
+        ├── pv_model_p50.lgb
+        ├── pv_model_p90.lgb
+        └── backup/              # Model backups (last 2)
+```
+
+### 14.3 Bootstrap Process (`darkstar/run.sh`)
+
+The add-on entrypoint script establishes the persistence layer before starting the application:
+
+```bash
+# 1. Create persistent storage directory
+mkdir -p /share/darkstar
+
+# 2. Symlink app data directory to persistent storage
+ln -sf /share/darkstar /app/data
+
+# 3. Symlink configuration files
+ln -sf /config/darkstar/config.yaml /app/config.yaml
+ln -sf /config/darkstar/secrets.yaml /app/secrets.yaml
+
+# 4. Run Alembic migrations
+export DB_PATH=/share/darkstar/planner_learning.db
+python -m alembic upgrade head
+
+# 5. Start application
+exec uvicorn backend.main:app --host 0.0.0.0 --port 5000
+```
+
+### 14.4 Application Path Configuration
+
+All code references use the `data/` relative path, which resolves to persistent storage via the symlink:
+
+| Code Reference | Resolves To | Persistent? |
+|----------------|-------------|-------------|
+| `data/schedule.json` | `/app/data/schedule.json` → `/share/darkstar/schedule.json` | ✅ Yes |
+| `data/ml/models/` | `/app/data/ml/models/` → `/share/darkstar/ml/models/` | ✅ Yes |
+| `data/planner_learning.db` | `/app/data/planner_learning.db` → `/share/darkstar/planner_learning.db` | ✅ Yes |
+
+### 14.5 Database Schema Management
+
+The **Learning Database** (`planner_learning.db`) contains multiple critical tables managed by Alembic migrations:
+
+**Tables:**
+- `slot_observations` - Historical energy data (import/export/PV/load/SoC)
+- `slot_forecasts` - Aurora ML predictions with confidence intervals
+- `slot_plans` - Kepler MILP optimization results
+- `execution_log` - Executor action history (commands vs. planned)
+- `training_episodes` - ML training session records
+- `learning_runs` - Training execution metadata
+- `reflex_state` - Aurora auto-tuning state
+- `learning_daily_metrics` - Daily performance metrics
+- `battery_cost` - Weighted average battery energy cost
+
+**Migration Process:**
+1. Container starts
+2. `run.sh` sets `DB_PATH=/share/darkstar/planner_learning.db`
+3. Alembic runs migrations: `alembic upgrade head`
+4. Schema updates applied if version mismatch detected
+5. Application starts with current schema
+
+### 14.6 Why Persistence Matters
+
+**Without persistent storage:**
+- ❌ ML models disappear → Planner falls back to heuristics
+- ❌ Schedule lost → Executor cannot find current slot plan
+- ❌ Database reset → All learning history erased
+- ❌ Training runs fail → Cannot store new models
+
+**With persistent storage:**
+- ✅ Models survive restarts → Consistent forecasting
+- ✅ Schedule persists → Executor operates normally
+- ✅ Database accumulates → Learning improves over time
+- ✅ Training succeeds → Models update automatically
+
+### 14.7 Local Development vs. Production
+
+| Environment | Code Location | Data Location | Config Location |
+|-------------|---------------|---------------|-----------------|
+| **Local Dev** | Working directory | `./data/` | `./config.yaml` |
+| **HA Add-on** | `/app/` (read-only) | `/share/darkstar/` | `/config/darkstar/` |
+
+The symlink strategy ensures the same relative path (`data/`) works correctly in both environments.

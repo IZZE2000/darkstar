@@ -28,7 +28,7 @@ class EvaluationConfig:
     days_back: int = 7
     aurora_version: str = AURORA_VERSION
     baseline_version: str = BASELINE_VERSION
-    models_dir: Path = Path("ml/models")
+    models_dir: Path = Path("data/ml/models")
     load_model_name: str = "load_model.lgb"
     pv_model_name: str = "pv_model.lgb"
 

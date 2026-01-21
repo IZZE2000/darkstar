@@ -18,7 +18,7 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger("train_corrector")
 
 
-def train_manual(force: bool = False, output_dir: str = "ml/models"):
+def train_manual(force: bool = False, output_dir: str = "data/ml/models"):
     try:
         from ml.corrector import (
             _determine_graduation_level,
@@ -88,7 +88,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--force", action="store_true", help="Force training even if graduation level is not met"
     )
-    parser.add_argument("--dir", type=str, default="ml/models", help="Directory to save models")
+    parser.add_argument(
+        "--dir", type=str, default="data/ml/models", help="Directory to save models"
+    )
 
     args = parser.parse_args()
 

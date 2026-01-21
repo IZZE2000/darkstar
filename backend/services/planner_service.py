@@ -99,7 +99,7 @@ class PlannerService:
         import json
 
         try:
-            with Path("schedule.json").open() as f:
+            with Path("data/schedule.json").open() as f:
                 data = json.load(f)
                 return len(data.get("schedule", []))
         except Exception:

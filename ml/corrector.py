@@ -130,7 +130,7 @@ def _load_training_frame(engine: LearningEngine, days_back: int = 30) -> pd.Data
 
 def _train_error_models(
     df: pd.DataFrame,
-    models_dir: str = "ml/models",
+    models_dir: str = "data/ml/models",
 ) -> dict[str, lgb.Booster]:
     """
     Train LightGBM models to predict residuals for PV and load.
@@ -182,7 +182,7 @@ def _train_error_models(
     return models
 
 
-def train(models_dir: str = "ml/models") -> dict[str, Any]:
+def train(models_dir: str = "data/ml/models") -> dict[str, Any]:
     """
     Train or refresh the Aurora Correction models.
     """
@@ -207,7 +207,7 @@ def train(models_dir: str = "ml/models") -> dict[str, Any]:
     }
 
 
-def _load_error_models(models_dir: str = "ml/models") -> dict[str, lgb.Booster]:
+def _load_error_models(models_dir: str = "data/ml/models") -> dict[str, lgb.Booster]:
     models: dict[str, lgb.Booster] = {}
     with contextlib.suppress(Exception):
         models["pv_residual"] = lgb.Booster(model_file=f"{models_dir}/pv_error.lgb")
@@ -285,7 +285,7 @@ def _clamp_correction(base: float, raw_correction: float) -> float:
 async def predict_corrections(
     horizon_hours: int = 48,
     forecast_version: str = "aurora",
-    models_dir: str = "ml/models",
+    models_dir: str = "data/ml/models",
 ) -> tuple[list[dict[str, Any]], str]:
     """
     Predict per-slot corrections for the upcoming horizon using the Graduation Path.

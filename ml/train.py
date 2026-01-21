@@ -25,7 +25,7 @@ class TrainingConfig:
     days_back: int = 90
     # Reduced from 500 to 100 to allow training on small datasets (Cold Start scenario)
     min_samples: int = 100
-    models_dir: Path = Path("ml/models")
+    models_dir: Path = Path("data/ml/models")
     load_model_name: str = "load_model.lgb"
     pv_model_name: str = "pv_model.lgb"
 
@@ -54,7 +54,7 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def delete_trained_models(models_dir: Path = Path("ml/models")) -> None:
+def delete_trained_models(models_dir: Path = Path("data/ml/models")) -> None:
     """Delete all .lgb files in the models directory."""
     if not models_dir.exists():
         return

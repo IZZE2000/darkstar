@@ -720,7 +720,7 @@ async def run_simulation() -> dict[str, Any]:
     try:
         from planner.simulation import simulate_schedule  # pyright: ignore [reportMissingImports]
 
-        with Path("schedule.json").open() as f:
+        with Path("data/schedule.json").open() as f:
             schedule = json.load(f)
 
         config = load_yaml("config.yaml")

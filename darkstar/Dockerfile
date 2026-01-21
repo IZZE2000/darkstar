@@ -38,8 +38,10 @@ COPY planner/ ./planner/
 COPY executor/ ./executor/
 COPY bin/ ./bin/
 COPY ml/*.py ./ml/
-# Models are generated at runtime (Clean Slate strategy)
-RUN mkdir -p ml/models
+# Ship baseline ML models with image (will be copied to persistent storage on first boot)
+COPY ml/models/*.lgb ./ml/models/
+# Persistent storage structure for ML models (symlinked to /share/darkstar/ml/models at runtime)
+RUN mkdir -p data/ml/models
 COPY inputs.py ./
 
 # Copy frontend source and build (AFTER copying backend to avoid overwriting static assets)
