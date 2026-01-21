@@ -19,15 +19,15 @@ export default function ModelTrainingCard() {
     } | null>(null)
 
     // Listen for real-time progress
-    useSocket('training_progress', (data: any) => {
-        // console.log('Training progress:', data)
-        setProgress(data)
-        if (data.status === 'success' || data.status === 'error') {
+    useSocket('training_progress', (data: unknown) => {
+        const payload = data as { status: string; stage: string; message: string; progress: number }
+        // console.log('Training progress:', payload)
+        setProgress(payload)
+        if (payload.status === 'success' || payload.status === 'error') {
             // Refresh main data on completion
             fetchData()
         }
     })
-
 
     const fetchData = async () => {
         setLoading(true)
@@ -90,11 +90,10 @@ export default function ModelTrainingCard() {
 
     // Use either API status or realtime progress status
     // If backend says is_training=false (because stale), we respect that.
-    const isTraining = isTrainingLocked || (progress?.status === 'busy')
+    const isTraining = isTrainingLocked || progress?.status === 'busy'
 
     // Helper for button state
     // const canTrain = !isTrainingLocked && !isTraining // Used in render
-
 
     return (
         <Card className="p-4 md:p-5 flex flex-col h-full">
@@ -181,7 +180,7 @@ export default function ModelTrainingCard() {
                                                 day: '2-digit',
                                                 hour: '2-digit',
                                                 minute: '2-digit',
-                                                hour12: false
+                                                hour12: false,
                                             })}
                                         </span>
                                     </div>
@@ -227,7 +226,6 @@ export default function ModelTrainingCard() {
                     )}
                 </button>
             </div>
-
         </Card>
     )
 }

@@ -90,8 +90,8 @@ async def test_today_with_history_includes_planned_actions(tmp_path):
 
 
 @pytest.mark.anyio
-async def test_today_with_history_excludes_past(tmp_path):
-    """Verify that slots before 'now' are excluded after the filter implementation."""
+async def test_today_with_history_includes_past(tmp_path):
+    """Verify that slots before 'now' are INCLUDED as they are part of history."""
     db_path = tmp_path / "planner_learning.db"
 
     engine = create_async_engine(f"sqlite+aiosqlite:///{db_path}")
@@ -142,6 +142,6 @@ async def test_today_with_history_excludes_past(tmp_path):
         result = await schedule_today_with_history(store=store)
 
     slots = result["slots"]
-    # 01:00 should be excluded (past), 22:00 should be included (future)
-    assert not any("01:00:00" in s["start_time"] for s in slots)
+    # 01:00 should be INCLUDED (past/history), 22:00 should be INCLUDED (future)
+    assert any("01:00:00" in s["start_time"] for s in slots)
     assert any("22:00:00" in s["start_time"] for s in slots)
