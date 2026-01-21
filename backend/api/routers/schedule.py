@@ -354,10 +354,12 @@ async def schedule_today_with_history(
                 if "water_heating_kw" not in slot or slot.get("water_heating_kw") is None:
                     slot["water_heating_kw"] = p.get("water_heating_kw", 0.0)
             else:
-                # Future: Only take non-action data from planned_map if not in slot
-                # (Actually, for future, schedule.json should really have everything, but we can preserve
-                # SoC target if it's missing for some reason, though schedule.json should be the master).
-                # To fix F36, we EXPLICITLY do NOT pull battery_charge_kw / battery_discharge_kw from DB for future.
+                # Future: Only take non-critical data from planned_map if really needed.
+                # [REV F36] CRITICAL: Absolutely DO NOT touch battery_charge_kw or battery_discharge_kw for future slots.
+                # schedule.json is the ONLY source of truth for future actions.
+                # Even if schedule.json has None, we prefer None over stale DB data.
+                if "soc_target_percent" not in slot or slot.get("soc_target_percent") is None:
+                    slot["soc_target_percent"] = p["soc_target_percent"]
                 if "soc_target_percent" not in slot or slot.get("soc_target_percent") is None:
                     slot["soc_target_percent"] = p["soc_target_percent"]
                 if "water_heating_kw" not in slot or slot.get("water_heating_kw") is None:

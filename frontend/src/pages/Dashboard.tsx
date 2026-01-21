@@ -478,10 +478,16 @@ export default function Dashboard() {
 
     // Build slotsOverride for the chart (and badge)
     let slotsOverride: ScheduleSlot[] | undefined
+    if (historySlots) {
+        console.log('[DASHBOARD DEBUG] historySlots:', {
+            count: historySlots.length,
+            first: historySlots[0],
+            last: historySlots[historySlots.length - 1]
+        })
+    }
     if (localSchedule && localSchedule.length > 0) {
         const todayAndTomorrow = localSchedule.filter((slot) => isToday(slot.start_time) || isTomorrow(slot.start_time))
-        // FIX: Temporarily disable historySlots merge to prevent bad data overwrite
-        // This forces valid schedule.json data to be used
+        // FIX: Re-disabled history merge until data is verified.
         if (false && historySlots && historySlots.length > 0) {
             const tomorrowSlots = todayAndTomorrow.filter((slot) => isTomorrow(slot.start_time))
             slotsOverride = [...historySlots, ...tomorrowSlots]
