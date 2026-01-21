@@ -70,7 +70,7 @@ https://github.com/springfall2008/batpred/discussions/2529
 - Zoom in the chartCard does no longer work properly! When i try to zoom it just wants to reset to the 48h to 24h view! It should only set that view on page reload, or maybe we need a "reset zoom" button?
 - We are missing the config key comments for the whole "# Learning Engine (Aurora Reflex)
 learning:" section in config.default.yaml
-
+- Can we improve the config soft merge so any new added keys are added to the same place as they are in the default config file?
 ---
 
 ## 🔴 High Priority
