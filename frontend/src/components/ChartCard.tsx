@@ -1299,8 +1299,25 @@ function buildLiveData(
         }
     }
 
+    // Use the first slot's time as the anchor if available, otherwise fallback to today 00:00
+    // This ensures we align with the actual data being returned, shielding against timezone/date mismatches
     const anchor = new Date()
-    anchor.setHours(0, 0, 0, 0)
+    if (ordered.length > 0) {
+        anchor.setTime(new Date(ordered[0].start_time).getTime())
+        // Ensure we anchor to the start of the day if we want a full 48h view from midnight
+        // OR align to the first slot if we are showing a sliding window.
+        // For the ChartCard 48h view, we typically want to start at 00:00 of the current day.
+
+        // CORRECTION: The loop iterates 'steps' (192) times from 'anchor'.
+        // If anchor is "now" (which new Date() is), then we are looking for slots STARTING NOW.
+        // But the previous logic did anchor.setHours(0,0,0,0).
+        // If 'isToday' logic filtered slots correctly, we should just use midnight of the first slot's day.
+        const firstSlotDate = new Date(ordered[0].start_time)
+        anchor.setTime(firstSlotDate.getTime())
+        anchor.setHours(0, 0, 0, 0)
+    } else {
+        anchor.setHours(0, 0, 0, 0)
+    }
 
     const stepMs = resolutionMinutes * 60 * 1000
     const steps = Math.round((48 * 60) / resolutionMinutes)
