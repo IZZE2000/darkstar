@@ -85,3 +85,5 @@ gsd-template/
 data/planner_learning.db-shm
 .gitignore
 data/planner_learning.db-wal
+
+.kiro/

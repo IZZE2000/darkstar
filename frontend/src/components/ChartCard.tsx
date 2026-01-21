@@ -559,29 +559,6 @@ const createChartData = (
         }
     }
 
-    // DEBUG: Time alignment check
-    if (baseData.datasets[3] && baseData.datasets[4]) {
-        console.log('[CREATECHARTDATA DEBUG]', {
-            inputChargeNonZero: values.charge?.filter((v) => v !== null && (v as number) > 0).length || 0,
-            inputDischargeNonZero: values.discharge?.filter((v) => v !== null && (v as number) > 0).length || 0,
-            outputChargeNonZero: (baseData.datasets[3].data as (number | null)[]).filter(
-                (v) => v !== null && (v as number) > 0,
-            ).length,
-            outputDischargeNonZero: (baseData.datasets[4].data as (number | null)[]).filter(
-                (v) => v !== null && (v as number) > 0,
-            ).length,
-        })
-    }
-
-    // DEBUG: Final positioning check
-    const dischargeDataset = baseData.datasets[4] as any
-    if (dischargeDataset) {
-        const dischargeIndices = dischargeDataset.data
-            .map((v: any, i: number) => (v !== null && v > 0 ? { index: i, value: v } : null))
-            .filter(Boolean)
-        console.log('[DISCHARGE POSITIONS]', dischargeIndices)
-    }
-
     // Preserve nowIndex on the returned object so runtime
     // logic can position the "NOW" marker.
     return {
@@ -1354,17 +1331,6 @@ function buildLiveData(
     // For 48h view, we show "now" if it's within the window (which starts at 00:00 today)
     if (elapsed >= 0 && elapsed <= totalMs) {
         nowPct = elapsed / totalMs
-    }
-
-    // DEBUG: Log non-zero action values
-    const nonZeroCharge = charge.map((v, i) => ({ i, v })).filter((x) => x.v && x.v > 0)
-    const nonZeroDischarge = discharge.map((v, i) => ({ i, v })).filter((x) => x.v && x.v > 0)
-    if (nonZeroCharge.length > 0 || nonZeroDischarge.length > 0) {
-        console.log('[48h CHART DATA] Non-zero actions:', {
-            charge: nonZeroCharge,
-            discharge: nonZeroDischarge,
-            totalSlots: charge.length,
-        })
     }
 
     return {
