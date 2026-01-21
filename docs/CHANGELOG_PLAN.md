@@ -8,6 +8,121 @@ This document contains the archive of all completed revisions. It serves as the 
 
 
 
+## ERA // 16: v2.5.2-beta ML Core & Training Infrastructure
+
+This era focused on implementing the final missing pieces of the ML training pipeline, including automatic training schedules, a unified orchestrator for all model types, and a comprehensive status UI.
+
+### [DONE] REV // ARC11 — Complete ML Model Training System
+
+**Goal:** Implement missing automatic ML training, create unified training for all model types, and add comprehensive training status UI with production-grade safety features.
+
+**Context:**
+- AURORA ML pipeline fails because error correction models are missing but never trained
+- Automatic ML training is configured in `config.default.yaml` but not implemented in `SchedulerService`
+- Current "Train Model Now" only trains main AURORA models, not error correction models
+- No UI feedback for training status, schedules, or model freshness
+- System expects both main models and error correction models but only provides manual training for main models
+
+**Plan:**
+
+#### Phase 1: Unified Training Orchestrator [DONE]
+* [x] Create Training Orchestrator: New `ml/training_orchestrator.py` module with `train_all_models()` function
+* [x] Training Lock System: Add simple file-based training lock to prevent concurrent training
+* [x] Model Backup System: Copy existing models to `ml/models/backup/` with timestamp before training, keep only last 2 backups
+* [x] Graduation Level Integration: Check graduation level using existing `ml.corrector._determine_graduation_level()`
+* [x] Unified Training Flow: Train main models (load/PV) using `ml.train.train_models()`, then error correction models using `ml.corrector.train()` only if Graduate level (14+ days)
+* [x] Detailed Status Return: Return status including which models were trained, errors, training duration, and partial failure handling
+* [x] Auto-restore on Failure: Restore from backup if training fails completely
+
+#### Phase 2: Database Schema & Tracking [DONE]
+* [x] **Extend learning_runs Table:** Add migration with new columns:
+  * `training_type` VARCHAR ("automatic", "manual")
+  * `models_trained` TEXT (JSON array of trained model types)
+  * `training_duration_seconds` INTEGER
+  * `partial_failure` BOOLEAN (true if some models failed)
+* [x] **Training History Cleanup:** Add cleanup job to keep only last 30 days of training records
+* [x] **Update Learning Queries:** Modify existing learning history queries to include new training fields
+
+#### Phase 3: Automatic Training Implementation [DONE]
+* [x] **Scheduler Service Integration:** Modify `backend/services/scheduler_service.py` to add ML training logic to `_loop()` method
+* [x] **Training Schedule Logic:** Add `_should_run_training()` method to check schedule based on `config.ml_training` section
+* [x] **Config Validation:** Validate `run_days` (0-6) and `run_time` (HH:MM format), log warnings and use defaults for invalid values
+* [x] **Training Execution:** Add `_run_ml_training()` method that calls unified training orchestrator
+* [x] **Timezone Handling:** Use local timezone for `run_time` parsing and comparison
+* [x] **Task Status Tracking:** Set `current_task = "ml_training"` during training execution
+* [x] **Retry Logic:** Add retry logic (2 attempts) for failed automatic training with exponential backoff
+* [x] **Training Logging:** Log training trigger reason ("automatic_schedule") and detailed results
+
+#### Phase 4: Manual Training API Updates [DONE]
+* [x] **Update Training Endpoint:** Modify `/api/learning/train` in `backend/api/routers/learning.py`
+* [x] **Unified Training Call:** Replace `ml.train.train_models()` call with new unified `train_all_models()`
+* [x] **Concurrency Control:** Check training lock and return appropriate status if training already in progress
+* [x] **Detailed Response:** Return detailed status including individual model training results and duration
+* [x] **Error Handling:** Add proper error handling for partial failures
+* [x] **Manual Training Logging:** Log training trigger reason ("manual") and results
+
+#### Phase 5: Training Status APIs [DONE]
+* [x] **Training Status Endpoint:** Create `/api/learning/training-status` endpoint to return current training state
+* [x] **Training History Endpoint:** Create `/api/learning/training-history` endpoint to return recent training attempts
+* [x] **Status Information:** Include training lock status, current operation, and progress information
+* [x] **Model File Status:** Return model file timestamps and ages for status display
+
+#### Phase 6: Model Training Status UI Card [DONE]
+* [x] **Create Training Card:** New `ModelTrainingCard.tsx` component in `frontend/src/components/aurora/`
+* [x] **Status Visualization:** Show training status (idle/training), last run info, and main/corrector model status
+* [x] **Manual Trigger:** Replace existing "Train Model Now" button with invalidation/progress indicator
+* [x] **History List:** Show recent training outcomes (success/failure, duration)
+
+#### Phase 7: Critical Fixes & Enhancements [DONE]
+* [x] **System Maturity:** Add graduation level indicator to UI and API
+* [x] **Next Schedule:** Show next automated training time in UI
+* [x] **Error Correction Toggle:** Add config toggle for error correction models
+* [x] **Model Detection Fix:** Correctly identify corrector models by filename
+* [x] **Stale Lock Fix:** Ignore training locks older than 1 hour
+
+#### Phase 8: Training Progress Feedback [DONE]
+* [x] **WebSocket Events:** Add WebSocket events for training progress updates
+* [x] **UI Progress Indicators:** Show live progress spinner
+* [x] **Real-time Updates:** Update training history in real-time
+
+#### Phase 9: Config Migration & Validation [DONE]
+* [x] **Config Migration:** Update `backend/config_migration.py` to add default `ml_training` config if missing (keys exist in `config.default.yaml`)
+* [x] **Default Values:** Set defaults: `enabled: true`, `run_days: [1, 4]`, `run_time: "03:00"`
+* [x] **Future Flexibility:** Add `error_correction_enabled: true` config key for future flexibility
+* [x] **Migration Validation:** Validate config values during migration and log warnings for invalid values (Is this already implemented?)
+
+#### Phase 10: Scheduler Status Integration [DONE]
+* [x] **Extend Scheduler Status:** Extend `SchedulerStatus` dataclass to include training schedule info
+* [x] **Training Status Fields:** Add `next_training_at`, `last_training_at`, `last_training_status`, `training_enabled` fields
+* [x] **API Updates:** Update `/api/scheduler/status` endpoint to return training information
+* [x] **Lock Status:** Include training lock status for UI feedback (Fixed in Phase 10.5)
+* [x] **Config Check:** Respect error correction config in orchestrator (Fixed in Phase 10.5)
+
+#### Phase 11: Immediate Error Correction Fix [DONE]
+* [x] **Quick Fix Script:** Create temporary script or API endpoint to manually train error correction models
+* [x] **Graduation Check:** Check graduation level before attempting error correction training
+* [x] **Clear Feedback:** Provide clear feedback about why error correction training was skipped (if not Graduate level)
+
+#### Phase 12: Integration Testing [DONE]
+* [x] **Schedule Testing:** Test automatic training schedule calculation across timezone changes and DST transitions
+* [x] **Concurrency Testing:** Test manual training during automatic training (should show progress or disable button)
+* [x] **Failure Scenarios:** Test partial failure scenarios (main models succeed, error correction fails)
+* [x] **Graduation Transitions:** Test graduation level transitions (infant -> statistician -> graduate)
+* [x] **Config Validation:** Test config validation with invalid values
+* [x] **Backup & Restore:** Test backup and restore functionality
+* [x] **WebSocket Events:** Verify WebSocket events work correctly for training progress
+* [x] **History Cleanup:** Test training history cleanup (30-day retention)
+
+#### Phase 13: Logging & Documentation [DONE]
+* [x] **Comprehensive Logging:** Add comprehensive logging for all training operations with clear prefixes
+* [x] **Trigger Logging:** Log training trigger reasons (automatic_schedule vs manual)
+* [x] **Graduation Logging:** Log graduation level decisions for error correction training
+* [x] **Success Logging:** Add training duration and model count to success logs
+* [x] **Error Context:** Ensure all training errors are logged with sufficient context for debugging
+* [x] **Backup Logging:** Log backup restore failures and continue with broken models
+
+---
+
 ## ERA // 15: v2.5.1-beta Stability & UI Refinement
 
 This era focused on the stabilization of the v2.5.1-beta release, fixing critical startup and migration issues, and refining the ChartCard UI for better visibility and performance.
