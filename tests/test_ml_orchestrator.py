@@ -77,48 +77,78 @@ def test_restore_backup(setup_test_dirs):
     assert (setup_test_dirs / "model1.lgb").read_text() == "v1"
 
 
+@pytest.mark.asyncio
 @patch("ml.training_orchestrator.train_models")
 @patch("ml.training_orchestrator.train_corrector")
 @patch("ml.training_orchestrator._determine_graduation_level")
 @patch("ml.training_orchestrator._get_engine")
-def test_train_all_models_flow(
+async def test_train_all_models_flow(
     mock_engine, mock_grad, mock_train_corr, mock_train_main, setup_test_dirs
 ):
     """Test the full unified training flow."""
+    from unittest.mock import AsyncMock
+
     # Setup mocks
     mock_grad.return_value = MagicMock(level=2, label="graduate", days_of_data=20)
     mock_train_corr.return_value = {"status": "trained", "models_trained": ["pv_error.lgb"]}
 
+    mock_store = MagicMock()
+    mock_store.log_learning_run = AsyncMock()
+    mock_store.cleanup_learning_runs = AsyncMock(return_value=0)
+
+    mock_engine.return_value = MagicMock(store=mock_store)
+
     # Create a dummy model file so the orchestrator thinks training succeeded
     (setup_test_dirs / "load_model.lgb").touch()
 
-    res = training_orchestrator.train_all_models()
+    res = await training_orchestrator.train_all_models()
 
-    assert res["status"] == "success"
+    assert res["status"] == "success", f"Training failed: {res.get('error')}"
     assert "load_model.lgb" in res["trained_models"]
     assert "pv_error.lgb" in res["trained_models"]
     assert mock_train_main.called
     assert mock_train_corr.called
+    assert mock_store.log_learning_run.called
 
 
+@pytest.mark.asyncio
 @patch("ml.training_orchestrator.train_models")
 @patch("ml.training_orchestrator._determine_graduation_level")
 @patch("ml.training_orchestrator._get_engine")
-def test_train_all_models_low_graduation(mock_engine, mock_grad, mock_train_main, setup_test_dirs):
+async def test_train_all_models_low_graduation(
+    mock_engine, mock_grad, mock_train_main, setup_test_dirs
+):
     """Test that corrector is skipped if level is low."""
+    from unittest.mock import AsyncMock
+
     mock_grad.return_value = MagicMock(level=1, label="statistician", days_of_data=5)
+
+    mock_store = MagicMock()
+    mock_store.log_learning_run = AsyncMock()
+    mock_store.cleanup_learning_runs = AsyncMock(return_value=0)
+    mock_engine.return_value = MagicMock(store=mock_store)
 
     (setup_test_dirs / "load_model.lgb").touch()
 
-    res = training_orchestrator.train_all_models()
+    res = await training_orchestrator.train_all_models()
 
-    assert res["status"] == "success"
+    assert res["status"] == "success", f"Training failed: {res.get('error')}"
     assert res["corrector_status"]["status"] == "skipped"
     assert mock_train_main.called
 
 
-def test_train_all_models_error_recovery(setup_test_dirs, monkeypatch):
+@pytest.mark.asyncio
+@patch("ml.training_orchestrator._get_engine")
+async def test_train_all_models_error_recovery(mock_engine, setup_test_dirs, monkeypatch):
     """Test auto-restore on failure."""
+    from unittest.mock import AsyncMock
+
+    # Setup mocks
+    mock_store = MagicMock()
+    mock_store.log_learning_run = AsyncMock()
+    mock_store.cleanup_learning_runs = AsyncMock(return_value=0)
+    mock_engine.return_value = MagicMock(store=mock_store)
+
     # 1. Create a "good" state and backup
     (setup_test_dirs / "load_model.lgb").write_text("good")
     training_orchestrator._backup_models()
@@ -130,7 +160,7 @@ def test_train_all_models_error_recovery(setup_test_dirs, monkeypatch):
         raise Exception("Boom!")
 
     with patch("ml.training_orchestrator.train_models", side_effect=fail_training):
-        res = training_orchestrator.train_all_models()
+        res = await training_orchestrator.train_all_models()
 
     assert res["status"] == "error"
     # Should have restored from backup

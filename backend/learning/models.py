@@ -96,6 +96,12 @@ class LearningRun(Base):
     result_metrics_json: Mapped[str | None] = mapped_column(Text)
     error_message: Mapped[str | None] = mapped_column(Text)
 
+    # ARC11: Unified Training Tracking
+    training_type: Mapped[str | None] = mapped_column(String)  # "automatic", "manual"
+    models_trained: Mapped[str | None] = mapped_column(Text)  # JSON array
+    training_duration_seconds: Mapped[int | None] = mapped_column(Integer)
+    partial_failure: Mapped[bool] = mapped_column(Boolean, default=False)
+
 
 class LearningDailyMetric(Base):
     __tablename__ = "learning_daily_metrics"

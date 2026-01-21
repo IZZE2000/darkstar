@@ -85,7 +85,7 @@ def _restore_latest_backup() -> bool:
     return True
 
 
-def train_all_models(days_back: int = 90, min_samples: int = 100) -> dict:
+async def train_all_models(days_back: int = 90, min_samples: int = 100) -> dict:
     """
     Train all ML models (AURORA main + Antares Corrector) with safety features.
 
@@ -99,6 +99,8 @@ def train_all_models(days_back: int = 90, min_samples: int = 100) -> dict:
     }
     """
     start_time = time.time()
+    engine = _get_engine()
+    store = engine.store
 
     if not _acquire_lock():
         return {
@@ -131,7 +133,6 @@ def train_all_models(days_back: int = 90, min_samples: int = 100) -> dict:
             logger.warning("Main model training did not produce any models.")
 
         # 3. Train Corrector Models (if graduate)
-        engine = _get_engine()
         level = _determine_graduation_level(engine)
         logger.info(f"Current graduation level: {level.label} (days: {level.days_of_data})")
 
@@ -147,6 +148,11 @@ def train_all_models(days_back: int = 90, min_samples: int = 100) -> dict:
                 "reason": f"insufficient data (level: {level.label}, days: {level.days_of_data})",
             }
 
+        # 4. Cleanup old history (ARC11 Phase 2)
+        deleted_runs = await store.cleanup_learning_runs(days_back=30)
+        if deleted_runs > 0:
+            logger.info(f"Cleaned up {deleted_runs} old training records.")
+
     except Exception as e:
         logger.exception("Unified training failed unexpectedly.")
         results["status"] = "error"
@@ -159,13 +165,35 @@ def train_all_models(days_back: int = 90, min_samples: int = 100) -> dict:
 
     finally:
         _release_lock()
-        results["duration_seconds"] = round(time.time() - start_time, 2)
+        duration = round(time.time() - start_time, 2)
+        results["duration_seconds"] = duration
         logger.info(f"Unified training finished: {results}")
+
+        # Log unified run result to DB (ARC11 Phase 2)
+        try:
+            await store.log_learning_run(
+                status=results["status"],
+                result_metrics={
+                    "main_models_count": len(
+                        [m for m in results["trained_models"] if "corrector" not in m]
+                    ),
+                    "corrector_status": results["corrector_status"].get("status"),
+                },
+                training_type="automatic",
+                models_trained=results["trained_models"],
+                duration_seconds=int(duration),
+                partial_failure=results["status"] == "success" and not results["trained_models"],
+                error_message=results.get("error"),
+            )
+        except Exception as db_err:
+            logger.error(f"Failed to log unified training run to DB: {db_err}")
 
     return results
 
 
 if __name__ == "__main__":
+    import asyncio
+
     logging.basicConfig(level=logging.INFO)
-    res = train_all_models()
+    res = asyncio.run(train_all_models())
     print(res)

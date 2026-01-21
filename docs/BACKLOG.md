@@ -66,6 +66,9 @@ https://github.com/springfall2008/batpred/discussions/2529
 "
 - Add improved progress indicators to UI so 75-second solves don't feel frozen.
 - Can we simplify the water constraints? It is extremely slow right now, and will get worse when we add more heat sources etc. (BRAINSTORM!)
+- Add sensor filtering for spikes or unavailable values
+- Zoom in the chartCard does no longer work properly! When i try to zoom it just wants to reset to the 48h to 24h view! It should only set that view on page reload, or maybe we need a "reset zoom" button?
+-
 
 ---
 

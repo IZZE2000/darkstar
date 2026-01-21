@@ -325,8 +325,8 @@ def train_models(days_back: int = 90, min_samples: int = 100) -> None:
             conn.execute(
                 """
                 INSERT INTO learning_runs
-                (started_at, completed_at, status, params_json, result_metrics_json)
-                VALUES (?, ?, ?, ?, ?)
+                (started_at, completed_at, status, params_json, result_metrics_json, training_type, partial_failure)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     now.isoformat(),
@@ -334,6 +334,8 @@ def train_models(days_back: int = 90, min_samples: int = 100) -> None:
                     "success",
                     json.dumps(run_params),
                     json.dumps(run_metrics),
+                    "automatic",
+                    0,
                 ),
             )
             conn.commit()

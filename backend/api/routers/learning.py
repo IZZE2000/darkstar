@@ -63,6 +63,12 @@ async def learning_history(limit: int = Query(20, ge=1, le=100)) -> dict[str, An
                         "id": run.id,
                         "run_date": run.started_at.isoformat() if run.started_at else None,
                         "status": run.status,
+                        "training_type": run.training_type,
+                        "models_trained": json.loads(run.models_trained)
+                        if run.models_trained
+                        else [],
+                        "training_duration_seconds": run.training_duration_seconds,
+                        "partial_failure": run.partial_failure,
                         "metrics": json.loads(run.result_metrics_json)
                         if run.result_metrics_json
                         else None,

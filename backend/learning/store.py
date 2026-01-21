@@ -903,8 +903,13 @@ class LearningStore:
         result_metrics: dict[str, Any] | None = None,
         params: dict[str, Any] | None = None,
         started_at: datetime | None = None,
+        training_type: str | None = None,
+        models_trained: list[str] | None = None,
+        duration_seconds: int | None = None,
+        partial_failure: bool = False,
+        error_message: str | None = None,
     ) -> None:
-        """Log a learning run execution."""
+        """Log a learning run execution (ARC11)."""
         if started_at is None:
             started_at = datetime.utcnow()
 
@@ -916,9 +921,28 @@ class LearningStore:
                 status=status,
                 result_metrics_json=json.dumps(result_metrics) if result_metrics else None,
                 params_json=json.dumps(params) if params else None,
+                training_type=training_type,
+                models_trained=json.dumps(models_trained) if models_trained else None,
+                training_duration_seconds=duration_seconds,
+                partial_failure=partial_failure,
+                error_message=error_message,
+                completed_at=datetime.utcnow()
+                if status in ["success", "error", "failed"]
+                else None,
             )
             session.add(run)
             await session.commit()
+
+    async def cleanup_learning_runs(self, days_back: int = 30) -> int:
+        """Delete learning run records older than days_back (ARC11)."""
+        cutoff = datetime.utcnow() - timedelta(days=days_back)
+        async with self.AsyncSession() as session:
+            from sqlalchemy import delete
+
+            stmt = delete(LearningRun).where(LearningRun.started_at < cutoff)
+            result = await session.execute(stmt)
+            await session.commit()
+            return result.rowcount
 
     async def get_latest_metrics(self) -> dict[str, Any] | None:
         """Get the latest daily metrics for overlays using Async SQLAlchemy."""
