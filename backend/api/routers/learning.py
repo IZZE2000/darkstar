@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from typing import TYPE_CHECKING, Any, cast
@@ -231,3 +232,31 @@ async def record_observation() -> dict[str, str]:
     except Exception as e:
         logger.exception("Failed to record observation")
         raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.get(
+    "/api/learning/training-status",
+    summary="Get Training Status",
+    description="Get current ML training status and model details.",
+)
+async def learning_training_status() -> dict[str, Any]:
+    """Get current ML training status."""
+    try:
+        from ml.training_orchestrator import get_training_status
+
+        return await asyncio.to_thread(get_training_status)
+    except Exception as e:
+        logger.exception("Failed to get training status")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.get(
+    "/api/learning/training-history",
+    summary="Get Training History",
+    description="Get recent ML training attempts.",
+)
+async def learning_training_history(limit: int = Query(5, ge=1, le=20)) -> dict[str, Any]:
+    """Get recent ML training attempts (specialized view of learning history)."""
+    # Reuse learning_history logic but filter/format specifically for training view if needed
+    # For now, it's a wrapper with a smaller default limit
+    return await learning_history(limit=limit)

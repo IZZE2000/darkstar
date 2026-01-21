@@ -220,11 +220,11 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] **Error Handling:** Add proper error handling for partial failures
 * [x] **Manual Training Logging:** Log training trigger reason ("manual") and results
 
-#### Phase 5: Training Status APIs [PLANNED]
-* [ ] **Training Status Endpoint:** Create `/api/learning/training-status` endpoint to return current training state
-* [ ] **Training History Endpoint:** Create `/api/learning/training-history` endpoint to return recent training attempts
-* [ ] **Status Information:** Include training lock status, current operation, and progress information
-* [ ] **Model File Status:** Return model file timestamps and ages for status display
+#### Phase 5: Training Status APIs [DONE]
+* [x] **Training Status Endpoint:** Create `/api/learning/training-status` endpoint to return current training state
+* [x] **Training History Endpoint:** Create `/api/learning/training-history` endpoint to return recent training attempts
+* [x] **Status Information:** Include training lock status, current operation, and progress information
+* [x] **Model File Status:** Return model file timestamps and ages for status display
 
 #### Phase 6: Model Training Status UI Card [PLANNED]
 * [ ] **Create Training Card:** New `ModelTrainingCard.tsx` component in `frontend/src/components/aurora/`

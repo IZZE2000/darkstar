@@ -85,6 +85,29 @@ def _restore_latest_backup() -> bool:
     return True
 
 
+def get_training_status() -> dict:
+    """
+    Get current training status and model information.
+    """
+    is_training = False
+    lock_age = None
+
+    if LOCK_FILE.exists():
+        is_training = True
+        lock_age = time.time() - LOCK_FILE.stat().st_mtime
+
+    models_info = {}
+    if MODELS_DIR.exists():
+        for f in MODELS_DIR.glob("*.lgb"):
+            models_info[f.name] = {
+                "last_modified": datetime.fromtimestamp(f.stat().st_mtime).isoformat(),
+                "age_seconds": time.time() - f.stat().st_mtime,
+                "size_bytes": f.stat().st_size,
+            }
+
+    return {"is_training": is_training, "lock_age_seconds": lock_age, "models": models_info}
+
+
 async def train_all_models(
     days_back: int = 90, min_samples: int = 100, training_type: str = "automatic"
 ) -> dict:
