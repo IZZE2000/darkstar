@@ -1,3 +1,56 @@
+## [v2.5.4-beta] - HA Add-on Critical Planner Fix - 2026-01-21
+
+> [!CAUTION]
+> **CRITICAL FIX FOR HA ADD-ON USERS EXPERIENCING FLAT SCHEDULES**
+> If your HA Add-on deployment is producing "flat" schedules with no charge/discharge actions
+> (only water heating), this release fixes the regression introduced in v2.5.0-beta.
+
+**🐛 Critical Fixes**
+
+- **HA Add-on Planner Regression (REV PERS2)**: Fixed complete planner failure in HA Add-on deployments where ML models were not included in Docker images, causing the planner to produce trivial schedules with zero forecasts. Solve times dropped from expected 30-60s to 0.2s with no battery actions.
+
+- **Persistent Storage Architecture (REV PERS1)**: Fixed critical bug where ML models and `schedule.json` were stored in ephemeral container locations, being lost on every restart. All persistent data now correctly uses `/share/darkstar/` via symlinked `data/` directory.
+
+**Root Causes Identified**
+
+1. **Dockerfile Bug**: Only copied `ml/*.py`, not `ml/models/*.lgb` → Images shipped without baseline models
+2. **Path Inconsistencies**: Mixed use of `ml/models/` and `data/ml/models/` across 10+ files
+3. **Silent Failure**: `_load_models()` returned empty dict without error → Zero forecasts → Trivial optimization
+
+**Changes Implemented**
+
+- **Model Shipping**: `darkstar/Dockerfile` now includes 10 baseline ML models (40MB)
+- **First-Boot Bootstrap**: `darkstar/run.sh` copies shipped models to persistent storage on startup
+- **Robust Fallback**: When no ML models available:
+  - **Load Forecast**: Uses 0.5 kWh baseline average (2 kW constant load)
+  - **PV Forecast**: Uses Open-Meteo radiation data scaled by system capacity
+- **Path Consistency**: Updated 10 files to use `data/ml/models` and `data/schedule.json`
+- **Critical Logging**: Models missing now logs `CRITICAL` error instead of silent `Info`
+
+**Impact**
+
+- ✅ Fresh HA Add-on installs work immediately with baseline models
+- ✅ Planner never silently runs with zero forecasts (logs critical + uses fallback)
+- ✅ ML models and schedules persist across container restarts
+- ✅ User-trained models are never overwritten by shipped baselines
+- ✅ All code paths use consistent persistent storage locations
+
+**Upgrade Notes**
+
+- **First startup**: Logs will show "📦 Copied baseline model" messages (10 files)
+- **Subsequent startups**: Models already present, skips copy
+- **Local training**: User-trained models remain untouched in `/share/darkstar/ml/models/`
+
+**Files Modified** (30 total)
+
+- Core: `ml/forward.py`, `darkstar/Dockerfile`, `darkstar/run.sh`
+- Path fixes: `ml/train.py`, `ml/corrector.py`, `ml/evaluate.py`, `ml/training_orchestrator.py`, `planner/output/schedule.py`, `executor/config.py`
+- Scripts: `scripts/health_check.py`, `scripts/train_corrector.py`, `scripts/diagnose_ml.py`
+- API: `backend/api/routers/learning.py`, `backend/api/routers/schedule.py`, `backend/services/planner_service.py`
+- Docs: `docs/PLAN.md`, `docs/ARCHITECTURE.md`
+
+---
+
 ## [v2.5.3-beta] - Critical Migration Hotfix - 2026-01-21
 
 > [!CAUTION]
