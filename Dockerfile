@@ -53,7 +53,8 @@ COPY planner/ ./planner/
 COPY executor/ ./executor/
 COPY bin/ ./bin/
 COPY ml/*.py ./ml/
-COPY ml/models/*.lgb ./ml/models/
+# Models are generated at runtime (Clean Slate strategy)
+RUN mkdir -p ml/models
 COPY inputs.py ./
 COPY scripts/ ./scripts/
 COPY scripts/docker-entrypoint.sh /entrypoint.sh
