@@ -480,7 +480,9 @@ export default function Dashboard() {
     let slotsOverride: ScheduleSlot[] | undefined
     if (localSchedule && localSchedule.length > 0) {
         const todayAndTomorrow = localSchedule.filter((slot) => isToday(slot.start_time) || isTomorrow(slot.start_time))
-        if (historySlots && historySlots.length > 0) {
+        // FIX: Temporarily disable historySlots merge to prevent bad data overwrite
+        // This forces valid schedule.json data to be used
+        if (false && historySlots && historySlots.length > 0) {
             const tomorrowSlots = todayAndTomorrow.filter((slot) => isTomorrow(slot.start_time))
             slotsOverride = [...historySlots, ...tomorrowSlots]
         } else {
@@ -799,8 +801,8 @@ export default function Dashboard() {
                                     <div className="flex items-center gap-2 text-[10px] text-muted">
                                         <span
                                             className={`inline-flex h-2 w-2 rounded-full ${automationConfig?.enable_scheduler
-                                                    ? 'bg-good shadow-[0_0_0_2px_rgba(var(--color-good),0.4)]'
-                                                    : 'bg-line'
+                                                ? 'bg-good shadow-[0_0_0_2px_rgba(var(--color-good),0.4)]'
+                                                : 'bg-line'
                                                 }`}
                                         />
                                         <span>{automationConfig?.enable_scheduler ? 'Active' : 'Disabled'}</span>
