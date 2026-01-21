@@ -3,6 +3,7 @@ import { Brain, RotateCw, AlertTriangle, CheckCircle2, Play, CalendarClock } fro
 import Card from '../Card'
 import { Api } from '../../lib/api'
 import type { TrainingStatusResponse, TrainingHistoryResponse } from '../../lib/api'
+import { useSocket } from '../../lib/hooks'
 
 export default function ModelTrainingCard() {
     const [status, setStatus] = useState<TrainingStatusResponse | null>(null)
@@ -10,6 +11,23 @@ export default function ModelTrainingCard() {
     const [scheduler, setScheduler] = useState<{ next_run_at?: string } | null>(null)
     const [loading, setLoading] = useState(false)
     const [triggering, setTriggering] = useState(false)
+    const [progress, setProgress] = useState<{
+        status: string
+        stage: string
+        message: string
+        progress: number
+    } | null>(null)
+
+    // Listen for real-time progress
+    useSocket('training_progress', (data: any) => {
+        // console.log('Training progress:', data)
+        setProgress(data)
+        if (data.status === 'success' || data.status === 'error') {
+            // Refresh main data on completion
+            fetchData()
+        }
+    })
+
 
     const fetchData = async () => {
         setLoading(true)
@@ -68,7 +86,9 @@ export default function ModelTrainingCard() {
 
     // Stale lock detection (ignore lock if older than 1 hour)
     const isStaleTraining = (status?.lock_age_seconds || 0) > 3600
-    const isTraining = (status?.is_training ?? false) && !isStaleTraining
+    // Use either API status or realtime progress status
+    const isTraining = ((status?.is_training ?? false) && !isStaleTraining) || (progress?.status === 'busy')
+
 
     return (
         <Card className="p-4 md:p-5 flex flex-col h-full">
@@ -157,7 +177,22 @@ export default function ModelTrainingCard() {
                 </div>
             </div>
 
-            <div className="mt-4 pt-3 border-t border-line/30">
+            <div className="mt-4 pt-3 border-t border-line/30 space-y-2">
+                {isTraining && progress?.status === 'busy' && (
+                    <div className="space-y-1.5">
+                        <div className="flex justify-between text-[11px]">
+                            <span className="text-accent font-medium animate-pulse">{progress.message}</span>
+                            <span className="text-muted">{Math.round(progress.progress * 100)}%</span>
+                        </div>
+                        <div className="h-1.5 w-full bg-surface1 rounded-full overflow-hidden">
+                            <div
+                                className="h-full bg-accent transition-all duration-500 ease-in-out"
+                                style={{ width: `${Math.max(5, progress.progress * 100)}%` }}
+                            />
+                        </div>
+                    </div>
+                )}
+
                 <button
                     onClick={handleTrain}
                     disabled={isTraining || triggering}
@@ -166,7 +201,7 @@ export default function ModelTrainingCard() {
                     {triggering || isTraining ? (
                         <>
                             <div className="h-3 w-3 border-2 border-[#0F1216]/20 border-t-[#0F1216] rounded-full animate-spin" />
-                            <span>Processing...</span>
+                            <span>{triggering ? 'Starting...' : 'Training in Progress...'}</span>
                         </>
                     ) : (
                         <>
@@ -176,6 +211,7 @@ export default function ModelTrainingCard() {
                     )}
                 </button>
             </div>
+
         </Card>
     )
 }

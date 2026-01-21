@@ -2,12 +2,14 @@
 Unified training orchestrator for Darkstar ML models.
 """
 
+import asyncio
 import logging
 import shutil
 import time
 from datetime import datetime
 from pathlib import Path
 
+from backend.core.websockets import ws_manager
 from ml.corrector import _determine_graduation_level, _get_engine, train as train_corrector
 from ml.train import train_models
 
@@ -127,7 +129,29 @@ async def train_all_models(
     engine = _get_engine()
     store = engine.store
 
+    # Notify start
+    await ws_manager.emit(
+        "training_progress",
+        {
+            "type": "training_progress",
+            "status": "busy",
+            "stage": "starting",
+            "message": "Initializing training...",
+            "progress": 0.05,
+        },
+    )
+
     if not _acquire_lock():
+        await ws_manager.emit(
+            "training_progress",
+            {
+                "type": "training_progress",
+                "status": "error",
+                "stage": "idle",
+                "message": "Training already in progress",
+                "progress": 0.0,
+            },
+        )
         return {
             "status": "busy",
             "trained_models": [],
@@ -148,6 +172,17 @@ async def train_all_models(
 
         # 2. Train Main Models (AURORA)
         logger.info("Starting Main Model training...")
+        await ws_manager.emit(
+            "training_progress",
+            {
+                "type": "training_progress",
+                "status": "busy",
+                "stage": "training_main_models",
+                "message": "Training main Aurora models (this may take a minute)...",
+                "progress": 0.2,
+            },
+        )
+
         # train_models is heavy and synchronous, offload to thread
         await asyncio.to_thread(train_models, days_back=days_back, min_samples=min_samples)
 
@@ -164,6 +199,17 @@ async def train_all_models(
 
         if level.level >= 2:
             logger.info("Starting Corrector training...")
+            await ws_manager.emit(
+                "training_progress",
+                {
+                    "type": "training_progress",
+                    "status": "busy",
+                    "stage": "training_corrector",
+                    "message": "Training error correction models...",
+                    "progress": 0.6,
+                },
+            )
+
             # train_corrector is also heavy/sync
             corr_res = await asyncio.to_thread(train_corrector, models_dir=str(MODELS_DIR))
             results["corrector_status"] = corr_res
@@ -184,6 +230,17 @@ async def train_all_models(
         logger.exception("Unified training failed unexpectedly.")
         results["status"] = "error"
         results["error"] = str(e)
+
+        await ws_manager.emit(
+            "training_progress",
+            {
+                "type": "training_progress",
+                "status": "error",
+                "stage": "idle",
+                "message": f"Training failed: {e}",
+                "progress": 0.0,
+            },
+        )
 
         # Try to restore if it looks like we broke something
         if not list(MODELS_DIR.glob("*model*.lgb")):
@@ -214,6 +271,20 @@ async def train_all_models(
             )
         except Exception as db_err:
             logger.error(f"Failed to log unified training run to DB: {db_err}")
+
+    # Final success event if not error
+    if results["status"] == "success":
+        await ws_manager.emit(
+            "training_progress",
+            {
+                "type": "training_progress",
+                "status": "success",
+                "stage": "idle",
+                "message": "Training completed successfully",
+                "progress": 1.0,
+                "result": results,
+            },
+        )
 
     return results
 
