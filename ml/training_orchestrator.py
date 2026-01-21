@@ -87,16 +87,35 @@ def _restore_latest_backup() -> bool:
     return True
 
 
+def _load_config() -> dict:
+    """Load config.yaml for training decisions."""
+    import yaml
+
+    try:
+        with Path("config.yaml").open(encoding="utf-8") as f:
+            return yaml.safe_load(f) or {}
+    except Exception as e:
+        logger.warning(f"Failed to load config: {e}")
+        return {}
+
+
 def get_training_status() -> dict:
     """
     Get current training status and model information.
     """
     is_training = False
     lock_age = None
+    lock_exists = LOCK_FILE.exists()
+    is_stale = False
 
-    if LOCK_FILE.exists():
-        is_training = True
-        lock_age = time.time() - LOCK_FILE.stat().st_mtime
+    if lock_exists:
+        age_seconds = time.time() - LOCK_FILE.stat().st_mtime
+        if age_seconds > 3600:
+            is_stale = True
+            # Do not report as "training" if stale, so UI unlocks
+        else:
+            is_training = True
+        lock_age = age_seconds
 
     models_info = {}
     if MODELS_DIR.exists():
@@ -107,7 +126,12 @@ def get_training_status() -> dict:
                 "size_bytes": f.stat().st_size,
             }
 
-    return {"is_training": is_training, "lock_age_seconds": lock_age, "models": models_info}
+    return {
+        "is_training": is_training,
+        "lock_age_seconds": lock_age,
+        "lock_status": {"locked": lock_exists, "stale": is_stale, "lock_age_seconds": lock_age},
+        "models": models_info,
+    }
 
 
 async def train_all_models(
@@ -193,11 +217,15 @@ async def train_all_models(
         if not main_models:
             logger.warning("Main model training did not produce any models.")
 
-        # 3. Train Corrector Models (if graduate)
+        # 3. Train Corrector Models (if graduate AND enabled)
         level = _determine_graduation_level(engine)
         logger.info(f"Current graduation level: {level.label} (days: {level.days_of_data})")
 
-        if level.level >= 2:
+        # ARC11 Fix: Check if error correction is enabled in config
+        config = _load_config()
+        error_correction_enabled = config.get("learning", {}).get("error_correction_enabled", True)
+
+        if level.level >= 2 and error_correction_enabled:
             logger.info("Starting Corrector training...")
             await ws_manager.emit(
                 "training_progress",
@@ -215,6 +243,9 @@ async def train_all_models(
             results["corrector_status"] = corr_res
             if corr_res.get("status") == "trained":
                 results["trained_models"].extend(corr_res.get("models_trained", []))
+        elif level.level >= 2 and not error_correction_enabled:
+            logger.info("Corrector training skipped (disabled in config)")
+            results["corrector_status"] = {"status": "disabled", "reason": "disabled in config"}
         else:
             results["corrector_status"] = {
                 "status": "skipped",

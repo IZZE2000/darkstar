@@ -257,7 +257,8 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] **Extend Scheduler Status:** Extend `SchedulerStatus` dataclass to include training schedule info
 * [x] **Training Status Fields:** Add `next_training_at`, `last_training_at`, `last_training_status`, `training_enabled` fields
 * [x] **API Updates:** Update `/api/scheduler/status` endpoint to return training information
-* [ ] **Lock Status:** Include training lock status for UI feedback
+* [x] **Lock Status:** Include training lock status for UI feedback (Fixed in Phase 10.5)
+* [x] **Config Check:** Respect error correction config in orchestrator (Fixed in Phase 10.5)
 
 #### Phase 11: Immediate Error Correction Fix [PLANNED]
 * [ ] **Quick Fix Script:** Create temporary script or API endpoint to manually train error correction models

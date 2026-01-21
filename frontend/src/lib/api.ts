@@ -416,6 +416,11 @@ export type SystemHealthResponse = {
 export type TrainingStatusResponse = {
     is_training: boolean
     lock_age_seconds: number | null
+    lock_status?: {
+        locked: boolean
+        stale: boolean
+        lock_age_seconds: number | null
+    }
     graduation_level?: {
         level: number
         label: string
