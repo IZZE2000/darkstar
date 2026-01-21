@@ -1019,31 +1019,35 @@ export default function ChartCard({
             if (ds[14]) ds[14].hidden = !overlays.showActual || !overlays.export
             if (ds[15]) ds[15].hidden = !overlays.showActual || !overlays.water
 
-            // DEBUG: Check if chart datasets contain the action data
-            if (ds[3] || ds[4]) {
-                const chargeData = (ds[3]?.data as any[]) || []
-                const dischargeData = (ds[4]?.data as any[]) || []
-                const nonZeroCharge = chargeData.filter((v: any) => v && v > 0)
-                const nonZeroDischarge = dischargeData.filter((v: any) => v && v > 0)
-
-                console.log('[CHART RENDER DEBUG]', {
-                    chargeDataset: {
-                        exists: !!ds[3],
-                        hidden: ds[3]?.hidden,
-                        totalPoints: chargeData.length,
-                        nonZeroPoints: nonZeroCharge.length,
-                        maxValue: Math.max(...chargeData.filter((v) => v != null)),
-                    },
-                    dischargeDataset: {
-                        exists: !!ds[4],
-                        hidden: ds[4]?.hidden,
-                        totalPoints: dischargeData.length,
-                        nonZeroPoints: nonZeroDischarge.length,
-                        maxValue: Math.max(...dischargeData.filter((v) => v != null)),
-                    },
-                    overlays: { charge: overlays.charge, discharge: overlays.discharge },
-                })
-            }
+            // DEBUG: Full dataset inspection
+            console.log('[CHART RENDER DEBUG EXPANDED]', {
+                chargeDataset: ds[3] ? {
+                    label: ds[3].label,
+                    hidden: ds[3].hidden,
+                    dataLength: ds[3].data?.length,
+                    nonZeroCount: ds[3].data?.filter((v: any) => v && v > 0).length,
+                    firstFewValues: ds[3].data?.slice(0, 10),
+                    maxValue: ds[3].data ? Math.max(...ds[3].data.filter((v: any) => v != null && v > 0)) : 'no data',
+                    type: ds[3].type,
+                    yAxisID: ds[3].yAxisID
+                } : 'MISSING CHARGE DATASET',
+                dischargeDataset: ds[4] ? {
+                    label: ds[4].label,
+                    hidden: ds[4].hidden,
+                    dataLength: ds[4].data?.length,
+                    nonZeroCount: ds[4].data?.filter((v: any) => v && v > 0).length,
+                    firstFewValues: ds[4].data?.slice(0, 10),
+                    maxValue: ds[4].data ? Math.max(...ds[4].data.filter((v: any) => v != null && v > 0)) : 'no data',
+                    type: ds[4].type,
+                    yAxisID: ds[4].yAxisID
+                } : 'MISSING DISCHARGE DATASET',
+                overlayState: {
+                    charge: overlays.charge,
+                    discharge: overlays.discharge
+                },
+                totalDatasets: ds.length,
+                datasetLabels: ds.map((d: any) => d.label)
+            });
             try {
                 if (chartRef.current) {
                     console.log('[ChartCard DEBUG] Applying chart data', {
