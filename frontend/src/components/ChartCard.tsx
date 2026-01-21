@@ -1091,6 +1091,19 @@ export default function ChartCard({
                         chartUpdateCalled: true,
                     })
 
+                    const nonZeroIndices = (actualDataset?.data as any[])
+                        ?.map((v, i) => (v != null && v > 0 ? { i, v } : null))
+                        .filter(Boolean)
+                    console.log('[CHART VISUAL DEBUG]', {
+                        nonZeroValues: nonZeroIndices,
+                        backgroundColor: (actualDataset as any)?.backgroundColor,
+                        borderColor: (actualDataset as any)?.borderColor,
+                        yAxisID: (actualDataset as any)?.yAxisID,
+                        yAxisMin: chartRef.current?.scales?.y1?.min,
+                        yAxisMax: chartRef.current?.scales?.y1?.max,
+                        barThickness: (actualDataset as any)?.barThickness,
+                    })
+
                     console.log('[CHART CONFIG DEBUG]', {
                         yAxisVisible: chartRef.current?.scales?.y1?.options?.display,
                         datasetVisible: chartRef.current?.data?.datasets?.[4]?.hidden,
