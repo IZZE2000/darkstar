@@ -1337,10 +1337,11 @@ function buildLiveData(
     const stepMs = resolutionMinutes * 60 * 1000
     const steps = Math.round((48 * 60) / resolutionMinutes)
 
-    const slotByTime = new Map<number, ScheduleSlot>()
+    const slotByTime = new Map<string, ScheduleSlot>()
     for (const s of ordered) {
-        const t = new Date(s.start_time).getTime()
-        slotByTime.set(t, s)
+        // Standardize on UTC ISO strings for keys to avoid timezone mess
+        const iso = new Date(s.start_time).toISOString()
+        slotByTime.set(iso, s)
     }
 
     const labels: string[] = []
@@ -1367,7 +1368,7 @@ function buildLiveData(
     for (let i = 0; i < steps; i++) {
         const bucketStart = new Date(anchor.getTime() + i * stepMs)
         const bucketEnd = new Date(bucketStart.getTime() + stepMs)
-        const slot = slotByTime.get(bucketStart.getTime())
+        const slot = slotByTime.get(bucketStart.toISOString())
 
         // DEBUG: Check if we are finding the slot for the expected action time (approx 14:45)
         if (!slot && bucketStart.getHours() === 14 && bucketStart.getMinutes() === 45) {
@@ -1375,7 +1376,7 @@ function buildLiveData(
                 bucketStart: bucketStart.getTime(),
                 bucketISO: bucketStart.toISOString(),
                 mapKeys: Array.from(slotByTime.keys()).slice(0, 5), // First 5 keys
-                hasExactMatch: slotByTime.has(bucketStart.getTime())
+                hasExactMatch: slotByTime.has(bucketStart.toISOString())
             });
         }
         if (slot) {
