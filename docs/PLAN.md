@@ -252,200 +252,97 @@ data_quality:
 
 ---
 
-### [DONE] REV // PERS1 — HA Add-on Persistent Storage
+## **REV // K16: Simplify Water Heating Constraints**
 
-**Goal:** Fix critical bug where ML models and schedule.json are not persisted across container restarts in the HA add-on deployment, making debugging impossible and causing planner to fall back to heuristics.
+**Problem Statement:**
+Current water heating MILP implementation is overly complex with ~746 variables and ~600 constraints, causing slow solve times and potential solver hangs. The complexity comes from hard constraints, 2-tier gap systems, start detection variables, and hard spacing constraints.
 
-**Context:**
-- HA add-on uses `/share/darkstar/` for persistent storage, symlinked to `/app/data/`
-- Models were being saved to ephemeral `/app/ml/models/` → Lost on restart
-- Schedule was being saved to ephemeral `/app/schedule.json` → Lost on restart
-- Database (`planner_learning.db`) was already correctly using `data/` → Working fine
+**Requirements:**
+- Maintain all current water heating functionality (daily minimum, comfort gaps, block consolidation, spacing)
+- Dramatically reduce MILP complexity for faster solve times
+- Keep profitable optimization - MILP should still choose optimal heating times
+- Preserve user comfort controls via existing comfort_level slider (1-5)
 
-**Changes:**
-* [x] Update `ml/train.py` L28: `models_dir = Path("data/ml/models")`
-* [x] Update `ml/train.py` L57: `delete_trained_models()` default path
-* [x] Update `ml/forward.py` L19: `_load_models()` default path
-* [x] Update `ml/training_orchestrator.py` L18: `MODELS_DIR` constant
-* [x] Update `ml/corrector.py` L133,185,210,288: All function default paths
-* [x] Update `planner/output/schedule.py` L46: `output_path = "data/schedule.json"`
-* [x] Update `executor/config.py` L117,331: `schedule_path` defaults
-* [x] Update `darkstar/Dockerfile` L42: Create `data/ml/models` at build time
-* [x] Document persistence architecture in `docs/ARCHITECTURE.md` (New Section 14)
+**Background:**
+Current implementation uses:
+- Hard daily minimum kWh constraints (feasibility requirements)
+- 2-tier progressive gap penalty system (8h + 12h thresholds)
+- Binary start detection variables (`water_start[t]`) for block consolidation
+- Hard spacing constraints preventing heating within `min_spacing_hours`
 
-**Impact:**
-- ✅ ML models now persist across restarts
-- ✅ Schedule.json visible in `/share/darkstar/` for debugging
-- ✅ Training runs successfully update models in persistent location
-- ✅ Executor can always find current schedule
-- ✅ Database, models, and schedule all in same persistent directory
+This creates ~746 extra variables and ~600 constraints just for water heating in a 48-hour horizon.
 
-**Files Modified:**
-- `ml/train.py` - Training models directory
-- `ml/forward.py` - Forward inference models directory
-- `ml/training_orchestrator.py` - Training orchestrator constants
-- `ml/corrector.py` - Error correction models directory
-- `planner/output/schedule.py` - Schedule output path
-- `executor/config.py` - Schedule path defaults
-- `darkstar/Dockerfile` - Build-time directory creation
-- `docs/ARCHITECTURE.md` - New Section 14: Persistence Architecture
-- `docs/PLAN.md` - This revision entry
+**Proposed Solution:**
+Convert all hard constraints to soft penalties in the objective function, eliminate redundant constraint tiers, and replace complex start detection with simple transition penalties.
 
----
+**Task Breakdown:**
 
-### [DONE] REV // PERS2 — HA Add-on Planner Regression Fix
+**Task 1: Create Baseline Performance Benchmark**
+- Create comprehensive benchmarking script for water heating solver performance
+- Measure current solve times, variable counts, constraint counts across different scenarios
+- Test with various comfort levels (1-5), different daily minimums, and horizon lengths
+- Generate baseline performance report with statistical analysis (mean, p95, max solve times)
+- Include memory usage and solver iteration counts if available
+- Save benchmark results for before/after comparison
+- Test: Script runs reliably and produces consistent measurements
+- Demo: Clear baseline metrics showing current solver performance bottlenecks
 
-**Goal:** Fix critical planner regression where HA Add-on produces flat schedules (no charge/discharge) because ML models fail to load silently.
+**Task 2: Convert Daily Minimum to Soft Constraint**
+- Replace hard daily minimum kWh constraint with soft penalty approach
+- Add `daily_shortfall` continuous variable per day bucket
+- Apply high comfort penalty (derived from comfort_level) for unmet daily requirements
+- Maintain existing smart deferral logic (defer_up_to_hours)
+- Test: Verify daily minimum is still respected with appropriate penalty weights
+- Demo: Water heating still meets daily requirements but solver can find solutions even with conflicting constraints
 
-**Root Cause:**
-1. **Path Inconsistencies** - Several files used old `ml/models/` path while core ML code used `data/ml/models/`. Training saved to `data/`, but some code loaded from `ml/`.
-2. **Silent Failure** - `_load_models()` returns empty dict `{}` on failure with just an "Info" log. Empty models → zero forecasts → trivial MILP → 0.2s solve time.
-3. **Dockerfile Bug** - Only copied `ml/*.py`, not `ml/models/*.lgb`. Images shipped without models.
+**Task 3: Eliminate 2-Tier Gap System**
+- Remove `gap_violation_2` variables and constraints (Tier 2: 1.5x threshold)
+- Keep only single-tier gap penalty for `max_hours_between_heating`
+- Simplify gap penalty calculation to single penalty rate
+- Update comfort_level mapping to compensate for single-tier system
+- Test: Verify comfort behavior is preserved with single-tier approach
+- Demo: Gap penalties still discourage long heating gaps but with ~50% fewer variables
 
-**Plan:**
+**Task 4: Replace Start Detection with Transition Penalties**
+- Remove `water_start[t]` binary variables and start detection constraints
+- Replace with direct transition penalty: `|water_heat[t] - water_heat[t-1]|`
+- Apply block consolidation penalty per transition (start/stop events)
+- Map existing `block_start_penalty_sek` to transition penalty rate
+- Test: Verify heating still consolidates into blocks rather than scattered slots
+- Demo: Block consolidation behavior preserved with simpler mathematical formulation
 
-#### Phase 1: Ship Baseline Models [DONE]
-* [x] Remove `ml/models/` from `.gitignore` (only `antares_*` subdirs ignored)
-* [x] Add `ml/models/*.lgb` files to git tracking (10 models)
+**Task 5: Convert Spacing to Soft Constraint**
+- Remove hard spacing constraints that prevent heating within `min_spacing_hours`
+- Replace with soft penalty for spacing violations using linear formulation
+- Add continuous `spacing_violation[t]` slack variables for each time slot
+- Linear constraint: `sum(water_heat[j] for j in recent_window) <= spacing_slots * (1 - water_heat[t]) + spacing_violation[t]`
+- Apply penalty rate derived from existing `spacing_penalty_sek` config to slack variables
+- Test: Verify spacing behavior is maintained with soft penalties and linear constraints
+- Demo: Heating blocks still respect minimum spacing but solver has flexibility for optimization
 
-#### Phase 2: Fix Path Inconsistencies [DONE]
-* [x] Update `ml/evaluate.py` L31 → `data/ml/models`
-* [x] Update `scripts/health_check.py` L320,389,391,432 → `data/ml/models`, `data/schedule.json`
-* [x] Update `scripts/train_corrector.py` L21,91 → `data/ml/models`
-* [x] Update `scripts/diagnose_ml.py` L56 → `data/ml/models`
-* [x] Update `backend/api/routers/learning.py` L251 → LOCK_FILE path fix
+**Task 6: Update Configuration Mapping**
+- Ensure existing config parameters map correctly to new penalty structure
+- Verify `comfort_level` (1-5) still produces appropriate penalty weights
+- Update penalty calculations in `planner/solver/adapter.py`
+- Maintain backward compatibility with existing config files
+- Test: Existing configurations produce similar heating behavior
+- Demo: User comfort settings work identically to before
 
-#### Phase 3: Robust Model Loading [DONE]
-* [x] Update `ml/forward.py`: Log CRITICAL error when no models loaded
-* [x] Update `ml/forward.py`: Load fallback (0.5 kWh baseline average)
-* [x] Update `ml/forward.py`: PV fallback (Open-Meteo radiation-based)
+**Task 7: Performance Validation and Tuning**
+- Re-run benchmark script from Task 1 with simplified implementation
+- Compare before/after performance metrics (solve times, variable counts, constraint counts)
+- Validate heating behavior matches expectations across comfort levels
+- Tune penalty weights if behavior deviates significantly from current implementation
+- Add performance metrics logging for constraint count and solve duration
+- Test: Solve times improve significantly (target: >50% reduction)
+- Demo: Faster planning with equivalent water heating intelligence and comprehensive performance comparison
 
-#### Phase 4: Startup Model Copy [DONE]
-* [x] Update `darkstar/Dockerfile`: Ship `ml/models/*.lgb` with image
-* [x] Update `darkstar/run.sh`: Copy models to persistent storage on first boot
-
-**Impact:**
-- ✅ Models now tracked in git → shipped with Docker image
-- ✅ All code paths use consistent `data/ml/models` location
-- ✅ Fallback ensures planner never silently runs with zero forecasts
-- ✅ First-boot model copy ensures fresh installs work immediately
-- ✅ User-trained models are never overwritten
-
----
-
-### [DONE] REV // F38 — AURORA Pipeline Data Structure Fix
-
-**Goal:** Fix critical AURORA ML inference pipeline failure causing flat battery schedules in v2.5.5-beta due to data structure mismatch between ML API and forecast retrieval.
-
-**Root Cause:**
-The ML API (`ml/api.py`) changed forecast data structure from flat to nested format, but `inputs.py` was not updated to match:
-- **Old format**: `{"pv_forecast_kwh": 1.5, "load_forecast_kwh": 0.8}`
-- **New format**: `{"final": {"pv_kwh": 1.5, "load_kwh": 0.8}, "probabilistic": {...}}`
-
-This caused `KeyError: 'pv_forecast_kwh'` during forecast data retrieval, not ML inference. The error was misleading - models were working correctly.
-
-**Plan:**
-
-#### Phase 1: Fix Data Structure Access [DONE]
-* [x] Update `inputs.py` L819-825: Use `rec["final"]["pv_kwh"]` instead of `rec.get("pv_forecast_kwh")`
-* [x] Update `inputs.py` L425-430: Fix daily forecast aggregation data access
-* [x] Verify other forecast access points use correct structure
-
-#### Phase 2: Version Release [DONE]
-* [x] Bump version to v2.5.6-beta in all 8 locations:
-  - `/VERSION`
-  - `/package.json`
-  - `/config.default.yaml`
-  - `/darkstar/config.yaml`
-  - `/darkstar/run.sh`
-  - `/frontend/package.json`
-* [x] Update `docs/RELEASE_NOTES.md` with comprehensive fix description
-
-**Impact:**
-- ✅ AURORA ML pipeline completes successfully without KeyError
-- ✅ Battery schedules show proper charging/discharging actions instead of flat SoC
-- ✅ `/api/run_planner` returns 200 with valid schedule instead of 524 timeout
-- ✅ Error reporting accurately distinguishes ML failures from data retrieval failures
-- ✅ Fallback logic works correctly when models are actually missing
-
-**Files Modified:**
-- `inputs.py` - Fixed forecast data structure access in two functions
-- `ml/corrector.py` - Fixed ALL 6 data structure access points in correction pipeline
-- `backend/api/routers/forecast.py` - Fixed stats calculation
-- `ml/simulation/data_loader.py` - Fixed simulation data access
-- All version files - Bumped to v2.5.8-beta
-- `docs/RELEASE_NOTES.md` - Added comprehensive release notes
+**Expected Outcomes:**
+- Reduce water heating binary variables from ~384 to ~192 (50% reduction - eliminate water_start variables)
+- Reduce water heating constraints from ~600 to ~50 (92% reduction)
+- Add minimal continuous slack variables for soft constraints (much less expensive than binary variables)
+- Maintain all existing functionality: daily minimums, comfort gaps, block consolidation, spacing
+- Preserve profitable optimization within MILP framework
+- Significantly improve solver performance and stability
 
 ---
-
-### [COMPLETED] REV // F39 — Kepler Battery Config Path & Validation Fix ✅
-
-**Goal:** Fix critical Kepler solver bug where battery charge/discharge limits are read from wrong config path, causing flat schedules with no battery actions.
-
-**Root Cause:**
-1. **Wrong Config Path**: `planner/solver/adapter.py` looks for `battery.max_charge_a` but config has `executor.controller.max_charge_a`
-2. **Missing Validation**: Kepler receives 0.0 kW limits but doesn't warn that battery is completely disabled
-3. **Silent Failure**: Produces flat schedule with `reason: "no_action_needed"` instead of error
-
-**Current Behavior:**
-- Kepler gets `max_charge_kw = 0.0` and `max_discharge_kw = 0.0`
-- Solves optimization with battery disabled
-- Produces flat SoC schedule (no charge/discharge actions)
-- Takes 2+ minutes instead of normal 30s-1min
-- No warnings or validation errors
-
-**Plan:**
-
-#### Phase 1: Fix Config Path ✅ [COMPLETED]
-* [x] Update `planner/solver/adapter.py` L139-140: Read from `executor.controller.max_charge_a`
-* [x] Update `planner/solver/adapter.py` L139-140: Read from `executor.controller.max_discharge_a`
-* [x] Verify voltage lookup uses correct path (`executor.controller.system_voltage_v`)
-* [x] Fix W/A mode toggling to read from correct config paths
-
-#### Phase 2: Add Validation ✅ [COMPLETED]
-* [x] Add validation in `KeplerConfig.__post_init__()`: Warn if charge/discharge limits are 0
-* [x] Add validation in `KeplerSolver.solve()`: Error if battery capacity > 0 but limits = 0
-* [x] Log actual config values being used for debugging
-
-#### Phase 3: Version Release ✅ [COMPLETED]
-* [x] Bump version to v2.5.9-beta
-* [x] Update release notes with fix description
-* [x] Test on HA add-on to verify battery actions work
-
-**Expected Impact:**
-- ✅ Kepler reads correct battery limits from config
-- ✅ Battery charging/discharging actions appear in schedule
-- ✅ SoC changes from current 56% toward target 30%
-- ✅ Solve time returns to normal 30s-1min
-- ✅ Clear validation errors when config is invalid
-
-**Released:** v2.5.9-beta (2026-01-22)
-
-**Files to Modify:**
-- `planner/solver/adapter.py` - Fix config path lookup
-- `planner/solver/types.py` - Add KeplerConfig validation
-- All version files - Bump to v2.5.9-beta
-- `docs/RELEASE_NOTES.md` - Add release notes
-
----
-
-### [DONE] REV // F40 — Fix HA Add-on Solver Hang
-
-**Goal:** Fix critical Kepler solver hang in HA Add-on v2.5.0+ by switching from GLPK to CBC solver.
-
-**Root Cause:**
-- HA Add-on environment installed `glpk-utils`, forcing `kepler.py` to use `GLPK`.
-- v2.5.0 features (Water Start Detection, Active Battery) created complex Mixed-Integer constraints that cause GLPK to hang.
-- Other environments (Docker, Local) lack `glpk` and fallback to `CBC` (bundled in PuLP), which handles these constraints correctly.
-
-**Changes:**
-- Removed `glpk-utils` and `libglpk-dev` from `darkstar/Dockerfile` to force CBC fallback.
-- Added `libgomp1` to `darkstar/Dockerfile` (Critical for LightGBM stability on Debian).
-
-**Impact:**
-- ✅ Solver uses CBC (Industry standard, robust).
-- ✅ "Perfect Storm" of complexity no longer hangs the add-on.
-- ✅ Fixes regression without disabling smart features.
-
-**Files Modified:**
-- `darkstar/Dockerfile`
