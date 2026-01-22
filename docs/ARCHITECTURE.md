@@ -13,6 +13,10 @@ Darkstar is an intelligent energy management system designed to optimize residen
 ## 2. The Kepler Solver (MILP)
 Kepler is the decision-making core. It solves an optimization problem to generate the optimal charge/discharge schedule.
 
+**Solver Engine:**
+- **Local/Docker/Add-on**: Uses **CBC (Coin-OR Branch and Cut)** via `PuLP`.
+- **Legacy**: Formerly used GLPK, but it is deprecated due to stability issues with complex Mixed-Integer constraints.
+
 ### Objective Function
 The solver minimizes the total cost over the planning horizon (typically 24-48 hours):
 ```
