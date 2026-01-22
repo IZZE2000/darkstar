@@ -9,6 +9,7 @@ on:
       - 'v*'
     branches:
       - dev
+      - main
   workflow_dispatch:
 
 env:
@@ -70,18 +71,14 @@ jobs:
             IMAGE_NAME="ergetie/darkstar"
             ADDON_PATH="darkstar"
             IS_DEV=false
-          elif [[ $GITHUB_REF == refs/heads/dev ]]; then
+          else
+            # Build DEV image for any non-tag push (main or dev)
             VERSION="dev-$(date +'%Y%m%d.%H%M')"
             IMAGE_NAME="ergetie/darkstar-dev"
             ADDON_PATH="darkstar-dev"
             IS_DEV=true
             # Update version in config.yaml for HA to see the update
             sed -i "s/^version: .*/version: \"$VERSION\"/" darkstar-dev/config.yaml
-          else
-            VERSION=$(grep -E '^version:' darkstar/config.yaml | sed 's/version: *"\(.*\)"/\1/')
-            IMAGE_NAME="ergetie/darkstar"
-            ADDON_PATH="darkstar"
-            IS_DEV=false
           fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "image_name=$IMAGE_NAME" >> $GITHUB_OUTPUT
