@@ -1,3 +1,34 @@
+## [v2.5.7-beta] - Complete AURORA Pipeline Fix - 2026-01-22
+
+> [!IMPORTANT]
+> **COMPLETE FIX FOR AURORA ML PIPELINE**
+> This release provides the complete fix for the AURORA inference pipeline failure.
+> v2.5.6-beta was incomplete and still failed - this version fixes ALL affected files.
+
+**🐛 Complete Fix**
+
+- **All AURORA Pipeline Consumers Fixed**: Updated all 4 files that consume `get_forecast_slots()` data to use the correct nested structure
+- **ml/corrector.py**: Fixed correction pipeline data access (2 locations)
+- **backend/api/routers/forecast.py**: Fixed forecast stats calculation
+- **ml/simulation/data_loader.py**: Fixed simulation data loading
+- **inputs.py**: Already fixed in v2.5.6-beta
+
+**Technical Details**
+
+The previous v2.5.6-beta fix was incomplete - it only fixed `inputs.py` but missed 3 other critical files that also consume `get_forecast_slots()` data. The error was still occurring in the correction phase of the ML pipeline.
+
+**Complete Data Structure Migration**:
+- **Old**: `rec["pv_forecast_kwh"]`, `rec["load_forecast_kwh"]`
+- **New**: `rec["final"]["pv_kwh"]`, `rec["final"]["load_kwh"]`
+
+**Impact**:
+- ✅ AURORA ML pipeline completes fully without any KeyError
+- ✅ Battery schedules generate with proper charging/discharging actions
+- ✅ Correction models work correctly for improved accuracy
+- ✅ All forecast consumers use consistent data structure
+
+---
+
 ## [v2.5.6-beta] - AURORA Pipeline Fix - 2026-01-22
 
 > [!IMPORTANT]
