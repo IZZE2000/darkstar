@@ -13,9 +13,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     jq \
     bash \
-    # GLPK solver for PuLP (Kepler optimizer)
-    glpk-utils \
-    libglpk-dev \
+    # Required for LightGBM (prevents segfaults/hangs)
+    libgomp1 \
     # Build dependencies for any packages that need compilation
     gcc \
     g++ \

@@ -426,3 +426,26 @@ This caused `KeyError: 'pv_forecast_kwh'` during forecast data retrieval, not ML
 - `planner/solver/types.py` - Add KeplerConfig validation
 - All version files - Bump to v2.5.9-beta
 - `docs/RELEASE_NOTES.md` - Add release notes
+
+---
+
+### [DONE] REV // F40 — Fix HA Add-on Solver Hang
+
+**Goal:** Fix critical Kepler solver hang in HA Add-on v2.5.0+ by switching from GLPK to CBC solver.
+
+**Root Cause:**
+- HA Add-on environment installed `glpk-utils`, forcing `kepler.py` to use `GLPK`.
+- v2.5.0 features (Water Start Detection, Active Battery) created complex Mixed-Integer constraints that cause GLPK to hang.
+- Other environments (Docker, Local) lack `glpk` and fallback to `CBC` (bundled in PuLP), which handles these constraints correctly.
+
+**Changes:**
+- Removed `glpk-utils` and `libglpk-dev` from `darkstar/Dockerfile` to force CBC fallback.
+- Added `libgomp1` to `darkstar/Dockerfile` (Critical for LightGBM stability on Debian).
+
+**Impact:**
+- ✅ Solver uses CBC (Industry standard, robust).
+- ✅ "Perfect Storm" of complexity no longer hangs the add-on.
+- ✅ Fixes regression without disabling smart features.
+
+**Files Modified:**
+- `darkstar/Dockerfile`
