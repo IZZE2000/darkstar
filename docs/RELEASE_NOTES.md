@@ -1,3 +1,23 @@
+## [v2.5.10-beta] - Add-on Solver Stability Fix (CBC) - 2026-01-22
+
+> [!IMPORTANT]
+> **CRITICAL STABILITY FIX FOR HA ADD-ON**
+> This release resolves the Infinite Hang issue in `Kepler` by switching the solver engine.
+
+**🐛 Critical Fix**
+
+- **Solver Engine Switch (GLPK -> CBC)**: The Home Assistant Add-on now uses the **CBC (Coin-OR Branch and Cut)** solver bundled with `PuLP` instead of the system-installed `GLPK`.
+    - **Why?**: The new "Water Start Detection" and "Battery Optimization" features (v2.5.0+) created Mixed-Integer constraints that caused GLPK to hang indefinitely ("THEN NOTHING" behavior). CBC handles this complexity robustly.
+    - **Impact**: Complex schedules (Water + Battery) now solve in ~30-90s instead of hanging forever.
+
+- **Dependency Update**: Added `libgomp1` to the Docker image to prevent potential threading crashes in LightGBM/OpenMP on Debian-based add-ons.
+
+**Upgrade Notes**
+- **Transparent Upgrade**: No config changes required. The solver switch is internal to the container.
+- **Verification**: Logs will now show `Kepler Solved: ...` after ~60-90s for complex plans.
+
+---
+
 ## [v2.5.9-beta] - Kepler Battery Config Fix - 2026-01-22
 
 **🔧 Bug Fixes**
