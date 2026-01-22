@@ -378,7 +378,7 @@ This caused `KeyError: 'pv_forecast_kwh'` during forecast data retrieval, not ML
 
 ---
 
-### [ACTIVE] REV // F39 — Kepler Battery Config Path & Validation Fix
+### [COMPLETED] REV // F39 — Kepler Battery Config Path & Validation Fix ✅
 
 **Goal:** Fix critical Kepler solver bug where battery charge/discharge limits are read from wrong config path, causing flat schedules with no battery actions.
 
@@ -396,20 +396,21 @@ This caused `KeyError: 'pv_forecast_kwh'` during forecast data retrieval, not ML
 
 **Plan:**
 
-#### Phase 1: Fix Config Path [ACTIVE]
-* [ ] Update `planner/solver/adapter.py` L139-140: Read from `executor.controller.max_charge_a`
-* [ ] Update `planner/solver/adapter.py` L139-140: Read from `executor.controller.max_discharge_a`
-* [ ] Verify voltage lookup uses correct path (`executor.controller.system_voltage_v`)
+#### Phase 1: Fix Config Path ✅ [COMPLETED]
+* [x] Update `planner/solver/adapter.py` L139-140: Read from `executor.controller.max_charge_a`
+* [x] Update `planner/solver/adapter.py` L139-140: Read from `executor.controller.max_discharge_a`
+* [x] Verify voltage lookup uses correct path (`executor.controller.system_voltage_v`)
+* [x] Fix W/A mode toggling to read from correct config paths
 
-#### Phase 2: Add Validation [ACTIVE]
-* [ ] Add validation in `KeplerConfig.__post_init__()`: Warn if charge/discharge limits are 0
-* [ ] Add validation in `KeplerSolver.solve()`: Error if battery capacity > 0 but limits = 0
-* [ ] Log actual config values being used for debugging
+#### Phase 2: Add Validation ✅ [COMPLETED]
+* [x] Add validation in `KeplerConfig.__post_init__()`: Warn if charge/discharge limits are 0
+* [x] Add validation in `KeplerSolver.solve()`: Error if battery capacity > 0 but limits = 0
+* [x] Log actual config values being used for debugging
 
-#### Phase 3: Version Release [PENDING]
-* [ ] Bump version to v2.5.9-beta
-* [ ] Update release notes with fix description
-* [ ] Test on HA add-on to verify battery actions work
+#### Phase 3: Version Release ✅ [COMPLETED]
+* [x] Bump version to v2.5.9-beta
+* [x] Update release notes with fix description
+* [x] Test on HA add-on to verify battery actions work
 
 **Expected Impact:**
 - ✅ Kepler reads correct battery limits from config
@@ -417,6 +418,8 @@ This caused `KeyError: 'pv_forecast_kwh'` during forecast data retrieval, not ML
 - ✅ SoC changes from current 56% toward target 30%
 - ✅ Solve time returns to normal 30s-1min
 - ✅ Clear validation errors when config is invalid
+
+**Released:** v2.5.9-beta (2026-01-22)
 
 **Files to Modify:**
 - `planner/solver/adapter.py` - Fix config path lookup
