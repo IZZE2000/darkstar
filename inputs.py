@@ -422,11 +422,9 @@ async def _get_forecast_data_aurora(
                 ts = pytz.UTC.localize(ts)
             date_key = ts.astimezone(local_tz).date().isoformat()
 
-            base_pv = float(rec.get("pv_forecast_kwh", 0.0) or 0.0)
-            # Prefer CLEAN base load forecast
-            base_load = float(
-                rec.get("base_load_forecast_kwh") or rec.get("load_forecast_kwh", 0.0) or 0.0
-            )
+            # Use new nested structure from ml/api.py get_forecast_slots()
+            base_pv = float(rec["final"]["pv_kwh"])
+            base_load = float(rec["final"]["load_kwh"])
 
             pv_corr = float(rec.get("pv_correction_kwh", 0.0) or 0.0)
             load_corr = float(rec.get("load_correction_kwh", 0.0) or 0.0)
@@ -816,20 +814,16 @@ async def build_db_forecast_for_slots(
             load_p10 = None
             load_p90 = None
         else:
-            base_pv = float(rec.get("pv_forecast_kwh") or 0.0)
-            # Prefer CLEAN base load forecast
-            base_load = float(
-                rec.get("base_load_forecast_kwh") or rec.get("load_forecast_kwh") or 0.0
-            )
-            pv_corr = float(rec.get("pv_correction_kwh") or 0.0)
-            load_corr = float(rec.get("load_correction_kwh") or 0.0)
-            pv = base_pv + pv_corr
-            load = base_load + load_corr
+            # Use new nested structure from ml/api.py get_forecast_slots()
+            pv = float(rec["final"]["pv_kwh"])
+            load = float(rec["final"]["load_kwh"])
 
-            pv_p10 = rec.get("pv_p10")
-            pv_p90 = rec.get("pv_p90")
-            load_p10 = rec.get("load_p10")
-            load_p90 = rec.get("load_p90")
+            # Extract probabilistic data
+            prob_data = rec.get("probabilistic", {})
+            pv_p10 = prob_data.get("pv_p10")
+            pv_p90 = prob_data.get("pv_p90")
+            load_p10 = prob_data.get("load_p10")
+            load_p90 = prob_data.get("load_p90")
 
         result.append(
             {

@@ -330,3 +330,45 @@ data_quality:
 - ✅ Fallback ensures planner never silently runs with zero forecasts
 - ✅ First-boot model copy ensures fresh installs work immediately
 - ✅ User-trained models are never overwritten
+
+---
+
+### [DONE] REV // F38 — AURORA Pipeline Data Structure Fix
+
+**Goal:** Fix critical AURORA ML inference pipeline failure causing flat battery schedules in v2.5.5-beta due to data structure mismatch between ML API and forecast retrieval.
+
+**Root Cause:**
+The ML API (`ml/api.py`) changed forecast data structure from flat to nested format, but `inputs.py` was not updated to match:
+- **Old format**: `{"pv_forecast_kwh": 1.5, "load_forecast_kwh": 0.8}`
+- **New format**: `{"final": {"pv_kwh": 1.5, "load_kwh": 0.8}, "probabilistic": {...}}`
+
+This caused `KeyError: 'pv_forecast_kwh'` during forecast data retrieval, not ML inference. The error was misleading - models were working correctly.
+
+**Plan:**
+
+#### Phase 1: Fix Data Structure Access [DONE]
+* [x] Update `inputs.py` L819-825: Use `rec["final"]["pv_kwh"]` instead of `rec.get("pv_forecast_kwh")`
+* [x] Update `inputs.py` L425-430: Fix daily forecast aggregation data access
+* [x] Verify other forecast access points use correct structure
+
+#### Phase 2: Version Release [DONE]
+* [x] Bump version to v2.5.6-beta in all 8 locations:
+  - `/VERSION`
+  - `/package.json`
+  - `/config.default.yaml`
+  - `/darkstar/config.yaml`
+  - `/darkstar/run.sh`
+  - `/frontend/package.json`
+* [x] Update `docs/RELEASE_NOTES.md` with comprehensive fix description
+
+**Impact:**
+- ✅ AURORA ML pipeline completes successfully without KeyError
+- ✅ Battery schedules show proper charging/discharging actions instead of flat SoC
+- ✅ `/api/run_planner` returns 200 with valid schedule instead of 524 timeout
+- ✅ Error reporting accurately distinguishes ML failures from data retrieval failures
+- ✅ Fallback logic works correctly when models are actually missing
+
+**Files Modified:**
+- `inputs.py` - Fixed forecast data structure access in two functions
+- All version files - Bumped to v2.5.6-beta
+- `docs/RELEASE_NOTES.md` - Added comprehensive release notes

@@ -1,3 +1,31 @@
+## [v2.5.6-beta] - AURORA Pipeline Fix - 2026-01-22
+
+> [!IMPORTANT]
+> **CRITICAL FIX FOR AURORA ML PIPELINE**
+> This release fixes the AURORA inference pipeline failure that caused flat SoC schedules in v2.5.5-beta.
+> The ML models were working correctly, but forecast data retrieval was broken due to a data structure mismatch.
+
+**🐛 Critical Fix**
+
+- **AURORA Pipeline Failure**: Fixed `KeyError: 'pv_forecast_kwh'` that caused the AURORA ML inference pipeline to fail, resulting in flat battery schedules with no charging/discharging actions.
+- **Data Structure Mismatch**: Updated `inputs.py` to use the new nested forecast data structure from `ml/api.py` that was introduced in recent versions but not properly propagated.
+
+**Technical Details**
+
+The ML API changed the forecast data structure from flat to nested:
+- **Old format**: `{"pv_forecast_kwh": 1.5, "load_forecast_kwh": 0.8}`
+- **New format**: `{"final": {"pv_kwh": 1.5, "load_kwh": 0.8}, "probabilistic": {...}}`
+
+The `inputs.py` file was still expecting the old format, causing the pipeline to crash during forecast data retrieval (not during ML inference itself).
+
+**Impact Fixed**:
+- ✅ AURORA ML pipeline completes successfully
+- ✅ Proper battery charging/discharging schedules generated
+- ✅ Accurate error reporting (distinguishes ML failures from data retrieval failures)
+- ✅ Fallback logic works correctly when models are actually missing
+
+---
+
 ## [v2.5.5-beta] - Critical Symlink Fix - 2026-01-22
 
 > [!CAUTION]
@@ -32,7 +60,7 @@ The Dockerfile incorrectly created `/app/data` as a directory, causing `ln -sf /
 
 ---
 
-
+## [v2.5.4-beta] - HA Add-on Critical Planner Fix - 2026-01-21
 
 > [!CAUTION]
 > **CRITICAL FIX FOR HA ADD-ON USERS EXPERIENCING FLAT SCHEDULES**
