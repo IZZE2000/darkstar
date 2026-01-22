@@ -421,8 +421,8 @@ async def predict_corrections(
         pv_bias, load_bias = stats_bias.get(key, (0.0, 0.0))
 
         # Stats fallback values
-        stats_pv_corr = _clamp_correction(rec["pv_forecast_kwh"], pv_bias)
-        stats_load_corr = _clamp_correction(rec["load_forecast_kwh"], load_bias)
+        stats_pv_corr = _clamp_correction(rec["final"]["pv_kwh"], pv_bias)
+        stats_load_corr = _clamp_correction(rec["final"]["load_kwh"], load_bias)
 
         pv_corr = stats_pv_corr
         load_corr = stats_load_corr
@@ -433,14 +433,14 @@ async def predict_corrections(
 
         if "pv_residual" in models:
             raw_pv = float(models["pv_residual"].predict(row_features)[0])
-            ml_pv_corr = _clamp_correction(rec["pv_forecast_kwh"], raw_pv)
+            ml_pv_corr = _clamp_correction(rec["final"]["pv_kwh"], raw_pv)
             if abs(ml_pv_corr) <= abs(stats_pv_corr) or stats_pv_corr == 0.0:
                 pv_corr = ml_pv_corr
                 source = "ml"
 
         if "load_residual" in models:
             raw_load = float(models["load_residual"].predict(row_features)[0])
-            ml_load_corr = _clamp_correction(rec["load_forecast_kwh"], raw_load)
+            ml_load_corr = _clamp_correction(rec["final"]["load_kwh"], raw_load)
             if abs(ml_load_corr) <= abs(stats_load_corr) or stats_load_corr == 0.0:
                 load_corr = ml_load_corr
                 source = "ml"

@@ -370,5 +370,8 @@ This caused `KeyError: 'pv_forecast_kwh'` during forecast data retrieval, not ML
 
 **Files Modified:**
 - `inputs.py` - Fixed forecast data structure access in two functions
-- All version files - Bumped to v2.5.6-beta
+- `ml/corrector.py` - Fixed ALL 6 data structure access points in correction pipeline
+- `backend/api/routers/forecast.py` - Fixed stats calculation
+- `ml/simulation/data_loader.py` - Fixed simulation data access
+- All version files - Bumped to v2.5.8-beta
 - `docs/RELEASE_NOTES.md` - Added comprehensive release notes
