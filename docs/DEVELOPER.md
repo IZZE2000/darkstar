@@ -378,12 +378,29 @@ For rapid debugging and feature testing, we use a separate **Dev Add-on** channe
 - **Add-on**: `[DEV] Darkstar Energy Manager`
 - **Image**: `ghcr.io/ergetie/darkstar-dev-amd64`
 
-### How It Works
-1. **Push to `dev`**: Any push to the `dev` branch triggers the GitHub Action.
-2. **AMD64 Optimization**: To keep iteration fast, the dev build only targets `amd64`.
-3. **Dynamic Versioning**: The CI automatically bumps the version in `darkstar-dev/config.yaml` to `dev-YYYYMMDD.HHMM`.
-4. **HA Updates**: Because the version string changes every time, Home Assistant will show an **Update** button in the Add-on Store/Dashboard automatically.
-5. **Merging**: Once a feature is stable in `dev`, it should be merged into `main` and tagged for a formal release.
+### How It Works (Dev on Main)
+We support a "Dev on Main" workflow to allow rapid iteration without spamming the main branch history.
+
+1. **Push to `main` (Recommended)**:
+    *   **Action**: Development work is committed and pushed to `main`.
+    *   **CI Trigger**: Builds the `ergetie/darkstar-dev` Docker image targeting `amd64` (for speed).
+    *   **Version Bump**: The CI checkout the `dev` branch, updates the version in `darkstar-dev/config.yaml` to `dev-YYYYMMDD.HHMM`, and pushes this **only to the `dev` branch**.
+    *   **Result**: Your `main` branch stays clean (no version bump commits), but your Home Assistant (tracking `URL#dev`) sees the update immediately.
+
+2. **Push to `dev` (Legacy/Testing)**:
+    *   **Action**: Pushing directly to `dev` works identically to `main`. It builds the dev image and self-updates the version string on the `dev` branch.
+
+3.  **Releases (Production)**:
+    *   **Action**: Tag a commit on `main` with `vX.Y.Z`.
+    *   **CI Trigger**: Builds `ergetie/darkstar` (Production) for both `amd64` and `aarch64`.
+    *   **Release**: Creates a GitHub Release with notes extracted from `docs/RELEASE_NOTES.md`.
+
+### Summary of Git Flow
+| Action | Build Target | Architectures | Updates HA? | Git History |
+| :--- | :--- | :--- | :--- | :--- |
+| **Push to `main`** | `darkstar-dev` | `amd64` | ✅ (via dev branch) | Clean |
+| **Push to `dev`** | `darkstar-dev` | `amd64` | ✅ | Contains Bumps |
+| **Tag `v*`** | `darkstar` (Prod) | `amd64` + `aarch64` | ✅ | Release Tag |
 
 ### Local Development
 If you are developing locally on a different architecture (e.g., Apple Silicon), it is recommended to test the standard `darkstar/` build or run via `pnpm run dev` directly as described in the Quick Start.
