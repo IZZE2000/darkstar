@@ -124,7 +124,10 @@ async def lifespan(app: FastAPI):
     # Initialize Async LearningStore (REV ARC10)
     try:
         config = load_yaml("config.yaml")
-        db_path = str(config.get("learning", {}).get("sqlite_path", "data/planner_learning.db"))
+        # Respect DB_PATH env var if present (for consistency with Alembic)
+        db_path = os.getenv("DB_PATH") or str(
+            config.get("learning", {}).get("sqlite_path", "data/planner_learning.db")
+        )
         tz_name = str(config.get("timezone", "Europe/Stockholm"))
         import pytz
 

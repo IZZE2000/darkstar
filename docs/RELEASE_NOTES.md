@@ -1,4 +1,38 @@
-## [v2.5.4-beta] - HA Add-on Critical Planner Fix - 2026-01-21
+## [v2.5.5-beta] - Critical Symlink Fix - 2026-01-22
+
+> [!CAUTION]
+> **CRITICAL HOTFIX FOR v2.5.4-beta USERS**
+> If you installed v2.5.4-beta, the add-on is completely broken due to a symlink issue.
+> This release fixes the critical startup crash. **Upgrade immediately.**
+
+**🐛 Critical Fix**
+
+- **Symlink Path Issue**: Fixed complete system failure where the application could not access persistent storage (database, ML models, logs, schedule cache). Root cause was a broken symlink that caused the app to use ephemeral storage instead of `/share/darkstar/`.
+
+**Technical Details**
+
+The Dockerfile incorrectly created `/app/data` as a directory, causing `ln -sf /share/darkstar /app/data` to create a **nested symlink** (`/app/data/darkstar -> /share/darkstar`) instead of a **direct symlink** (`/app/data -> /share/darkstar`).
+
+**Impact**:
+- ❌ Database errors: `sqlite3.OperationalError: no such table: slot_observations`
+- ❌ ML model loading failures: `[LightGBM] [Fatal] Could not open data/ml/models/*.lgb`
+- ❌ Forecast generation failures
+- ❌ Schedule planning failures
+- ❌ Complete add-on failure
+
+**Changes**:
+- Removed problematic `RUN mkdir -p data/ml/models` from `darkstar/Dockerfile`
+- Enhanced `backend/main.py` to respect `DB_PATH` environment variable for consistency with Alembic migrations
+
+**User Data**: All persistent data in `/share/darkstar/` is safe and untouched.
+
+**Upgrade Path**:
+- Users on v2.5.4-beta: **Must upgrade** to v2.5.5-beta
+- Users on v2.5.3-beta and earlier: Can upgrade safely
+
+---
+
+
 
 > [!CAUTION]
 > **CRITICAL FIX FOR HA ADD-ON USERS EXPERIENCING FLAT SCHEDULES**
