@@ -51,11 +51,11 @@ jobs:
 
     steps:
       - name: Checkout
-        if: github.ref != 'refs/heads/dev' || matrix.arch == 'amd64'
+        if: startsWith(github.ref, 'refs/tags/v') || matrix.arch == 'amd64'
         uses: actions/checkout@v4
 
       - name: Log in to Container Registry
-        if: github.ref != 'refs/heads/dev' || matrix.arch == 'amd64'
+        if: startsWith(github.ref, 'refs/tags/v') || matrix.arch == 'amd64'
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
@@ -63,7 +63,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup environment
-        if: github.ref != 'refs/heads/dev' || matrix.arch == 'amd64'
+        if: startsWith(github.ref, 'refs/tags/v') || matrix.arch == 'amd64'
         id: setup
         run: |
           if [[ $GITHUB_REF == refs/tags/v* ]]; then
@@ -86,15 +86,15 @@ jobs:
           echo "is_dev=$IS_DEV" >> $GITHUB_OUTPUT
 
       - name: Set up QEMU
-        if: github.ref != 'refs/heads/dev' || matrix.arch == 'amd64'
+        if: startsWith(github.ref, 'refs/tags/v') || matrix.arch == 'amd64'
         uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
-        if: github.ref != 'refs/heads/dev' || matrix.arch == 'amd64'
+        if: startsWith(github.ref, 'refs/tags/v') || matrix.arch == 'amd64'
         uses: docker/setup-buildx-action@v3
 
       - name: Build and push
-        if: github.ref != 'refs/heads/dev' || matrix.arch == 'amd64'
+        if: startsWith(github.ref, 'refs/tags/v') || matrix.arch == 'amd64'
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -111,6 +111,14 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Force checkout dev branch to push the update there
+          git fetch origin dev
+          git checkout dev
+
+          # Re-apply the version bump to the dev branch file
+          sed -i "s/^version: .*/version: \"${{ steps.setup.outputs.version }}\"/" darkstar-dev/config.yaml
+
           git add darkstar-dev/config.yaml
           git commit -m "chore(dev): bump version to ${{ steps.setup.outputs.version }} [skip ci]"
           git push origin dev
