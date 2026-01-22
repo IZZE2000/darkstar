@@ -277,15 +277,15 @@ Convert all hard constraints to soft penalties in the objective function, elimin
 
 **Task Breakdown:**
 
-**Task 1: Create Baseline Performance Benchmark**
-- Create comprehensive benchmarking script for water heating solver performance
-- Measure current solve times, variable counts, constraint counts across different scenarios
-- Test with various comfort levels (1-5), different daily minimums, and horizon lengths
-- Generate baseline performance report with statistical analysis (mean, p95, max solve times)
-- Include memory usage and solver iteration counts if available
-- Save benchmark results for before/after comparison
-- Test: Script runs reliably and produces consistent measurements
-- Demo: Clear baseline metrics showing current solver performance bottlenecks
+**Task 1: Create Baseline Performance Benchmark [DONE]**
+- [x] Create comprehensive benchmarking script for water heating solver performance
+- [x] Measure current solve times, variable counts, constraint counts across different scenarios
+- [x] Test with various comfort levels (1-5), different daily minimums, and horizon lengths
+- [x] Generate baseline performance report with statistical analysis (mean, p95, max solve times)
+- [x] Include memory usage and solver iteration counts if available
+- [x] Save benchmark results for before/after comparison
+- [x] Test: Script runs reliably and produces consistent measurements
+- [x] Demo: Clear baseline metrics showing current solver performance bottlenecks
 
 **Task 2: Convert Daily Minimum to Soft Constraint**
 - Replace hard daily minimum kWh constraint with soft penalty approach

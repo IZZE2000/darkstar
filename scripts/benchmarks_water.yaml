@@ -1,0 +1,62 @@
+# Water Heating Specific Benchmark Scenarios
+# Focus on varying comfort levels, gaps, and horizons
+benchmarks:
+  - name: "Water Minimal (24h)"
+    slots: 96
+    water: true
+    spacing: false
+    comfort_level: 1
+    min_kwh: 5.0
+    max_gap: 24.0
+
+  - name: "Water Standard (24h)"
+    slots: 96
+    water: true
+    spacing: true
+    comfort_level: 3
+    min_kwh: 8.0
+    max_gap: 12.0
+
+  - name: "Water Standard (48h)"
+    slots: 192
+    water: true
+    spacing: true
+    comfort_level: 3
+    min_kwh: 8.0
+    max_gap: 12.0
+
+  - name: "Water Comfort (48h)"
+    slots: 192
+    water: true
+    spacing: true
+    comfort_level: 5
+    min_kwh: 10.0
+    max_gap: 8.0
+
+  - name: "Water Double Target (48h)"
+    slots: 192
+    water: true
+    spacing: true
+    comfort_level: 5
+    min_kwh: 20.0
+    max_gap: 4.0
+    # Simulate multiple sources by increasing power
+    heating_power: 6.0
+
+  - name: "Water Tight Spacing (48h)"
+    slots: 192
+    water: true
+    spacing: true
+    comfort_level: 3
+    min_kwh: 8.0
+    max_gap: 12.0
+    min_spacing: 6.0
+
+  - name: "Water High Consumption (48h)"
+    slots: 192
+    water: true
+    spacing: true
+    comfort_level: 5
+    min_kwh: 30.0
+    max_gap: 6.0
+    heating_power: 9.0
