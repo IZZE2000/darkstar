@@ -189,12 +189,8 @@ class SimulationDataLoader:
             if not isinstance(slot_start, datetime):
                 continue
             slot_end = slot_start + timedelta(minutes=15)
-            pv = _safe_float(slot.get("pv_forecast_kwh")) + _safe_float(
-                slot.get("pv_correction_kwh")
-            )
-            load = _safe_float(slot.get("load_forecast_kwh")) + _safe_float(
-                slot.get("load_correction_kwh")
-            )
+            pv = _safe_float(slot["final"]["pv_kwh"])
+            load = _safe_float(slot["final"]["load_kwh"])
             result.append(
                 {
                     "start_time": slot_start,

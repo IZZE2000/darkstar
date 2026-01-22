@@ -344,8 +344,8 @@ async def predict_corrections(
             ts = rec["slot_start"].astimezone(tz)
             key = (ts.weekday(), ts.hour)
             pv_bias, load_bias = stats_bias.get(key, (0.0, 0.0))
-            pv_corr = _clamp_correction(rec["pv_forecast_kwh"], pv_bias)
-            load_corr = _clamp_correction(rec["load_forecast_kwh"], load_bias)
+            pv_corr = _clamp_correction(rec["final"]["pv_kwh"], pv_bias)
+            load_corr = _clamp_correction(rec["final"]["load_kwh"], load_bias)
             corrections.append(
                 {
                     "slot_start": rec["slot_start"],
@@ -364,8 +364,8 @@ async def predict_corrections(
             ts = rec["slot_start"].astimezone(tz)
             key = (ts.weekday(), ts.hour)
             pv_bias, load_bias = stats_bias.get(key, (0.0, 0.0))
-            pv_corr = _clamp_correction(rec["pv_forecast_kwh"], pv_bias)
-            load_corr = _clamp_correction(rec["load_forecast_kwh"], load_bias)
+            pv_corr = _clamp_correction(rec["final"]["pv_kwh"], pv_bias)
+            load_corr = _clamp_correction(rec["final"]["load_kwh"], load_bias)
             corrections.append(
                 {
                     "slot_start": rec["slot_start"],

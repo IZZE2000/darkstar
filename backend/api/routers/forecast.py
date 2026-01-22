@@ -236,8 +236,8 @@ async def aurora_dashboard() -> dict[str, Any]:
             horizon_slots = await get_forecast_slots(slot_start, horizon_end, "aurora")
 
         # Calculate stats
-        total_pv = sum(s.get("pv_forecast_kwh", 0) for s in horizon_slots)
-        total_load = sum(s.get("load_forecast_kwh", 0) for s in horizon_slots)
+        total_pv = sum(s["final"]["pv_kwh"] for s in horizon_slots)
+        total_load = sum(s["final"]["load_kwh"] for s in horizon_slots)
 
         stats = {
             "horizon_hours": 24,
