@@ -1,3 +1,18 @@
+## [v2.5.9-beta] - Kepler Battery Config Fix - 2026-01-22
+
+**🔧 Bug Fixes**
+- **Fixed Kepler battery config path**: Planner now correctly reads battery charge/discharge limits from `executor.controller.*` instead of `battery.*`
+- **Added battery config validation**: Clear error messages when battery limits are misconfigured or zero
+- **Fixed W/A mode toggling**: Both Watt and Ampere control modes now read from correct config paths
+- **Improved config migration**: Fixed bug where migrated config keys weren't being saved
+
+**🎯 Impact**
+- Resolves flat battery schedules with no charge/discharge actions
+- Battery should now properly charge/discharge based on price optimization
+- Clear validation errors help identify configuration issues
+
+---
+
 ## [v2.5.8-beta] - COMPLETE AURORA Pipeline Fix - 2026-01-22
 
 > [!IMPORTANT]

@@ -1,6 +1,6 @@
 {
   "name": "darkstar-frontend",
-  "version": "2.5.8",
+  "version": "2.5.9",
   "private": true,
   "scripts": {
     "dev": "concurrently -k -n FRONTEND,BACKEND \"pnpm:dev:frontend\" \"pnpm:dev:backend\"",

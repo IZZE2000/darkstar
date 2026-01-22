@@ -375,3 +375,51 @@ This caused `KeyError: 'pv_forecast_kwh'` during forecast data retrieval, not ML
 - `ml/simulation/data_loader.py` - Fixed simulation data access
 - All version files - Bumped to v2.5.8-beta
 - `docs/RELEASE_NOTES.md` - Added comprehensive release notes
+
+---
+
+### [ACTIVE] REV // F39 — Kepler Battery Config Path & Validation Fix
+
+**Goal:** Fix critical Kepler solver bug where battery charge/discharge limits are read from wrong config path, causing flat schedules with no battery actions.
+
+**Root Cause:**
+1. **Wrong Config Path**: `planner/solver/adapter.py` looks for `battery.max_charge_a` but config has `executor.controller.max_charge_a`
+2. **Missing Validation**: Kepler receives 0.0 kW limits but doesn't warn that battery is completely disabled
+3. **Silent Failure**: Produces flat schedule with `reason: "no_action_needed"` instead of error
+
+**Current Behavior:**
+- Kepler gets `max_charge_kw = 0.0` and `max_discharge_kw = 0.0`
+- Solves optimization with battery disabled
+- Produces flat SoC schedule (no charge/discharge actions)
+- Takes 2+ minutes instead of normal 30s-1min
+- No warnings or validation errors
+
+**Plan:**
+
+#### Phase 1: Fix Config Path [ACTIVE]
+* [ ] Update `planner/solver/adapter.py` L139-140: Read from `executor.controller.max_charge_a`
+* [ ] Update `planner/solver/adapter.py` L139-140: Read from `executor.controller.max_discharge_a`
+* [ ] Verify voltage lookup uses correct path (`executor.controller.system_voltage_v`)
+
+#### Phase 2: Add Validation [ACTIVE]
+* [ ] Add validation in `KeplerConfig.__post_init__()`: Warn if charge/discharge limits are 0
+* [ ] Add validation in `KeplerSolver.solve()`: Error if battery capacity > 0 but limits = 0
+* [ ] Log actual config values being used for debugging
+
+#### Phase 3: Version Release [PENDING]
+* [ ] Bump version to v2.5.9-beta
+* [ ] Update release notes with fix description
+* [ ] Test on HA add-on to verify battery actions work
+
+**Expected Impact:**
+- ✅ Kepler reads correct battery limits from config
+- ✅ Battery charging/discharging actions appear in schedule
+- ✅ SoC changes from current 56% toward target 30%
+- ✅ Solve time returns to normal 30s-1min
+- ✅ Clear validation errors when config is invalid
+
+**Files to Modify:**
+- `planner/solver/adapter.py` - Fix config path lookup
+- `planner/solver/types.py` - Add KeplerConfig validation
+- All version files - Bump to v2.5.9-beta
+- `docs/RELEASE_NOTES.md` - Add release notes

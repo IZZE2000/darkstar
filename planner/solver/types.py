@@ -56,6 +56,27 @@ class KeplerConfig:
     # Rev E4: Export Toggle
     enable_export: bool = True  # If False, enforce 0 export
 
+    def __post_init__(self):
+        """Validate configuration after initialization."""
+        # Rev F39: Validate battery configuration
+        if self.capacity_kwh > 0:
+            if self.max_charge_power_kw <= 0:
+                raise ValueError(
+                    f"Battery capacity is {self.capacity_kwh} kWh but max_charge_power_kw is {self.max_charge_power_kw}. Battery cannot charge!"
+                )
+            if self.max_discharge_power_kw <= 0:
+                raise ValueError(
+                    f"Battery capacity is {self.capacity_kwh} kWh but max_discharge_power_kw is {self.max_discharge_power_kw}. Battery cannot discharge!"
+                )
+
+        # Log actual values for debugging
+        import logging
+
+        logger = logging.getLogger("darkstar.kepler.config")
+        logger.info(
+            f"Kepler Config: capacity={self.capacity_kwh}kWh, charge={self.max_charge_power_kw}kW, discharge={self.max_discharge_power_kw}kW"
+        )
+
 
 @dataclass
 class KeplerInputSlot:
