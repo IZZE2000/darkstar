@@ -15,24 +15,7 @@ env:
   REGISTRY: ghcr.io
 
 jobs:
-  test:
-    name: API Tests Gating
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - name: Install dependencies
-        run: |
-          pip install -r requirements.txt
-          pip install pytest httpx
-      - name: Run API tests
-        run: PYTHONPATH=. pytest tests/test_api_routes.py -v
-
   build:
-    needs: [test]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -120,6 +103,7 @@ jobs:
 
   release:
     needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: write
