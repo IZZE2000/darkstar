@@ -330,12 +330,12 @@ class KeplerSolver:
         # just the overhead of writing the LP file in prob.solve()
 
         try:
-            # Try GLPK first (installed in Alpine Docker image)
-            solver_cmd = pulp.GLPK_CMD(msg=False)
+            # Try GLPK first (installed in Alpine Docker image) with timeout
+            solver_cmd = pulp.GLPK_CMD(msg=False, timeLimit=90)
             prob.solve(solver_cmd)
         except Exception:
-            # Fall back to CBC if GLPK not available
-            solver_cmd = pulp.PULP_CBC_CMD(msg=False)
+            # Fall back to CBC if GLPK not available, also with timeout
+            solver_cmd = pulp.PULP_CBC_CMD(msg=False, timeLimit=90)
             prob.solve(solver_cmd)
 
         solve_end = time.time()
