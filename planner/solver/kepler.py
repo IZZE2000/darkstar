@@ -332,6 +332,9 @@ class KeplerSolver:
                 if water_enabled and needs_water_start and config.water_block_start_penalty_sek > 0
                 else 0.0
             )  # Rev WH2: Block start penalty
+            # Rev K16 Phase 5: Symmetry Breaker
+            # Add tiny cost (increasing with t) to break ties in flat price scenarios
+            + (pulp.lpSum(water_heat[t] * (t * 1e-5) for t in range(T)) if water_enabled else 0.0)
         )
 
         # Solve using GLPK (available in Alpine) or CBC as fallback

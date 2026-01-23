@@ -273,6 +273,7 @@ data_quality:
 * [x] **Implementation:** `sum(water_heat[t-9:t]) <= 8 + slack[t]`.
 * [x] **Pivot:** Switched from "Recursive Discomfort" (slow) to "Sliding Window" (fast).
 * [x] **Result:** Solve times < 3s (mostly < 0.5s), blocks broken up successfully.
+* [x] **Optimization:** Added Symmetry Breaker (Phase 5) to fix "Cheap" scenario slowness.
 * [ ] **Commit:** "feat(planner): implement soft sliding window for water heating"
 
 #### Phase 2: Reliability (Soft Constraints) [PLANNED]
