@@ -345,4 +345,11 @@ Convert all hard constraints to soft penalties in the objective function, elimin
 - Preserve profitable optimization within MILP framework
 - Significantly improve solver performance and stability
 
+
 ---
+
+**Task 8: Performance recovery: Revert to 448de35 and optimize (DONE)**
+- Stripped "Gap Penalty" logic that caused 90s solve times.
+- Implemented lightweight `Max Block Length` linear constraint (2.0h).
+- Successfully split "One Big Block" into two 2-hour segments via `min_spacing_hours` interaction.
+- Result: **0.43s solve time** (200x speedup) with correct scheduling behavior.
