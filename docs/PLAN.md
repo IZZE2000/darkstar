@@ -252,104 +252,62 @@ data_quality:
 
 ---
 
-## **REV // K16: Simplify Water Heating Constraints**
+### [IN PROGRESS] REV // K16 — Water Heating Optimization (Recovered)
 
-**Problem Statement:**
-Current water heating MILP implementation is overly complex with ~746 variables and ~600 constraints, causing slow solve times and potential solver hangs. The complexity comes from hard constraints, 2-tier gap systems, start detection variables, and hard spacing constraints.
+**Goal:** Restore planner performance (<1s) while maintaining smart water heating layout.
+**Strategy:** "Linearize Everything." Remove binary constraints (hard/slow) and replace with linear soft penalties (fast/flexible).
 
-**Requirements:**
-- Maintain all current water heating functionality (daily minimum, comfort gaps, block consolidation, spacing)
-- Dramatically reduce MILP complexity for faster solve times
-- Keep profitable optimization - MILP should still choose optimal heating times
-- Preserve user comfort controls via existing comfort_level slider (1-5)
+**Plan:**
 
-**Background:**
-Current implementation uses:
-- Hard daily minimum kWh constraints (feasibility requirements)
-- 2-tier progressive gap penalty system (8h + 12h thresholds)
-- Binary start detection variables (`water_start[t]`) for block consolidation
-- Hard spacing constraints preventing heating within `min_spacing_hours`
+#### Phase 0: Investigation & Stabilization [DONE]
+* [x] **Benchmark Script:** Created `scripts/benchmark_kepler.py`.
+* [x] **Baseline:** Established ~90s solve time for standard scenarios with Gap Constraint.
+* [x] **Diagnosis:** Identified "Gap Penalty" (recursive binary constraints) as combinatorial root cause.
+* [x] **Fix 1:** Removed Gap Penalty logic. Result: 0.05s solve time (>1000x speedup) but caused "One Big Block" layout.
+* [x] **Fix 2:** Implemented hard `Max Block Length` (2.0h) as interim fix.
+* [x] **Current State:** Fast (0.43s), Splits blocks, but constraints are HARD (brittle).
 
-This creates ~746 extra variables and ~600 constraints just for water heating in a 48-hour horizon.
+#### Phase 1: Smart Comfort (Linear Discomfort Cost) [PLANNED]
+**Objective:** Solve "One Big Block" layout organically without hard limits.
+* [ ] **Concept:** Replace binary "Gap" check with linear "Discomfort Counter".
+* [ ] **Math:** `discomfort[t] = discomfort[t-1] + 1 - (water_heat[t] * large_number)`. (Continuous variable).
+* [ ] **Objective Function:** `minimize sum(discomfort[t] * comfort_penalty_rate)`.
+* [ ] **Config Mapping:** Map `comfort_level` (1-5) to `comfort_penalty_rate`.
+    *   Level 5 (Max): High penalty rate -> Forces frequent resets (top-ups).
+    *   Level 1 (Eco): Low penalty rate -> Allows long gaps if power is cheap.
+* [ ] **Validation:**
+    *   Test: Does Level 5 produce many small chunks?
+    *   Test: Does Level 1 produce consolidated cheap chunks?
+    *   Benchmark: Does solve time stay <1s? (Crucial).
 
-**Proposed Solution:**
-Convert all hard constraints to soft penalties in the objective function, eliminate redundant constraint tiers, and replace complex start detection with simple transition penalties.
+#### Phase 2: Reliability (Soft Constraints) [PLANNED]
+**Objective:** Prevent "Infeasible" crashes during edge cases.
+* [ ] **Task 2a - Soft Daily Min:**
+    *   Convert `min_kwh_per_day` to soft constraint.
+    *   Add slack variable `daily_shortfall[day]`.
+    *   Penalty: Huge cost (e.g., 500 SEK/kWh) for shortfall.
+* [ ] **Task 2b - Soft Spacing:**
+    *   Convert `min_spacing_hours` to soft constraint.
+    *   Add slack variable `spacing_violation[t]`.
+    *   Penalty: Moderate cost for breaking 5h spacing rule (e.g., if re-heating is urgent).
 
-**Task Breakdown:**
+#### Phase 3: Layout Safety (Max Block Length) [CONDITIONAL]
+**Objective:** Fallback mechanism if Phase 1 fails to prevent massive blocks.
+* [ ] **Condition:** ONLY execute if Phase 1 (`Discomfort Cost`) fails to break up 5-6h heating blocks on cheap days.
+* [ ] **Change:** Convert hard 2h limit to SOFT constraint or configurable `max_continuous_hours`.
+* [ ] **Validation:** Verify layout on "Free Electricity Day" scenarios.
 
-**Task 1: Create Baseline Performance Benchmark [DONE]**
-- [x] Create comprehensive benchmarking script for water heating solver performance
-- [x] Measure current solve times, variable counts, constraint counts across different scenarios
-- [x] Test with various comfort levels (1-5), different daily minimums, and horizon lengths
-- [x] Generate baseline performance report with statistical analysis (mean, p95, max solve times)
-- [x] Include memory usage and solver iteration counts if available
-- [x] Save benchmark results for before/after comparison
-- [x] Test: Script runs reliably and produces consistent measurements
-- [x] Demo: Clear baseline metrics showing current solver performance bottlenecks
+#### Phase 4: Performance (Variable Optimization) [PLANNED]
+**Objective:** Final speed optimization by removing `water_start` binaries.
+* [ ] **Hypothesis:** We can prevent sawtooth (ON-OFF-ON) behavior using linear ramping costs instead of binary start penalties.
+* [ ] **Implementation:**
+    *   Remove `water_start` binary variables.
+    *   Remove `block_start_penalty` logic.
+    *   Add `water_ramping_cost`: `|water_heat[t] - water_heat[t-1]| * cost_per_switch`.
+* [ ] **Benefit:** Removing ~96 binary variables should drop solve time further and improve stability.
+* [ ] **Validation:** Confirm no "chatter" (rapid switching) appears in schedule.
 
-**Task 2: Convert Daily Minimum to Soft Constraint**
-- Replace hard daily minimum kWh constraint with soft penalty approach
-- Add `daily_shortfall` continuous variable per day bucket
-- Apply high comfort penalty (derived from comfort_level) for unmet daily requirements
-- Maintain existing smart deferral logic (defer_up_to_hours)
-- Test: Verify daily minimum is still respected with appropriate penalty weights
-- Demo: Water heating still meets daily requirements but solver can find solutions even with conflicting constraints
-
-**Task 3: Eliminate 2-Tier Gap System**
-- Remove `gap_violation_2` variables and constraints (Tier 2: 1.5x threshold)
-- Keep only single-tier gap penalty for `max_hours_between_heating`
-- Simplify gap penalty calculation to single penalty rate
-- Update comfort_level mapping to compensate for single-tier system
-- Test: Verify comfort behavior is preserved with single-tier approach
-- Demo: Gap penalties still discourage long heating gaps but with ~50% fewer variables
-
-**Task 4: Replace Start Detection with Transition Penalties**
-- Remove `water_start[t]` binary variables and start detection constraints
-- Replace with direct transition penalty: `|water_heat[t] - water_heat[t-1]|`
-- Apply block consolidation penalty per transition (start/stop events)
-- Map existing `block_start_penalty_sek` to transition penalty rate
-- Test: Verify heating still consolidates into blocks rather than scattered slots
-- Demo: Block consolidation behavior preserved with simpler mathematical formulation
-
-**Task 5: Convert Spacing to Soft Constraint**
-- Remove hard spacing constraints that prevent heating within `min_spacing_hours`
-- Replace with soft penalty for spacing violations using linear formulation
-- Add continuous `spacing_violation[t]` slack variables for each time slot
-- Linear constraint: `sum(water_heat[j] for j in recent_window) <= spacing_slots * (1 - water_heat[t]) + spacing_violation[t]`
-- Apply penalty rate derived from existing `spacing_penalty_sek` config to slack variables
-- Test: Verify spacing behavior is maintained with soft penalties and linear constraints
-- Demo: Heating blocks still respect minimum spacing but solver has flexibility for optimization
-
-**Task 6: Update Configuration Mapping**
-- Ensure existing config parameters map correctly to new penalty structure
-- Verify `comfort_level` (1-5) still produces appropriate penalty weights
-- Update penalty calculations in `planner/solver/adapter.py`
-- Maintain backward compatibility with existing config files
-- Test: Existing configurations produce similar heating behavior
-- Demo: User comfort settings work identically to before
-
-**Task 7: Performance Validation and Tuning**
-- Re-run benchmark script from Task 1 with simplified implementation
-- Compare before/after performance metrics (solve times, variable counts, constraint counts)
-- Validate heating behavior matches expectations across comfort levels
-- Tune penalty weights if behavior deviates significantly from current implementation
-- Add performance metrics logging for constraint count and solve duration
-- Test: Solve times improve significantly (target: >50% reduction)
-- Demo: Faster planning with equivalent water heating intelligence and comprehensive performance comparison
-
-**Expected Outcomes:**
-- Reduce water heating binary variables from ~384 to ~192 (50% reduction - eliminate water_start variables)
-- Reduce water heating constraints from ~600 to ~50 (92% reduction)
-- Add minimal continuous slack variables for soft constraints (much less expensive than binary variables)
-- Maintain all existing functionality: daily minimums, comfort gaps, block consolidation, spacing
-- Preserve profitable optimization within MILP framework
-- Significantly improve solver performance and stability
-
-
----
-
-**Task 8: Performance recovery: Revert to 448de35 and optimize (DONE)**
-- Stripped "Gap Penalty" logic that caused 90s solve times.
-- Implemented lightweight `Max Block Length` linear constraint (2.0h).
-- Successfully split "One Big Block" into two 2-hour segments via `min_spacing_hours` interaction.
-- Result: **0.43s solve time** (200x speedup) with correct scheduling behavior.
+#### Phase 5: Documentation & Release [PLANNED]
+* [ ] **Docs:** Update `docs/DEVELOPER.md` with new benchmarking notes.
+* [ ] **Cleanup:** Remove legacy commented-out Gap Penalty code.
+* [ ] **Final Commit:** "feat(planner): optimize water heating constraints".

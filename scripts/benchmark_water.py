@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
 """
-Water Heating Solver Benchmark
-============================
+Water Heating Solver Benchmark (Ultimate)
+=========================================
 
-Specific benchmark for water heating optimization performance.
-Measures solve times, variable counts, and constraint counts.
+Comparitive benchmark for water heating optimization.
+Features:
+- ASCII Gantt Chart Visualization
+- Quality Metrics (Gap, Block, Sawtooth)
+- Markdown Report Generation with Phase tagging
 
 Usage:
-    python scripts/benchmark_water.py
+    python scripts/benchmark_water.py --phase "PHASE 1" --reset
 """
 
+import argparse
 import contextlib
 import logging
 import math
@@ -28,7 +32,6 @@ import yaml
 from rich.console import Console
 from rich.panel import Panel
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
-from rich.table import Table
 
 # Add project root to path
 sys.path.append(str(Path(__file__).parent.parent.resolve()))
@@ -38,6 +41,7 @@ from planner.solver.types import (
     KeplerConfig,
     KeplerInput,
     KeplerInputSlot,
+    KeplerResult,
 )
 
 
@@ -48,7 +52,6 @@ class PerfCaptureHandler(logging.Handler):
         self.last_metrics = {}
 
     def emit(self, record):
-        # Look for: "Kepler Solved: 192 slots in 0.456s (Vars: 746, Const: 600) | Cost: 12.34 SEK"
         msg = record.getMessage()
         match = re.search(r"Vars: (\d+), Const: (\d+)", msg)
         if match:
@@ -60,9 +63,31 @@ perf_logger = logging.getLogger("darkstar.performance")
 perf_logger.setLevel(logging.INFO)
 perf_logger.addHandler(perf_handler)
 
-# Silence other logs
 logging.basicConfig(level=logging.ERROR, format="%(message)s")
 logging.getLogger("planner").setLevel(logging.CRITICAL)
+
+
+def draw_sparkline(data: list[float], height: int = 1) -> str:
+    """Generates a sparkline string from a list of values."""
+    if not data:
+        return ""
+
+    min_val = min(data)
+    max_val = max(data)
+    rng = max_val - min_val
+    if rng == 0:
+        return "█" * len(data)
+
+    # Levels:  ▂▃▄▅▆▇█
+    levels = [" ", "▂", "▃", "▄", "▅", "▆", "▇", "█"]
+
+    res = ""
+    for x in data:
+        normalized = (x - min_val) / rng
+        idx = int(normalized * (len(levels) - 1))
+        res += levels[idx]
+
+    return res
 
 
 def get_sys_info() -> dict[str, str]:
@@ -111,14 +136,20 @@ def generate_scenario(sc_config: dict[str, Any]) -> dict[str, Any]:
         e = s + timedelta(minutes=15)
         hour = s.hour
 
-        # Volatile prices for interesting optimization
-        import_price = 1.0 + 0.5 * (math.sin(i / 10) + rng.random())
-        export_price = import_price * 0.8
+        # Price Profiles
+        if profile == "cheap_prices":
+            import_price = 0.05 + rng.random() * 0.1  # Virtually free
+        elif profile == "expensive_prices":
+            import_price = 2.0 + rng.random() * 3.0  # Very expensive
+        elif profile == "random_spikes":
+            # Spiky: 10% chance of 5 SEK, else 0.5
+            import_price = 5.0 if rng.random() < 0.1 else 0.5
+        else:  # Default
+            # Sine wave price (0.5 to 1.5)
+            import_price = 1.0 + 0.5 * math.sin(i / 10)
 
-        if profile == "heavy_home":
-            load = 2.0 + rng.random() * 5.0
-        else:
-            load = 0.5 + (2.0 if 17 <= hour <= 21 else 0.0)
+        export_price = import_price * 0.8
+        load = 0.5 + (2.0 if 17 <= hour <= 21 else 0.0)
 
         input_slots.append(
             KeplerInputSlot(
@@ -133,8 +164,9 @@ def generate_scenario(sc_config: dict[str, Any]) -> dict[str, Any]:
 
     input_data = KeplerInput(slots=input_slots, initial_soc_kwh=5.0)
 
-    # Map comfort level to penalty (simplified for now)
-    comfort_penalty = 2.0 * comfort_level
+    # Simplified Comfort Penalty Map (matches adapter.py roughly)
+    comfort_map = {1: 0.05, 2: 0.20, 3: 0.50, 4: 1.00, 5: 3.00}
+    comfort_penalty = comfort_map.get(comfort_level, 0.50)
 
     config = KeplerConfig(
         capacity_kwh=10.0,
@@ -154,62 +186,149 @@ def generate_scenario(sc_config: dict[str, Any]) -> dict[str, Any]:
         enable_export=True,
     )
 
+    return {"name": name + f" [{profile}]", "input": input_data, "config": config, "slots": slots}
+
+
+def analyze_quality(result: KeplerResult, total_slots: int) -> dict[str, Any]:
+    if not result.is_optimal:
+        return {"max_gap": -1, "avg_block": -1, "sawtooth": -1, "ascii": "FAIL", "prices": []}
+
+    # Extract binary schedule (1 = heating, 0 = off)
+    # Note: result.slots[t].water_heat_kw > 0
+    schedule = [1 if s.water_heat_kw > 0.1 else 0 for s in result.slots]
+
+    # ASCII Gantt
+    # Compress 192 slots -> 48 chars (1 char = 1 hour = 4 slots)
+    ascii_str = ""
+    for h in range(0, len(schedule), 4):
+        chunk = schedule[h : h + 4]
+        # If any slot in the hour is ON, mark as '█' (Full block) or '▄' (Partial)?
+        # For readability, '█' if > 50% on, '░' if partial, '_' if off
+        s_sum = sum(chunk)
+        if s_sum == 4:
+            ascii_str += "█"
+        elif s_sum > 0:
+            ascii_str += "▒"
+        else:
+            ascii_str += "_"
+
+    # Metrics
+    max_gap_slots = 0
+    current_gap = 0
+
+    blocks = []
+    current_block = 0
+    sawtooth_count = 0
+    last_val = 0
+
+    for val in schedule:
+        if val == 0:
+            current_gap += 1
+            if current_block > 0:
+                blocks.append(current_block)
+                current_block = 0
+        else:
+            max_gap_slots = max(max_gap_slots, current_gap)
+            current_gap = 0
+            current_block += 1
+
+        if val != last_val:
+            sawtooth_count += 1
+        last_val = val
+
+    if current_block > 0:
+        blocks.append(current_block)
+
+    # Edge case: ended with gap
+    max_gap_slots = max(max_gap_slots, current_gap)
+
+    avg_block_slots = sum(blocks) / len(blocks) if blocks else 0
+
     return {
-        "name": name,
-        "input": input_data,
-        "config": config,
+        "max_gap": max_gap_slots / 4.0,  # Hours
+        "avg_block": avg_block_slots / 4.0,  # Hours
+        "sawtooth": sawtooth_count / 2,  # Approx number of cycles
+        "ascii": ascii_str,
+        "prices": [s.import_price_sek_kwh for s in result.slots] if result.is_optimal else [],
     }
 
 
-def get_process_memory() -> float:
-    process = psutil.Process(os.getpid())
-    return process.memory_info().rss / (1024 * 1024)
-
-
-def save_markdown_report(results: list[dict[str, Any]], sys_info: dict[str, str]):
+def save_markdown_report(
+    results: list[dict[str, Any]], sys_info: dict[str, str], phase: str, reset: bool
+):
     report_dir = Path(__file__).parent.parent / "docs" / "reports"
     report_dir.mkdir(parents=True, exist_ok=True)
     report_path = report_dir / "BENCHMARK_WATER_REPORT.md"
 
-    exists = report_path.exists()
+    mode = "w" if reset else "a"
 
+    # Header if new/reset
     lines = []
-    if not exists:
+    if reset or not report_path.exists():
         lines.append("# Water Heating Optimization Benchmark Report")
         lines.append("Comparison of water heating MILP complexity and solve times.\n")
 
-    lines.append(f"## Run: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    lines.append("### System Context")
-    lines.append(f"- **CPU**: {sys_info['CPU']}")
-    lines.append(f"- **RAM**: {sys_info['RAM']}")
-    lines.append(f"- **OS**: {sys_info['Arch']}")
-    lines.append(f"- **Python**: {sys_info['Python']}\n")
+    # Run Section
+    lines.append(f"## Run: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ({phase})")
+    if reset:
+        lines.append("### System Context")
+        lines.append(f"- **CPU**: {sys_info['CPU']}")
+        lines.append(f"- **RAM**: {sys_info['RAM']}")
+        lines.append(f"- **OS**: {sys_info['Arch']}")
+        lines.append(f"- **Python**: {sys_info['Python']}\n")
 
     lines.append("### Results")
-    lines.append("| Scenario | Solve Time | Vars | Consts | Memory (MB) | Status |")
-    lines.append("| :--- | :---: | :---: | :---: | :---: | :---: |")
+    # Compact Table
+    lines.append("| Scenario | Time | Cost | Status | Max Gap | Avg Block | Sawtooth |")
+    lines.append("| :--- | :---: | :---: | :---: | :---: | :---: | :---: |")
 
     for r in results:
-        t_str = f"{r['t']:.4f}s" if r["t"] > 0 else "FAIL"
+        t_str = f"{r['t']:.3f}s" if r["t"] > 0 else "FAIL"
         status = "✅" if r["t"] > 0 else "❌"
+        q = r["quality"]
+
         lines.append(
-            f"| {r['name']} | {t_str} | {r['vars']} | {r['consts']} | {r['mem']:.1f} | {status} |"
+            f"| {r['name']} | {t_str} | {r['cost']:.1f} | {status} | {q['max_gap']:.1f}h | {q['avg_block']:.1f}h | {q['sawtooth']:.0f} |"
         )
 
+    # ASCII Visuals Section
+    lines.append("\n### Visual Schedule (48h)")
+    lines.append("`█` = Full Hour Heat, `▒` = Partial, `_` = Off")
+    lines.append("`▂▃▅█` = Price Intensity (Low to High)")
+    lines.append("```text")
+    for r in results:
+        q = r["quality"]
+        # Compress prices to hourly average for sparkline (192 -> 48)
+        hourly_prices = []
+        if q["prices"]:
+            for i in range(0, len(q["prices"]), 4):
+                chunk = q["prices"][i : i + 4]
+                hourly_prices.append(sum(chunk) / len(chunk))
+
+        spark = draw_sparkline(hourly_prices)
+
+        lines.append(f"{r['name']:<40} [{q['ascii']}]")
+        lines.append(f"{' ':<40} [{spark}]")
+        lines.append("")  # Empty line for spacing
+    lines.append("```")
     lines.append("\n---\n")
 
-    mode = "a" if exists else "w"
     with report_path.open(mode) as f:
         f.write("\n".join(lines) + "\n")
 
 
 def run_benchmark():
+    parser = argparse.ArgumentParser(description="Water Heating Benchmark")
+    parser.add_argument("--phase", type=str, default="UNKNOWN", help="Phase tag for report")
+    parser.add_argument("--reset", action="store_true", help="Clear report file")
+    args = parser.parse_args()
+
     sys_info = get_sys_info()
 
     console.print(
         Panel(
-            f"[bold cyan]CPU:[/] {sys_info['CPU']}\n[bold cyan]RAM:[/] {sys_info['RAM']}\n[bold cyan]Python:[/] {sys_info['Python']}",
-            title="[bold blue]WATER HEATING BENCHMARK[/]",
+            f"[bold cyan]CPU:[/] {sys_info['CPU']}\n[bold cyan]Phase:[/] {args.phase}",
+            title="[bold blue]ULTIMATE WATER BENCHMARK[/]",
             expand=False,
         )
     )
@@ -219,14 +338,6 @@ def run_benchmark():
         bench_data = yaml.safe_load(f)
 
     scenarios = [generate_scenario(s) for s in bench_data["benchmarks"]]
-
-    table = Table(box=None, header_style="bold blue", show_header=True)
-    table.add_column("Scenario", style="cyan", width=30)
-    table.add_column("Solve Time", justify="right")
-    table.add_column("Vars", justify="right", style="dim")
-    table.add_column("Consts", justify="right", style="dim")
-    table.add_column("Memory (MB)", justify="right", style="dim")
-    table.add_column("Status", justify="center")
 
     py_solver = KeplerSolver()
     progress_results = []
@@ -239,68 +350,70 @@ def run_benchmark():
         TimeElapsedColumn(),
         console=console,
     ) as progress:
-        task = progress.add_task("[green]Solvin' water...", total=len(scenarios))
+        task = progress.add_task("[green]Simulating...", total=len(scenarios))
 
         for sc in scenarios:
             progress.update(task, description=f"[bold blue]Solving:[/] {sc['name']}")
 
-            t_solve, mem_solve = -1.0, 0.0
+            t_solve = -1.0
             metrics = {"vars": 0, "consts": 0}
+            result = None
 
             try:
-                start_mem = get_process_memory()
                 start_time = time.time()
-
                 with contextlib.redirect_stdout(None):
-                    py_solver.solve(sc["input"], sc["config"])
-
+                    result = py_solver.solve(sc["input"], sc["config"])
                 t_solve = time.time() - start_time
-                mem_solve = max(0.0, get_process_memory() - start_mem)
                 metrics = perf_handler.last_metrics
             except Exception as e:
                 console.print(f"[red]Error solving {sc['name']}: {e}[/]")
 
-            status_icon = "✅" if t_solve > 0 else "❌"
-
-            # Formatting time with colors
-            if t_solve < 0:
-                t_str = "[red]FAIL[/]"
-            elif t_solve < 0.2:
-                t_str = f"[green]{t_solve:.4f}s[/]"
-            elif t_solve < 1.0:
-                t_str = f"[yellow]{t_solve:.4f}s[/]"
-            else:
-                t_str = f"[red]{t_solve:.4f}s[/]"
-
-            table.add_row(
-                sc["name"],
-                t_str,
-                str(metrics.get("vars", 0)),
-                str(metrics.get("consts", 0)),
-                f"{mem_solve:.1f}",
-                status_icon,
+            # Quality Analysis
+            quality = (
+                analyze_quality(result, sc["slots"])
+                if result
+                else {"max_gap": -1, "avg_block": -1, "sawtooth": -1, "ascii": "FAIL"}
             )
+
+            # Rich Table Output (Mini)
+            t_color = "green" if t_solve < 1.0 else "red"
+            console.print(
+                f"  [cyan]{sc['name']:<35}[/] [{t_color}]{t_solve:.3f}s[/] | Gap: {quality['max_gap']:.1f}h | Block: {quality['avg_block']:.1f}h"
+            )
+            # Draw ASCII to console (Blue blocks)
+            console.print(f"  [bold blue]{quality['ascii']}[/]")
+
+            # Draw Sparkline below
+            if quality.get("prices"):
+                # Compress prices to hourly average for sparkline
+                hourly_prices = []
+                for i in range(0, len(quality["prices"]), 4):
+                    chunk = quality["prices"][i : i + 4]
+                    hourly_prices.append(sum(chunk) / len(chunk))
+                spark = draw_sparkline(hourly_prices)
+                console.print(f"  [dim]{spark}[/]\n")
+            else:
+                console.print("\n")
 
             progress_results.append(
                 {
                     "name": sc["name"],
                     "t": t_solve,
+                    "cost": result.total_cost_sek if result else 0.0,
                     "vars": metrics.get("vars", 0),
                     "consts": metrics.get("consts", 0),
-                    "mem": mem_solve,
+                    "quality": quality,
                 }
             )
-
             progress.advance(task)
 
-    console.print(table)
-    save_markdown_report(progress_results, sys_info)
-    console.print(
-        Panel(
-            "[bold green]Benchmark Complete.[/]\n[grey]Results added to docs/reports/BENCHMARK_WATER_REPORT.md[/]",
-            border_style="green",
-        )
-    )
+    save_markdown_report(progress_results, sys_info, args.phase, args.reset)
+    console.print("[green]Report saved to docs/reports/BENCHMARK_WATER_REPORT.md[/]")
+
+
+def get_process_memory() -> float:
+    process = psutil.Process(os.getpid())
+    return process.memory_info().rss / (1024 * 1024)
 
 
 if __name__ == "__main__":

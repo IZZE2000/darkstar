@@ -1,62 +1,71 @@
-# Water Heating Specific Benchmark Scenarios
-# Focus on varying comfort levels, gaps, and horizons
+# Water Heating Ultimate Benchmark Scenarios
+# All tests are 48h (192 slots) to ensure consistency.
+
 benchmarks:
-  - name: "Water Minimal (24h)"
-    slots: 96
-    water: true
-    spacing: false
-    comfort_level: 1
-    min_kwh: 5.0
-    max_gap: 24.0
-
-  - name: "Water Standard (24h)"
-    slots: 96
-    water: true
-    spacing: true
-    comfort_level: 3
-    min_kwh: 8.0
-    max_gap: 12.0
-
-  - name: "Water Standard (48h)"
+  # 1. Reference (Cheap) - Stress test for "Clumping" behavior
+  # Expectation: 0.04 - 0.10 SEK/kWh flat rate. Planner might want to dump everything in one go.
+  - name: "Reference (Cheap)"
     slots: 192
     water: true
     spacing: true
     comfort_level: 3
     min_kwh: 8.0
     max_gap: 12.0
+    profile: "cheap_prices"
 
-  - name: "Water Comfort (48h)"
+  # 2. Reference (Expensive) - Stress test for "Minimization" behavior
+  # Expectation: 2.00 - 5.00 SEK/kWh. Planner should do bare minimum.
+  - name: "Reference (Expensive)"
+    slots: 192
+    water: true
+    spacing: true
+    comfort_level: 3
+    min_kwh: 8.0
+    max_gap: 12.0
+    profile: "expensive_prices"
+
+  # 3. Comfort L5 (Max) - Stress test for "Smart Comfort" (Option B)
+  # Expectation: Should produce many small blocks to keep discomfort low.
+  - name: "Comfort L5 (Max)"
     slots: 192
     water: true
     spacing: true
     comfort_level: 5
     min_kwh: 10.0
-    max_gap: 8.0
-
-  - name: "Water Double Target (48h)"
-    slots: 192
-    water: true
-    spacing: true
-    comfort_level: 5
-    min_kwh: 20.0
     max_gap: 4.0
-    # Simulate multiple sources by increasing power
-    heating_power: 6.0
+    profile: "default"
 
-  - name: "Water Tight Spacing (48h)"
+  # 4. Comfort L3 (Balanced) - Benchmark for average user
+  # Expectation: Balanced approach between comfort and cost.
+  - name: "Comfort L3 (Balanced)"
     slots: 192
     water: true
     spacing: true
     comfort_level: 3
     min_kwh: 8.0
-    max_gap: 12.0
-    min_spacing: 6.0
+    max_gap: 8.0
+    profile: "default"
 
-  - name: "Water High Consumption (48h)"
+  # 5. Economy L1 (Eco) - Stress test for "Budget" behavior
+  # Expectation: Should allow larger gaps if price difference is significant.
+  - name: "Economy L1 (Eco)"
+    slots: 192
+    water: true
+    spacing: true
+    comfort_level: 1
+    min_kwh: 5.0
+    max_gap: 24.0
+    profile: "default"
+
+  # 6. Constraint Hell - Stress test for "Soft Constraints" (Phase 2)
+  # Expectation: High Min kWh + High Spacing + Short Window (simulated via high prices at wrong times).
+  # Should NOT fail (Infeasible), but pay high penalties.
+  - name: "Constraint Hell"
     slots: 192
     water: true
     spacing: true
     comfort_level: 5
-    min_kwh: 30.0
+    min_kwh: 20.0
+    min_spacing: 6.0
     max_gap: 6.0
-    heating_power: 9.0
+    profile: "random_spikes"
