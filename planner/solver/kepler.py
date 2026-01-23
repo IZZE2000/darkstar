@@ -50,19 +50,13 @@ class KeplerSolver:
         water_enabled = config.water_heating_power_kw > 0
         if water_enabled:
             water_heat = pulp.LpVariable.dicts("water_heat", range(T), cat="Binary")
-            # Optimization (Rev K16): Only create water_start if needed for constraints
-            # This saves ~T binary variables when spacing/start_penalty are disabled
-            needs_water_start = (
-                config.water_min_spacing_hours > 0 or config.water_block_start_penalty_sek > 0
+            # Phase 4: water_switch variables (continuous 0..1) for ramping penalty
+            water_switch = pulp.LpVariable.dicts(
+                "water_switch", range(T), lowBound=0.0, upBound=1.0
             )
-            if needs_water_start:
-                water_start = pulp.LpVariable.dicts("water_start", range(T), cat="Binary")
-            else:
-                water_start = None
         else:
             water_heat = dict.fromkeys(range(T), 0)
-            water_start = None
-            needs_water_start = False
+            water_switch = dict.fromkeys(range(T), 0)
 
         # SoC state variables (T+1 states for T slots)
 
@@ -95,9 +89,6 @@ class KeplerSolver:
         water_min_kwh_violation = pulp.LpVariable.dicts(
             "water_min_kwh_violation", range(100), lowBound=0.0
         )
-        water_spacing_violation = pulp.LpVariable.dicts(
-            "water_spacing_violation", range(T), lowBound=0.0
-        )
 
         # Initial SoC Constraint
         initial_soc = max(0.0, min(config.capacity_kwh, input_data.initial_soc_kwh))
@@ -129,13 +120,13 @@ class KeplerSolver:
                 == s.pv_kwh + discharge[t] + grid_import[t] + load_shedding[t]
             )
 
-            # Rev K21: Water start detection
-            # Only enabled if we are tracking starts
-            if water_enabled and needs_water_start:
+            # Phase 4: Water switch/ramping detection (Soft Spacing)
+            if water_enabled:
                 if t == 0:
-                    prob += water_start[t] == water_heat[t]
+                    prob += water_switch[t] >= water_heat[t]
                 else:
-                    prob += water_start[t] >= water_heat[t] - water_heat[t - 1]
+                    prob += water_switch[t] >= water_heat[t] - water_heat[t - 1]
+                    prob += water_switch[t] >= water_heat[t - 1] - water_heat[t]
 
             # Rev WH2: Force specific slots ON (Mid-block locking)
             if water_enabled and config.force_water_on_slots:
@@ -297,23 +288,7 @@ class KeplerSolver:
                         <= max_block_slots + block_overshoot[t]
                     )
 
-            # Constraint 3: Hard Spacing Constraint (Rev PERF1)
-            # If we start a block, we MUST NOT have processed any heating in the previous window.
-            # Formulation: sum(heat[t-S : t]) + start[t] * S <= S
-            if config.water_min_spacing_hours > 0:
-                spacing_slots = max(1, int(config.water_min_spacing_hours / avg_slot_hours))
-                M = spacing_slots
-                for t in range(T):
-                    # Check preceding slots in spacing window
-                    # Rev K16 Phase 2: Soft Constraint
-                    # sum(...) + start*M <= M + violation
-                    start_idx = max(0, t - spacing_slots)
-                    prob += (
-                        pulp.lpSum(water_heat[j] for j in range(start_idx, t)) + water_start[t] * M
-                        <= M + water_spacing_violation[t]
-                    )
-
-            # Constraint 4: Max Block Length (Prevent "Single Huge Block")
+            # Constraint 3: Max Block Length (Prevent "Single Huge Block")
             # REMOVED in Rev K16 Phase 1: Replaced by linear discomfort cost which naturally
             # breaks up blocks if penalty is low enough.
 
@@ -339,24 +314,17 @@ class KeplerSolver:
                 if water_enabled
                 else 0.0
             )  # Rev K16: Soft Block Penalty
-            # + spacing_violation_penalty (Removed in PERF1)
             + (
-                pulp.lpSum(water_start[t] for t in range(T)) * config.water_block_start_penalty_sek
-                if water_enabled and needs_water_start and config.water_block_start_penalty_sek > 0
+                pulp.lpSum(water_switch[t] for t in range(T)) * config.water_switch_penalty_sek
+                if water_enabled and config.water_switch_penalty_sek > 0
                 else 0.0
-            )  # Rev WH2: Block start penalty
+            )  # Rev K16 Phase 4: Switch penalty
             # Rev K16 Phase 5: Symmetry Breaker
             # Add tiny cost (increasing with t) to break ties in flat price scenarios
             + (pulp.lpSum(water_heat[t] * (t * 1e-5) for t in range(T)) if water_enabled else 0.0)
             # Rev K16 Phase 2: Reliability Penalties
             + (
                 pulp.lpSum(water_min_kwh_violation[i] for i in range(len(sorted_days)))
-                * config.water_reliability_penalty_sek
-                if water_enabled
-                else 0.0
-            )
-            + (
-                pulp.lpSum(water_spacing_violation[t] for t in range(T))
                 * config.water_reliability_penalty_sek
                 if water_enabled
                 else 0.0

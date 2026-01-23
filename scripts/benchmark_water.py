@@ -191,7 +191,7 @@ def generate_scenario(sc_config: dict[str, Any]) -> dict[str, Any]:
         water_heating_max_gap_hours=max_gap if water_enabled else 0.0,
         water_comfort_penalty_sek=comfort_penalty if water_enabled else 0.0,
         water_min_spacing_hours=min_spacing if spacing_enabled else 0.0,
-        water_block_start_penalty_sek=0.5 if spacing_enabled else 0.0,
+        water_switch_penalty_sek=0.5 if spacing_enabled else 0.0,
         enable_export=True,
     )
 
