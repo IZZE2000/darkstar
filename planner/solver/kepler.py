@@ -90,6 +90,15 @@ class KeplerSolver:
         # "Block Overshoot" variable (soft penalty for massive blocks)
         block_overshoot = pulp.LpVariable.dicts("block_overshoot", range(T), lowBound=0.0)
 
+        # Slack variables for soft constraints (Phase 2)
+        # We index min_kwh_violation by day index (max 365 days, sufficient size)
+        water_min_kwh_violation = pulp.LpVariable.dicts(
+            "water_min_kwh_violation", range(100), lowBound=0.0
+        )
+        water_spacing_violation = pulp.LpVariable.dicts(
+            "water_spacing_violation", range(T), lowBound=0.0
+        )
+
         # Initial SoC Constraint
         initial_soc = max(0.0, min(config.capacity_kwh, input_data.initial_soc_kwh))
         prob += soc[0] == initial_soc
@@ -263,9 +272,11 @@ class KeplerSolver:
                     day_min_kwh = config.water_heating_min_kwh
 
                 if day_min_kwh > 0:
+                    # Rev K16 Phase 2: Soft Constraint
+                    # sum(...) >= day_min_kwh - violation
                     prob += (
                         pulp.lpSum(water_heat[t] for t in day_slot_indices) * water_kwh_per_slot
-                        >= day_min_kwh
+                        >= day_min_kwh - water_min_kwh_violation[i]
                     )
 
             # Constraint 2: Soft Block Breaker (Rev K16 Phase 1 Pivot)
@@ -294,10 +305,12 @@ class KeplerSolver:
                 M = spacing_slots
                 for t in range(T):
                     # Check preceding slots in spacing window
+                    # Rev K16 Phase 2: Soft Constraint
+                    # sum(...) + start*M <= M + violation
                     start_idx = max(0, t - spacing_slots)
                     prob += (
                         pulp.lpSum(water_heat[j] for j in range(start_idx, t)) + water_start[t] * M
-                        <= M
+                        <= M + water_spacing_violation[t]
                     )
 
             # Constraint 4: Max Block Length (Prevent "Single Huge Block")
@@ -335,6 +348,19 @@ class KeplerSolver:
             # Rev K16 Phase 5: Symmetry Breaker
             # Add tiny cost (increasing with t) to break ties in flat price scenarios
             + (pulp.lpSum(water_heat[t] * (t * 1e-5) for t in range(T)) if water_enabled else 0.0)
+            # Rev K16 Phase 2: Reliability Penalties
+            + (
+                pulp.lpSum(water_min_kwh_violation[i] for i in range(len(sorted_days)))
+                * config.water_reliability_penalty_sek
+                if water_enabled
+                else 0.0
+            )
+            + (
+                pulp.lpSum(water_spacing_violation[t] for t in range(T))
+                * config.water_reliability_penalty_sek
+                if water_enabled
+                else 0.0
+            )
         )
 
         # Solve using GLPK (available in Alpine) or CBC as fallback

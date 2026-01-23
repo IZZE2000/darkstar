@@ -276,17 +276,12 @@ data_quality:
 * [x] **Optimization:** Added Symmetry Breaker (Phase 5) to fix "Cheap" scenario slowness.
 * [ ] **Commit:** "feat(planner): implement soft sliding window for water heating"
 
-#### Phase 2: Reliability (Soft Constraints) [PLANNED]
+#### Phase 2: Reliability (Soft Constraints) [DONE]
 **Objective:** Prevent "Infeasible" crashes during edge cases.
-* [ ] **Task 2a - Soft Daily Min:**
-    *   Convert `min_kwh_per_day` to soft constraint.
-    *   Add slack variable `daily_shortfall[day]`.
-    *   Penalty: Huge cost (e.g., 500 SEK/kWh) for shortfall.
-* [ ] **Task 2b - Soft Spacing:**
-    *   Convert `min_spacing_hours` to soft constraint.
-    *   Add slack variable `spacing_violation[t]`.
-    *   Penalty: Moderate cost for breaking 5h spacing rule (e.g., if re-heating is urgent).
-* [ ] **UPDATE PLAN WITH PROGRESS AND COMMIT PHASE AFTER USER REVIEW**
+* [x] **Concept:** Convert hard constraints (Min kWh, Spacing) to soft constraints + penalty.
+* [x] **Implementation:** `sum(...) <= M + slack[t]`.
+* [x] **Verification:** "Impossible Scenario" (200kWh demand in 48h) no longer crashes.
+* [ ] **Commit:** "feat(planner): soft constraints for water heating reliability"
 
 #### Phase 3: Layout Safety (Max Block Length) [CONDITIONAL]
 **Objective:** Fallback mechanism if Phase 1 fails to prevent massive blocks.

@@ -39,6 +39,9 @@ class KeplerConfig:
     water_heated_today_kwh: float = 0.0  # Already heated today (reduces remaining min)
     water_comfort_penalty_sek: float = 0.50  # Penalty per hour beyond gap threshold
     water_block_penalty_sek: float = 0.50  # Penalty per hour for "block overshoot"
+    water_reliability_penalty_sek: float = (
+        1000.0  # Penalty for violating soft reliability constraints (min_kwh, spacing)
+    )
     water_min_spacing_hours: float = (
         5.0  # Rev K21/PERF1: STRICT min gap between starts. Hard Constraint.
     )
