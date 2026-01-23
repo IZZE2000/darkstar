@@ -20,6 +20,19 @@ vi.mock('../../../lib/useToast', () => ({
     }),
 }))
 
+// Mock Types
+vi.mock('../types', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../types')>()
+    return {
+        ...actual,
+        allFields: [
+            { key: 'test.field', label: 'Test', path: ['test', 'field'], type: 'number' },
+            { key: 'battery.min_soc_percent', label: 'Min', path: ['battery', 'min_soc_percent'], type: 'number' },
+            { key: 'battery.max_soc_percent', label: 'Max', path: ['battery', 'max_soc_percent'], type: 'number' },
+        ],
+    }
+})
+
 describe('useSettingsForm Hook', () => {
     const mockFields: BaseField[] = [
         { key: 'test.field', label: 'Test', path: ['test', 'field'], type: 'number' },

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Api, ConfigResponse } from '../../../lib/api'
 import { useToast } from '../../../lib/useToast'
-import { BaseField } from '../types'
+import { BaseField, allFields } from '../types'
 import { buildFormState, buildPatch } from '../utils'
 
 export interface UseSettingsFormReturn {
@@ -38,7 +38,7 @@ export function useSettingsForm(fields: BaseField[]): UseSettingsFormReturn {
         try {
             const cfg = await Api.config()
             setConfig(cfg)
-            setForm(buildFormState(cfg as unknown as Record<string, unknown>, fields))
+            setForm(buildFormState(cfg as unknown as Record<string, unknown>, allFields))
             setFieldErrors({})
         } catch (err: unknown) {
             console.error('Failed to load configuration', err)
@@ -46,7 +46,7 @@ export function useSettingsForm(fields: BaseField[]): UseSettingsFormReturn {
         } finally {
             setLoading(false)
         }
-    }, [fields])
+    }, [])
 
     const reloadEntities = useCallback(async () => {
         setHaLoading(true)
