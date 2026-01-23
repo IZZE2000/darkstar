@@ -274,32 +274,26 @@ data_quality:
 * [x] **Pivot:** Switched from "Recursive Discomfort" (slow) to "Sliding Window" (fast).
 * [x] **Result:** Solve times < 3s (mostly < 0.5s), blocks broken up successfully.
 * [x] **Optimization:** Added Symmetry Breaker (Phase 5) to fix "Cheap" scenario slowness.
-* [ ] **Commit:** "feat(planner): implement soft sliding window for water heating"
+* [x] **Commit:** "feat(planner): implement soft sliding window for water heating"
 
 #### Phase 2: Reliability (Soft Constraints) [DONE]
 **Objective:** Prevent "Infeasible" crashes during edge cases.
 * [x] **Concept:** Convert hard constraints (Min kWh, Spacing) to soft constraints + penalty.
 * [x] **Implementation:** `sum(...) <= M + slack[t]`.
 * [x] **Verification:** "Impossible Scenario" (200kWh demand in 48h) no longer crashes.
-* [ ] **Commit:** "feat(planner): soft constraints for water heating reliability"
+* [x] **Commit:** "feat(planner): soft constraints for water heating reliability"
 
-#### Phase 3: Layout Safety (Max Block Length) [CONDITIONAL]
-**Objective:** Fallback mechanism if Phase 1 fails to prevent massive blocks.
-* [ ] **Condition:** ONLY execute if Phase 1 (`Discomfort Cost`) fails to break up 5-6h heating blocks on cheap days.
-* [ ] **Change:** Convert hard 2h limit to SOFT constraint or configurable `max_continuous_hours`.
-* [ ] **Validation:** Verify layout on "Free Electricity Day" scenarios.
-* [ ] **UPDATE PLAN WITH PROGRESS AND COMMIT PHASE AFTER USER REVIEW**
+#### Phase 3: Layout Safety (Max Block Length) [OBSOLETE]
+**Objective:** Fallback mechanism if Phase 1 fails.
+* [x] **Status:** SCRAPPED. Verified in "Mirrored Stress Test" that Phase 1 (Soft Window) naturally breaks up blocks even under extreme price incentive flips. Hard limits are not needed.
 
-#### Phase 4: Performance (Variable Optimization) [PLANNED]
+#### Phase 4: Performance (Variable Optimization) [IN PROGRESS]
 **Objective:** Final speed optimization by removing `water_start` binaries.
-* [ ] **Hypothesis:** We can prevent sawtooth (ON-OFF-ON) behavior using linear ramping costs instead of binary start penalties.
-* [ ] **Implementation:**
-    *   Remove `water_start` binary variables.
-    *   Remove `block_start_penalty` logic.
-    *   Add `water_ramping_cost`: `|water_heat[t] - water_heat[t-1]| * cost_per_switch`.
-* [ ] **Benefit:** Removing ~96 binary variables should drop solve time further and improve stability.
-* [ ] **Validation:** Confirm no "chatter" (rapid switching) appears in schedule.
-* [ ] **UPDATE PLAN WITH PROGRESS AND COMMIT PHASE AFTER USER REVIEW**
+* [ ] **Hypothesis:** By converting the hard "Min Spacing" and "Start Penalty" into a soft "Ramping Cost", we can remove ~192 binary variables.
+* [ ] **Change:** Remove `water_start` and replace spacing constraints/penalties with a continuous ramping variable `|water_heat[t] - water_heat[t-1]|`.
+* [ ] **Benefit:** Massive speedup in "Cheap" scenarios (Expected <1s).
+* [ ] **Target:** Solve time < 1s for all scenarios except "Constraint Hell".
+
 
 #### Phase 5: Documentation & Release [PLANNED]
 * [ ] **Docs:** Update `docs/DEVELOPER.md` with new benchmarking notes.

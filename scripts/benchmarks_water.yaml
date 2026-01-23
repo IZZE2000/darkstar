@@ -69,3 +69,19 @@ benchmarks:
     min_spacing: 6.0
     max_gap: 6.0
     profile: "random_spikes"
+
+
+
+  # 7. Stress Test (Day vs Night)
+  # Expectation:
+  # - Low Night / High Day: Should heat heavily at night.
+  # - High Night / Low Day: Should wait for day.
+  # Testing if it handles transitions without massive blocks.
+  - name: "Stress (Day/Night)"
+    slots: 192
+    water: true
+    spacing: true
+    comfort_level: 3
+    min_kwh: 10.0
+    max_gap: 12.0
+    profile: "day_night_mirrored"

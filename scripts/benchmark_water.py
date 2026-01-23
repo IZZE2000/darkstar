@@ -144,6 +144,15 @@ def generate_scenario(sc_config: dict[str, Any]) -> dict[str, Any]:
         elif profile == "random_spikes":
             # Spiky: 10% chance of 5 SEK, else 0.5
             import_price = 5.0 if rng.random() < 0.1 else 0.5
+        elif profile == "day_night_mirrored":
+            # Day 1: Low Night (0-6), High Day (6-24)
+            # Day 2: High Night (0-6), Low Day (6-24) (Mirrored)
+            # Used to test spacing logic when price incentives flip
+            day_idx = i // 96  # 0 or 1
+            is_night = hour < 6
+            import_price = (
+                (0.5 if is_night else 2.0) if day_idx == 0 else (2.0 if is_night else 0.5)
+            )
         else:  # Default
             # Sine wave price (0.5 to 1.5)
             import_price = 1.0 + 0.5 * math.sin(i / 10)
