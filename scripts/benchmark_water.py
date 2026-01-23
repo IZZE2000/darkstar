@@ -10,7 +10,7 @@ Features:
 - Markdown Report Generation with Phase tagging
 
 Usage:
-    python scripts/benchmark_water.py --phase "PHASE 1" --reset
+    python scripts/benchmark_water.py --phase "PHASE 1"
 """
 
 import argparse
@@ -191,7 +191,7 @@ def generate_scenario(sc_config: dict[str, Any]) -> dict[str, Any]:
         water_heating_max_gap_hours=max_gap if water_enabled else 0.0,
         water_comfort_penalty_sek=comfort_penalty if water_enabled else 0.0,
         water_min_spacing_hours=min_spacing if spacing_enabled else 0.0,
-        water_switch_penalty_sek=0.5 if spacing_enabled else 0.0,
+        water_block_start_penalty_sek=0.5 if spacing_enabled else 0.0,
         enable_export=True,
     )
 
@@ -262,29 +262,22 @@ def analyze_quality(result: KeplerResult, total_slots: int) -> dict[str, Any]:
     }
 
 
-def save_markdown_report(
-    results: list[dict[str, Any]], sys_info: dict[str, str], phase: str, reset: bool
-):
+def save_markdown_report(results: list[dict[str, Any]], sys_info: dict[str, str], phase: str):
     report_dir = Path(__file__).parent.parent / "docs" / "reports"
     report_dir.mkdir(parents=True, exist_ok=True)
     report_path = report_dir / "BENCHMARK_WATER_REPORT.md"
 
-    mode = "w" if reset else "a"
+    # Always append
+    mode = "a"
 
-    # Header if new/reset
+    # Header if new file
     lines = []
-    if reset or not report_path.exists():
+    if not report_path.exists():
         lines.append("# Water Heating Optimization Benchmark Report")
         lines.append("Comparison of water heating MILP complexity and solve times.\n")
 
     # Run Section
     lines.append(f"## Run: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ({phase})")
-    if reset:
-        lines.append("### System Context")
-        lines.append(f"- **CPU**: {sys_info['CPU']}")
-        lines.append(f"- **RAM**: {sys_info['RAM']}")
-        lines.append(f"- **OS**: {sys_info['Arch']}")
-        lines.append(f"- **Python**: {sys_info['Python']}\n")
 
     lines.append("### Results")
     # Compact Table
@@ -329,7 +322,6 @@ def save_markdown_report(
 def run_benchmark():
     parser = argparse.ArgumentParser(description="Water Heating Benchmark")
     parser.add_argument("--phase", type=str, default="UNKNOWN", help="Phase tag for report")
-    parser.add_argument("--reset", action="store_true", help="Clear report file")
     args = parser.parse_args()
 
     sys_info = get_sys_info()
@@ -416,7 +408,7 @@ def run_benchmark():
             )
             progress.advance(task)
 
-    save_markdown_report(progress_results, sys_info, args.phase, args.reset)
+    save_markdown_report(progress_results, sys_info, args.phase)
     console.print("[green]Report saved to docs/reports/BENCHMARK_WATER_REPORT.md[/]")
 
 

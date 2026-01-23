@@ -288,11 +288,11 @@ data_quality:
 * [x] **Status:** SCRAPPED. Verified in "Mirrored Stress Test" that Phase 1 (Soft Window) naturally breaks up blocks even under extreme price incentive flips. Hard limits are not needed.
 
 #### Phase 4: Performance (Variable Optimization) [DONE]
-**Objective:** Final speed optimization by removing `water_start` binaries.
-* [x] **Hypothesis:** By converting the hard "Min Spacing" and "Start Penalty" into a soft "Ramping Cost", we can remove ~192 binary variables.
-* [x] **Implementation:** Replaced `water_start` and hard spacing with a continuous `water_switch` variable and ramping penalty.
-* [x] **Result:** Massive speedup in "Cheap" scenarios (down to sub-second for most, significant reduction for stress cases).
-* [x] **Commit:** "feat(planner): remove water_start binaries for high-performance scheduling"
+**Objective:** Final speed optimization by balancing binaries and soft constraints.
+* [x] **Hypothesis:** Removing binaries caused a performance regression due to loss of solver guidance.
+* [x] **Implementation:** Restored `water_start` (Binary) and Hard Spacing constraints. Kept `min_kwh` as a Soft Constraint.
+* [x] **Result:** "Stress" scenario down to 7s (was 23s). "Reference (Cheap)" down to 36s. "Expensive" remains < 1s.
+* [x] **Commit:** "feat(planner): optimize water constraints with hybrid hard/soft approach"
 
 
 #### Phase 5: Documentation & Release [DONE]

@@ -54,8 +54,7 @@ class KeplerConfig:
     # Rev WH2: Block start penalty
     water_block_start_penalty_sek: float = 0.0  # Penalty for starting a new block
 
-    # Rev K16 Phase 4: Switch penalty (Soft Spacing)
-    water_switch_penalty_sek: float = 0.0  # Penalty per switch (ON->OFF or OFF->ON)
+    # Rev K16 Phase 4: Switch penalty (Soft Spacing) - REMOVED (Reverted to Binary Starts)
 
     # Rev WH2: Smart deferral
     defer_up_to_hours: float = 0.0  # Allow heating until N hours into next day
