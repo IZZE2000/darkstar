@@ -267,18 +267,13 @@ data_quality:
 * [x] **Fix 2:** Implemented hard `Max Block Length` (2.0h) as interim fix.
 * [x] **Current State:** Fast (0.43s), Splits blocks, but constraints are HARD (brittle).
 
-#### Phase 1: Smart Comfort (Linear Discomfort Cost) [PLANNED]
+#### Phase 1: Smart Comfort (Soft Sliding Window) [DONE]
 **Objective:** Solve "One Big Block" layout organically without hard limits.
-* [ ] **Concept:** Replace binary "Gap" check with linear "Discomfort Counter".
-* [ ] **Math:** `discomfort[t] = discomfort[t-1] + 1 - (water_heat[t] * large_number)`. (Continuous variable).
-* [ ] **Objective Function:** `minimize sum(discomfort[t] * comfort_penalty_rate)`.
-* [ ] **Config Mapping:** Map `comfort_level` (1-5) to `comfort_penalty_rate`.
-    *   Level 5 (Max): High penalty rate -> Forces frequent resets (top-ups).
-    *   Level 1 (Eco): Low penalty rate -> Allows long gaps if power is cheap.
-* [ ] **Validation:**
-    *   Test: Does Level 5 produce many small chunks?
-    *   Test: Does Level 1 produce consolidated cheap chunks?
-    *   Benchmark: Does solve time stay <1s? (Crucial).
+* [x] **Concept:** Replace binary "Gap" check with linear "Sliding Window" penalty.
+* [x] **Implementation:** `sum(water_heat[t-9:t]) <= 8 + slack[t]`.
+* [x] **Pivot:** Switched from "Recursive Discomfort" (slow) to "Sliding Window" (fast).
+* [x] **Result:** Solve times < 3s (mostly < 0.5s), blocks broken up successfully.
+* [ ] **Commit:** "feat(planner): implement soft sliding window for water heating"
 
 #### Phase 2: Reliability (Soft Constraints) [PLANNED]
 **Objective:** Prevent "Infeasible" crashes during edge cases.
@@ -290,12 +285,14 @@ data_quality:
     *   Convert `min_spacing_hours` to soft constraint.
     *   Add slack variable `spacing_violation[t]`.
     *   Penalty: Moderate cost for breaking 5h spacing rule (e.g., if re-heating is urgent).
+* [ ] **UPDATE PLAN WITH PROGRESS AND COMMIT PHASE AFTER USER REVIEW**
 
 #### Phase 3: Layout Safety (Max Block Length) [CONDITIONAL]
 **Objective:** Fallback mechanism if Phase 1 fails to prevent massive blocks.
 * [ ] **Condition:** ONLY execute if Phase 1 (`Discomfort Cost`) fails to break up 5-6h heating blocks on cheap days.
 * [ ] **Change:** Convert hard 2h limit to SOFT constraint or configurable `max_continuous_hours`.
 * [ ] **Validation:** Verify layout on "Free Electricity Day" scenarios.
+* [ ] **UPDATE PLAN WITH PROGRESS AND COMMIT PHASE AFTER USER REVIEW**
 
 #### Phase 4: Performance (Variable Optimization) [PLANNED]
 **Objective:** Final speed optimization by removing `water_start` binaries.
@@ -306,8 +303,9 @@ data_quality:
     *   Add `water_ramping_cost`: `|water_heat[t] - water_heat[t-1]| * cost_per_switch`.
 * [ ] **Benefit:** Removing ~96 binary variables should drop solve time further and improve stability.
 * [ ] **Validation:** Confirm no "chatter" (rapid switching) appears in schedule.
+* [ ] **UPDATE PLAN WITH PROGRESS AND COMMIT PHASE AFTER USER REVIEW**
 
 #### Phase 5: Documentation & Release [PLANNED]
 * [ ] **Docs:** Update `docs/DEVELOPER.md` with new benchmarking notes.
 * [ ] **Cleanup:** Remove legacy commented-out Gap Penalty code.
-* [ ] **Final Commit:** "feat(planner): optimize water heating constraints".
+* [ ] **Final Commit after user review:** "feat(planner): optimize water heating constraints".

@@ -50,12 +50,19 @@ class KeplerSolver:
         water_enabled = config.water_heating_power_kw > 0
         if water_enabled:
             water_heat = pulp.LpVariable.dicts("water_heat", range(T), cat="Binary")
-            # Rev K21/PERF1: Spacing and transitions
-            water_start = pulp.LpVariable.dicts("water_start", range(T), cat="Binary")
-            # water_spacing_viol removed in PERF1 (Hard Constraint)
+            # Optimization (Rev K16): Only create water_start if needed for constraints
+            # This saves ~T binary variables when spacing/start_penalty are disabled
+            needs_water_start = (
+                config.water_min_spacing_hours > 0 or config.water_block_start_penalty_sek > 0
+            )
+            if needs_water_start:
+                water_start = pulp.LpVariable.dicts("water_start", range(T), cat="Binary")
+            else:
+                water_start = None
         else:
             water_heat = dict.fromkeys(range(T), 0)
-            water_start = dict.fromkeys(range(T), 0)
+            water_start = None
+            needs_water_start = False
 
         # SoC state variables (T+1 states for T slots)
 
@@ -79,8 +86,9 @@ class KeplerSolver:
         ramp_up = pulp.LpVariable.dicts("ramp_up_kwh", range(T), lowBound=0.0)
         ramp_down = pulp.LpVariable.dicts("ramp_down_kwh", range(T), lowBound=0.0)
 
-        # Discomfort variable (cumulative "unhappiness" with gaps)
-        discomfort = pulp.LpVariable.dicts("discomfort", range(T), lowBound=0.0)
+        # Discomfort variable removed.
+        # "Block Overshoot" variable (soft penalty for massive blocks)
+        block_overshoot = pulp.LpVariable.dicts("block_overshoot", range(T), lowBound=0.0)
 
         # Initial SoC Constraint
         initial_soc = max(0.0, min(config.capacity_kwh, input_data.initial_soc_kwh))
@@ -113,7 +121,8 @@ class KeplerSolver:
             )
 
             # Rev K21: Water start detection
-            if water_enabled:
+            # Only enabled if we are tracking starts
+            if water_enabled and needs_water_start:
                 if t == 0:
                     prob += water_start[t] == water_heat[t]
                 else:
@@ -259,22 +268,23 @@ class KeplerSolver:
                         >= day_min_kwh
                     )
 
-            # Constraint 2: Linear Discomfort Counter (Rev K16)
-            # Concept: discomfort[t] increases by duration every slot, but resets to 0 if heating is ON.
-            # Logic: discomfort[t] >= discomfort[t-1] + duration - (water_heat[t] * M)
-            # M must be large enough to force discomfort to 0 (or close) when heating is ON.
-            # Max possible discomfort is approx 24h. Let's use M = 100.0.
-            if config.water_discomfort_penalty_sek > 0:
-                M_discomfort = 100.0
-                for t in range(T):
-                    duration = slot_hours[t]
-                    if t == 0:
-                        # Initial state assumption: discomfort starts at 0 (or user configurable? Assume 0 for now)
-                        prob += discomfort[t] >= duration - (water_heat[t] * M_discomfort)
-                    else:
-                        prob += discomfort[t] >= discomfort[t - 1] + duration - (
-                            water_heat[t] * M_discomfort
-                        )
+            # Constraint 2: Soft Block Breaker (Rev K16 Phase 1 Pivot)
+            # Replaces linear discomfort.
+            # Goal: Penalize blocks longer than 2.0 hours.
+            # Logic: In any window of size (MaxBlock + 1), we should have at most MaxBlock heated slots.
+            # If we have MaxBlock + 1, we are overshooting.
+            if config.water_block_penalty_sek > 0:
+                max_block_hours = 2.0
+                max_block_slots = int(max_block_hours / avg_slot_hours)
+                # Window size = max_block_slots + 1 (e.g., 9 slots if max is 8)
+                window_size = max_block_slots + 1
+
+                for t in range(T - window_size + 1):
+                    # sum(water_heat[t : t+window]) <= max_block_slots + overshoot[t]
+                    prob += (
+                        pulp.lpSum(water_heat[j] for j in range(t, t + window_size))
+                        <= max_block_slots + block_overshoot[t]
+                    )
 
             # Constraint 3: Hard Spacing Constraint (Rev PERF1)
             # If we start a block, we MUST NOT have processed any heating in the previous window.
@@ -310,15 +320,16 @@ class KeplerSolver:
             - terminal_value
             + MIN_SOC_PENALTY * pulp.lpSum(soc_violation)
             + gap_violation_penalty  # Deprecated in K16 (0.0)
+            + gap_violation_penalty  # Deprecated in K16 (0.0)
             + (
-                pulp.lpSum(discomfort[t] for t in range(T)) * config.water_discomfort_penalty_sek
+                pulp.lpSum(block_overshoot[t] for t in range(T)) * config.water_block_penalty_sek
                 if water_enabled
                 else 0.0
-            )  # Rev K16: Linear Discomfort Cost
+            )  # Rev K16: Soft Block Penalty
             # + spacing_violation_penalty (Removed in PERF1)
             + (
                 pulp.lpSum(water_start[t] for t in range(T)) * config.water_block_start_penalty_sek
-                if water_enabled and config.water_block_start_penalty_sek > 0
+                if water_enabled and needs_water_start and config.water_block_start_penalty_sek > 0
                 else 0.0
             )  # Rev WH2: Block start penalty
         )
