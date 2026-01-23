@@ -79,6 +79,9 @@ class KeplerSolver:
         ramp_up = pulp.LpVariable.dicts("ramp_up_kwh", range(T), lowBound=0.0)
         ramp_down = pulp.LpVariable.dicts("ramp_down_kwh", range(T), lowBound=0.0)
 
+        # Discomfort variable (cumulative "unhappiness" with gaps)
+        discomfort = pulp.LpVariable.dicts("discomfort", range(T), lowBound=0.0)
+
         # Initial SoC Constraint
         initial_soc = max(0.0, min(config.capacity_kwh, input_data.initial_soc_kwh))
         prob += soc[0] == initial_soc
@@ -256,33 +259,22 @@ class KeplerSolver:
                         >= day_min_kwh
                     )
 
-            # Constraint 2: Progressive gap penalty (Rev K18/K21)
-            gap_violation_penalty = 0.0  # Initialize to 0.0 (Disabled for performance)
-            # Tier 1: Base comfort penalty beyond max_gap_hours
-            # if config.water_heating_max_gap_hours > 0 and config.water_comfort_penalty_sek > 0:
-            #     gap_slots = max(1, int(config.water_heating_max_gap_hours / avg_slot_hours))
-            #     gap_violation = pulp.LpVariable.dicts("gap_viol", range(T), lowBound=0.0)
-            #     for start in range(T - gap_slots + 1):
-            #         prob += (
-            #             pulp.lpSum(water_heat[t] for t in range(start, start + gap_slots))
-            #             + gap_violation[start]
-            #             >= 1
-            #         )
-            #
-            #     # Tier 2: Double penalty for very long gaps (> 1.5x threshold)
-            #     gap_slots_2 = max(1, int(config.water_heating_max_gap_hours * 1.5 / avg_slot_hours))
-            #     gap_violation_2 = pulp.LpVariable.dicts("gap_viol_2", range(T), lowBound=0.0)
-            #     for start in range(T - gap_slots_2 + 1):
-            #         prob += (
-            #             pulp.lpSum(water_heat[t] for t in range(start, start + gap_slots_2))
-            #             + gap_violation_2[start]
-            #             >= 1
-            #         )
-            #
-            #     gap_violation_penalty = config.water_comfort_penalty_sek * (
-            #         pulp.lpSum(gap_violation[t] for t in range(T - gap_slots + 1))
-            #         + pulp.lpSum(gap_violation_2[t] for t in range(T - gap_slots_2 + 1))
-            #     )
+            # Constraint 2: Linear Discomfort Counter (Rev K16)
+            # Concept: discomfort[t] increases by duration every slot, but resets to 0 if heating is ON.
+            # Logic: discomfort[t] >= discomfort[t-1] + duration - (water_heat[t] * M)
+            # M must be large enough to force discomfort to 0 (or close) when heating is ON.
+            # Max possible discomfort is approx 24h. Let's use M = 100.0.
+            if config.water_discomfort_penalty_sek > 0:
+                M_discomfort = 100.0
+                for t in range(T):
+                    duration = slot_hours[t]
+                    if t == 0:
+                        # Initial state assumption: discomfort starts at 0 (or user configurable? Assume 0 for now)
+                        prob += discomfort[t] >= duration - (water_heat[t] * M_discomfort)
+                    else:
+                        prob += discomfort[t] >= discomfort[t - 1] + duration - (
+                            water_heat[t] * M_discomfort
+                        )
 
             # Constraint 3: Hard Spacing Constraint (Rev PERF1)
             # If we start a block, we MUST NOT have processed any heating in the previous window.
@@ -299,14 +291,8 @@ class KeplerSolver:
                     )
 
             # Constraint 4: Max Block Length (Prevent "Single Huge Block")
-            # Force a break after 2 hours of consecutive heating
-            max_block_hours = 2.0
-            max_block_slots = int(max_block_hours / avg_slot_hours)
-            for t in range(T - max_block_slots):
-                prob += (
-                    pulp.lpSum(water_heat[j] for j in range(t, t + max_block_slots + 1))
-                    <= max_block_slots
-                )
+            # REMOVED in Rev K16 Phase 1: Replaced by linear discomfort cost which naturally
+            # breaks up blocks if penalty is low enough.
 
         # Terminal Value
         terminal_value = (
@@ -323,7 +309,12 @@ class KeplerSolver:
             pulp.lpSum(total_cost)
             - terminal_value
             + MIN_SOC_PENALTY * pulp.lpSum(soc_violation)
-            + gap_violation_penalty
+            + gap_violation_penalty  # Deprecated in K16 (0.0)
+            + (
+                pulp.lpSum(discomfort[t] for t in range(T)) * config.water_discomfort_penalty_sek
+                if water_enabled
+                else 0.0
+            )  # Rev K16: Linear Discomfort Cost
             # + spacing_violation_penalty (Removed in PERF1)
             + (
                 pulp.lpSum(water_start[t] for t in range(T)) * config.water_block_start_penalty_sek
