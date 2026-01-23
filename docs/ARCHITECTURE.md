@@ -57,7 +57,7 @@ Minimize: Sum(Import_Cost - Export_Revenue + Wear_Cost) - (End_SoC * Terminal_Va
 
     3.  **Soft vs Hard Constraints in Kepler**:
         *   **Min SoC (Hard)**: 1000 SEK/kWh penalty - NEVER violate battery safety floor.
-        *   **Water Spacing (Hard)**: Strictly enforced minimum gap between starts to prevent short-cycling.
+        *   **Water Spacing (Hard)**: Strictly enforced minimum gap between starts (Hybrid Model).
         *   **Target SoC (Soft)**: Risk-based penalty (2-20 SEK/kWh) - economics can override.
         *   **Risk Penalty Scaling**:
             *   Level 1: 20 SEK/kWh (hard to violate)
@@ -77,7 +77,9 @@ The water heater is integrated into Kepler as a **deferrable load**, allowing op
 - `water_heat[t]` binary variable in MILP: is heating ON in slot t?
 - **Constraint**: Must schedule `min_kwh_per_day` (e.g., 6 kWh)
 - **Constraint**: Max gap `max_hours_between_heating` (e.g., 8h)
-- **Constraint**: Min spacing `water_min_spacing_hours` (Hard minimum gap between starts) (Rev PERF1)
+- **Constraint**: Min spacing `water_min_spacing_hours` (Hard minimum gap between starts) (Rev K16 Option 4)
+- **Constraint (Soft)**: "Smart Comfort" Sliding Window (Prevents massive blocks without hard limits)
+- **Reliability**: Soft Min kWh constraints (Prevent "Infeasible" crashes if capacity exceeded)
 - Water load added to energy balance → Kepler sources from grid or battery
 
 ### Source Selection

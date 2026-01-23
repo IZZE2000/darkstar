@@ -299,4 +299,4 @@ data_quality:
 * [x] **Docs:** Update `docs/DEVELOPER.md` with new benchmarking notes.
 * [x] **Cleanup:** Removed legacy `discomfort` and `water_start` logic.
 * [x] **Verification:** Verified all reliability and performance targets.
-* [ ] **Final Commit after user review:** "feat(planner): optimize water heating constraints".
+* [x] **Final Commit after user review:** "feat(planner): optimize water constraints with hybrid hard/soft approach".
