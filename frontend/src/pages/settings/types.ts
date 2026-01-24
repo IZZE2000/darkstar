@@ -27,6 +27,8 @@ export interface BaseField {
     showIfAll?: string[]
     /** Any config key must be truthy for field to be enabled */
     showIfAny?: string[]
+    /** Flags this field as hidden unless Advanced Mode is enabled */
+    isAdvanced?: boolean
     /** Subsection grouping within a card */
     subsection?: string
 }
@@ -764,6 +766,33 @@ export const parameterSections: SettingsSection[] = [
                     disabledText: "Enable 'Home battery installed' in System Profile to configure",
                 },
             },
+            {
+                key: 'kepler.target_soc_penalty_sek',
+                label: 'Target SoC Penalty (SEK)',
+                helper: 'Penalty for missing the seasonal target SoC (higher = stricter adherence to reserve).',
+                path: ['kepler', 'target_soc_penalty_sek'],
+                type: 'number',
+                subsection: 'Advanced Tuning',
+                isAdvanced: true,
+            },
+            {
+                key: 'kepler.curtailment_penalty_sek',
+                label: 'Curtailment Penalty (SEK)',
+                helper: 'Penalty for wasting available solar power when battery is not full (higher = more aggressive charging).',
+                path: ['kepler', 'curtailment_penalty_sek'],
+                type: 'number',
+                subsection: 'Advanced Tuning',
+                isAdvanced: true,
+            },
+            {
+                key: 'kepler.ramping_cost_sek_per_kw',
+                label: 'Ramping Cost (SEK/kW)',
+                helper: 'Penalty for rapid battery power changes (higher = smoother power flow, reduces "sawtooth" behavior).',
+                path: ['kepler', 'ramping_cost_sek_per_kw'],
+                type: 'number',
+                subsection: 'Advanced Tuning',
+                isAdvanced: true,
+            },
         ],
     },
 
@@ -844,9 +873,39 @@ export const parameterSections: SettingsSection[] = [
             {
                 key: 'water_heating.block_start_penalty_sek',
                 label: 'Block start penalty (SEK)',
-                helper: 'Advanced: Penalty per heating start (higher = more consolidated bulk heating).',
+                helper: 'Penalty per heating start (higher = more consolidated bulk heating).',
                 path: ['water_heating', 'block_start_penalty_sek'],
                 type: 'number',
+                subsection: 'Advanced Tuning',
+                isAdvanced: true,
+                showIf: {
+                    configKey: 'system.has_water_heater',
+                    value: true,
+                    disabledText: "Enable 'Smart water heater' in System Profile to configure",
+                },
+            },
+            {
+                key: 'water_heating.reliability_penalty_sek',
+                label: 'Reliability Penalty (SEK)',
+                helper: 'Heavy penalty for failing to meet the daily min kWh quota (higher = stricter quota enforcement).',
+                path: ['water_heating', 'reliability_penalty_sek'],
+                type: 'number',
+                subsection: 'Advanced Tuning',
+                isAdvanced: true,
+                showIf: {
+                    configKey: 'system.has_water_heater',
+                    value: true,
+                    disabledText: "Enable 'Smart water heater' in System Profile to configure",
+                },
+            },
+            {
+                key: 'water_heating.block_penalty_sek',
+                label: 'Block Penalty (SEK)',
+                helper: 'Small penalty per active heating slot (higher = encourages shorter, more efficient heat blocks).',
+                path: ['water_heating', 'block_penalty_sek'],
+                type: 'number',
+                subsection: 'Advanced Tuning',
+                isAdvanced: true,
                 showIf: {
                     configKey: 'system.has_water_heater',
                     value: true,

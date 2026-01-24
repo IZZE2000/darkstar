@@ -303,9 +303,9 @@ data_quality:
 * [x] **Final Commit after user review:** "feat(planner): optimize water constraints with hybrid hard/soft approach".
 
 
-### [IN PROGRESS] REV // K17 — Configuration Exposure & Polish
+### [DONE] REV // K17 — Configuration Exposure & Polish
 
-**Goal:** Expose all hardcoded solver constraints to `config.yaml` and unify "Comfort Level" logic according to the [Audit Report](reports/REV_K17_CONFIG_AUDIT.md).
+**Goal:** Expose all hardcoded solver constraints to `config.yaml`, unify "Comfort Level" logic, and prepare UI schema for Advanced Mode (UI10).
 
 **Plan:**
 
@@ -322,3 +322,63 @@ data_quality:
 #### Phase 3: Verification [DONE]
 * [x] **Benchmark:** Run `scripts/benchmark_kepler.py` to ensure performance parity (0 regression).
 * [x] **Unit Test:** Verified with `benchmark_kepler.py` passing (0.07s on Heavy scenario).
+
+#### Phase 4: UI Exposure [DONE]
+* [x] **Water Heating Config:** Edit `frontend/src/pages/settings/types.ts`. Added the following fields to the `Water Heating` section in `parameterSections`:
+    *   `reliability_penalty_sek`: type `number`, label "Reliability Penalty (SEK)", helper "Heavy penalty for failing to meet the daily min kWh quota (higher = stricter quota enforcement)."
+    *   `block_penalty_sek`: type `number`, label "Block Penalty (SEK)", helper "Small penalty per active heating slot (higher = encourages shorter, more efficient heat blocks)."
+    *   `block_start_penalty_sek`: type `number`, label "Block Start Penalty (SEK)", helper "Penalty per heating start (higher = more consolidated bulk heating)."
+    *   **STATUS:** Marked as `subsection: 'Advanced Tuning'` and `isAdvanced: true`.
+* [x] **Solver Tuning:** Edit `frontend/src/pages/settings/types.ts`. Added the following fields to the `Arbitrage & Economics` section in `parameterSections`:
+    *   `target_soc_penalty_sek`: type `number`, label "Target SoC Penalty (SEK)", helper "Penalty for missing the seasonal target SoC (higher = stricter adherence to reserve)."
+    *   `curtailment_penalty_sek`: type `number`, label "Curtailment Penalty (SEK)", helper "Penalty for wasting available solar power when battery is not full (higher = more aggressive charging)."
+    *   `ramping_cost_sek_per_kw`: type `number`, label "Ramping Cost (SEK/kW)", helper "Penalty for rapid battery power changes (higher = smoother power flow, reduces \"sawtooth\" behavior)."
+    *   **STATUS:** Marked as `subsection: 'Advanced Tuning'` and `isAdvanced: true`.
+* [x] **Schema Prep:** Updated `BaseField` interface to include `isAdvanced?: boolean` in preparation for REV UI10.
+
+---
+
+### [PLANNED] REV // UI10 — Advanced Settings Mode
+
+**Goal:** Simplify the settings experience by implementing a global "Advanced Mode" that hides complex technical parameters by default.
+
+**Plan:**
+
+#### Phase 1: Foundation (UI & Persistence) [PLANNED]
+* [ ] **State Management:** Add `advancedMode` state to `frontend/src/pages/settings/index.tsx`, persisting to `localStorage` (key: `darkstar_ui_advanced_mode`).
+* [ ] **Header Layout:** Refactor the Settings tab bar in `index.tsx` to use `flex justify-between`, placing tabs on the left and the new toggle on the right.
+* [ ] **Toggle Component:** Implement the "Advanced Mode" switch:
+    *   **Inactive:** Grey style, "Standard".
+    *   **Active:** Orange/Red style (Use `bg-bad` or `bg-warning` variants), "Advanced Mode", with a warning icon.
+* [ ] **Prop Drilling:** Update `ParametersTab`, `SystemTab`, and `SettingsField` to accept the `advancedMode` boolean prop.
+
+#### Phase 2: Schema & Filtering Logic [PLANNED]
+* [ ] **Type Update:** Add `isAdvanced?: boolean` to the `BaseField` interface in `types.ts`.
+* [ ] **Component Logic:** Update `SettingsField.tsx` to return `null` if `(!advancedMode && field.isAdvanced)`.
+* [ ] **DX:** Ensure "Not Implemented" badges or other dev-only flags also respect/interact with this mode if needed (or keep them separate).
+
+#### Phase 3: Key Migration (The Great Mapping) [PLANNED]
+* [ ] **Review & Tag Keys:** Apply `isAdvanced: true` to the following candidates (User to Confirm):
+
+    **System Tab (Hardware/Deep Config):**
+    *   `battery.nominal_voltage_v` (Technical)
+    *   `battery.min_voltage_v` (Technical)
+    *   `system.inverter.control_unit` (Technical)
+    *   `system.grid_meter_type` (Technical/Setup)
+
+    **Parameters Tab (Tuning & Costs):**
+    *   *Water Heating:*
+        *   `water_heating.defer_up_to_hours`
+        *   `water_heating.block_start_penalty_sek`
+        *   `water_heating.reliability_penalty_sek`
+        *   `water_heating.block_penalty_sek`
+        *   `water_heating.spacing_penalty_sek`
+    *   *Forecasting:*
+        *   `forecasting.pv_confidence_percent`
+        *   `forecasting.load_safety_margin_percent`
+    *   *Economics:*
+        *   `battery_economics.battery_cycle_cost_kwh`
+    *   *Solver (Future K17):*
+        *   `kepler.target_soc_penalty_sek`
+        *   `kepler.curtailment_penalty_sek`
+        *   `kepler.ramping_cost_sek_per_kw`
