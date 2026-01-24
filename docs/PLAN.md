@@ -252,7 +252,7 @@ data_quality:
 
 ---
 
-### [IN PROGRESS] REV // K16 — Water Heating Optimization (Recovered)
+### [DONE] REV // K16 — Water Heating Optimization (Recovered)
 
 **Goal:** Restore planner performance (<1s) while maintaining smart water heating layout.
 **Strategy:** "Linearize Everything." Remove binary constraints (hard/slow) and replace with linear soft penalties (fast/flexible).
@@ -300,3 +300,25 @@ data_quality:
 * [x] **Cleanup:** Removed legacy `discomfort` and `water_start` logic.
 * [x] **Verification:** Verified all reliability and performance targets.
 * [x] **Final Commit after user review:** "feat(planner): optimize water constraints with hybrid hard/soft approach".
+* [x] **Final Commit after user review:** "feat(planner): optimize water constraints with hybrid hard/soft approach".
+
+
+### [IN PROGRESS] REV // K17 — Configuration Exposure & Polish
+
+**Goal:** Expose all hardcoded solver constraints to `config.yaml` and unify "Comfort Level" logic according to the [Audit Report](reports/REV_K17_CONFIG_AUDIT.md).
+
+**Plan:**
+
+#### Phase 1: Audit & Categorization [DONE]
+* [x] Audit all hardcoded keys in `adapter.py` vs `types.py`.
+* [x] Create Categorized Audit Report in `docs/reports/REV_K17_CONFIG_AUDIT.md`.
+* [x] Review categorization (UI Normal vs UI Advanced vs Config Only) with user.
+
+#### Phase 2: Configuration & Backend [PLANNED]
+* [ ] **Config:** Add new Category B/C keys to `config.default.yaml` (defaults matching K16 hardcodes).
+* [ ] **Adapter:** Update `config_to_kepler_config` in `adapter.py` to map all exposed keys.
+* [ ] **Cleanup:** Remove hardcoded defaults in `types.py` (ensure everything flows from config).
+
+#### Phase 3: Verification [PLANNED]
+* [ ] **Benchmark:** Run `scripts/benchmark_kepler.py` to ensure performance parity (0 regression).
+* [ ] **Unit Test:** Verify that changing `config.yaml` actually changes solver behavior (e.g., test high penalty).
