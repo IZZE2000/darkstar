@@ -17,8 +17,7 @@ interface SettingsFieldProps {
     error?: string
     haEntities?: HaEntity[]
     haLoading?: boolean
-    fullForm?: Record<string, string>
-    advancedMode?: boolean
+    fullForm?: Record<string, string | boolean | number | undefined>
 }
 
 export const SettingsField: React.FC<SettingsFieldProps> = ({
@@ -29,7 +28,6 @@ export const SettingsField: React.FC<SettingsFieldProps> = ({
     haEntities = [],
     haLoading = false,
     fullForm = {},
-    advancedMode = false,
 }) => {
     const isEnabled = React.useMemo(() => {
         if (field.disabled) return false
@@ -58,10 +56,6 @@ export const SettingsField: React.FC<SettingsFieldProps> = ({
     }, [field, fullForm])
 
     const isDisabled = field.disabled || !isEnabled
-
-    if (!advancedMode && field.isAdvanced) {
-        return null
-    }
 
     const renderInput = () => {
         switch (field.type) {

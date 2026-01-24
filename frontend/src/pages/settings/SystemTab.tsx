@@ -4,6 +4,7 @@ import Card from '../../components/Card'
 import { useSettingsForm } from './hooks/useSettingsForm'
 import { SettingsField } from './components/SettingsField'
 import { systemFieldList, systemSections } from './types'
+import { motion, AnimatePresence } from 'framer-motion'
 import { AdvancedLockedNotice, AdditionalAdvancedNotice } from './components/AdvancedLockedNotice'
 
 export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }) => {
@@ -52,6 +53,12 @@ export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }
 
     if (loading) {
         return <Card className="p-6 text-sm text-muted">Loading system configuration…</Card>
+    }
+
+    const fieldVariants = {
+        initial: { opacity: 0, y: -10, height: 0 },
+        animate: { opacity: 1, y: 0, height: 'auto' },
+        exit: { opacity: 0, y: -10, height: 0 },
     }
 
     return (
@@ -120,54 +127,114 @@ export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }
                                                     {subKey}
                                                 </div>
                                                 <div className="grid gap-4 sm:grid-cols-2">
-                                                    {params.groups[subKey].map((field) => (
-                                                        <SettingsField
-                                                            key={field.key}
-                                                            field={field}
-                                                            value={form[field.key] ?? ''}
-                                                            onChange={handleChange}
-                                                            error={fieldErrors[field.key]}
-                                                            haEntities={haEntities}
-                                                            haLoading={haLoading}
-                                                            fullForm={form}
-                                                            advancedMode={advancedMode}
-                                                        />
-                                                    ))}
-                                                    {!advancedMode &&
-                                                        params.groups[subKey].every((f) => f.isAdvanced) && (
-                                                            <AdvancedLockedNotice />
+                                                    <AnimatePresence initial={false}>
+                                                        {params.groups[subKey].map(
+                                                            (field) =>
+                                                                (advancedMode || !field.isAdvanced) && (
+                                                                    <motion.div
+                                                                        key={field.key}
+                                                                        variants={fieldVariants}
+                                                                        initial="initial"
+                                                                        animate="animate"
+                                                                        exit="exit"
+                                                                        transition={{ duration: 0.2, ease: 'easeOut' }}
+                                                                        className="overflow-hidden"
+                                                                    >
+                                                                        <SettingsField
+                                                                            field={field}
+                                                                            value={form[field.key] ?? ''}
+                                                                            onChange={handleChange}
+                                                                            error={fieldErrors[field.key]}
+                                                                            haEntities={haEntities}
+                                                                            haLoading={haLoading}
+                                                                            fullForm={form}
+                                                                        />
+                                                                    </motion.div>
+                                                                ),
                                                         )}
-                                                    {!advancedMode &&
-                                                        params.groups[subKey].some((f) => f.isAdvanced) &&
-                                                        params.groups[subKey].some((f) => !f.isAdvanced) && (
-                                                            <AdditionalAdvancedNotice />
-                                                        )}
+                                                        {!advancedMode &&
+                                                            params.groups[subKey].every((f) => f.isAdvanced) && (
+                                                                <motion.div
+                                                                    key={`${subKey}-locked`}
+                                                                    variants={fieldVariants}
+                                                                    initial="initial"
+                                                                    animate="animate"
+                                                                    exit="exit"
+                                                                    className="col-span-2 overflow-hidden"
+                                                                >
+                                                                    <AdvancedLockedNotice />
+                                                                </motion.div>
+                                                            )}
+                                                        {!advancedMode &&
+                                                            params.groups[subKey].some((f) => f.isAdvanced) &&
+                                                            params.groups[subKey].some((f) => !f.isAdvanced) && (
+                                                                <motion.div
+                                                                    key={`${subKey}-additional`}
+                                                                    variants={fieldVariants}
+                                                                    initial="initial"
+                                                                    animate="animate"
+                                                                    exit="exit"
+                                                                    className="col-span-2 overflow-hidden"
+                                                                >
+                                                                    <AdditionalAdvancedNotice />
+                                                                </motion.div>
+                                                            )}
+                                                    </AnimatePresence>
                                                 </div>
                                             </Card>
                                         ) : (
-                                            <>
-                                                {params.groups[subKey].map((field) => (
-                                                    <SettingsField
-                                                        key={field.key}
-                                                        field={field}
-                                                        value={form[field.key] ?? ''}
-                                                        onChange={handleChange}
-                                                        error={fieldErrors[field.key]}
-                                                        haEntities={haEntities}
-                                                        haLoading={haLoading}
-                                                        fullForm={form}
-                                                        advancedMode={advancedMode}
-                                                    />
-                                                ))}
+                                            <AnimatePresence initial={false}>
+                                                {params.groups[subKey].map(
+                                                    (field) =>
+                                                        (advancedMode || !field.isAdvanced) && (
+                                                            <motion.div
+                                                                key={field.key}
+                                                                variants={fieldVariants}
+                                                                initial="initial"
+                                                                animate="animate"
+                                                                exit="exit"
+                                                                transition={{ duration: 0.2, ease: 'easeOut' }}
+                                                                className="overflow-hidden"
+                                                            >
+                                                                <SettingsField
+                                                                    field={field}
+                                                                    value={form[field.key] ?? ''}
+                                                                    onChange={handleChange}
+                                                                    error={fieldErrors[field.key]}
+                                                                    haEntities={haEntities}
+                                                                    haLoading={haLoading}
+                                                                    fullForm={form}
+                                                                />
+                                                            </motion.div>
+                                                        ),
+                                                )}
                                                 {!advancedMode && params.groups[subKey].every((f) => f.isAdvanced) && (
-                                                    <AdvancedLockedNotice />
+                                                    <motion.div
+                                                        key={`${subKey}-locked`}
+                                                        variants={fieldVariants}
+                                                        initial="initial"
+                                                        animate="animate"
+                                                        exit="exit"
+                                                        className="col-span-2 overflow-hidden"
+                                                    >
+                                                        <AdvancedLockedNotice />
+                                                    </motion.div>
                                                 )}
                                                 {!advancedMode &&
                                                     params.groups[subKey].some((f) => f.isAdvanced) &&
                                                     params.groups[subKey].some((f) => !f.isAdvanced) && (
-                                                        <AdditionalAdvancedNotice />
+                                                        <motion.div
+                                                            key={`${subKey}-additional`}
+                                                            variants={fieldVariants}
+                                                            initial="initial"
+                                                            animate="animate"
+                                                            exit="exit"
+                                                            className="col-span-2 overflow-hidden"
+                                                        >
+                                                            <AdditionalAdvancedNotice />
+                                                        </motion.div>
                                                     )}
-                                            </>
+                                            </AnimatePresence>
                                         )}
                                     </React.Fragment>
                                 ))}
