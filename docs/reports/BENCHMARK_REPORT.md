@@ -1,5 +1,5 @@
 # Kepler Solver Benchmark Report
-Generated: 2026-01-18 20:25:37
+Generated: 2026-01-24 16:18:17
 
 ## System Context
 - **CPU**: 13th Gen Intel(R) Core(TM) i5-13600K
@@ -10,8 +10,8 @@ Generated: 2026-01-18 20:25:37
 ## Results
 | Scenario | Complex | Python (s) | Memory (MB) | Economy | Status |
 | :--- | :---: | :---: | :---: | :--- | :---: |
-| Baseline (24h) | 96 | 0.0272s | 2.1 | 4.29 SEK Cr | ✅ |
-| Baseline (48h) | 192 | 0.0596s | 2.1 | 7.92 SEK Cr | ✅ |
-| Water Heat (48h) | 384 | 0.2131s | 2.5 | 6.27 SEK Cr | ✅ |
-| Water + Spacing (48h) | 768 | 5.2976s | 1.7 | 5.49 SEK Cr | ✅ |
-| Heavy Home (48h) | 960 | 3.2103s | 0.0 | 270.27 SEK Dr | ✅ |
+| Baseline (24h) | 96 | 0.0463s | 1.7 | 4.29 SEK Cr | ✅ |
+| Baseline (48h) | 192 | 0.0370s | 2.0 | 7.92 SEK Cr | ✅ |
+| Water Heat (48h) | 384 | 0.0527s | 0.4 | 7.92 SEK Cr | ✅ |
+| Water + Spacing (48h) | 768 | 0.0748s | 1.4 | 7.92 SEK Cr | ✅ |
+| Heavy Home (48h) | 960 | 0.0740s | 0.0 | 267.84 SEK Dr | ✅ |

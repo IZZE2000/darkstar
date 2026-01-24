@@ -160,7 +160,11 @@ def config_to_kepler_config(
         max_discharge_power_kw=max_discharge_kw,
         charge_efficiency=charge_eff,
         discharge_efficiency=discharge_eff,
-        wear_cost_sek_per_kwh=get_val("wear_cost_sek_per_kwh", 0.0),
+        wear_cost_sek_per_kwh=float(
+            planner_config.get("battery_economics", {}).get(
+                "battery_cycle_cost_kwh", get_val("wear_cost_sek_per_kwh", 0.0)
+            )
+        ),
         max_export_power_kw=(
             float(system.get("grid", {}).get("max_power_kw"))
             if system.get("grid", {}).get("max_power_kw")
@@ -171,8 +175,12 @@ def config_to_kepler_config(
             if system.get("grid", {}).get("max_power_kw")
             else None
         ),
-        ramping_cost_sek_per_kw=get_val("ramping_cost_sek_per_kw", 0.0),
+        ramping_cost_sek_per_kw=get_val("ramping_cost_sek_per_kw", 0.05),
         export_threshold_sek_per_kwh=get_val("export_threshold_sek_per_kwh", 0.0),
+        target_soc_penalty_sek=get_val("target_soc_penalty_sek", 10.0),
+        curtailment_penalty_sek=float(
+            planner_config.get("kepler", {}).get("curtailment_penalty_sek", 0.1)
+        ),
         # Rev K23: terminal_value = max(avg_future_price, stored_energy_cost)
         terminal_value_sek_kwh=terminal_value,
         # Water heating as deferrable load
@@ -198,6 +206,8 @@ def config_to_kepler_config(
         # Rev WH2: Smart Water Heating Logic
         force_water_on_slots=force_water_on_slots,
         water_block_start_penalty_sek=block_start_penalty,
+        water_block_penalty_sek=float(wh_cfg.get("block_penalty_sek", 0.50)),
+        water_reliability_penalty_sek=float(wh_cfg.get("reliability_penalty_sek", 1000.0)),
         defer_up_to_hours=float(wh_cfg.get("defer_up_to_hours", 0.0)),
         # Rev E4: Export Toggle
         enable_export=bool(planner_config.get("export", {}).get("enable_export", True)),

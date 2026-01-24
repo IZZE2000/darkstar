@@ -107,7 +107,7 @@ class KeplerSolver:
         MIN_SOC_PENALTY = 1000.0  # Hard constraint - don't violate min_soc!
         # Target penalty comes from config (derived from risk_appetite in pipeline)
         target_soc_penalty = config.target_soc_penalty_sek
-        CURTAILMENT_PENALTY = 0.1
+        curtailment_penalty = config.curtailment_penalty_sek
         LOAD_SHEDDING_PENALTY = 10000.0
         IMPORT_BREACH_PENALTY = 5000.0
 
@@ -181,7 +181,7 @@ class KeplerSolver:
             effective_export_price = s.export_price_sek_kwh - config.export_threshold_sek_per_kwh
             slot_export_revenue = grid_export[t] * effective_export_price
             slot_ramping_cost = ((ramp_up[t] + ramp_down[t]) / h) * config.ramping_cost_sek_per_kw
-            slot_curtailment_cost = curtailment[t] * CURTAILMENT_PENALTY
+            slot_curtailment_cost = curtailment[t] * curtailment_penalty
             slot_shedding_cost = load_shedding[t] * LOAD_SHEDDING_PENALTY
             slot_import_breach_cost = import_breach[t] * IMPORT_BREACH_PENALTY
 

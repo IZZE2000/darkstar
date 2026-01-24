@@ -78,6 +78,11 @@ water_heating:
     anti_legionella_duration_hours: 3.0  # Duration at power_kw (e.g., 3h * 3kW = 9kWh)
     end_date: ""                      # Vacation mode end date (set by UI/Automation)
 
+  # Advanced Water Heating Tuning (Rev K17)
+  # Controls how the solver prioritizes water heating comfort and blocking.
+  reliability_penalty_sek: 1000.0   # "Must Have" penalty (missing daily min_kwh)
+  block_penalty_sek: 0.50           # "Block Breaker" penalty (discouragues long continuous runs)
+
 # Deferrable & Controllable Loads (Load Disaggregation)
 deferrable_loads:
   # List of loads that can be disaggregated from the main load sensor.
@@ -187,6 +192,8 @@ grid:
 # Kepler Solver (MILP optimizer settings)
 kepler:
   ramping_cost_sek_per_kw: 0.05        # Penalty for power changes between slots (reduces sawtooth)
+  target_soc_penalty_sek: 10.0         # Penalty for missing the S-Index target SoC (higher = stricter)
+  curtailment_penalty_sek: 0.1         # Penalty for wasting available solar power
 
 # =============================================================================
 # Home Assistant Integration

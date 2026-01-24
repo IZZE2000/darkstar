@@ -25,10 +25,9 @@ class KeplerConfig:
     max_export_power_kw: float | None = None
     max_import_power_kw: float | None = None
     target_soc_kwh: float | None = None  # Minimum SoC at end of horizon
-    target_soc_penalty_sek: float = (
-        10.0  # Soft penalty for missing target (derived from risk_appetite)
-    )
+    target_soc_penalty_sek: float = 0.0  # Set by config (default 10.0)
     terminal_value_sek_kwh: float = 0.0  # Value of energy left in battery
+    curtailment_penalty_sek: float = 0.0  # Penalty for wasting available solar power
     ramping_cost_sek_per_kw: float = 0.0  # Penalty for power changes
     export_threshold_sek_per_kwh: float = 0.0  # Min spread to export
     grid_import_limit_kw: float | None = None  # Soft constraint
@@ -38,12 +37,10 @@ class KeplerConfig:
     water_heating_max_gap_hours: float = 0.0  # Threshold for gap penalty (0 = disabled)
     water_heated_today_kwh: float = 0.0  # Already heated today (reduces remaining min)
     water_comfort_penalty_sek: float = 0.50  # Penalty per hour beyond gap threshold
-    water_block_penalty_sek: float = 0.50  # Penalty per hour for "block overshoot"
-    water_reliability_penalty_sek: float = (
-        1000.0  # Penalty for violating soft reliability constraints (min_kwh, spacing)
-    )
+    water_block_penalty_sek: float = 0.0  # Set by config (default 0.50)
+    water_reliability_penalty_sek: float = 0.0  # Set by config (default 1000.0)
     water_min_spacing_hours: float = (
-        5.0  # Rev K21/PERF1: STRICT min gap between starts. Hard Constraint.
+        4.0  # Rev K21/PERF1: STRICT min gap between starts. Hard Constraint.
     )
     water_spacing_penalty_sek: float = (
         0.20  # DEPRECATED (PERF1): No longer used. Spacing is now a hard constraint.
@@ -52,7 +49,7 @@ class KeplerConfig:
     force_water_on_slots: list[int] | None = None  # Slots indices that MUST be ON
 
     # Rev WH2: Block start penalty
-    water_block_start_penalty_sek: float = 0.0  # Penalty for starting a new block
+    water_block_start_penalty_sek: float = 0.0  # Set by config (default 3.0)
 
     # Rev K16 Phase 4: Switch penalty (Soft Spacing) - REMOVED (Reverted to Binary Starts)
 

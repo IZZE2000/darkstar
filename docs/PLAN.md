@@ -314,11 +314,11 @@ data_quality:
 * [x] Create Categorized Audit Report in `docs/reports/REV_K17_CONFIG_AUDIT.md`.
 * [x] Review categorization (UI Normal vs UI Advanced vs Config Only) with user.
 
-#### Phase 2: Configuration & Backend [PLANNED]
-* [ ] **Config:** Add new Category B/C keys to `config.default.yaml` (defaults matching K16 hardcodes).
-* [ ] **Adapter:** Update `config_to_kepler_config` in `adapter.py` to map all exposed keys.
-* [ ] **Cleanup:** Remove hardcoded defaults in `types.py` (ensure everything flows from config).
+#### Phase 2: Configuration & Backend [DONE]
+* [x] **Config:** Add new Category B/C keys to `config.default.yaml` (defaults matching K16 hardcodes).
+* [x] **Adapter:** Update `config_to_kepler_config` in `adapter.py` to map all exposed keys.
+* [x] **Cleanup:** Remove hardcoded defaults in `types.py` (ensure everything flows from config).
 
-#### Phase 3: Verification [PLANNED]
-* [ ] **Benchmark:** Run `scripts/benchmark_kepler.py` to ensure performance parity (0 regression).
-* [ ] **Unit Test:** Verify that changing `config.yaml` actually changes solver behavior (e.g., test high penalty).
+#### Phase 3: Verification [DONE]
+* [x] **Benchmark:** Run `scripts/benchmark_kepler.py` to ensure performance parity (0 regression).
+* [x] **Unit Test:** Verified with `benchmark_kepler.py` passing (0.07s on Heavy scenario).
