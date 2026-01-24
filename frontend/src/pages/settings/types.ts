@@ -262,6 +262,18 @@ export const systemSections: SettingsSection[] = [
                 type: 'number',
             },
             {
+                key: 'battery_economics.battery_cycle_cost_kwh',
+                label: 'Battery cycle cost (SEK/kWh)',
+                helper: 'Estimated degradation cost for every kWh cycled. Affects arbitrage profitability.',
+                path: ['battery_economics', 'battery_cycle_cost_kwh'],
+                type: 'number',
+                showIf: {
+                    configKey: 'system.has_battery',
+                    value: true,
+                    disabledText: "Enable 'Home battery installed' in System Profile to configure",
+                },
+            },
+            {
                 key: 'system.grid.max_power_kw',
                 label: 'HARD Grid max power (kW)',
                 path: ['system', 'grid', 'max_power_kw'],
@@ -740,6 +752,7 @@ export const parameterSections: SettingsSection[] = [
                 helper: '100 = trust forecast fully. Lower values make the planner more conservative with solar.',
                 path: ['forecasting', 'pv_confidence_percent'],
                 type: 'number',
+                isAdvanced: true,
             },
             {
                 key: 'forecasting.load_safety_margin_percent',
@@ -747,6 +760,7 @@ export const parameterSections: SettingsSection[] = [
                 helper: '100 = neutral. >100 = expect more load than predicted (safer).',
                 path: ['forecasting', 'load_safety_margin_percent'],
                 type: 'number',
+                isAdvanced: true,
             },
         ],
     },
@@ -754,18 +768,6 @@ export const parameterSections: SettingsSection[] = [
         title: 'Arbitrage & Economics',
         description: 'Export thresholds, peak-only export, and degradation costs.',
         fields: [
-            {
-                key: 'battery_economics.battery_cycle_cost_kwh',
-                label: 'Battery cycle cost (SEK/kWh)',
-                helper: 'Estimated degradation cost for every kWh cycled. Affects arbitrage profitability.',
-                path: ['battery_economics', 'battery_cycle_cost_kwh'],
-                type: 'number',
-                showIf: {
-                    configKey: 'system.has_battery',
-                    value: true,
-                    disabledText: "Enable 'Home battery installed' in System Profile to configure",
-                },
-            },
             {
                 key: 'kepler.target_soc_penalty_sek',
                 label: 'Target SoC Penalty (SEK)',
@@ -816,6 +818,7 @@ export const parameterSections: SettingsSection[] = [
                 label: 'Max defer hours',
                 path: ['water_heating', 'defer_up_to_hours'],
                 type: 'number',
+                isAdvanced: true,
                 showIf: {
                     configKey: 'system.has_water_heater',
                     value: true,
@@ -838,6 +841,7 @@ export const parameterSections: SettingsSection[] = [
                 label: 'Min spacing (hours)',
                 path: ['water_heating', 'min_spacing_hours'],
                 type: 'number',
+                isAdvanced: true,
                 helper: 'Minimum gap between heating sessions to avoid efficiency loss.',
                 showIf: {
                     configKey: 'system.has_water_heater',
@@ -850,6 +854,7 @@ export const parameterSections: SettingsSection[] = [
                 label: 'Spacing penalty (SEK)',
                 path: ['water_heating', 'spacing_penalty_sek'],
                 type: 'number',
+                isAdvanced: true,
                 helper: 'Penalty applied when heating sessions are too close.',
                 showIf: {
                     configKey: 'system.has_water_heater',
@@ -1252,13 +1257,6 @@ export const advancedSections: SettingsSection[] = [
                 helper: 'Master toggle for automatic schedule regeneration.',
                 path: ['automation', 'enable_scheduler'],
                 type: 'boolean',
-            },
-            {
-                key: 'automation.schedule.jitter_minutes',
-                label: 'Schedule Jitter (min)',
-                helper: 'Random delay to avoid thundering herd on restart.',
-                path: ['automation', 'schedule', 'jitter_minutes'],
-                type: 'number',
             },
 
             {

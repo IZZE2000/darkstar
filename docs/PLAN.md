@@ -352,34 +352,15 @@ data_quality:
     *   **Active:** Orange/Red style (`bg-bad`), "Advanced Mode", with a warning icon.
 * [x] **Prop Drilling:** Update `ParametersTab`, `SystemTab`, and `SettingsField` to accept the `advancedMode` boolean prop.
 
-#### Phase 2: Schema & Filtering Logic [IN PROGRESS]
+#### Phase 2: Schema & Filtering Logic [DONE]
 * [x] **Type Update:** Add `isAdvanced?: boolean` to the `BaseField` interface in `types.ts`.
 * [x] **Component Logic:** Update `SettingsField.tsx` to return `null` if `(!advancedMode && field.isAdvanced)`.
-* [ ] **Verification Point:** Manually verify that fields marked `isAdvanced` (from K17) are hidden/shown correctly.
-* [ ] **Commit:** `feat(ui): implement conditional rendering for advanced settings (UI10 Phase 2)`
+* [x] **Verification Point:** Manually verify that field filtering works as expected.
+* [x] **Commit:** `feat(ui): implement conditional rendering for advanced settings (UI10 Phase 2)`
 
-#### Phase 3: Key Migration (The Great Mapping) [PLANNED]
-* [ ] **Review & Tag Keys:** Apply `isAdvanced: true` to the following candidates (User to Confirm):
-
-    **System Tab (Hardware/Deep Config):**
-    *   `battery.nominal_voltage_v` (Technical)
-    *   `battery.min_voltage_v` (Technical)
-    *   `system.inverter.control_unit` (Technical)
-    *   `system.grid_meter_type` (Technical/Setup)
-
-    **Parameters Tab (Tuning & Costs):**
-    *   *Water Heating:*
-        *   `water_heating.defer_up_to_hours`
-        *   `water_heating.block_start_penalty_sek`
-        *   `water_heating.reliability_penalty_sek`
-        *   `water_heating.block_penalty_sek`
-        *   `water_heating.spacing_penalty_sek`
-    *   *Forecasting:*
-        *   `forecasting.pv_confidence_percent`
-        *   `forecasting.load_safety_margin_percent`
-    *   *Economics:*
-        *   `battery_economics.battery_cycle_cost_kwh`
-    *   *Solver (Future K17):*
-        *   `kepler.target_soc_penalty_sek`
-        *   `kepler.curtailment_penalty_sek`
-        *   `kepler.ramping_cost_sek_per_kw`
+#### Phase 3: Key Migration & Re-organization [DONE]
+* [x] **Review & Tag Keys:** Applied `isAdvanced: true` to forecasting tuning, water heating tuning, and kepler solver tuning.
+* [x] **Re-organize:** Moved `battery_cycle_cost_kwh` to System tab (Battery Specification).
+* [x] **Cleanup:** Removed `automation.schedule.jitter_minutes` from UI and deprecated in `config.yaml`.
+* [x] **Verification:** Verified that System tab remains fully functional in Standard Mode.
+* [x] **Commit:** `feat(ui): migrate technical settings to advanced mode (UI10 Phase 3)`
