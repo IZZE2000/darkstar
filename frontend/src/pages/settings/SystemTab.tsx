@@ -4,6 +4,7 @@ import Card from '../../components/Card'
 import { useSettingsForm } from './hooks/useSettingsForm'
 import { SettingsField } from './components/SettingsField'
 import { systemFieldList, systemSections } from './types'
+import { AdvancedLockedNotice, AdditionalAdvancedNotice } from './components/AdvancedLockedNotice'
 
 export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }) => {
     const {
@@ -132,22 +133,41 @@ export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }
                                                             advancedMode={advancedMode}
                                                         />
                                                     ))}
+                                                    {!advancedMode &&
+                                                        params.groups[subKey].every((f) => f.isAdvanced) && (
+                                                            <AdvancedLockedNotice />
+                                                        )}
+                                                    {!advancedMode &&
+                                                        params.groups[subKey].some((f) => f.isAdvanced) &&
+                                                        params.groups[subKey].some((f) => !f.isAdvanced) && (
+                                                            <AdditionalAdvancedNotice />
+                                                        )}
                                                 </div>
                                             </Card>
                                         ) : (
-                                            params.groups[subKey].map((field) => (
-                                                <SettingsField
-                                                    key={field.key}
-                                                    field={field}
-                                                    value={form[field.key] ?? ''}
-                                                    onChange={handleChange}
-                                                    error={fieldErrors[field.key]}
-                                                    haEntities={haEntities}
-                                                    haLoading={haLoading}
-                                                    fullForm={form}
-                                                    advancedMode={advancedMode}
-                                                />
-                                            ))
+                                            <>
+                                                {params.groups[subKey].map((field) => (
+                                                    <SettingsField
+                                                        key={field.key}
+                                                        field={field}
+                                                        value={form[field.key] ?? ''}
+                                                        onChange={handleChange}
+                                                        error={fieldErrors[field.key]}
+                                                        haEntities={haEntities}
+                                                        haLoading={haLoading}
+                                                        fullForm={form}
+                                                        advancedMode={advancedMode}
+                                                    />
+                                                ))}
+                                                {!advancedMode && params.groups[subKey].every((f) => f.isAdvanced) && (
+                                                    <AdvancedLockedNotice />
+                                                )}
+                                                {!advancedMode &&
+                                                    params.groups[subKey].some((f) => f.isAdvanced) &&
+                                                    params.groups[subKey].some((f) => !f.isAdvanced) && (
+                                                        <AdditionalAdvancedNotice />
+                                                    )}
+                                            </>
                                         )}
                                     </React.Fragment>
                                 ))}

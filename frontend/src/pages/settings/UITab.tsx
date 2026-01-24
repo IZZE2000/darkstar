@@ -5,6 +5,7 @@ import Card from '../../components/Card'
 import { useSettingsForm } from './hooks/useSettingsForm'
 import { SettingsField } from './components/SettingsField'
 import { uiFieldList, uiSections } from './types'
+import { AdvancedLockedNotice, AdditionalAdvancedNotice } from './components/AdvancedLockedNotice'
 
 export const UITab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }) => {
     const { form, fieldErrors, loading, saving, statusMessage, handleChange, save } = useSettingsForm(uiFieldList)
@@ -106,6 +107,12 @@ export const UITab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }) =>
                                 advancedMode={advancedMode}
                             />
                         ))}
+
+                        {!advancedMode && section.fields.every((f) => f.isAdvanced) && <AdvancedLockedNotice />}
+
+                        {!advancedMode &&
+                            section.fields.some((f) => f.isAdvanced) &&
+                            section.fields.some((f) => !f.isAdvanced) && <AdditionalAdvancedNotice />}
                     </div>
                     {section.title === 'Dashboard Defaults' && (
                         <div className="mt-6 border-t border-line/30 pt-4">

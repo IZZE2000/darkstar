@@ -3,6 +3,7 @@ import Card from '../../components/Card'
 import { useSettingsForm } from './hooks/useSettingsForm'
 import { SettingsField } from './components/SettingsField'
 import { parameterFieldList, parameterSections } from './types'
+import { AdvancedLockedNotice, AdditionalAdvancedNotice } from './components/AdvancedLockedNotice'
 
 export const ParametersTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }) => {
     const { form, fieldErrors, loading, saving, statusMessage, handleChange, save } =
@@ -35,6 +36,12 @@ export const ParametersTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMo
                                 advancedMode={advancedMode}
                             />
                         ))}
+
+                        {!advancedMode && section.fields.every((f) => f.isAdvanced) && <AdvancedLockedNotice />}
+
+                        {!advancedMode &&
+                            section.fields.some((f) => f.isAdvanced) &&
+                            section.fields.some((f) => !f.isAdvanced) && <AdditionalAdvancedNotice />}
                     </div>
                 </Card>
             ))}

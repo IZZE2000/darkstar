@@ -364,3 +364,12 @@ data_quality:
 * [x] **Cleanup:** Removed `automation.schedule.jitter_minutes` from UI and deprecated in `config.yaml`.
 * [x] **Verification:** Verified that System tab remains fully functional in Standard Mode.
 * [x] **Commit:** `feat(ui): migrate technical settings to advanced mode (UI10 Phase 3)`
+
+#### Phase 4: UI Refinement (Option B) [DONE]
+* [x] **Lock Notice Component:** Created `AdvancedLockedNotice` for empty sections.
+* [x] **Integration:** Added adaptive notices to `SystemTab`, `ParametersTab`, and `UITab`:
+    *   Show "Locked" notice if a section is entirely advanced.
+    *   Show footer notice if a section has mixed fields.
+* [x] **Tagging Refinement:** Completed `isAdvanced` tagging for all `learning.*` and `s_index.*` fields.
+* [x] **Verification:** Verified notice visibility in Standard Mode and correct unlocking in Advanced Mode.
+* [x] **Commit:** `feat(ui): implement advanced settings notice and refined tagging (UI10 Phase 4)`
