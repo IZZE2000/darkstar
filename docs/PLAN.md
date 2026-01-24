@@ -373,3 +373,11 @@ data_quality:
 * [x] **Tagging Refinement:** Completed `isAdvanced` tagging for all `learning.*` and `s_index.*` fields.
 * [x] **Verification:** Verified notice visibility in Standard Mode and correct unlocking in Advanced Mode.
 * [x] **Commit:** `feat(ui): implement advanced settings notice and refined tagging (UI10 Phase 4)`
+
+#### Phase 5: Transition Animations (Framer Motion) [DONE]
+* [x] **Refactoring:** Removed internal visibility filtering from `SettingsField` to enable mount/unmount animations.
+* [x] **Animation Engine:** Integrated `framer-motion` with `AnimatePresence` in all Settings tabs.
+* [x] **FX Implementation:** Added "fade and slide" transitions for fields and "locked" notices.
+* [x] **Type Safety:** Cleaned up TypeScript props and removed unused `advancedMode` from children.
+* [x] **Verification:** Confirmed smooth layout shifts and visual fluidity during mode toggles.
+* [x] **Commit:** `feat(ui): add smooth transitions for advanced settings (UI10 Phase 5)`
