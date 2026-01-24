@@ -83,6 +83,17 @@ learning:" section in config.default.yaml
 
 ---
 
+### [UI/ARC] Unify Overlay Configuration Keys
+
+**Goal:** Align the `overlay_defaults` keys used in Settings UI (`solar`, `battery`, `load`, `grid`, `water`, `forecast`) with the granular keys used by the Chart engine (`pv`, `charge`, `discharge`, `socActual`, etc.).
+
+**Notes:**
+- Current mismatch causes some UI toggles to have no effect on specific chart lines.
+- Requires updating both `UITab.tsx` and `ChartCard.tsx` to use a shared set of semantic keys.
+- Needs a migration for existing `config.yaml` values to the new unified format.
+
+---
+
 ### [Planner] Smart EV Integration
 
 **Goal:** Prioritize home battery vs EV charging based on departure time and user preferences.

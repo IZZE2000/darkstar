@@ -262,7 +262,7 @@ export default function DesignSystem() {
                     This is the actual ChartCard component used throughout Darkstar.
                 </p>
                 <div className="bg-surface rounded-ds-lg p-4 shadow-float">
-                    <ChartCard day="today" showDayToggle={false} />
+                    <ChartCard day="today" />
                 </div>
             </section>
 

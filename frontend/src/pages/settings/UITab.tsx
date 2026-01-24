@@ -21,9 +21,27 @@ export const UITab: React.FC = () => {
     }
 
     // const currentThemeIdx = config?.ui?.theme_accent_index ?? 0
-    const overlayDefaults = form['dashboard.overlay_defaults']
-        ? (JSON.parse(form['dashboard.overlay_defaults']) as Record<string, boolean>)
-        : {}
+    const parseOverlayDefaults = (raw: string | undefined): Record<string, boolean> => {
+        if (!raw) return {}
+        try {
+            // Try to parse as JSON first (new format)
+            const parsed = JSON.parse(raw)
+            if (typeof parsed === 'object' && parsed !== null) {
+                return parsed as Record<string, boolean>
+            }
+        } catch {
+            // Fallback: handle comma-separated string (legacy format)
+            const obj: Record<string, boolean> = {}
+            raw.split(',').forEach((k) => {
+                const trimmed = k.trim().toLowerCase()
+                if (trimmed) obj[trimmed] = true
+            })
+            return obj
+        }
+        return {}
+    }
+
+    const overlayDefaults = parseOverlayDefaults(form['dashboard.overlay_defaults'])
 
     const toggleOverlay = (key: string) => {
         const next = { ...overlayDefaults, [key]: !overlayDefaults[key] }

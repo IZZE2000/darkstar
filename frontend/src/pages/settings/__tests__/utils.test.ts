@@ -26,7 +26,8 @@ describe('Settings Utilities', () => {
             expect(source.a).toBe(1)
         })
         it('sets deeply nested properties immutably', () => {
-            const source = { a: { b: 1 } }
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const source = { a: { b: 1 } } as any
             const result = setDeepValueCorrect(source, ['a', 'c'], 2)
             expect(result.a.c).toBe(2)
             expect(result.a.b).toBe(1)
@@ -64,6 +65,13 @@ describe('Settings Utilities', () => {
             const config = { a: 123, b: { c: true } }
             const result = buildFormState(config, fields)
             expect(result).toEqual({ a: '123', b: 'true' })
+        })
+
+        it('stringifies objects as JSON', () => {
+            const objFields: BaseField[] = [{ key: 'obj', label: 'Obj', path: ['obj'], type: 'text' }]
+            const config = { obj: { foo: 'bar' } }
+            const result = buildFormState(config, objFields)
+            expect(result.obj).toBe('{"foo":"bar"}')
         })
 
         it('handles missing values with empty strings', () => {

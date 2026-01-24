@@ -79,6 +79,7 @@ export type ConfigResponse = {
     }
     ui?: {
         theme_accent_index?: number
+        theme_mode?: 'light' | 'dark' | 'system'
     }
     [key: string]: unknown
 }

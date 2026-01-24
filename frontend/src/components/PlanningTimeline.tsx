@@ -51,7 +51,7 @@ export default function PlanningTimeline({
         start_time: b.start,
         end_time: b.end,
         canMove: !b.isHistorical,
-        canResize: b.isHistorical ? false : 'both',
+        canResize: (b.isHistorical ? false : 'both') as boolean | 'both' | 'left' | 'right',
         canChangeGroup: !b.isHistorical,
         className: `ds-timeline-item ds-timeline-${b.lane}${
             b.isHistorical ? ' ds-timeline-item-historical' : ''
@@ -119,8 +119,8 @@ export default function PlanningTimeline({
                     items={items}
                     visibleTimeStart={visibleStart}
                     visibleTimeEnd={visibleEnd}
-                    defaultTimeStart={baseStart}
-                    defaultTimeEnd={baseEnd}
+                    defaultTimeStart={baseStart.getTime()}
+                    defaultTimeEnd={baseEnd.getTime()}
                     lineHeight={64}
                     sidebarWidth={96}
                     canMove

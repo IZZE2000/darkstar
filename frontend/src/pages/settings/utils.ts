@@ -94,6 +94,9 @@ export function buildFormState(config: Record<string, unknown> | null, fields: B
             state[field.key] = value === true ? 'true' : 'false'
         } else if (field.type === 'array' && Array.isArray(value)) {
             state[field.key] = value.join(', ')
+        } else if (value !== null && typeof value === 'object') {
+            // Handle objects (like dashboard.overlay_defaults) by stringifying them as JSON
+            state[field.key] = JSON.stringify(value)
         } else {
             state[field.key] = value !== undefined && value !== null ? String(value) : ''
         }
