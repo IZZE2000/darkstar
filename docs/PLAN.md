@@ -381,3 +381,10 @@ data_quality:
 * [x] **Type Safety:** Cleaned up TypeScript props and removed unused `advancedMode` from children.
 * [x] **Verification:** Confirmed smooth layout shifts and visual fluidity during mode toggles.
 * [x] **Commit:** `feat(ui): add smooth transitions for advanced settings (UI10 Phase 5)`
+
+#### Phase 6: Ultra-Compact Standard Mode Layout [DONE]
+* [x] **Card Logic:** Refactored all tabs to hide entire cards if all fields are advanced.
+* [x] **Global Notice:** Created `GlobalAdvancedLockedNotice` and placed it at the bottom of each tab to centralize the "hidden settings" info.
+* [x] **Micro-Notices:** Kept footer notices for cards with mixed content to avoid confusion.
+* [x] **Verification:** Confirmed significant vertical space reduction in Standard Mode.
+* [x] **Commit:** `feat(ui): implement ultra-compact settings layout for standard mode (UI10 Phase 6)`

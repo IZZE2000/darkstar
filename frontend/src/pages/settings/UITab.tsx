@@ -6,7 +6,7 @@ import { useSettingsForm } from './hooks/useSettingsForm'
 import { SettingsField } from './components/SettingsField'
 import { uiFieldList, uiSections } from './types'
 import { motion, AnimatePresence } from 'framer-motion'
-import { AdvancedLockedNotice, AdditionalAdvancedNotice } from './components/AdvancedLockedNotice'
+import { AdditionalAdvancedNotice, GlobalAdvancedLockedNotice } from './components/AdvancedLockedNotice'
 
 export const UITab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }) => {
     const { form, fieldErrors, loading, saving, statusMessage, handleChange, save } = useSettingsForm(uiFieldList)
@@ -56,130 +56,110 @@ export const UITab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }) =>
         handleChange('dashboard.overlay_defaults', JSON.stringify(next))
     }
 
+    const hasHiddenSections = uiSections.some((s) => s.fields.every((f) => f.isAdvanced))
+
     return (
         <div className="space-y-4">
             {/* Accent Theme Card - Hidden as per user request */}
-            {/* <Card className="p-6">
-                <div className="flex items-baseline justify-between gap-2">
-                    <div>
-                        <div className="text-sm font-semibold">Accent Theme</div>
-                        <p className="text-xs text-muted mt-1">Select the primary accent color for the Darkstar UI.</p>
-                    </div>
-                    <span className="text-[10px] uppercase text-muted tracking-wide">Appearance</span>
-                </div>
-                <div className="mt-5 flex flex-wrap gap-3">
-                    {themes.map((theme, idx) => (
-                        <button
-                            key={theme.name}
-                            onClick={() => save({ ui: { theme_accent_index: idx } })}
-                            disabled={saving}
-                            className={`group relative h-12 w-12 rounded-xl transition duration-300 ${
-                                currentThemeIdx === idx
-                                    ? 'ring-2 ring-accent ring-offset-4 ring-offset-[#0a0a0a]'
-                                    : 'hover:rotate-3 hover:scale-105'
-                            }`}
-                            style={{ backgroundColor: theme.palette[0] }}
-                        >
-                            <span className="absolute -bottom-6 left-1/2 -translate-x-1/2 scale-0 text-[10px] text-muted transition group-hover:scale-100 whitespace-nowrap">
-                                {theme.name}
-                            </span>
-                            {currentThemeIdx === idx && (
-                                <div className="absolute inset-0 flex items-center justify-center bg-black/10 rounded-xl">
-                                    <div className="h-1.5 w-1.5 rounded-full bg-white shadow-[0_0_8px_white]" />
-                                </div>
-                            )}
-                        </button>
-                    ))}
-                </div>
-            </Card> */}
+            {/* ... */}
 
-            {uiSections.map((section) => (
-                <Card key={section.title} className="p-6">
-                    <div className="flex items-baseline justify-between gap-2">
-                        <div>
-                            <div className="text-sm font-semibold">{section.title}</div>
-                            <p className="text-xs text-muted mt-1">{section.description}</p>
-                        </div>
-                        <span className="text-[10px] uppercase text-muted tracking-wide">Interface</span>
-                    </div>
-                    <div className="mt-5 grid gap-4 sm:grid-cols-2">
-                        <AnimatePresence initial={false}>
-                            {section.fields.map(
-                                (field) =>
-                                    (advancedMode || !field.isAdvanced) && (
-                                        <motion.div
-                                            key={field.key}
-                                            variants={fieldVariants}
-                                            initial="initial"
-                                            animate="animate"
-                                            exit="exit"
-                                            transition={{ duration: 0.2, ease: 'easeOut' }}
-                                            className="overflow-hidden"
-                                        >
-                                            <SettingsField
-                                                field={field}
-                                                value={form[field.key] ?? ''}
-                                                onChange={handleChange}
-                                                error={fieldErrors[field.key]}
-                                                fullForm={form}
-                                            />
-                                        </motion.div>
-                                    ),
-                            )}
+            {uiSections.map((section) => {
+                const isEntirelyAdvanced = section.fields.every((f) => f.isAdvanced)
+                const shouldShowCard = advancedMode || !isEntirelyAdvanced
 
-                            {!advancedMode && section.fields.every((f) => f.isAdvanced) && (
-                                <motion.div
-                                    key={`${section.title}-locked`}
-                                    variants={fieldVariants}
-                                    initial="initial"
-                                    animate="animate"
-                                    exit="exit"
-                                    className="col-span-2 overflow-hidden"
-                                >
-                                    <AdvancedLockedNotice />
-                                </motion.div>
-                            )}
+                return (
+                    <AnimatePresence key={section.title} initial={false}>
+                        {shouldShowCard && (
+                            <motion.div
+                                initial={{ opacity: 0, height: 0 }}
+                                animate={{ opacity: 1, height: 'auto' }}
+                                exit={{ opacity: 0, height: 0 }}
+                                transition={{ duration: 0.3 }}
+                                className="overflow-hidden"
+                            >
+                                <Card className="p-6 mb-4">
+                                    <div className="flex items-baseline justify-between gap-2">
+                                        <div>
+                                            <div className="text-sm font-semibold">{section.title}</div>
+                                            <p className="text-xs text-muted mt-1">{section.description}</p>
+                                        </div>
+                                        <span className="text-[10px] uppercase text-muted tracking-wide">
+                                            Interface
+                                        </span>
+                                    </div>
+                                    <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                                        <AnimatePresence initial={false}>
+                                            {section.fields.map(
+                                                (field) =>
+                                                    (advancedMode || !field.isAdvanced) && (
+                                                        <motion.div
+                                                            key={field.key}
+                                                            variants={fieldVariants}
+                                                            initial="initial"
+                                                            animate="animate"
+                                                            exit="exit"
+                                                            transition={{ duration: 0.2, ease: 'easeOut' }}
+                                                            className="overflow-hidden"
+                                                        >
+                                                            <SettingsField
+                                                                field={field}
+                                                                value={form[field.key] ?? ''}
+                                                                onChange={handleChange}
+                                                                error={fieldErrors[field.key]}
+                                                                fullForm={form}
+                                                            />
+                                                        </motion.div>
+                                                    ),
+                                            )}
 
-                            {!advancedMode &&
-                                section.fields.some((f) => f.isAdvanced) &&
-                                section.fields.some((f) => !f.isAdvanced) && (
-                                    <motion.div
-                                        key={`${section.title}-additional`}
-                                        variants={fieldVariants}
-                                        initial="initial"
-                                        animate="animate"
-                                        exit="exit"
-                                        className="col-span-2 overflow-hidden"
-                                    >
-                                        <AdditionalAdvancedNotice />
-                                    </motion.div>
-                                )}
-                        </AnimatePresence>
-                    </div>
-                    {section.title === 'Dashboard Defaults' && (
-                        <div className="mt-6 border-t border-line/30 pt-4">
-                            <div className="text-[10px] uppercase tracking-widest text-muted font-bold mb-3">
-                                Overlay Defaults
-                            </div>
-                            <div className="flex flex-wrap gap-2">
-                                {['solar', 'battery', 'load', 'grid', 'water', 'forecast'].map((key) => (
-                                    <button
-                                        key={key}
-                                        onClick={() => toggleOverlay(key)}
-                                        className={`rounded-lg px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider transition ${
-                                            overlayDefaults[key]
-                                                ? 'bg-accent/20 text-accent border border-accent/30'
-                                                : 'bg-surface2 text-muted border border-line/50 hover:border-line'
-                                        }`}
-                                    >
-                                        {key}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-                </Card>
-            ))}
+                                            {!advancedMode &&
+                                                section.fields.some((f) => f.isAdvanced) &&
+                                                section.fields.some((f) => !f.isAdvanced) && (
+                                                    <motion.div
+                                                        key={`${section.title}-additional`}
+                                                        variants={fieldVariants}
+                                                        initial="initial"
+                                                        animate="animate"
+                                                        exit="exit"
+                                                        className="col-span-2 overflow-hidden"
+                                                    >
+                                                        <AdditionalAdvancedNotice />
+                                                    </motion.div>
+                                                )}
+                                        </AnimatePresence>
+                                    </div>
+                                    {section.title === 'Dashboard Defaults' && (
+                                        <div className="mt-6 border-t border-line/30 pt-4">
+                                            <div className="text-[10px] uppercase tracking-widest text-muted font-bold mb-3">
+                                                Overlay Defaults
+                                            </div>
+                                            <div className="flex flex-wrap gap-2">
+                                                {['solar', 'battery', 'load', 'grid', 'water', 'forecast'].map(
+                                                    (key) => (
+                                                        <button
+                                                            key={key}
+                                                            onClick={() => toggleOverlay(key)}
+                                                            className={`rounded-lg px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider transition ${
+                                                                overlayDefaults[key]
+                                                                    ? 'bg-accent/20 text-accent border border-accent/30'
+                                                                    : 'bg-surface2 text-muted border border-line/50 hover:border-line'
+                                                            }`}
+                                                        >
+                                                            {key}
+                                                        </button>
+                                                    ),
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+                                </Card>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+                )
+            })}
+
+            {!advancedMode && hasHiddenSections && <GlobalAdvancedLockedNotice />}
 
             <div className="flex flex-wrap items-center gap-3">
                 <button

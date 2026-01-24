@@ -5,7 +5,7 @@ import { useSettingsForm } from './hooks/useSettingsForm'
 import { SettingsField } from './components/SettingsField'
 import { systemFieldList, systemSections } from './types'
 import { motion, AnimatePresence } from 'framer-motion'
-import { AdvancedLockedNotice, AdditionalAdvancedNotice } from './components/AdvancedLockedNotice'
+import { AdditionalAdvancedNotice, GlobalAdvancedLockedNotice } from './components/AdvancedLockedNotice'
 
 export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }) => {
     const {
@@ -61,6 +61,8 @@ export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }
         exit: { opacity: 0, y: -10, height: 0 },
     }
 
+    const hasHiddenSections = systemSections.some((s) => s.fields.every((f) => f.isAdvanced))
+
     return (
         <div className="space-y-4">
             {/* HA Add-on Guidance Banner */}
@@ -83,186 +85,243 @@ export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }
                 })
                 const params = { groups, order }
 
+                const isEntirelyAdvanced = section.fields.every((f) => f.isAdvanced)
+                const shouldShowCard = advancedMode || !isEntirelyAdvanced
+
                 return (
-                    <div key={section.title}>
-                        {showDivider && (
-                            <div className="py-8 flex items-center gap-4">
-                                <div className="h-px flex-1 bg-line/30" />
-                                <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-muted whitespace-nowrap">
-                                    Home Assistant Integration
-                                </span>
-                                <div className="h-px flex-1 bg-line/30" />
-                            </div>
-                        )}
-                        {section.title === 'Home Assistant Connection' && (
-                            <Card className="mb-4 p-4 bg-accent/5 border border-accent/20">
-                                <div className="flex items-start gap-3">
-                                    <div className="text-xl">🔌</div>
-                                    <div>
-                                        <div className="text-sm font-semibold text-accent">HA Add-on User?</div>
-                                        <p className="text-xs text-muted mt-1 leading-relaxed">
-                                            If you are running as a Home Assistant Add-on, connection settings are
-                                            managed automatically.
-                                            <strong> Manually entering them here is not required</strong> and they will
-                                            be reset to match your add-on configuration on next save.
-                                        </p>
-                                    </div>
-                                </div>
-                            </Card>
-                        )}
-                        <Card className="p-6">
-                            <div className="flex items-baseline justify-between gap-2">
-                                <div>
-                                    <div className="text-base font-bold text-text">{section.title}</div>
-                                    <p className="text-xs text-muted mt-1">{section.description}</p>
-                                </div>
-                                <span className="text-[10px] uppercase text-muted tracking-wide">System</span>
-                            </div>
-                            <div className="mt-5 grid gap-4 sm:grid-cols-2">
-                                {params.order.map((subKey) => (
-                                    <React.Fragment key={subKey}>
-                                        {subKey !== 'default' ? (
-                                            <Card className="col-span-2 p-4 bg-surface1 border border-line/20 rounded-xl">
-                                                <div className="text-sm font-semibold text-muted mb-3 uppercase tracking-wider">
-                                                    {subKey}
-                                                </div>
-                                                <div className="grid gap-4 sm:grid-cols-2">
-                                                    <AnimatePresence initial={false}>
-                                                        {params.groups[subKey].map(
-                                                            (field) =>
-                                                                (advancedMode || !field.isAdvanced) && (
-                                                                    <motion.div
-                                                                        key={field.key}
-                                                                        variants={fieldVariants}
-                                                                        initial="initial"
-                                                                        animate="animate"
-                                                                        exit="exit"
-                                                                        transition={{ duration: 0.2, ease: 'easeOut' }}
-                                                                        className="overflow-hidden"
-                                                                    >
-                                                                        <SettingsField
-                                                                            field={field}
-                                                                            value={form[field.key] ?? ''}
-                                                                            onChange={handleChange}
-                                                                            error={fieldErrors[field.key]}
-                                                                            haEntities={haEntities}
-                                                                            haLoading={haLoading}
-                                                                            fullForm={form}
-                                                                        />
-                                                                    </motion.div>
-                                                                ),
-                                                        )}
-                                                        {!advancedMode &&
-                                                            params.groups[subKey].every((f) => f.isAdvanced) && (
-                                                                <motion.div
-                                                                    key={`${subKey}-locked`}
-                                                                    variants={fieldVariants}
-                                                                    initial="initial"
-                                                                    animate="animate"
-                                                                    exit="exit"
-                                                                    className="col-span-2 overflow-hidden"
-                                                                >
-                                                                    <AdvancedLockedNotice />
-                                                                </motion.div>
-                                                            )}
-                                                        {!advancedMode &&
-                                                            params.groups[subKey].some((f) => f.isAdvanced) &&
-                                                            params.groups[subKey].some((f) => !f.isAdvanced) && (
-                                                                <motion.div
-                                                                    key={`${subKey}-additional`}
-                                                                    variants={fieldVariants}
-                                                                    initial="initial"
-                                                                    animate="animate"
-                                                                    exit="exit"
-                                                                    className="col-span-2 overflow-hidden"
-                                                                >
-                                                                    <AdditionalAdvancedNotice />
-                                                                </motion.div>
-                                                            )}
-                                                    </AnimatePresence>
-                                                </div>
-                                            </Card>
-                                        ) : (
-                                            <AnimatePresence initial={false}>
-                                                {params.groups[subKey].map(
-                                                    (field) =>
-                                                        (advancedMode || !field.isAdvanced) && (
-                                                            <motion.div
-                                                                key={field.key}
-                                                                variants={fieldVariants}
-                                                                initial="initial"
-                                                                animate="animate"
-                                                                exit="exit"
-                                                                transition={{ duration: 0.2, ease: 'easeOut' }}
-                                                                className="overflow-hidden"
-                                                            >
-                                                                <SettingsField
-                                                                    field={field}
-                                                                    value={form[field.key] ?? ''}
-                                                                    onChange={handleChange}
-                                                                    error={fieldErrors[field.key]}
-                                                                    haEntities={haEntities}
-                                                                    haLoading={haLoading}
-                                                                    fullForm={form}
-                                                                />
-                                                            </motion.div>
-                                                        ),
-                                                )}
-                                                {!advancedMode && params.groups[subKey].every((f) => f.isAdvanced) && (
-                                                    <motion.div
-                                                        key={`${subKey}-locked`}
-                                                        variants={fieldVariants}
-                                                        initial="initial"
-                                                        animate="animate"
-                                                        exit="exit"
-                                                        className="col-span-2 overflow-hidden"
-                                                    >
-                                                        <AdvancedLockedNotice />
-                                                    </motion.div>
-                                                )}
-                                                {!advancedMode &&
-                                                    params.groups[subKey].some((f) => f.isAdvanced) &&
-                                                    params.groups[subKey].some((f) => !f.isAdvanced) && (
-                                                        <motion.div
-                                                            key={`${subKey}-additional`}
-                                                            variants={fieldVariants}
-                                                            initial="initial"
-                                                            animate="animate"
-                                                            exit="exit"
-                                                            className="col-span-2 overflow-hidden"
-                                                        >
-                                                            <AdditionalAdvancedNotice />
-                                                        </motion.div>
-                                                    )}
-                                            </AnimatePresence>
-                                        )}
-                                    </React.Fragment>
-                                ))}
-                            </div>
-                            {section.title === 'Home Assistant Connection' && (
-                                <div className="mt-4 flex items-center gap-3">
-                                    <button
-                                        type="button"
-                                        onClick={handleTestConnection}
-                                        className="rounded-xl px-4 py-2 text-[11px] font-semibold bg-neutral hover:bg-neutral/80 text-white transition"
-                                    >
-                                        {haTestStatus && haTestStatus.startsWith('Testing')
-                                            ? 'Testing...'
-                                            : 'Test Connection'}
-                                    </button>
-                                    {haTestStatus && (
-                                        <span
-                                            className={`text-xs ${haTestStatus.startsWith('Success') ? 'text-good' : 'text-bad'}`}
-                                        >
-                                            {haTestStatus}
-                                        </span>
+                    <AnimatePresence key={section.title} initial={false}>
+                        {shouldShowCard && (
+                            <motion.div
+                                initial={{ opacity: 0, height: 0 }}
+                                animate={{ opacity: 1, height: 'auto' }}
+                                exit={{ opacity: 0, height: 0 }}
+                                transition={{ duration: 0.3 }}
+                                className="overflow-hidden"
+                            >
+                                <div key={section.title}>
+                                    {showDivider && (
+                                        <div className="py-8 flex items-center gap-4">
+                                            <div className="h-px flex-1 bg-line/30" />
+                                            <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-muted whitespace-nowrap">
+                                                Home Assistant Integration
+                                            </span>
+                                            <div className="h-px flex-1 bg-line/30" />
+                                        </div>
                                     )}
+                                    {section.title === 'Home Assistant Connection' && (
+                                        <Card className="mb-4 p-4 bg-accent/5 border border-accent/20">
+                                            <div className="flex items-start gap-3">
+                                                <div className="text-xl">🔌</div>
+                                                <div>
+                                                    <div className="text-sm font-semibold text-accent">
+                                                        HA Add-on User?
+                                                    </div>
+                                                    <p className="text-xs text-muted mt-1 leading-relaxed">
+                                                        If you are running as a Home Assistant Add-on, connection
+                                                        settings are managed automatically.
+                                                        <strong>
+                                                            {' '}
+                                                            Manually entering them here is not required
+                                                        </strong>{' '}
+                                                        and they will be reset to match your add-on configuration on
+                                                        next save.
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </Card>
+                                    )}
+                                    <Card className="p-6">
+                                        <div className="flex items-baseline justify-between gap-2">
+                                            <div>
+                                                <div className="text-base font-bold text-text">{section.title}</div>
+                                                <p className="text-xs text-muted mt-1">{section.description}</p>
+                                            </div>
+                                            <span className="text-[10px] uppercase text-muted tracking-wide">
+                                                System
+                                            </span>
+                                        </div>
+                                        <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                                            {params.order.map((subKey) => {
+                                                const isSubEntirelyAdvanced = params.groups[subKey].every(
+                                                    (f) => f.isAdvanced,
+                                                )
+                                                const shouldShowSub = advancedMode || !isSubEntirelyAdvanced
+
+                                                return (
+                                                    <AnimatePresence key={subKey} initial={false}>
+                                                        {shouldShowSub && (
+                                                            <motion.div
+                                                                initial={{ opacity: 0, height: 0 }}
+                                                                animate={{ opacity: 1, height: 'auto' }}
+                                                                exit={{ opacity: 0, height: 0 }}
+                                                                transition={{ duration: 0.3 }}
+                                                                className="col-span-2 overflow-hidden"
+                                                            >
+                                                                {subKey !== 'default' ? (
+                                                                    <Card className="p-4 bg-surface1 border border-line/20 rounded-xl mb-4">
+                                                                        <div className="text-sm font-semibold text-muted mb-3 uppercase tracking-wider">
+                                                                            {subKey}
+                                                                        </div>
+                                                                        <div className="grid gap-4 sm:grid-cols-2">
+                                                                            <AnimatePresence initial={false}>
+                                                                                {params.groups[subKey].map(
+                                                                                    (field) =>
+                                                                                        (advancedMode ||
+                                                                                            !field.isAdvanced) && (
+                                                                                            <motion.div
+                                                                                                key={field.key}
+                                                                                                variants={fieldVariants}
+                                                                                                initial="initial"
+                                                                                                animate="animate"
+                                                                                                exit="exit"
+                                                                                                transition={{
+                                                                                                    duration: 0.2,
+                                                                                                    ease: 'easeOut',
+                                                                                                }}
+                                                                                                className="overflow-hidden"
+                                                                                            >
+                                                                                                <SettingsField
+                                                                                                    field={field}
+                                                                                                    value={
+                                                                                                        form[
+                                                                                                            field.key
+                                                                                                        ] ?? ''
+                                                                                                    }
+                                                                                                    onChange={
+                                                                                                        handleChange
+                                                                                                    }
+                                                                                                    error={
+                                                                                                        fieldErrors[
+                                                                                                            field.key
+                                                                                                        ]
+                                                                                                    }
+                                                                                                    haEntities={
+                                                                                                        haEntities
+                                                                                                    }
+                                                                                                    haLoading={
+                                                                                                        haLoading
+                                                                                                    }
+                                                                                                    fullForm={form}
+                                                                                                />
+                                                                                            </motion.div>
+                                                                                        ),
+                                                                                )}
+                                                                                {!advancedMode &&
+                                                                                    params.groups[subKey].some(
+                                                                                        (f) => f.isAdvanced,
+                                                                                    ) &&
+                                                                                    params.groups[subKey].some(
+                                                                                        (f) => !f.isAdvanced,
+                                                                                    ) && (
+                                                                                        <motion.div
+                                                                                            key={`${subKey}-additional`}
+                                                                                            variants={fieldVariants}
+                                                                                            initial="initial"
+                                                                                            animate="animate"
+                                                                                            exit="exit"
+                                                                                            className="col-span-2 overflow-hidden"
+                                                                                        >
+                                                                                            <AdditionalAdvancedNotice />
+                                                                                        </motion.div>
+                                                                                    )}
+                                                                            </AnimatePresence>
+                                                                        </div>
+                                                                    </Card>
+                                                                ) : (
+                                                                    <div className="grid gap-4 sm:grid-cols-2 mb-4">
+                                                                        <AnimatePresence initial={false}>
+                                                                            {params.groups[subKey].map(
+                                                                                (field) =>
+                                                                                    (advancedMode ||
+                                                                                        !field.isAdvanced) && (
+                                                                                        <motion.div
+                                                                                            key={field.key}
+                                                                                            variants={fieldVariants}
+                                                                                            initial="initial"
+                                                                                            animate="animate"
+                                                                                            exit="exit"
+                                                                                            transition={{
+                                                                                                duration: 0.2,
+                                                                                                ease: 'easeOut',
+                                                                                            }}
+                                                                                            className="overflow-hidden"
+                                                                                        >
+                                                                                            <SettingsField
+                                                                                                field={field}
+                                                                                                value={
+                                                                                                    form[field.key] ??
+                                                                                                    ''
+                                                                                                }
+                                                                                                onChange={handleChange}
+                                                                                                error={
+                                                                                                    fieldErrors[
+                                                                                                        field.key
+                                                                                                    ]
+                                                                                                }
+                                                                                                haEntities={haEntities}
+                                                                                                haLoading={haLoading}
+                                                                                                fullForm={form}
+                                                                                            />
+                                                                                        </motion.div>
+                                                                                    ),
+                                                                            )}
+                                                                            {!advancedMode &&
+                                                                                params.groups[subKey].some(
+                                                                                    (f) => f.isAdvanced,
+                                                                                ) &&
+                                                                                params.groups[subKey].some(
+                                                                                    (f) => !f.isAdvanced,
+                                                                                ) && (
+                                                                                    <motion.div
+                                                                                        key={`${subKey}-additional`}
+                                                                                        variants={fieldVariants}
+                                                                                        initial="initial"
+                                                                                        animate="animate"
+                                                                                        exit="exit"
+                                                                                        className="col-span-2 overflow-hidden"
+                                                                                    >
+                                                                                        <AdditionalAdvancedNotice />
+                                                                                    </motion.div>
+                                                                                )}
+                                                                        </AnimatePresence>
+                                                                    </div>
+                                                                )}
+                                                            </motion.div>
+                                                        )}
+                                                    </AnimatePresence>
+                                                )
+                                            })}
+                                        </div>
+                                        {section.title === 'Home Assistant Connection' && (
+                                            <div className="mt-4 flex items-center gap-3">
+                                                <button
+                                                    type="button"
+                                                    onClick={handleTestConnection}
+                                                    className="rounded-xl px-4 py-2 text-[11px] font-semibold bg-neutral hover:bg-neutral/80 text-white transition"
+                                                >
+                                                    {haTestStatus && haTestStatus.startsWith('Testing')
+                                                        ? 'Testing...'
+                                                        : 'Test Connection'}
+                                                </button>
+                                                {haTestStatus && (
+                                                    <span
+                                                        className={`text-xs ${haTestStatus.startsWith('Success') ? 'text-good' : 'text-bad'}`}
+                                                    >
+                                                        {haTestStatus}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        )}
+                                    </Card>
                                 </div>
-                            )}
-                        </Card>
-                    </div>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
                 )
             })}
+
+            {!advancedMode && hasHiddenSections && <GlobalAdvancedLockedNotice />}
+
             <div className="flex flex-wrap items-center gap-3">
                 <button
                     disabled={saving}

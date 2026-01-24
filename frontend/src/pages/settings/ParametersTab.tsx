@@ -4,7 +4,7 @@ import { useSettingsForm } from './hooks/useSettingsForm'
 import { SettingsField } from './components/SettingsField'
 import { parameterFieldList, parameterSections } from './types'
 import { motion, AnimatePresence } from 'framer-motion'
-import { AdvancedLockedNotice, AdditionalAdvancedNotice } from './components/AdvancedLockedNotice'
+import { AdditionalAdvancedNotice, GlobalAdvancedLockedNotice } from './components/AdvancedLockedNotice'
 
 export const ParametersTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }) => {
     const { form, fieldErrors, loading, saving, statusMessage, handleChange, save } =
@@ -20,73 +20,84 @@ export const ParametersTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMo
         exit: { opacity: 0, y: -10, height: 0 },
     }
 
+    const hasHiddenSections = parameterSections.some((s) => s.fields.every((f) => f.isAdvanced))
+
     return (
         <div className="space-y-4">
-            {parameterSections.map((section) => (
-                <Card key={section.title} className="p-6">
-                    <div className="flex items-baseline justify-between gap-2">
-                        <div>
-                            <div className="text-sm font-semibold">{section.title}</div>
-                            <p className="text-xs text-muted mt-1">{section.description}</p>
-                        </div>
-                        <span className="text-[10px] uppercase text-muted tracking-wide">Optimization</span>
-                    </div>
-                    <div className="mt-5 grid gap-4 sm:grid-cols-2">
-                        <AnimatePresence initial={false}>
-                            {section.fields.map(
-                                (field) =>
-                                    (advancedMode || !field.isAdvanced) && (
-                                        <motion.div
-                                            key={field.key}
-                                            variants={fieldVariants}
-                                            initial="initial"
-                                            animate="animate"
-                                            exit="exit"
-                                            transition={{ duration: 0.2, ease: 'easeOut' }}
-                                            className="overflow-hidden"
-                                        >
-                                            <SettingsField
-                                                field={field}
-                                                value={form[field.key] ?? ''}
-                                                onChange={handleChange}
-                                                error={fieldErrors[field.key]}
-                                                fullForm={form}
-                                            />
-                                        </motion.div>
-                                    ),
-                            )}
+            {parameterSections.map((section) => {
+                const isEntirelyAdvanced = section.fields.every((f) => f.isAdvanced)
+                const shouldShowCard = advancedMode || !isEntirelyAdvanced
 
-                            {!advancedMode && section.fields.every((f) => f.isAdvanced) && (
-                                <motion.div
-                                    key={`${section.title}-locked`}
-                                    variants={fieldVariants}
-                                    initial="initial"
-                                    animate="animate"
-                                    exit="exit"
-                                    className="col-span-2 overflow-hidden"
-                                >
-                                    <AdvancedLockedNotice />
-                                </motion.div>
-                            )}
+                return (
+                    <AnimatePresence key={section.title} initial={false}>
+                        {shouldShowCard && (
+                            <motion.div
+                                initial={{ opacity: 0, height: 0 }}
+                                animate={{ opacity: 1, height: 'auto' }}
+                                exit={{ opacity: 0, height: 0 }}
+                                transition={{ duration: 0.3 }}
+                                className="overflow-hidden"
+                            >
+                                <Card className="p-6 mb-4">
+                                    <div className="flex items-baseline justify-between gap-2">
+                                        <div>
+                                            <div className="text-sm font-semibold">{section.title}</div>
+                                            <p className="text-xs text-muted mt-1">{section.description}</p>
+                                        </div>
+                                        <span className="text-[10px] uppercase text-muted tracking-wide">
+                                            Optimization
+                                        </span>
+                                    </div>
+                                    <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                                        <AnimatePresence initial={false}>
+                                            {section.fields.map(
+                                                (field) =>
+                                                    (advancedMode || !field.isAdvanced) && (
+                                                        <motion.div
+                                                            key={field.key}
+                                                            variants={fieldVariants}
+                                                            initial="initial"
+                                                            animate="animate"
+                                                            exit="exit"
+                                                            transition={{ duration: 0.2, ease: 'easeOut' }}
+                                                            className="overflow-hidden"
+                                                        >
+                                                            <SettingsField
+                                                                field={field}
+                                                                value={form[field.key] ?? ''}
+                                                                onChange={handleChange}
+                                                                error={fieldErrors[field.key]}
+                                                                fullForm={form}
+                                                            />
+                                                        </motion.div>
+                                                    ),
+                                            )}
 
-                            {!advancedMode &&
-                                section.fields.some((f) => f.isAdvanced) &&
-                                section.fields.some((f) => !f.isAdvanced) && (
-                                    <motion.div
-                                        key={`${section.title}-additional`}
-                                        variants={fieldVariants}
-                                        initial="initial"
-                                        animate="animate"
-                                        exit="exit"
-                                        className="col-span-2 overflow-hidden"
-                                    >
-                                        <AdditionalAdvancedNotice />
-                                    </motion.div>
-                                )}
-                        </AnimatePresence>
-                    </div>
-                </Card>
-            ))}
+                                            {!advancedMode &&
+                                                section.fields.some((f) => f.isAdvanced) &&
+                                                section.fields.some((f) => !f.isAdvanced) && (
+                                                    <motion.div
+                                                        key={`${section.title}-additional`}
+                                                        variants={fieldVariants}
+                                                        initial="initial"
+                                                        animate="animate"
+                                                        exit="exit"
+                                                        className="col-span-2 overflow-hidden"
+                                                    >
+                                                        <AdditionalAdvancedNotice />
+                                                    </motion.div>
+                                                )}
+                                        </AnimatePresence>
+                                    </div>
+                                </Card>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+                )
+            })}
+
+            {!advancedMode && hasHiddenSections && <GlobalAdvancedLockedNotice />}
+
             <div className="flex flex-wrap items-center gap-3">
                 <button
                     disabled={saving}

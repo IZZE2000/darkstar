@@ -22,3 +22,22 @@ export const AdditionalAdvancedNotice: React.FC = () => (
         <span>Additional tuning available in Advanced Mode</span>
     </div>
 )
+
+export const GlobalAdvancedLockedNotice: React.FC = () => (
+    <div className="flex items-center gap-4 py-8 px-8 border-2 border-dashed border-line/20 rounded-2xl bg-surface2/10 mt-4 animate-in fade-in slide-in-from-bottom-4 duration-700">
+        <div className="flex-shrink-0 flex items-center justify-center w-12 h-12 rounded-xl bg-surface3 border border-line/20 text-muted shadow-inner">
+            <ShieldAlert size={22} className="text-muted/50" />
+        </div>
+        <div className="flex flex-col gap-1">
+            <div className="text-xs font-bold text-text uppercase tracking-widest flex items-center gap-2">
+                <span>Advanced Tuning Mode Required</span>
+                <span className="h-1 w-1 rounded-full bg-bad/50 animate-pulse" />
+            </div>
+            <p className="text-[11px] text-muted/80 leading-relaxed max-w-md">
+                Some technical configuration sections are hidden to keep your dashboard clean. Enable{' '}
+                <span className="text-text font-semibold">Advanced Mode</span> in the header to unlock deep tuning
+                parameters and experimental controls.
+            </p>
+        </div>
+    </div>
+)
