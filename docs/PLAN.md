@@ -344,18 +344,19 @@ data_quality:
 
 **Plan:**
 
-#### Phase 1: Foundation (UI & Persistence) [PLANNED]
-* [ ] **State Management:** Add `advancedMode` state to `frontend/src/pages/settings/index.tsx`, persisting to `localStorage` (key: `darkstar_ui_advanced_mode`).
-* [ ] **Header Layout:** Refactor the Settings tab bar in `index.tsx` to use `flex justify-between`, placing tabs on the left and the new toggle on the right.
-* [ ] **Toggle Component:** Implement the "Advanced Mode" switch:
-    *   **Inactive:** Grey style, "Standard".
-    *   **Active:** Orange/Red style (Use `bg-bad` or `bg-warning` variants), "Advanced Mode", with a warning icon.
-* [ ] **Prop Drilling:** Update `ParametersTab`, `SystemTab`, and `SettingsField` to accept the `advancedMode` boolean prop.
+#### Phase 1: Foundation (UI & Persistence) [DONE]
+* [x] **State Management:** Add `advancedMode` state to `frontend/src/pages/settings/index.tsx`, persisting to `localStorage` (key: `darkstar_ui_advanced_mode`).
+* [x] **Header Layout:** Refactor the Settings tab bar in `index.tsx` to use `flex justify-between`, placing tabs on the left and the new toggle on the right.
+* [x] **Toggle Component:** Implement the "Advanced Mode" switch:
+    *   **Inactive:** Green style (`bg-good`), "Standard Mode".
+    *   **Active:** Orange/Red style (`bg-bad`), "Advanced Mode", with a warning icon.
+* [x] **Prop Drilling:** Update `ParametersTab`, `SystemTab`, and `SettingsField` to accept the `advancedMode` boolean prop.
 
-#### Phase 2: Schema & Filtering Logic [PLANNED]
-* [ ] **Type Update:** Add `isAdvanced?: boolean` to the `BaseField` interface in `types.ts`.
-* [ ] **Component Logic:** Update `SettingsField.tsx` to return `null` if `(!advancedMode && field.isAdvanced)`.
-* [ ] **DX:** Ensure "Not Implemented" badges or other dev-only flags also respect/interact with this mode if needed (or keep them separate).
+#### Phase 2: Schema & Filtering Logic [IN PROGRESS]
+* [x] **Type Update:** Add `isAdvanced?: boolean` to the `BaseField` interface in `types.ts`.
+* [x] **Component Logic:** Update `SettingsField.tsx` to return `null` if `(!advancedMode && field.isAdvanced)`.
+* [ ] **Verification Point:** Manually verify that fields marked `isAdvanced` (from K17) are hidden/shown correctly.
+* [ ] **Commit:** `feat(ui): implement conditional rendering for advanced settings (UI10 Phase 2)`
 
 #### Phase 3: Key Migration (The Great Mapping) [PLANNED]
 * [ ] **Review & Tag Keys:** Apply `isAdvanced: true` to the following candidates (User to Confirm):
