@@ -4,7 +4,7 @@ import { useSettingsForm } from './hooks/useSettingsForm'
 import { SettingsField } from './components/SettingsField'
 import { parameterFieldList, parameterSections } from './types'
 
-export const ParametersTab: React.FC = () => {
+export const ParametersTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }) => {
     const { form, fieldErrors, loading, saving, statusMessage, handleChange, save } =
         useSettingsForm(parameterFieldList)
 
@@ -32,6 +32,7 @@ export const ParametersTab: React.FC = () => {
                                 onChange={handleChange}
                                 error={fieldErrors[field.key]}
                                 fullForm={form}
+                                advancedMode={advancedMode}
                             />
                         ))}
                     </div>

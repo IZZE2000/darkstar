@@ -5,7 +5,7 @@ import { useSettingsForm } from './hooks/useSettingsForm'
 import { SettingsField } from './components/SettingsField'
 import { systemFieldList, systemSections } from './types'
 
-export const SystemTab: React.FC = () => {
+export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }) => {
     const {
         form,
         fieldErrors,
@@ -129,6 +129,7 @@ export const SystemTab: React.FC = () => {
                                                             haEntities={haEntities}
                                                             haLoading={haLoading}
                                                             fullForm={form}
+                                                            advancedMode={advancedMode}
                                                         />
                                                     ))}
                                                 </div>
@@ -144,6 +145,7 @@ export const SystemTab: React.FC = () => {
                                                     haEntities={haEntities}
                                                     haLoading={haLoading}
                                                     fullForm={form}
+                                                    advancedMode={advancedMode}
                                                 />
                                             ))
                                         )}

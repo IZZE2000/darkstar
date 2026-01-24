@@ -6,7 +6,7 @@ import { useSettingsForm } from './hooks/useSettingsForm'
 import { SettingsField } from './components/SettingsField'
 import { uiFieldList, uiSections } from './types'
 
-export const UITab: React.FC = () => {
+export const UITab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }) => {
     const { form, fieldErrors, loading, saving, statusMessage, handleChange, save } = useSettingsForm(uiFieldList)
 
     // Themes state commented out - Accent Theme card is hidden
@@ -103,6 +103,7 @@ export const UITab: React.FC = () => {
                                 onChange={handleChange}
                                 error={fieldErrors[field.key]}
                                 fullForm={form}
+                                advancedMode={advancedMode}
                             />
                         ))}
                     </div>

@@ -7,7 +7,7 @@ import { useSettingsForm } from './hooks/useSettingsForm'
 import { SettingsField } from './components/SettingsField'
 import { advancedFieldList, advancedSections } from './types'
 
-export const AdvancedTab: React.FC = () => {
+export const AdvancedTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }) => {
     const { toast } = useToast()
     const { form, fieldErrors, loading, saving, statusMessage, handleChange, save, reload } =
         useSettingsForm(advancedFieldList)
@@ -75,6 +75,7 @@ export const AdvancedTab: React.FC = () => {
                                     onChange={handleChange}
                                     error={fieldErrors[field.key]}
                                     fullForm={form}
+                                    advancedMode={advancedMode}
                                 />
                             ))}
                         </div>

@@ -1,38 +1,61 @@
-import React from 'react'
+import React, { useState, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Settings as SettingsIcon, Sliders, Palette, Zap } from 'lucide-react'
+import { Settings as SettingsIcon, Sliders, Palette, Zap, ShieldAlert } from 'lucide-react'
 
 import { SystemTab } from './SystemTab'
 import { ParametersTab } from './ParametersTab'
 import { UITab } from './UITab'
 import { AdvancedTab } from './AdvancedTab'
 
-const tabs = [
+const ALL_TABS = [
     { id: 'system', label: 'System', icon: <SettingsIcon size={16} /> },
     { id: 'parameters', label: 'Parameters', icon: <Sliders size={16} /> },
     { id: 'ui', label: 'UI', icon: <Palette size={16} /> },
-    { id: 'advanced', label: 'Advanced', icon: <Zap size={16} /> },
+    { id: 'advanced', label: 'Advanced', icon: <Zap size={16} />, advancedOnly: true },
 ]
+
+const STORAGE_KEY = 'darkstar_ui_advanced_mode'
 
 export default function Settings() {
     const [searchParams, setSearchParams] = useSearchParams()
     const activeTab = searchParams.get('tab') || 'system'
 
-    const setActiveTab = (tab: string) => {
-        setSearchParams({ tab })
-    }
+    const [advancedMode, setAdvancedMode] = useState<boolean>(() => {
+        const saved = localStorage.getItem(STORAGE_KEY)
+        return saved === 'true'
+    })
+
+    useEffect(() => {
+        localStorage.setItem(STORAGE_KEY, String(advancedMode))
+    }, [advancedMode])
+
+    const setActiveTab = React.useCallback(
+        (tab: string) => {
+            setSearchParams({ tab })
+        },
+        [setSearchParams],
+    )
+
+    // Force redirect if on advanced tab but mode is off
+    useEffect(() => {
+        if (activeTab === 'advanced' && !advancedMode) {
+            setActiveTab('system')
+        }
+    }, [activeTab, advancedMode, setActiveTab])
+
+    const tabs = ALL_TABS.filter((t) => !t.advancedOnly || advancedMode)
 
     const renderTabContent = () => {
         switch (activeTab) {
             case 'parameters':
-                return <ParametersTab />
+                return <ParametersTab advancedMode={advancedMode} />
             case 'ui':
-                return <UITab />
+                return <UITab advancedMode={advancedMode} />
             case 'advanced':
-                return <AdvancedTab />
+                return <AdvancedTab advancedMode={advancedMode} />
             case 'system':
             default:
-                return <SystemTab />
+                return <SystemTab advancedMode={advancedMode} />
         }
     }
 
@@ -40,21 +63,35 @@ export default function Settings() {
         <>
             <main className="p-4 lg:p-8">
                 <div className="mx-auto max-w-5xl">
-                    <div className="mb-6 flex flex-wrap gap-2">
-                        {tabs.map((tab) => (
-                            <button
-                                key={tab.id}
-                                onClick={() => setActiveTab(tab.id)}
-                                className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold uppercase tracking-wider transition duration-300 ${
-                                    activeTab === tab.id
-                                        ? 'bg-accent text-[#100f0e] shadow-[0_0_20px_rgba(var(--color-accent-rgb),0.3)]'
-                                        : 'bg-surface2 text-muted hover:bg-surface3 hover:text-white'
-                                }`}
-                            >
-                                {tab.icon}
-                                {tab.label}
-                            </button>
-                        ))}
+                    <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div className="flex flex-wrap gap-2">
+                            {tabs.map((tab) => (
+                                <button
+                                    key={tab.id}
+                                    onClick={() => setActiveTab(tab.id)}
+                                    className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold uppercase tracking-wider transition duration-300 ${
+                                        activeTab === tab.id
+                                            ? 'bg-accent text-[#100f0e] shadow-[0_0_20px_rgba(var(--color-accent-rgb),0.3)]'
+                                            : 'bg-surface2 text-muted hover:bg-surface3 hover:text-white'
+                                    }`}
+                                >
+                                    {tab.icon}
+                                    {tab.label}
+                                </button>
+                            ))}
+                        </div>
+
+                        <button
+                            onClick={() => setAdvancedMode(!advancedMode)}
+                            className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-[10px] font-bold uppercase tracking-wider transition duration-300 self-end sm:self-auto ${
+                                advancedMode
+                                    ? 'bg-bad text-white shadow-[0_0_20px_rgba(var(--color-bad-rgb),0.3)]'
+                                    : 'bg-good text-white shadow-[0_0_20px_rgba(var(--color-good-rgb),0.3)]'
+                            }`}
+                        >
+                            {advancedMode ? <ShieldAlert size={14} /> : <Zap size={14} />}
+                            {advancedMode ? 'Advanced Mode' : 'Standard Mode'}
+                        </button>
                     </div>
 
                     <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">{renderTabContent()}</div>
