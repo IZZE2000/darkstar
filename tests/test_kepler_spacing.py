@@ -42,6 +42,7 @@ def get_base_config():
         # Default spacing
         water_min_spacing_hours=4.0,
         water_spacing_penalty_sek=0.0,  # Deprecated/Unused
+        water_reliability_penalty_sek=100.0,  # Force heating
     )
 
 

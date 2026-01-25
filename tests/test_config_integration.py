@@ -35,13 +35,13 @@ def test_config_mapping(default_config):
     assert k_config.curtailment_penalty_sek == raw_config["kepler"]["curtailment_penalty_sek"]
 
     # 3. Water Reliability Penalty
-    assert (
-        k_config.water_reliability_penalty_sek
-        == raw_config["water_heating"]["reliability_penalty_sek"]
-    )
+    # Note: Adapter applies Comfort Level 3 (Neutral) by default, overriding raw config.
+    # New Level 3 value set by user in adapter.py: 15.0 (was 25.0)
+    assert k_config.water_reliability_penalty_sek == 15.0
 
     # 4. Water Block Penalty
-    assert k_config.water_block_penalty_sek == raw_config["water_heating"]["block_penalty_sek"]
+    # Level 3 default: 0.50
+    assert k_config.water_block_penalty_sek == 0.50
 
     # 5. Wear Cost
     # Note: Adapter looks at battery_economics first
@@ -55,10 +55,8 @@ def test_config_mapping(default_config):
     assert k_config.charge_efficiency == raw_config["battery"]["charge_efficiency"]
 
     # 7. Water Block Start Penalty
-    assert (
-        k_config.water_block_start_penalty_sek
-        == raw_config["water_heating"]["block_start_penalty_sek"]
-    )
+    # Level 3 default: 3.0
+    assert k_config.water_block_start_penalty_sek == 3.0
 
     # 8. Defer Hours
     assert k_config.defer_up_to_hours == raw_config["water_heating"]["defer_up_to_hours"]

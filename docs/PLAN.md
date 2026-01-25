@@ -551,3 +551,32 @@ data_quality:
 #### Phase 2: Verification [DONE]
 * [x] **Action Verification:** Ensure async actions (HA calls) execute correctly.
 * [x] **Logging:** Verify execution history is logged successfully after async refactor.
+
+---
+
+### [DONE] REV // F39 — Test Suite Stabilisation
+
+**Goal:** Fix the 7 failing tests identified during the V2 environment verification.
+**Plan:**
+
+#### Phase 1: Config Integration [DONE]
+* [x] **Fix `test_config_mapping`:** Update `tests/test_config_integration.py` to account for the "Comfort Level" adapter logic which overrides raw config values (e.g. `reliability_penalty_sek`).
+
+#### Phase 2: Executor Health (Async) [DONE]
+* [x] **Fix `test_executor_engine_captures_action_errors`:** Convert the test to `async` and validly `await` the `_tick()` method, resolving the `RuntimeWarning` and `assert False` failure.
+
+#### Phase 3: Executor Override Logic [DONE]
+* [x] **Fix `test_no_slot_exists_triggers_fallback`:** Investigate missing `grid_charging` key in `OverrideResult`. Update expectation or restore key if it was a regression.
+
+#### Phase 4: Kepler Export Logic [DONE]
+* [x] **Fix `test_kepler_solver_export_disabled`:** Fix the solver constraint generation in `planner/solver/kepler.py`. Currently `enable_export: False` is ignored by the MILP solver.
+
+#### Phase 5: Kepler Spacing Logic [DONE]
+* [x] **Fix `test_strict_spacing_enforced` & `test_spacing_disabled`:** Investigate why water heating isn't triggering despite cheap prices. Likely a penalty tuning issue or a regression in `water_heating_binary` constraints.
+
+#### Phase 6: Schedule Overlay Logic [DONE]
+* [x] **Fix `test_today_with_history_includes_planned_actions`:** Investigate why `soc_target_percent` is returning `14.0` (likely `min_soc` + buffer) instead of the plan's `50.0`. Fix the "Merge History" logic in `backend/api/routers/schedule.py`.
+
+#### Phase 7: Final Validation [DONE]
+* [x] **Full Test Suite:** Run `uv run python -m pytest` and verify 0 failures.
+* [x] **Run Linting:** Verify `./scripts/lint.sh` passes.

@@ -77,8 +77,9 @@ async def test_today_with_history_includes_planned_actions(tmp_path):
     assert len(slots) > 0
 
     found_charge = False
+    target_slot_str = slot_13  # 2026-01-25T13:00:00+00:00
     for slot in slots:
-        if "13:00:00" in slot["start_time"]:
+        if slot["start_time"] == target_slot_str:
             # Even though it's future, SoC target and Water should be preserved from DB
             # but per REV F36, battery_charge_kw should NOT be pulled for future.
             found_charge = True

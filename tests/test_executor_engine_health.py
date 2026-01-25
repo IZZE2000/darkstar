@@ -1,5 +1,5 @@
 import collections
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -36,9 +36,13 @@ def test_executor_engine_status_includes_recent_errors(engine):
     assert status["recent_errors"][0] == error
 
 
-def test_executor_engine_captures_action_errors(engine):
+@pytest.mark.asyncio
+async def test_executor_engine_captures_action_errors(engine):
     # Mock dispatcher to return an error result
     engine.dispatcher = MagicMock()
+    # Execute is async now, so we need to mock it as such if we await it, or just ensure it returns an awaitable if mocked.
+    # However, since we mock the whole dispatcher, let's make execute an AsyncMock
+    engine.dispatcher.execute = AsyncMock()
     error_result = ActionResult(
         action_type="set_work_mode", success=False, message="HA API Error", skipped=False
     )
@@ -46,20 +50,24 @@ def test_executor_engine_captures_action_errors(engine):
 
     # Run a tick
     # We need to mock other parts of _tick to avoid failures before action execution
+    # _get_planner_decision is ASYNC, so use AsyncMock
+    engine._get_planner_decision = AsyncMock(return_value=MagicMock())
+    engine.history = MagicMock()
+    # _load_config and _gather_system_state are SYNC, so use MagicMock
     engine._load_config = MagicMock()
     engine._gather_system_state = MagicMock()
-    engine._get_planner_decision = MagicMock(return_value=MagicMock())
-    engine.history = MagicMock()  # Mock history to avoid DB errors
 
-    engine._tick()
+    await engine._tick()
 
     # It might have 2 errors if _tick itself failed somehow,
     # but we want at least the one from the action result.
     assert any(e["message"] == "HA API Error" for e in engine.recent_errors)
 
 
-def test_executor_engine_ignores_skipped_actions(engine):
+@pytest.mark.asyncio
+async def test_executor_engine_ignores_skipped_actions(engine):
     engine.dispatcher = MagicMock()
+    engine.dispatcher.execute = AsyncMock()
     skipped_result = ActionResult(
         action_type="set_work_mode", success=False, message="Entity not configured", skipped=True
     )
@@ -67,10 +75,10 @@ def test_executor_engine_ignores_skipped_actions(engine):
 
     engine._load_config = MagicMock()
     engine._gather_system_state = MagicMock()
-    engine._get_planner_decision = MagicMock(return_value=MagicMock())
+    engine._get_planner_decision = AsyncMock(return_value=MagicMock())
     engine.history = MagicMock()
 
-    engine._tick()
+    await engine._tick()
 
     # Should not have the skipped error
     assert not any(e["message"] == "Entity not configured" for e in engine.recent_errors)

@@ -61,29 +61,29 @@ def _comfort_level_to_penalty(comfort_level: int) -> dict[str, float]:
     COMFORT_MAP = {
         # Level: {reliability, block_start, block}
         1: {
-            "water_reliability_penalty_sek": 5.0,
+            "water_reliability_penalty_sek": 2.0,
             "water_block_start_penalty_sek": 1.5,
             "water_block_penalty_sek": 0.25,
         },  # Economy
         2: {
-            "water_reliability_penalty_sek": 15.0,
+            "water_reliability_penalty_sek": 7.0,
             "water_block_start_penalty_sek": 2.25,
             "water_block_penalty_sek": 0.375,
         },  # Balanced
         3: {
-            "water_reliability_penalty_sek": 25.0,
+            "water_reliability_penalty_sek": 15.0,
             "water_block_start_penalty_sek": 3.0,
             "water_block_penalty_sek": 0.50,
         },  # Neutral
         4: {
-            "water_reliability_penalty_sek": 60.0,
+            "water_reliability_penalty_sek": 30.0,
             "water_block_start_penalty_sek": 4.5,
             "water_block_penalty_sek": 0.75,
         },  # Priority
         5: {
             "water_reliability_penalty_sek": 300.0,
-            "water_block_start_penalty_sek": 7.5,
-            "water_block_penalty_sek": 1.0,
+            "water_block_start_penalty_sek": 1,
+            "water_block_penalty_sek": 30.0,
         },  # Maximum
     }
     # Default to Level 3 (Neutral) if invalid

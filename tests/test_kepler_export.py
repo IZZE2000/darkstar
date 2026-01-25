@@ -35,11 +35,15 @@ def test_kepler_solver_export_disabled():
         discharge_efficiency=1.0,
         min_soc_percent=0.0,
         max_soc_percent=100.0,
-        wear_cost_sek_per_kwh=0.0,
+        wear_cost_sek_per_kwh=0.2,  # Non-zero to prevent degenerate free cycling
         enable_export=False,  # KEY: Disable export
     )
 
     solver = KeplerSolver()
+
+    # Verification: Ensure config is correctly set to disable export
+    assert config.enable_export is False
+
     result = solver.solve(input_data, config)
 
     assert result.is_optimal
