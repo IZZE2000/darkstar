@@ -52,20 +52,45 @@ def planner_to_kepler_input(df: pd.DataFrame, initial_soc_kwh: float) -> KeplerI
     return KeplerInput(slots=slots, initial_soc_kwh=initial_soc_kwh)
 
 
-def _comfort_level_to_penalty(comfort_level: int) -> float:
-    """Map comfort level (1-5) to gap penalty (SEK/hour beyond threshold).
+def _comfort_level_to_penalty(comfort_level: int) -> dict[str, float]:
+    """Map comfort level (1-5) to penalty configuration.
 
     Level 1: Economy - comfort is nice-to-have
     Level 5: Maximum - almost hard constraint
     """
-    COMFORT_PENALTY_MAP = {
-        1: 0.05,  # Economy
-        2: 0.20,  # Balanced
-        3: 0.50,  # Neutral
-        4: 1.00,  # Priority
-        5: 3.00,  # Maximum
+    COMFORT_MAP = {
+        # Level: {reliability, block_start, block}
+        1: {
+            "water_reliability_penalty_sek": 5.0,
+            "water_block_start_penalty_sek": 1.5,
+            "water_block_penalty_sek": 0.25,
+        },  # Economy
+        2: {
+            "water_reliability_penalty_sek": 15.0,
+            "water_block_start_penalty_sek": 2.25,
+            "water_block_penalty_sek": 0.375,
+        },  # Balanced
+        3: {
+            "water_reliability_penalty_sek": 25.0,
+            "water_block_start_penalty_sek": 3.0,
+            "water_block_penalty_sek": 0.50,
+        },  # Neutral
+        4: {
+            "water_reliability_penalty_sek": 60.0,
+            "water_block_start_penalty_sek": 4.5,
+            "water_block_penalty_sek": 0.75,
+        },  # Priority
+        5: {
+            "water_reliability_penalty_sek": 300.0,
+            "water_block_start_penalty_sek": 7.5,
+            "water_block_penalty_sek": 1.0,
+        },  # Maximum
     }
-    return COMFORT_PENALTY_MAP.get(comfort_level, 0.50)
+    # Default to Level 3 (Neutral) if invalid
+    params = COMFORT_MAP.get(comfort_level, COMFORT_MAP[3]).copy()
+    # Explicitly disable legacy gap penalty
+    params["water_comfort_penalty_sek"] = 0.0
+    return params
 
 
 def config_to_kepler_config(
@@ -193,22 +218,19 @@ def config_to_kepler_config(
             else 0.0
         ),
         water_heated_today_kwh=0.0,  # Set in pipeline from HA sensor
-        water_comfort_penalty_sek=_comfort_level_to_penalty(int(wh_cfg.get("comfort_level", 3)))
-        if wh_cfg.get("enable_top_ups", True)
-        else 0.0,
-        # Rev WH1: Disable spacing constraints when top-ups are disabled
-        water_min_spacing_hours=float(
-            wh_cfg.get("min_spacing_hours", 5.0) if wh_cfg.get("enable_top_ups", True) else 0.0
+        # Rev K23: Multi-Parameter Comfort Control
+        **(
+            _comfort_level_to_penalty(int(wh_cfg.get("comfort_level", 3)))
+            if wh_cfg.get("enable_top_ups", True)
+            else {
+                "water_comfort_penalty_sek": 0.0,
+                "water_reliability_penalty_sek": float(
+                    wh_cfg.get("reliability_penalty_sek", 1000.0)
+                ),
+                "water_block_start_penalty_sek": block_start_penalty,
+                "water_block_penalty_sek": float(wh_cfg.get("block_penalty_sek", 0.50)),
+            }
         ),
-        water_spacing_penalty_sek=float(
-            wh_cfg.get("spacing_penalty_sek", 0.20) if wh_cfg.get("enable_top_ups", True) else 0.0
-        ),
-        # Rev WH2: Smart Water Heating Logic
-        force_water_on_slots=force_water_on_slots,
-        water_block_start_penalty_sek=block_start_penalty,
-        water_block_penalty_sek=float(wh_cfg.get("block_penalty_sek", 0.50)),
-        water_reliability_penalty_sek=float(wh_cfg.get("reliability_penalty_sek", 1000.0)),
-        defer_up_to_hours=float(wh_cfg.get("defer_up_to_hours", 0.0)),
         # Rev E4: Export Toggle
         enable_export=bool(planner_config.get("export", {}).get("enable_export", True)),
     )

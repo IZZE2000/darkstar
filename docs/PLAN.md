@@ -493,3 +493,43 @@ data_quality:
 * [x] **Conditional Logic:** Make Debug tab visible only when `advancedMode` is true.
 * [x] **UI Polish:** Adjust logs view height and container width for optimal display in Settings context.
 * [x] **Commit:** `feat(ui): move debug tab to settings advanced mode (REV UI12)`
+
+---
+
+### [DONE] REV // K23 — Water Comfort Multi-Parameter Control
+
+**Goal:** Make Water Comfort levels (1-5) actually functional by controlling multiple existing solver penalties simultaneously, providing meaningful Economy vs Comfort trade-off.
+
+**Context:** Water Comfort levels currently only control a deprecated gap penalty that was disabled in K16 for performance reasons. Users can adjust the comfort level but it has no actual effect on water heating behavior.
+
+**Plan:**
+
+#### Phase 1: Baseline Performance Benchmark [DONE]
+* [x] **Benchmark Script:** Run `scripts/benchmark_kepler.py` to establish current performance baseline.
+* [x] **Commit Baseline:** Saved benchmark results for comparison after implementation.
+
+#### Phase 2: Multi-Parameter Penalty Mapping [DONE]
+* [x] **Function Redesign:** Modify `_comfort_level_to_penalty()` in `planner/solver/adapter.py` to return penalty tuple instead of single value.
+* [x] **Penalty Matrix:** Implement comfort level to penalty mapping:
+    * Level 1 (Economy): reliability=5, block_start=1.5, block=0.25
+    * Level 2 (Balanced): reliability=15, block_start=2.25, block=0.375
+    * Level 3 (Neutral): reliability=25, block_start=3.0, block=0.50
+    * Level 4 (Priority): reliability=60, block_start=4.5, block=0.75
+    * Level 5 (Maximum): reliability=300, block_start=7.5, block=1.0
+* [x] **Adapter Integration:** Update `config_to_kepler_config()` to apply all penalty values from comfort level mapping.
+
+#### Phase 3: Configuration Integration [DONE]
+* [x] **Override Logic:** Ensure comfort level overrides individual penalty settings in config when enabled.
+* [x] **Preserve Spacing:** Keep `spacing_penalty_sek` unchanged at current 0.20 SEK value.
+* [x] **Validation:** Verify comfort level setting affects water heating behavior as expected.
+
+#### Phase 4: Performance Validation [DONE]
+* [x] **Regression Testing:** Run benchmark suite again with new implementation.
+* [x] **Performance Check:** Ensure solve times remain within 10% of baseline across all scenarios.
+* [x] **Comfort Level Testing:** Test all comfort levels (1-5) for performance impact.
+
+#### Phase 5: Behavioral Testing & Documentation [DONE]
+* [x] **Economy Testing:** Verify Level 1 allows skipping quota during expensive periods (>5 SEK extra cost).
+* [x] **Maximum Testing:** Verify Level 5 prioritizes quota regardless of cost (up to 300 SEK penalty).
+* [x] **Documentation:** Update relevant docs explaining new comfort level behavior and penalty mapping.
+* [x] **Final Validation:** Confirm comfort levels provide meaningful Economy vs Comfort trade-off.

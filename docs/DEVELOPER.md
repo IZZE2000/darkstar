@@ -172,6 +172,17 @@ System parameters are defined in `config.yaml`. Credentials live in `secrets.yam
 *   **Home Assistant**: `url` and `token`.
 *   **LLM**: API keys for "The Advisor" (e.g., OpenRouter).
 
+### Water Heating Comfort Levels (Rev K23)
+The "Comfort Level" slider (1-5) controls the trade-off between reliability (getting hot water) and economy (waiting for cheap prices). It maps to specific solver penalties:
+
+| Level | Name | Reliability Penalty | Block Start Penalty | Block Penalty | Behavior |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **1** | Economy | 5.0 | 1.5 | 0.25 | Strictly follows price. May skip daily quota if prices are >5 SEK. |
+| **2** | Balanced | 15.0 | 2.25 | 0.375 | Balances comfort and cost. |
+| **3** | Neutral | 25.0 | 3.0 | 0.50 | **Default.** Reliable hot water, optimizes placement. |
+| **4** | Priority | 60.0 | 4.5 | 0.75 | Prioritizes hitting quota over most price fluctuations. |
+| **5** | Maximum | 300.0 | 7.5 | 1.0 | Aggressive guarantee. Will heat even during expensive peaks if needed. |
+
 ---
 
 ## Output Format
