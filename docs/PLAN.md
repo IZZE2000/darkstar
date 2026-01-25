@@ -338,7 +338,7 @@ data_quality:
 
 ---
 
-### [PLANNED] REV // UI10 — Advanced Settings Mode
+### [DONE] REV // UI10 — Advanced Settings Mode
 
 **Goal:** Simplify the settings experience by implementing a global "Advanced Mode" that hides complex technical parameters by default.
 
@@ -388,3 +388,75 @@ data_quality:
 * [x] **Micro-Notices:** Kept footer notices for cards with mixed content to avoid confusion.
 * [x] **Verification:** Confirmed significant vertical space reduction in Standard Mode.
 * [x] **Commit:** `feat(ui): implement ultra-compact settings layout for standard mode (UI10 Phase 6)`
+
+---
+
+### REV // UI11 — Enhanced Execution History with Entity Visibility & Status Verification
+
+**Goal:** Improve the Execution History display to show which Home Assistant entities are being controlled and whether commands actually succeeded, helping beta users understand and debug inverter integration issues.
+
+**Plan:**
+
+#### Phase 1: Backend Data Enhancement
+* [ ] **ActionResult Extension:** Extend the `ActionResult` dataclass in `executor/actions.py` to include:
+    * `entity_id: str | None = None` - The HA entity being controlled
+    * `verified_value: Any | None = None` - Value read back after setting
+    * `verification_success: bool | None = None` - Whether verification matched expected value
+* [ ] **Entity Capture:** Modify all action methods in `ActionDispatcher` class to capture and store the target entity ID in the ActionResult
+* [ ] **Verification Logic:** Implement post-action verification in `ActionDispatcher`:
+    * After successful HA API call, wait 1 second for entity state to update
+    * Read back the entity value using existing `ha.get_state_value()` method
+    * Compare with expected value and set verification_success flag
+    * Skip verification in shadow mode (but still capture entity_id and target value)
+* [ ] **ExecutionRecord Integration:** Update `_create_execution_record()` in `executor/engine.py` to capture ActionResult details including entity info and verification status
+* [ ] **Commit:** `feat(executor): add entity tracking and post-action verification (UI11 Phase 1)`
+
+#### Phase 2: Database Schema & Storage
+* [ ] **ExecutionLog Model:** Extend the `ExecutionLog` model in `backend/learning/models.py` to store action details:
+    * Add `action_results` JSON field to store array of ActionResult data
+    * Ensure backward compatibility with existing records
+* [ ] **History Manager:** Update `ExecutionHistory.log_execution()` in `executor/history.py` to serialize and store ActionResult data in the new field
+* [ ] **API Response:** Modify `/api/executor/history` endpoint in `backend/api/routers/executor.py` to include action_results in response
+* [ ] **Migration Safety:** Ensure existing execution records without action_results continue to display properly
+* [ ] **Commit:** `feat(db): extend execution log schema for action tracking (UI11 Phase 2)`
+
+#### Phase 3: Frontend Status Display Enhancement
+* [ ] **Color Coding System:** Implement status color coding in the "Commanded (What We Set)" section of `frontend/src/pages/Executor.tsx`:
+    * Green (🟢): Command sent and verified successfully
+    * Blue (🔵): Skipped due to idempotent logic (already at target value)
+    * Red (🔴): Failed (either HA API error or verification mismatch)
+    * Purple (🟣): Shadow mode (shows target value that would have been sent)
+* [ ] **Entity Information Display:** Add entity ID display under each commanded value:
+    * Show full entity ID (e.g., "number.inverter_max_charge_current")
+    * Use small, muted text styling for minimal visual impact
+    * Only display when action_results data is available
+* [ ] **Status Indicators:** Apply color coding to both the colored dot/icon and the value text itself for clear visual feedback
+* [ ] **Backward Compatibility:** Ensure execution records without new action data continue to display with existing styling
+* [ ] **Commit:** `feat(ui): implement entity visibility and status colors in execution history (UI11 Phase 3)`
+
+#### Phase 4: Shadow Mode Enhancement
+* [ ] **Shadow Mode Logic:** Update shadow mode behavior in `ActionDispatcher` to:
+    * Capture current entity values without sending commands
+    * Show target values that would have been set
+    * Display purple color coding for all shadow mode actions
+    * Maintain same entity information display as normal mode
+* [ ] **Visual Distinction:** Ensure shadow mode entries are clearly distinguishable with purple styling throughout the execution history
+* [ ] **Testing:** Verify shadow mode provides complete visibility into what actions would be taken without actually controlling devices
+* [ ] **Commit:** `feat(executor): enhance shadow mode with full action visibility (UI11 Phase 4)`
+
+#### Phase 5: Error Handling & Edge Cases
+* [ ] **Verification Timeout:** Handle cases where entity state doesn't update within verification window:
+    * Implement reasonable timeout (2-3 seconds max)
+    * Mark as verification failed if timeout exceeded
+    * Log appropriate error messages for debugging
+* [ ] **Missing Entity Handling:** Gracefully handle cases where configured entities don't exist or are unavailable
+* [ ] **Partial Failure Display:** Ensure individual action failures are clearly shown when some commands succeed and others fail in the same execution
+* [ ] **Performance Impact:** Verify that verification delays don't significantly impact executor performance or timing
+* [ ] **Commit:** `feat(executor): robust error handling for entity verification (UI11 Phase 5)`
+
+#### Phase 6: Testing & Validation
+* [ ] **Integration Testing:** Test with real inverter entities to ensure verification works across different device types and response times
+* [ ] **UI Responsiveness:** Verify execution history remains performant with enhanced data display
+* [ ] **Beta User Feedback:** Validate that the enhanced display provides the debugging information needed for inverter integration
+* [ ] **Documentation Update:** Update relevant documentation to explain the new status indicators and entity visibility features
+* [ ] **Commit:** `test(ui11): validate enhanced execution history functionality (UI11 Phase 6)`

@@ -1044,6 +1044,7 @@ class ExecutorEngine:
                 state=state,
                 decision=decision,
                 override=override,
+                action_results=action_results,
                 success=(all(r.success for r in action_results) if action_results else True),
                 duration_ms=duration_ms,
             )
@@ -1263,6 +1264,7 @@ class ExecutorEngine:
         state: SystemState,
         decision: ControllerDecision,
         override: OverrideResult,
+        action_results: list[ActionResult],
         success: bool,
         duration_ms: int,
     ) -> ExecutionRecord:
@@ -1295,6 +1297,21 @@ class ExecutorEngine:
             override_active=1 if override.override_needed else 0,
             override_type=(override.override_type.value if override.override_needed else None),
             override_reason=override.reason if override.override_needed else None,
+            # Results (NEW: full detail for each controlled entity)
+            action_results=[
+                {
+                    "type": r.action_type,
+                    "success": r.success,
+                    "message": r.message,
+                    "entity_id": r.entity_id,
+                    "previous_value": r.previous_value,
+                    "new_value": r.new_value,
+                    "verified_value": r.verified_value,
+                    "verification_success": r.verification_success,
+                    "skipped": r.skipped,
+                }
+                for r in action_results
+            ],
             # Result
             success=1 if success else 0,
             duration_ms=duration_ms,

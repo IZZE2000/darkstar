@@ -314,3 +314,4 @@ class ExecutionLog(Base):
     source: Mapped[str] = mapped_column(String, default="native")
     executor_version: Mapped[str | None] = mapped_column(String)
     commanded_unit: Mapped[str] = mapped_column(String, default="A")
+    action_results: Mapped[str | None] = mapped_column(Text)

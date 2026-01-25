@@ -66,6 +66,7 @@ class ExecutionRecord:
     # Metadata
     source: str = "native"
     executor_version: str | None = None
+    action_results: list[dict[str, Any]] | None = None  # NEW: detailed results per action
 
 
 class ExecutionHistory:
@@ -129,6 +130,7 @@ class ExecutionHistory:
                 duration_ms=record.duration_ms,
                 source=record.source,
                 executor_version=record.executor_version,
+                action_results=json.dumps(record.action_results) if record.action_results else None,
             )
             session.add(entry)
             session.commit()
@@ -178,7 +180,14 @@ class ExecutionHistory:
 
             # Convert to dicts for API compatibility
             return [
-                {c.name: getattr(r, c.name) for c in ExecutionLog.__table__.columns}
+                {
+                    **{
+                        c.name: getattr(r, c.name)
+                        for c in ExecutionLog.__table__.columns
+                        if c.name != "action_results"
+                    },
+                    "action_results": json.loads(r.action_results) if r.action_results else [],
+                }
                 for r in results
             ]
 

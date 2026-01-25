@@ -99,6 +99,18 @@ type ExecutionRecord = {
     commanded_unit?: string
     commanded_soc_target?: number
     commanded_water_temp?: number
+    // Action details (NEW)
+    action_results?: {
+        type: string
+        success: boolean
+        message: string
+        entity_id?: string
+        previous_value?: any
+        new_value?: any
+        verified_value?: any
+        verification_success?: boolean
+        skipped: boolean
+    }[]
     // State before execution
     before_soc_percent?: number
     before_work_mode?: string
@@ -282,6 +294,22 @@ import {
 } from 'chart.js'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler)
+
+function ActionStatusIndicator({ result, shadowMode }: { result: any; shadowMode: boolean }) {
+    if (shadowMode) {
+        return <span className="text-[9px] text-purple-400 font-medium">⬢ SHADOW</span>
+    }
+    if (result.skipped) {
+        return <span className="text-[9px] text-sky-400 font-medium">● SKIPPED</span>
+    }
+    if (!result.success || result.verification_success === false) {
+        return <span className="text-[9px] text-red-400 font-medium">✖ FAILED</span>
+    }
+    if (result.verification_success === true) {
+        return <span className="text-[9px] text-emerald-400 font-medium">✔ VERIFIED</span>
+    }
+    return <span className="text-[9px] text-emerald-400/70 font-medium">✔ OK</span>
+}
 
 export default function Executor() {
     const [status, setStatus] = useState<ExecutorStatus | null>(null)
@@ -1038,6 +1066,66 @@ export default function Executor() {
                                                         </span>
                                                     </div>
                                                 </div>
+
+                                                {/* Action Results Detail (NEW: Detailed control visibility) */}
+                                                {record.action_results && record.action_results.length > 0 && (
+                                                    <div className="mt-4 space-y-2">
+                                                        <div className="text-[9px] text-muted uppercase tracking-wide mb-1.5">
+                                                            Control Verification
+                                                        </div>
+                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
+                                                            {record.action_results.map((res, i) => (
+                                                                <div
+                                                                    key={i}
+                                                                    className="flex items-center justify-between p-2 rounded-lg bg-surface2/40 border border-line/20"
+                                                                >
+                                                                    <div className="flex flex-col min-w-0">
+                                                                        <div className="flex items-center gap-2">
+                                                                            <span className="text-[10px] text-text font-medium capitalize">
+                                                                                {res.type.replace(/_/g, ' ')}
+                                                                            </span>
+                                                                            <ActionStatusIndicator
+                                                                                result={res}
+                                                                                shadowMode={
+                                                                                    status?.shadow_mode ?? false
+                                                                                }
+                                                                            />
+                                                                        </div>
+                                                                        {res.entity_id && (
+                                                                            <span className="text-[8px] text-muted truncate font-mono">
+                                                                                {res.entity_id}
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                    <div className="text-right ml-4">
+                                                                        <div className="text-[10px] text-text font-medium">
+                                                                            {res.new_value ?? '—'}
+                                                                            {res.type.includes('temp') ? '°C' : ''}
+                                                                        </div>
+                                                                        {res.verified_value !== undefined &&
+                                                                            res.verified_value !== null && (
+                                                                                <div className="text-[8px] text-muted italic">
+                                                                                    Read back:{' '}
+                                                                                    <span
+                                                                                        className={
+                                                                                            res.verification_success
+                                                                                                ? 'text-emerald-400'
+                                                                                                : 'text-red-400'
+                                                                                        }
+                                                                                    >
+                                                                                        {res.verified_value}
+                                                                                        {res.type.includes('temp')
+                                                                                            ? '°C'
+                                                                                            : ''}
+                                                                                    </span>
+                                                                                </div>
+                                                                            )}
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </div>
 
                                             {/* Before State */}

@@ -43,6 +43,9 @@ class ActionResult:
     message: str = ""
     previous_value: Any | None = None
     new_value: Any | None = None
+    entity_id: str | None = None  # NEW: The HA entity being controlled
+    verified_value: Any | None = None  # NEW: Value read back after setting
+    verification_success: bool | None = None  # NEW: Whether verification matched expected value
     skipped: bool = False  # True if action was skipped (already at target)
     duration_ms: int = 0
 
@@ -295,6 +298,7 @@ class ActionDispatcher:
                 message=f"Already at {target_mode}",
                 previous_value=current,
                 new_value=target_mode,
+                entity_id=entity,
                 skipped=True,
                 duration_ms=int((time.time() - start) * 1000),
             )
@@ -307,11 +311,19 @@ class ActionDispatcher:
                 message=f"[SHADOW] Would change {current} → {target_mode}",
                 previous_value=current,
                 new_value=target_mode,
+                entity_id=entity,
                 skipped=True,
                 duration_ms=int((time.time() - start) * 1000),
             )
 
         success = self.ha.set_select_option(entity, target_mode)
+
+        # Verification
+        verified_value = None
+        verification_success = None
+        if success:
+            verified_value, verification_success = self._verify_action(entity, target_mode)
+
         duration = int((time.time() - start) * 1000)
 
         if success:
@@ -323,6 +335,9 @@ class ActionDispatcher:
             message=f"Changed {current} → {target_mode}" if success else "Failed to set work mode",
             previous_value=current,
             new_value=target_mode,
+            entity_id=entity,
+            verified_value=verified_value,
+            verification_success=verification_success,
             duration_ms=duration,
         )
 
@@ -351,6 +366,7 @@ class ActionDispatcher:
                 message=f"Already {target}",
                 previous_value=current,
                 new_value=target,
+                entity_id=entity,
                 skipped=True,
                 duration_ms=int((time.time() - start) * 1000),
             )
@@ -363,11 +379,19 @@ class ActionDispatcher:
                 message=f"[SHADOW] Would change {current} → {target}",
                 previous_value=current,
                 new_value=target,
+                entity_id=entity,
                 skipped=True,
                 duration_ms=int((time.time() - start) * 1000),
             )
 
         success = self.ha.set_switch(entity, enabled)
+
+        # Verification
+        verified_value = None
+        verification_success = None
+        if success:
+            verified_value, verification_success = self._verify_action(entity, target)
+
         duration = int((time.time() - start) * 1000)
 
         action = "start" if enabled else "stop"
@@ -380,6 +404,9 @@ class ActionDispatcher:
             message=f"Changed {current} → {target}" if success else "Failed to set grid charging",
             previous_value=current,
             new_value=target,
+            entity_id=entity,
+            verified_value=verified_value,
+            verification_success=verification_success,
             duration_ms=duration,
         )
 
@@ -413,11 +440,19 @@ class ActionDispatcher:
                 success=True,
                 message=f"[SHADOW] Would set to {value} {unit_label}",
                 new_value=value,
+                entity_id=entity,
                 skipped=True,
                 duration_ms=int((time.time() - start) * 1000),
             )
 
         success = self.ha.set_number(entity, value)
+
+        # Verification
+        verified_value = None
+        verification_success = None
+        if success:
+            verified_value, verification_success = self._verify_action(entity, value)
+
         duration = int((time.time() - start) * 1000)
         logger.info("Set charge_limit result: success=%s, duration=%dms", success, duration)
 
@@ -426,6 +461,9 @@ class ActionDispatcher:
             success=success,
             message=f"Set to {value} {unit_label}" if success else "Failed to set charge limit",
             new_value=value,
+            entity_id=entity,
+            verified_value=verified_value,
+            verification_success=verification_success,
             duration_ms=duration,
         )
 
@@ -465,6 +503,7 @@ class ActionDispatcher:
                 success=True,
                 message=f"[SHADOW] Would set to {result_label}",
                 new_value=value,
+                entity_id=entity,
                 skipped=True,
                 duration_ms=int((time.time() - start) * 1000),
             )
@@ -478,11 +517,19 @@ class ActionDispatcher:
                 action_type="discharge_limit",
                 success=False,
                 message=f"Refused dangerously high limit: {value}A",
+                entity_id=entity,
                 skipped=False,
                 duration_ms=int((time.time() - start) * 1000),
             )
 
         success = self.ha.set_number(entity, value)
+
+        # Verification
+        verified_value = None
+        verification_success = None
+        if success:
+            verified_value, verification_success = self._verify_action(entity, value)
+
         duration = int((time.time() - start) * 1000)
         logger.info("Set discharge_limit result: success=%s, duration=%dms", success, duration)
 
@@ -491,6 +538,9 @@ class ActionDispatcher:
             success=success,
             message=f"Set to {value} {unit_label}" if success else "Failed to set discharge limit",
             new_value=value,
+            entity_id=entity,
+            verified_value=verified_value,
+            verification_success=verification_success,
             duration_ms=duration,
         )
 
@@ -522,6 +572,7 @@ class ActionDispatcher:
                 message=f"Already at {target}%",
                 previous_value=current_val,
                 new_value=target,
+                entity_id=entity,
                 skipped=True,
                 duration_ms=int((time.time() - start) * 1000),
             )
@@ -536,11 +587,24 @@ class ActionDispatcher:
                 message=f"[SHADOW] Would change {current_val}% → {target}%",
                 previous_value=current_val,
                 new_value=target,
+                entity_id=entity,
                 skipped=True,
                 duration_ms=int((time.time() - start) * 1000),
             )
 
         success = self.ha.set_input_number(entity, float(target))
+
+        # Verification
+        verified_value = None
+        verification_success = None
+        if success:
+            v_val, v_ok = self._verify_action(entity, target)
+            verification_success = v_ok
+            try:
+                verified_value = int(float(v_val)) if v_val else None
+            except (ValueError, TypeError):
+                verified_value = v_val
+
         duration = int((time.time() - start) * 1000)
 
         if success and self.config.notifications.on_soc_target_change:
@@ -554,6 +618,9 @@ class ActionDispatcher:
             ),
             previous_value=current_val,
             new_value=target,
+            entity_id=entity,
+            verified_value=verified_value,
+            verification_success=verification_success,
             duration_ms=duration,
         )
 
@@ -585,6 +652,7 @@ class ActionDispatcher:
                 message=f"Already at {target}°C",
                 previous_value=current_val,
                 new_value=target,
+                entity_id=entity,
                 skipped=True,
                 duration_ms=int((time.time() - start) * 1000),
             )
@@ -599,11 +667,24 @@ class ActionDispatcher:
                 message=f"[SHADOW] Would change {current_val}°C → {target}°C",
                 previous_value=current_val,
                 new_value=target,
+                entity_id=entity,
                 skipped=True,
                 duration_ms=int((time.time() - start) * 1000),
             )
 
         success = self.ha.set_input_number(entity, float(target))
+
+        # Verification
+        verified_value = None
+        verification_success = None
+        if success:
+            v_val, v_ok = self._verify_action(entity, target)
+            verification_success = v_ok
+            try:
+                verified_value = int(float(v_val)) if v_val else None
+            except (ValueError, TypeError):
+                verified_value = v_val
+
         duration = int((time.time() - start) * 1000)
 
         # Determine if this is start or stop
@@ -620,6 +701,9 @@ class ActionDispatcher:
             ),
             previous_value=current_val,
             new_value=target,
+            entity_id=entity,
+            verified_value=verified_value,
+            verification_success=verification_success,
             duration_ms=duration,
         )
 
@@ -654,6 +738,7 @@ class ActionDispatcher:
                     message=f"Change {change:.0f}W < threshold {self.config.controller.write_threshold_w:.0f}W, skipping",
                     previous_value=current_val,
                     new_value=watts,
+                    entity_id=entity,
                     skipped=True,
                     duration_ms=int((time.time() - start) * 1000),
                 )
@@ -665,11 +750,19 @@ class ActionDispatcher:
                 success=True,
                 message=f"[SHADOW] Would set to {watts} W",
                 new_value=watts,
+                entity_id=entity,
                 skipped=True,
                 duration_ms=int((time.time() - start) * 1000),
             )
 
         success = self.ha.set_number(entity, watts)
+
+        # Verification
+        verified_value = None
+        verification_success = None
+        if success:
+            verified_value, verification_success = self._verify_action(entity, watts)
+
         duration = int((time.time() - start) * 1000)
 
         logger.info("Set max_export_power: %.0f W on %s (success=%s)", watts, entity, success)
@@ -680,8 +773,54 @@ class ActionDispatcher:
             message=f"Set to {watts} W" if success else "Failed to set export power",
             previous_value=current_val,
             new_value=watts,
+            entity_id=entity,
+            verified_value=verified_value,
+            verification_success=verification_success,
             duration_ms=duration,
         )
+
+    def _verify_action(
+        self, entity_id: str, expected_value: Any, timeout: float = 2.0
+    ) -> tuple[Any, bool]:
+        """
+        Verify that an action successfully changed the state of an entity.
+
+        Args:
+            entity_id: The HA entity ID to check
+            expected_value: The value we expect the entity to have
+            timeout: Max time to wait for state update (seconds)
+
+        Returns:
+            tuple of (actual_value, success)
+        """
+        # Wait 1s for HA/Inverter to update
+        time.sleep(1.0)
+
+        start_wait = time.time()
+        actual_value = None
+
+        while time.time() - start_wait < timeout:
+            actual_value = self.ha.get_state_value(entity_id)
+
+            # Support loose matching for numeric types
+            if isinstance(expected_value, int | float) and actual_value is not None:
+                try:
+                    if abs(float(actual_value) - float(expected_value)) < 1.0:
+                        return actual_value, True
+                except (ValueError, TypeError):
+                    pass
+            elif str(actual_value) == str(expected_value):
+                return actual_value, True
+
+            time.sleep(0.5)
+
+        logger.warning(
+            "Verification FAILED for %s: Expected %s, got %s",
+            entity_id,
+            expected_value,
+            actual_value,
+        )
+        return actual_value, False
 
     def _maybe_notify(self, action_type: str, message: str) -> None:
         """Send notification if enabled for this action type."""
