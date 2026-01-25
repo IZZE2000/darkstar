@@ -461,19 +461,19 @@ data_quality:
 * [x] **Documentation Update:** Update relevant documentation to explain the new status indicators and entity visibility features
 * [x] **Commit:** `test(ui11): validate enhanced execution history functionality (UI11 Phase 6)`
 
-#### Phase 7: Critical Fixes & Performance Optimization
-* [ ] **Async Verification:** Convert verification from blocking `time.sleep(1.0)` to async `asyncio.sleep(1.0)`:
+#### Phase 7: Critical Fixes & Performance Optimization [DONE]
+* [x] **Async Verification:** Convert verification from blocking `time.sleep(1.0)` to async `asyncio.sleep(1.0)`:
     * Make `_verify_action()` method async in `ActionDispatcher`
     * Make all action methods (`_set_work_mode`, `_set_grid_charging`, etc.) async
     * Update `ActionDispatcher.execute()` to be async and use `await`
     * Update executor engine to await the async execute call
-* [ ] **Verification Tolerance Fix:** Change numeric matching tolerance from ±1.0 to ±0.1 in `_verify_action()` method for more precise verification
-* [ ] **Shadow Mode Logic Fix:** Fix ActionStatusIndicator to check individual action shadow status instead of global shadow mode:
+* [x] **Verification Tolerance Fix:** Change numeric matching tolerance from ±1.0 to ±0.1 in `_verify_action()` method for more precise verification
+* [x] **Shadow Mode Logic Fix:** Fix ActionStatusIndicator to check individual action shadow status instead of global shadow mode:
     * Remove `shadowMode` parameter from ActionStatusIndicator
     * Check `result.skipped && result.message.includes('[SHADOW]')` to detect shadow mode actions
     * Only show purple status for actions that were actually in shadow mode
-* [ ] **UI Consolidation:** Remove duplicate command display by consolidating into single enhanced section:
+* [x] **UI Consolidation:** Remove duplicate command display by consolidating into single enhanced section:
     * Remove the old "Commanded (What We Set)" section entirely from Executor.tsx
     * Rename "Control Verification" section to "Commanded (What We Set)"
     * Ensure color coding and entity information display correctly in the consolidated view
-* [ ] **Commit:** `fix(ui11): async verification, precise tolerance, and consolidated UI (UI11 Phase 7)`
+* [x] **Commit:** `fix(ui11): async verification, precise tolerance, and consolidated UI (UI11 Phase 7)`

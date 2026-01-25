@@ -481,7 +481,7 @@ export default function Executor() {
     }
 
     return (
-        <div className="px-4 pt-16 pb-10 lg:px-8 lg:pt-10 space-y-6">
+        <div className="px-4 pt-16 pb-4 lg:px-8 lg:pt-8 h-[calc(100vh-64px)] flex flex-col gap-6 overflow-hidden">
             {/* Header */}
             <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
                 <div>
@@ -800,7 +800,7 @@ export default function Executor() {
             </div>
 
             {/* Execution History */}
-            <Card className="p-4 md:p-5">
+            <Card className="p-4 md:p-5 flex-1 min-h-0 flex flex-col">
                 <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-2">
                         <History className="h-4 w-4 text-accent" />
@@ -823,7 +823,7 @@ export default function Executor() {
                         <p className="text-[10px] mt-1 text-muted/70">Run the executor to see results here.</p>
                     </div>
                 ) : (
-                    <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                    <div className="space-y-2 flex-1 min-h-0 overflow-y-auto pr-2 custom-scrollbar">
                         {/* Next Slot Preview */}
                         {status?.next_run_at && (
                             <div className="p-3 rounded-xl border-2 border-dashed border-line/30 bg-surface2/10 opacity-70">
