@@ -1,5 +1,6 @@
 import React from 'react'
 import { BaseField, HaEntity } from '../types'
+import { shouldRenderField } from '../logic'
 import Tooltip from '../../../components/Tooltip'
 import AzimuthDial from '../../../components/AzimuthDial'
 import TiltDial from '../../../components/TiltDial'
@@ -30,29 +31,7 @@ export const SettingsField: React.FC<SettingsFieldProps> = ({
     fullForm = {},
 }) => {
     const isEnabled = React.useMemo(() => {
-        if (field.disabled) return false
-
-        if (field.showIf) {
-            const currentVal = fullForm[field.showIf.configKey]
-            const expectedVal = field.showIf.value ?? true
-
-            // If expectedVal is a boolean, treat currentVal as a boolean string ('true'/'false')
-            if (typeof expectedVal === 'boolean') {
-                return (currentVal === 'true') === expectedVal
-            }
-            // Otherwise, do a direct string comparison
-            return currentVal === expectedVal
-        }
-
-        if (field.showIfAll) {
-            return field.showIfAll.every((k) => fullForm[k] === 'true')
-        }
-
-        if (field.showIfAny) {
-            return field.showIfAny.some((k) => fullForm[k] === 'true')
-        }
-
-        return true
+        return shouldRenderField(field, fullForm as Record<string, string | boolean | number | undefined>)
     }, [field, fullForm])
 
     const isDisabled = field.disabled || !isEnabled

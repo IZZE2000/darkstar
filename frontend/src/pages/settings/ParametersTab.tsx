@@ -3,6 +3,7 @@ import Card from '../../components/Card'
 import { useSettingsForm } from './hooks/useSettingsForm'
 import { SettingsField } from './components/SettingsField'
 import { parameterFieldList, parameterSections } from './types'
+import { shouldRenderField } from './logic'
 import { motion, AnimatePresence } from 'framer-motion'
 import { AdditionalAdvancedNotice, GlobalAdvancedLockedNotice } from './components/AdvancedLockedNotice'
 
@@ -52,7 +53,8 @@ export const ParametersTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMo
                                         <AnimatePresence initial={false}>
                                             {section.fields.map(
                                                 (field) =>
-                                                    (advancedMode || !field.isAdvanced) && (
+                                                    (advancedMode || !field.isAdvanced) &&
+                                                    shouldRenderField(field, form) && (
                                                         <motion.div
                                                             key={field.key}
                                                             variants={fieldVariants}

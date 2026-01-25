@@ -4,6 +4,7 @@ import Card from '../../components/Card'
 import { useSettingsForm } from './hooks/useSettingsForm'
 import { SettingsField } from './components/SettingsField'
 import { systemFieldList, systemSections } from './types'
+import { shouldRenderField } from './logic'
 import { motion, AnimatePresence } from 'framer-motion'
 import { AdditionalAdvancedNotice, GlobalAdvancedLockedNotice } from './components/AdvancedLockedNotice'
 
@@ -167,7 +168,11 @@ export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }
                                                                                 {params.groups[subKey].map(
                                                                                     (field) =>
                                                                                         (advancedMode ||
-                                                                                            !field.isAdvanced) && (
+                                                                                            !field.isAdvanced) &&
+                                                                                        shouldRenderField(
+                                                                                            field,
+                                                                                            form,
+                                                                                        ) && (
                                                                                             <motion.div
                                                                                                 key={field.key}
                                                                                                 variants={fieldVariants}
@@ -206,6 +211,7 @@ export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }
                                                                                             </motion.div>
                                                                                         ),
                                                                                 )}
+
                                                                                 {!advancedMode &&
                                                                                     params.groups[subKey].some(
                                                                                         (f) => f.isAdvanced,
@@ -233,7 +239,8 @@ export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }
                                                                             {params.groups[subKey].map(
                                                                                 (field) =>
                                                                                     (advancedMode ||
-                                                                                        !field.isAdvanced) && (
+                                                                                        !field.isAdvanced) &&
+                                                                                    shouldRenderField(field, form) && (
                                                                                         <motion.div
                                                                                             key={field.key}
                                                                                             variants={fieldVariants}

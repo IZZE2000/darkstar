@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
+import { createPortal } from 'react-dom'
 import { ChevronDown, Check, Search } from 'lucide-react'
 
 export interface SelectOption {
@@ -23,6 +24,7 @@ interface SelectProps {
  * A reusable dropdown that matches the design system.
  * Supports grouping, search, and keyboard navigation.
  */
+
 export default function Select({
     value,
     onChange,
@@ -35,10 +37,15 @@ export default function Select({
     const [open, setOpen] = useState(false)
     const [search, setSearch] = useState('')
     const [highlightIndex, setHighlightIndex] = useState(0)
+    const [coords, setCoords] = useState({ top: 0, left: 0, width: 0 })
+
     const containerRef = useRef<HTMLDivElement>(null)
+    const triggerRef = useRef<HTMLButtonElement>(null)
     const inputRef = useRef<HTMLInputElement>(null)
     const listRef = useRef<HTMLDivElement>(null)
+    const dropdownRef = useRef<HTMLDivElement>(null)
 
+    // ... existing logic for finding selected option, filtering, grouping ...
     // Find selected option
     const selectedOption = options.find((o) => o.value === value)
 
@@ -82,10 +89,38 @@ export default function Select({
         setHighlightIndex(0)
     }, [filtered.length, open])
 
+    // Update coordinates when opening
+    useEffect(() => {
+        if (open && triggerRef.current) {
+            const updatePosition = () => {
+                if (triggerRef.current) {
+                    const rect = triggerRef.current.getBoundingClientRect()
+                    setCoords({
+                        top: rect.bottom + 4, // 4px gap
+                        left: rect.left,
+                        width: rect.width,
+                    })
+                }
+            }
+            updatePosition()
+            window.addEventListener('resize', updatePosition)
+            window.addEventListener('scroll', updatePosition, true) // Capture scroll to update pos
+
+            return () => {
+                window.removeEventListener('resize', updatePosition)
+                window.removeEventListener('scroll', updatePosition, true)
+            }
+        }
+    }, [open])
+
     // Click outside
     useEffect(() => {
         const handleClickOutside = (e: MouseEvent) => {
-            if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+            // Check if click is inside container (trigger) or dropdown (portal)
+            const inContainer = containerRef.current?.contains(e.target as Node)
+            const inDropdown = dropdownRef.current?.contains(e.target as Node)
+
+            if (!inContainer && !inDropdown) {
                 setOpen(false)
                 setSearch('')
             }
@@ -94,6 +129,7 @@ export default function Select({
         return () => document.removeEventListener('mousedown', handleClickOutside)
     }, [])
 
+    // ... scroll correction and key handlers remain similar ...
     // Scroll correction
     useEffect(() => {
         if (open && listRef.current) {
@@ -148,6 +184,7 @@ export default function Select({
     return (
         <div ref={containerRef} className={`relative ${className}`}>
             <button
+                ref={triggerRef}
                 type="button"
                 disabled={disabled}
                 onClick={() => {
@@ -173,89 +210,103 @@ export default function Select({
                 <ChevronDown className={`h-4 w-4 text-muted transition-transform ${open ? 'rotate-180' : ''}`} />
             </button>
 
-            {open && (
-                <div className="absolute z-50 mt-1 w-full min-w-[180px] max-h-[300px] overflow-hidden rounded-lg border border-line bg-surface shadow-float animate-in fade-in zoom-in-95 duration-100">
-                    {searchable && (
-                        <div className="p-2 border-b border-line">
-                            <div className="relative">
-                                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted" />
-                                <input
-                                    ref={inputRef}
-                                    type="text"
-                                    value={search}
-                                    onChange={(e) => setSearch(e.target.value)}
-                                    placeholder="Search..."
-                                    className="w-full pl-8 pr-3 py-1.5 rounded-md bg-surface2 border border-line text-sm text-text placeholder:text-muted focus:outline-none focus:ring-1 focus:ring-accent/40"
-                                    onKeyDown={handleKeyDown}
-                                />
+            {open &&
+                createPortal(
+                    <div
+                        ref={dropdownRef}
+                        style={{
+                            position: 'fixed',
+                            top: coords.top,
+                            left: coords.left,
+                            width: coords.width,
+                            zIndex: 9999,
+                        }}
+                        className="min-w-[180px] max-h-[300px] overflow-hidden rounded-lg border border-line bg-surface shadow-float animate-in fade-in zoom-in-95 duration-100"
+                    >
+                        {searchable && (
+                            <div className="p-2 border-b border-line">
+                                <div className="relative">
+                                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted" />
+                                    <input
+                                        ref={inputRef}
+                                        type="text"
+                                        value={search}
+                                        onChange={(e) => setSearch(e.target.value)}
+                                        placeholder="Search..."
+                                        className="w-full pl-8 pr-3 py-1.5 rounded-md bg-surface2 border border-line text-sm text-text placeholder:text-muted focus:outline-none focus:ring-1 focus:ring-accent/40"
+                                        onKeyDown={handleKeyDown}
+                                    />
+                                </div>
                             </div>
-                        </div>
-                    )}
+                        )}
 
-                    <div ref={listRef} className="max-h-[240px] overflow-y-auto p-1 scrollbar-thin">
-                        {flatList.length === 0 ? (
-                            <div className="px-3 py-4 text-center text-sm text-muted">No options found</div>
-                        ) : (
-                            <>
-                                {/* Ungrouped items */}
-                                {grouped.noGroup.map((option, _i) => {
-                                    const isActive = selectedOption?.value === option.value
-                                    const isHighlighted = flatList[highlightIndex]?.value === option.value
-                                    return (
-                                        <div
-                                            key={option.value}
-                                            data-index={highlightIndex} // Only works if ungrouped is first, logic simplified for now
-                                            className={`
+                        <div ref={listRef} className="max-h-[240px] overflow-y-auto p-1 scrollbar-thin">
+                            {flatList.length === 0 ? (
+                                <div className="px-3 py-4 text-center text-sm text-muted">No options found</div>
+                            ) : (
+                                <>
+                                    {/* Ungrouped items */}
+                                    {grouped.noGroup.map((option, _i) => {
+                                        const isActive = selectedOption?.value === option.value
+                                        const isHighlighted = flatList[highlightIndex]?.value === option.value
+                                        return (
+                                            <div
+                                                key={option.value}
+                                                data-index={highlightIndex} // Only works if ungrouped is first, logic simplified for now
+                                                className={`
                                                 flex items-center justify-between px-2 py-1.5 rounded-md text-sm cursor-pointer
                                                 ${isHighlighted ? 'bg-accent/20 text-text' : 'text-text'}
                                                 ${isActive ? 'font-medium' : ''}
                                             `}
-                                            onClick={() => handleSelect(option.value)}
-                                            onMouseEnter={() =>
-                                                setHighlightIndex(flatList.findIndex((o) => o.value === option.value))
-                                            }
-                                        >
-                                            <span>{option.label}</span>
-                                            {isActive && <Check className="h-3.5 w-3.5 text-accent" />}
-                                        </div>
-                                    )
-                                })}
+                                                onClick={() => handleSelect(option.value)}
+                                                onMouseEnter={() =>
+                                                    setHighlightIndex(
+                                                        flatList.findIndex((o) => o.value === option.value),
+                                                    )
+                                                }
+                                            >
+                                                <span>{option.label}</span>
+                                                {isActive && <Check className="h-3.5 w-3.5 text-accent" />}
+                                            </div>
+                                        )
+                                    })}
 
-                                {/* Grouped items */}
-                                {Object.entries(grouped.groups).map(([group, groupOptions]) => (
-                                    <div key={group} className="mt-1 first:mt-0">
-                                        <div className="px-2 py-1 text-[10px] uppercase tracking-wider text-muted/70 font-medium">
-                                            {group}
-                                        </div>
-                                        {groupOptions.map((option) => {
-                                            const isActive = selectedOption?.value === option.value
-                                            const idx = flatList.findIndex((o) => o.value === option.value)
-                                            const isHighlighted = idx === highlightIndex
+                                    {/* Grouped items */}
+                                    {Object.entries(grouped.groups).map(([group, groupOptions]) => (
+                                        <div key={group} className="mt-1 first:mt-0">
+                                            <div className="px-2 py-1 text-[10px] uppercase tracking-wider text-muted/70 font-medium">
+                                                {group}
+                                            </div>
+                                            {groupOptions.map((option) => {
+                                                const isActive = selectedOption?.value === option.value
+                                                const idx = flatList.findIndex((o) => o.value === option.value)
+                                                const isHighlighted = idx === highlightIndex
 
-                                            return (
-                                                <div
-                                                    key={option.value}
-                                                    data-index={idx}
-                                                    className={`
+                                                return (
+                                                    <div
+                                                        key={option.value}
+                                                        data-index={idx}
+                                                        className={`
                                                         flex items-center justify-between px-2 py-1.5 rounded-md text-sm cursor-pointer
                                                         ${isHighlighted ? 'bg-accent/20 text-text' : 'text-text'}
                                                         ${isActive ? 'font-medium' : ''}
                                                     `}
-                                                    onClick={() => handleSelect(option.value)}
-                                                    onMouseEnter={() => setHighlightIndex(idx)}
-                                                >
-                                                    <span>{option.label}</span>
-                                                    {isActive && <Check className="h-3.5 w-3.5 text-accent" />}
-                                                </div>
-                                            )
-                                        })}
-                                    </div>
-                                ))}
-                            </>
-                        )}
-                    </div>
-                </div>
-            )}
+                                                        onClick={() => handleSelect(option.value)}
+                                                        onMouseEnter={() => setHighlightIndex(idx)}
+                                                    >
+                                                        <span>{option.label}</span>
+                                                        {isActive && <Check className="h-3.5 w-3.5 text-accent" />}
+                                                    </div>
+                                                )
+                                            })}
+                                        </div>
+                                    ))}
+                                </>
+                            )}
+                        </div>
+                    </div>,
+                    document.body,
+                )}
         </div>
     )
 }
