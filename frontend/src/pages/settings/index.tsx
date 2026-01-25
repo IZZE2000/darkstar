@@ -1,17 +1,19 @@
 import React, { useState, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Settings as SettingsIcon, Sliders, Palette, Zap, ShieldAlert } from 'lucide-react'
+import { Settings as SettingsIcon, Sliders, Palette, Zap, ShieldAlert, Bug } from 'lucide-react'
 
 import { SystemTab } from './SystemTab'
 import { ParametersTab } from './ParametersTab'
 import { UITab } from './UITab'
 import { AdvancedTab } from './AdvancedTab'
+import { DebugContent } from '../Debug'
 
 const ALL_TABS = [
     { id: 'system', label: 'System', icon: <SettingsIcon size={16} /> },
     { id: 'parameters', label: 'Parameters', icon: <Sliders size={16} /> },
     { id: 'ui', label: 'UI', icon: <Palette size={16} /> },
     { id: 'advanced', label: 'Advanced', icon: <Zap size={16} />, advancedOnly: true },
+    { id: 'debug', label: 'Debug', icon: <Bug size={16} />, advancedOnly: true },
 ]
 
 const STORAGE_KEY = 'darkstar_ui_advanced_mode'
@@ -53,6 +55,8 @@ export default function Settings() {
                 return <UITab advancedMode={advancedMode} />
             case 'advanced':
                 return <AdvancedTab advancedMode={advancedMode} />
+            case 'debug':
+                return <DebugContent className="" /> // Remove default padding
             case 'system':
             default:
                 return <SystemTab advancedMode={advancedMode} />
@@ -62,7 +66,9 @@ export default function Settings() {
     return (
         <>
             <main className="p-4 lg:p-8">
-                <div className="mx-auto max-w-5xl">
+                <div
+                    className={`mx-auto ${activeTab === 'debug' ? 'max-w-7xl' : 'max-w-5xl'} transition-all duration-300`}
+                >
                     <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                         <div className="flex flex-wrap gap-2">
                             {tabs.map((tab) => (

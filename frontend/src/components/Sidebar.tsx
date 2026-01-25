@@ -93,7 +93,6 @@ export default function Sidebar() {
                     <Item to="/executor" icon={Cpu} label="Executor" />
                     <Item to="/aurora" icon={Bot} label="Aurora" />
                     {/* Lab tab hidden - pending future redesign */}
-                    <Item to="/debug" icon={Bug} label="Debug" />
 
                     <div className="mt-auto w-8 h-px bg-line/70" />
 

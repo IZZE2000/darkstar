@@ -477,3 +477,19 @@ data_quality:
     * Rename "Control Verification" section to "Commanded (What We Set)"
     * Ensure color coding and entity information display correctly in the consolidated view
 * [x] **Commit:** `fix(ui11): async verification, precise tolerance, and consolidated UI (UI11 Phase 7)`
+
+---
+
+### [DONE] REV // UI12 — Move Debug Tab to Settings
+
+**Goal:** Clean up the sidebar by moving the Debug tab into the Settings page, making it accessible only in Advanced Mode.
+
+**Plan:**
+
+#### Phase 1: Implementation [DONE]
+* [x] **Sidebar:** Remove Debug link from sidebar.
+* [x] **Debug Page:** Refactor `Debug.tsx` to export reusable `DebugContent`.
+* [x] **Settings:** Integrate `DebugContent` into `Settings` page as a new tab.
+* [x] **Conditional Logic:** Make Debug tab visible only when `advancedMode` is true.
+* [x] **UI Polish:** Adjust logs view height and container width for optimal display in Settings context.
+* [x] **Commit:** `feat(ui): move debug tab to settings advanced mode (REV UI12)`

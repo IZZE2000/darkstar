@@ -132,7 +132,7 @@ function LogsView({
                 {error && <div className="text-[11px] text-amber-400 mb-2">{error}</div>}
                 <div
                     ref={logContainerRef}
-                    className="h-[calc(100vh-320px)] min-h-[400px] overflow-auto rounded-xl2 border border-line/60 bg-surface2/40 text-[11px] font-mono text-muted/90 mb-3"
+                    className="h-[calc(100vh-300px)] min-h-[400px] overflow-auto rounded-xl2 border border-line/60 bg-surface2/40 text-[11px] font-mono text-muted/90 mb-3"
                 >
                     {filteredLogs.length === 0 && !loading && !error && (
                         <div className="px-3 py-2 text-muted/70">No logs captured yet.</div>
@@ -370,7 +370,7 @@ function LoadDisaggregationView() {
     )
 }
 
-export default function Debug() {
+export function DebugContent({ className }: { className?: string }) {
     const [activeTab, setActiveTab] = useState<'logs' | 'loads'>('logs')
     const [logs, setLogs] = useState<DebugLogsResponse['logs']>([])
     const [logsLoading, setLogsLoading] = useState(false)
@@ -431,13 +431,12 @@ export default function Debug() {
         return () => clearInterval(interval)
     }, [isLive])
 
+    const containerClass = className !== undefined ? className : 'mx-auto max-w-7xl px-4 pb-24 pt-8 sm:px-6 lg:pt-12'
+
     return (
-        <main className="mx-auto max-w-7xl px-4 pb-24 pt-8 sm:px-6 lg:pt-12">
+        <div className={containerClass}>
             <div className="mb-8 flex flex-col md:flex-row md:items-end justify-between gap-4">
-                <div>
-                    <div className="text-sm text-muted font-medium mb-1">Debug & Diagnostics</div>
-                    <div className="text-[20px] font-bold text-white tracking-tight">System Troubleshooting</div>
-                </div>
+                <div>{/* Header text removed for Settings integration */}</div>
 
                 <div className="flex bg-surface2/50 p-1 rounded-xl border border-line/20 shadow-sm">
                     <button
@@ -483,6 +482,14 @@ export default function Debug() {
             ) : (
                 <LoadDisaggregationView />
             )}
+        </div>
+    )
+}
+
+export default function Debug() {
+    return (
+        <main>
+            <DebugContent />
         </main>
     )
 }
