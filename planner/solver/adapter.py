@@ -126,9 +126,6 @@ def config_to_kepler_config(
             val = overrides[key]
         return float(val) if val is not None else default
 
-    system = planner_config.get("system", {})
-    battery = planner_config.get("battery", {})
-
     # Calculate terminal value
     terminal_value = get_val("terminal_value_sek_kwh", 0.0)
     # If terminal value is 0 (default), we don't infer one automatically anymore
@@ -136,12 +133,7 @@ def config_to_kepler_config(
     # The user can explicitly set 'terminal_value_sek_kwh' in config if they want credit.
     pass
 
-    # Rev WH2: Block start penalty
-    # Prefer new key 'block_start_penalty_sek', fallback to dead key 'block_consolidation_tolerance_sek'
     wh_cfg = planner_config.get("water_heating", {})
-    block_start_penalty = float(
-        wh_cfg.get("block_start_penalty_sek", wh_cfg.get("block_consolidation_tolerance_sek", 0.0))
-    )
 
     capacity = float(battery.get("capacity_kwh", 13.5))
     charge_eff = float(battery.get("charge_efficiency", 0.95))
@@ -218,19 +210,18 @@ def config_to_kepler_config(
             else 0.0
         ),
         water_heated_today_kwh=0.0,  # Set in pipeline from HA sensor
-        # Rev K23: Multi-Parameter Comfort Control
-        **(
-            _comfort_level_to_penalty(int(wh_cfg.get("comfort_level", 3)))
-            if wh_cfg.get("enable_top_ups", True)
-            else {
-                "water_comfort_penalty_sek": 0.0,
-                "water_reliability_penalty_sek": float(
-                    wh_cfg.get("reliability_penalty_sek", 1000.0)
-                ),
-                "water_block_start_penalty_sek": block_start_penalty,
-                "water_block_penalty_sek": float(wh_cfg.get("block_penalty_sek", 0.50)),
-            }
+        # Rev K23: Multi-Parameter Comfort Control (ALWAYS applied)
+        **_comfort_level_to_penalty(int(wh_cfg.get("comfort_level", 3))),
+        # Rev WH1: Disable spacing constraints when top-ups are disabled
+        water_min_spacing_hours=float(
+            wh_cfg.get("min_spacing_hours", 5.0) if wh_cfg.get("enable_top_ups", True) else 0.0
         ),
+        water_spacing_penalty_sek=float(
+            wh_cfg.get("spacing_penalty_sek", 0.20) if wh_cfg.get("enable_top_ups", True) else 0.0
+        ),
+        # Rev WH2: Smart Water Heating Logic
+        force_water_on_slots=force_water_on_slots,
+        defer_up_to_hours=float(wh_cfg.get("defer_up_to_hours", 0.0)),
         # Rev E4: Export Toggle
         enable_export=bool(planner_config.get("export", {}).get("enable_export", True)),
     )
