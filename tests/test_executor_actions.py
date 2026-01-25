@@ -208,45 +208,49 @@ class TestActionDispatcherIdempotency:
             controller=ControllerConfig(),
         )
 
-    def test_work_mode_skips_if_already_set(self, mock_ha_client, executor_config):
+    @pytest.mark.asyncio
+    async def test_work_mode_skips_if_already_set(self, mock_ha_client, executor_config):
         """Work mode action is skipped if already at target."""
         mock_ha_client.get_state_value.return_value = "Export First"
 
         dispatcher = ActionDispatcher(mock_ha_client, executor_config)
-        result = dispatcher._set_work_mode("Export First")
+        result = await dispatcher._set_work_mode("Export First")
 
         assert result.skipped is True
         assert "Already at" in result.message
         mock_ha_client.set_select_option.assert_not_called()
 
-    def test_work_mode_executes_if_different(self, mock_ha_client, executor_config):
+    @pytest.mark.asyncio
+    async def test_work_mode_executes_if_different(self, mock_ha_client, executor_config):
         """Work mode action executes if target differs from current."""
         mock_ha_client.get_state_value.return_value = "Zero Export To CT"
         mock_ha_client.set_select_option.return_value = True
 
         dispatcher = ActionDispatcher(mock_ha_client, executor_config)
-        result = dispatcher._set_work_mode("Export First")
+        result = await dispatcher._set_work_mode("Export First")
 
         assert result.skipped is False
         assert result.success is True
         mock_ha_client.set_select_option.assert_called_once()
 
-    def test_grid_charging_skips_if_already_set(self, mock_ha_client, executor_config):
+    @pytest.mark.asyncio
+    async def test_grid_charging_skips_if_already_set(self, mock_ha_client, executor_config):
         """Grid charging is skipped if already at target state."""
         mock_ha_client.get_state_value.return_value = "on"
 
         dispatcher = ActionDispatcher(mock_ha_client, executor_config)
-        result = dispatcher._set_grid_charging(True)
+        result = await dispatcher._set_grid_charging(True)
 
         assert result.skipped is True
         mock_ha_client.set_switch.assert_not_called()
 
-    def test_soc_target_skips_if_already_set(self, mock_ha_client, executor_config):
+    @pytest.mark.asyncio
+    async def test_soc_target_skips_if_already_set(self, mock_ha_client, executor_config):
         """SoC target is skipped if already at target."""
         mock_ha_client.get_state_value.return_value = "80"
 
         dispatcher = ActionDispatcher(mock_ha_client, executor_config)
-        result = dispatcher._set_soc_target(80)
+        result = await dispatcher._set_soc_target(80)
 
         assert result.skipped is True
         mock_ha_client.set_input_number.assert_not_called()
@@ -279,29 +283,32 @@ class TestActionDispatcherShadowMode:
             controller=ControllerConfig(),
         )
 
-    def test_shadow_mode_logs_but_doesnt_execute(self, mock_ha_client, executor_config):
+    @pytest.mark.asyncio
+    async def test_shadow_mode_logs_but_doesnt_execute(self, mock_ha_client, executor_config):
         """Shadow mode logs intended actions but doesn't execute."""
         dispatcher = ActionDispatcher(mock_ha_client, executor_config, shadow_mode=True)
-        result = dispatcher._set_work_mode("Export First")
+        result = await dispatcher._set_work_mode("Export First")
 
         assert result.success is True
         assert result.skipped is True
         assert "[SHADOW]" in result.message
         mock_ha_client.set_select_option.assert_not_called()
 
-    def test_shadow_mode_charge_limit(self, mock_ha_client, executor_config):
+    @pytest.mark.asyncio
+    async def test_shadow_mode_charge_limit(self, mock_ha_client, executor_config):
         """Shadow mode logs charge current changes."""
         dispatcher = ActionDispatcher(mock_ha_client, executor_config, shadow_mode=True)
-        result = dispatcher._set_charge_limit(100.0, "A")
+        result = await dispatcher._set_charge_limit(100.0, "A")
 
         assert result.success is True
         assert "[SHADOW]" in result.message
         mock_ha_client.set_number.assert_not_called()
 
-    def test_shadow_mode_max_export_power(self, mock_ha_client, executor_config):
+    @pytest.mark.asyncio
+    async def test_shadow_mode_max_export_power(self, mock_ha_client, executor_config):
         """Shadow mode logs max export power changes."""
         dispatcher = ActionDispatcher(mock_ha_client, executor_config, shadow_mode=True)
-        result = dispatcher._set_max_export_power(5000.0)
+        result = await dispatcher._set_max_export_power(5000.0)
 
         assert result.success is True
         assert "[SHADOW]" in result.message
@@ -321,6 +328,9 @@ class TestActionDispatcherExecute:
             "select.inverter_work_mode": "Zero Export To CT",
             "switch.inverter_battery_grid_charging": "off",
             "input_number.vvbtemp": "40",
+            "input_number.master_soc_target": "50",
+            "number.inverter_battery_max_discharging_current": "100",
+            "number.inverter_grid_max_export_power": "1000",
         }.get(e)
         client.set_select_option.return_value = True
         client.set_switch.return_value = True
@@ -348,7 +358,8 @@ class TestActionDispatcherExecute:
             controller=ControllerConfig(),
         )
 
-    def test_execute_returns_results_for_all_actions(self, mock_ha_client, executor_config):
+    @pytest.mark.asyncio
+    async def test_execute_returns_results_for_all_actions(self, mock_ha_client, executor_config):
         """execute() returns results for all actions taken."""
         dispatcher = ActionDispatcher(mock_ha_client, executor_config)
         decision = ControllerDecision(
@@ -363,7 +374,7 @@ class TestActionDispatcherExecute:
             write_discharge_current=True,
         )
 
-        results = dispatcher.execute(decision)
+        results = await dispatcher.execute(decision)
 
         # Should have: work_mode, grid_charging, discharge_limit, soc_target, water_temp, max_export_power
         # (no charge_limit because write_charge_current=False)
@@ -376,7 +387,8 @@ class TestActionDispatcherExecute:
         assert "water_temp" in action_types
         assert "max_export_power" in action_types
 
-    def test_execute_only_writes_current_when_flagged(self, mock_ha_client, executor_config):
+    @pytest.mark.asyncio
+    async def test_execute_only_writes_current_when_flagged(self, mock_ha_client, executor_config):
         """Charge/discharge current only written when flags are True."""
         dispatcher = ActionDispatcher(mock_ha_client, executor_config)
         decision = ControllerDecision(
@@ -390,7 +402,7 @@ class TestActionDispatcherExecute:
             write_discharge_current=False,  # Don't write
         )
 
-        results = dispatcher.execute(decision)
+        results = await dispatcher.execute(decision)
 
         action_types = [r.action_type for r in results]
         assert "charge_limit" not in action_types

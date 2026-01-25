@@ -1012,7 +1012,19 @@ class ExecutorEngine:
             # 6. Execute actions
             action_results: list[ActionResult] = []
             if self.dispatcher:
-                action_results = self.dispatcher.execute(decision)
+                # REV UI11 Phase 7: Execute async actions
+                try:
+                    action_results = asyncio.run(self.dispatcher.execute(decision))
+                except Exception as e:
+                    logger.error("Failed to execute async actions: %s", e)
+                    # Create a dummy failed result for the log
+                    action_results = [
+                        ActionResult(
+                            action_type="execution_error",
+                            success=False,
+                            message=f"Async Execution Failed: {e!s}",
+                        )
+                    ]
 
                 # Phase 3: Capture errors from action results
                 for r in action_results:

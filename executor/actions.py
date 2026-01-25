@@ -6,6 +6,7 @@ Handles idempotent execution (skip if already set) and
 notification dispatch per action type.
 """
 
+import asyncio
 import logging
 import time
 from dataclasses import dataclass
@@ -224,7 +225,7 @@ class ActionDispatcher:
         self.config = config
         self.shadow_mode = shadow_mode
 
-    def execute(self, decision: ControllerDecision) -> list[ActionResult]:
+    async def execute(self, decision: ControllerDecision) -> list[ActionResult]:
         """
         Execute all actions from a controller decision.
 
@@ -238,42 +239,44 @@ class ActionDispatcher:
 
         # 1. Set work mode (Rev O1)
         if self.config.has_battery:
-            result = self._set_work_mode(decision.work_mode)
+            result = await self._set_work_mode(decision.work_mode)
             results.append(result)
 
         # 2. Set grid charging (Rev O1)
         if self.config.has_battery:
-            result = self._set_grid_charging(decision.grid_charging)
+            result = await self._set_grid_charging(decision.grid_charging)
             results.append(result)
 
         # 3. Set charge limit (Rev O1 + E3)
         if self.config.has_battery and decision.write_charge_current:
-            result = self._set_charge_limit(decision.charge_value, decision.control_unit)
+            result = await self._set_charge_limit(decision.charge_value, decision.control_unit)
             results.append(result)
 
         # 4. Set discharge limit (Rev O1 + E3)
         if self.config.has_battery and decision.write_discharge_current:
-            result = self._set_discharge_limit(decision.discharge_value, decision.control_unit)
+            result = await self._set_discharge_limit(
+                decision.discharge_value, decision.control_unit
+            )
             results.append(result)
 
         # 5. Set SoC target (Rev O1)
         if self.config.has_battery:
-            result = self._set_soc_target(decision.soc_target)
+            result = await self._set_soc_target(decision.soc_target)
             results.append(result)
 
         # 6. Set water heater target (Rev O1)
         if self.config.has_water_heater:
-            result = self.set_water_temp(decision.water_temp)
+            result = await self.set_water_temp(decision.water_temp)
             results.append(result)
 
         # 7. Set max export power (Bug fix #1)
         if self.config.has_battery:
-            result = self._set_max_export_power(decision.export_power_w)
+            result = await self._set_max_export_power(decision.export_power_w)
             results.append(result)
 
         return results
 
-    def _set_work_mode(self, target_mode: str) -> ActionResult:
+    async def _set_work_mode(self, target_mode: str) -> ActionResult:
         """Set inverter work mode if different from current."""
         start = time.time()
         entity = self.config.inverter.work_mode_entity
@@ -322,7 +325,7 @@ class ActionDispatcher:
         verified_value = None
         verification_success = None
         if success:
-            verified_value, verification_success = self._verify_action(entity, target_mode)
+            verified_value, verification_success = await self._verify_action(entity, target_mode)
 
         duration = int((time.time() - start) * 1000)
 
@@ -341,7 +344,7 @@ class ActionDispatcher:
             duration_ms=duration,
         )
 
-    def _set_grid_charging(self, enabled: bool) -> ActionResult:
+    async def _set_grid_charging(self, enabled: bool) -> ActionResult:
         """Set grid charging switch."""
         start = time.time()
         entity = self.config.inverter.grid_charging_entity
@@ -390,7 +393,7 @@ class ActionDispatcher:
         verified_value = None
         verification_success = None
         if success:
-            verified_value, verification_success = self._verify_action(entity, target)
+            verified_value, verification_success = await self._verify_action(entity, target)
 
         duration = int((time.time() - start) * 1000)
 
@@ -410,7 +413,7 @@ class ActionDispatcher:
             duration_ms=duration,
         )
 
-    def _set_charge_limit(self, value: float, unit: str) -> ActionResult:
+    async def _set_charge_limit(self, value: float, unit: str) -> ActionResult:
         """Set max charging limit (Amps or Watts)."""
         start = time.time()
 
@@ -451,7 +454,7 @@ class ActionDispatcher:
         verified_value = None
         verification_success = None
         if success:
-            verified_value, verification_success = self._verify_action(entity, value)
+            verified_value, verification_success = await self._verify_action(entity, value)
 
         duration = int((time.time() - start) * 1000)
         logger.info("Set charge_limit result: success=%s, duration=%dms", success, duration)
@@ -467,7 +470,7 @@ class ActionDispatcher:
             duration_ms=duration,
         )
 
-    def _set_discharge_limit(self, value: float, unit: str) -> ActionResult:
+    async def _set_discharge_limit(self, value: float, unit: str) -> ActionResult:
         """Set max discharging limit (Amps or Watts)."""
         start = time.time()
 
@@ -528,7 +531,7 @@ class ActionDispatcher:
         verified_value = None
         verification_success = None
         if success:
-            verified_value, verification_success = self._verify_action(entity, value)
+            verified_value, verification_success = await self._verify_action(entity, value)
 
         duration = int((time.time() - start) * 1000)
         logger.info("Set discharge_limit result: success=%s, duration=%dms", success, duration)
@@ -544,7 +547,7 @@ class ActionDispatcher:
             duration_ms=duration,
         )
 
-    def _set_soc_target(self, target: int) -> ActionResult:
+    async def _set_soc_target(self, target: int) -> ActionResult:
         """Set SoC target."""
         start = time.time()
         entity = self.config.soc_target_entity
@@ -598,7 +601,7 @@ class ActionDispatcher:
         verified_value = None
         verification_success = None
         if success:
-            v_val, v_ok = self._verify_action(entity, target)
+            v_val, v_ok = await self._verify_action(entity, target)
             verification_success = v_ok
             try:
                 verified_value = int(float(v_val)) if v_val else None
@@ -624,7 +627,7 @@ class ActionDispatcher:
             duration_ms=duration,
         )
 
-    def set_water_temp(self, target: int) -> ActionResult:
+    async def set_water_temp(self, target: int) -> ActionResult:
         """Set water heater target temperature."""
         start = time.time()
         entity = self.config.water_heater.target_entity
@@ -678,7 +681,7 @@ class ActionDispatcher:
         verified_value = None
         verification_success = None
         if success:
-            v_val, v_ok = self._verify_action(entity, target)
+            v_val, v_ok = await self._verify_action(entity, target)
             verification_success = v_ok
             try:
                 verified_value = int(float(v_val)) if v_val else None
@@ -707,7 +710,7 @@ class ActionDispatcher:
             duration_ms=duration,
         )
 
-    def _set_max_export_power(self, watts: float) -> ActionResult:
+    async def _set_max_export_power(self, watts: float) -> ActionResult:
         """Set max grid export power (Bug Fix #1)."""
         start = time.time()
         entity = self.config.inverter.grid_max_export_power_entity
@@ -761,7 +764,7 @@ class ActionDispatcher:
         verified_value = None
         verification_success = None
         if success:
-            verified_value, verification_success = self._verify_action(entity, watts)
+            verified_value, verification_success = await self._verify_action(entity, watts)
 
         duration = int((time.time() - start) * 1000)
 
@@ -779,7 +782,7 @@ class ActionDispatcher:
             duration_ms=duration,
         )
 
-    def _verify_action(
+    async def _verify_action(
         self, entity_id: str, expected_value: Any, timeout: float = 2.0
     ) -> tuple[Any, bool]:
         """
@@ -794,7 +797,7 @@ class ActionDispatcher:
             tuple of (actual_value, success)
         """
         # Wait 1s for HA/Inverter to update
-        time.sleep(1.0)
+        await asyncio.sleep(1.0)
 
         start_wait = time.time()
         actual_value = None
@@ -805,14 +808,15 @@ class ActionDispatcher:
             # Support loose matching for numeric types
             if isinstance(expected_value, int | float) and actual_value is not None:
                 try:
-                    if abs(float(actual_value) - float(expected_value)) < 1.0:
+                    # STRICTER TOLERANCE (REV UI11): 1.0 -> 0.1
+                    if abs(float(actual_value) - float(expected_value)) < 0.1:
                         return actual_value, True
                 except (ValueError, TypeError):
                     pass
             elif str(actual_value) == str(expected_value):
                 return actual_value, True
 
-            time.sleep(0.5)
+            await asyncio.sleep(0.5)
 
         logger.warning(
             "Verification FAILED for %s: Expected %s, got %s",

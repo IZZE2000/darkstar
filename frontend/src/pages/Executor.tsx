@@ -295,8 +295,8 @@ import {
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler)
 
-function ActionStatusIndicator({ result, shadowMode }: { result: any; shadowMode: boolean }) {
-    if (shadowMode) {
+function ActionStatusIndicator({ result }: { result: any }) {
+    if (result.skipped && result.message?.includes('[SHADOW]')) {
         return <span className="text-[9px] text-purple-400 font-medium">⬢ SHADOW</span>
     }
     if (result.skipped) {
@@ -996,137 +996,132 @@ export default function Executor() {
                                                 </div>
                                             </div>
 
-                                            {/* Commanded Values (What we actually set) */}
-                                            <div className="mt-3">
-                                                <div className="text-[9px] text-muted uppercase tracking-wide mb-1.5">
-                                                    Commanded (What We Set)
-                                                </div>
-                                                <div className="grid grid-cols-3 md:grid-cols-6 gap-2 text-[10px]">
-                                                    <div className="flex flex-col">
-                                                        <span className="text-muted/60">Work Mode</span>
-                                                        <span className="text-text font-medium">
-                                                            {record.commanded_work_mode ?? '—'}
-                                                        </span>
+                                            {/* Commanded Values (Consolidated) */}
+                                            {record.action_results && record.action_results.length > 0 ? (
+                                                <div className="mt-3">
+                                                    <div className="text-[9px] text-muted uppercase tracking-wide mb-1.5">
+                                                        Commanded (What We Set)
                                                     </div>
-                                                    <div className="flex flex-col">
-                                                        <span className="text-muted/60">Grid Charging</span>
-                                                        <span
-                                                            className={
-                                                                record.commanded_grid_charging
-                                                                    ? 'text-good'
-                                                                    : 'text-muted/40'
-                                                            }
-                                                        >
-                                                            {record.commanded_grid_charging ? 'ON' : 'OFF'}
-                                                        </span>
-                                                    </div>
-                                                    <div className="flex flex-col">
-                                                        <span className="text-muted/60">Charge I</span>
-                                                        <span
-                                                            className={
-                                                                record.commanded_charge_current_a
-                                                                    ? 'text-good'
-                                                                    : 'text-muted/40'
-                                                            }
-                                                        >
-                                                            {record.commanded_charge_current_a ?? '—'}{' '}
-                                                            {record.commanded_unit ?? 'A'}
-                                                        </span>
-                                                    </div>
-                                                    <div className="flex flex-col">
-                                                        <span className="text-muted/60">Discharge I</span>
-                                                        <span
-                                                            className={
-                                                                record.commanded_discharge_current_a
-                                                                    ? 'text-warn'
-                                                                    : 'text-muted/40'
-                                                            }
-                                                        >
-                                                            {record.commanded_discharge_current_a ?? '—'}{' '}
-                                                            {record.commanded_unit ?? 'A'}
-                                                        </span>
-                                                    </div>
-                                                    <div className="flex flex-col">
-                                                        <span className="text-muted/60">SoC Target</span>
-                                                        <span className="text-text">
-                                                            {record.commanded_soc_target ?? '—'}%
-                                                        </span>
-                                                    </div>
-                                                    <div className="flex flex-col">
-                                                        <span className="text-muted/60">Water Temp</span>
-                                                        <span
-                                                            className={
-                                                                record.commanded_water_temp &&
-                                                                record.commanded_water_temp > 50
-                                                                    ? 'text-warn'
-                                                                    : 'text-muted/40'
-                                                            }
-                                                        >
-                                                            {record.commanded_water_temp ?? '—'}°C
-                                                        </span>
-                                                    </div>
-                                                </div>
-
-                                                {/* Action Results Detail (NEW: Detailed control visibility) */}
-                                                {record.action_results && record.action_results.length > 0 && (
-                                                    <div className="mt-4 space-y-2">
-                                                        <div className="text-[9px] text-muted uppercase tracking-wide mb-1.5">
-                                                            Control Verification
-                                                        </div>
-                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
-                                                            {record.action_results.map((res, i) => (
-                                                                <div
-                                                                    key={i}
-                                                                    className="flex items-center justify-between p-2 rounded-lg bg-surface2/40 border border-line/20"
-                                                                >
-                                                                    <div className="flex flex-col min-w-0">
-                                                                        <div className="flex items-center gap-2">
-                                                                            <span className="text-[10px] text-text font-medium capitalize">
-                                                                                {res.type.replace(/_/g, ' ')}
-                                                                            </span>
-                                                                            <ActionStatusIndicator
-                                                                                result={res}
-                                                                                shadowMode={
-                                                                                    status?.shadow_mode ?? false
-                                                                                }
-                                                                            />
-                                                                        </div>
-                                                                        {res.entity_id && (
-                                                                            <span className="text-[8px] text-muted truncate font-mono">
-                                                                                {res.entity_id}
-                                                                            </span>
-                                                                        )}
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
+                                                        {record.action_results.map((res, i) => (
+                                                            <div
+                                                                key={i}
+                                                                className="flex items-center justify-between p-2 rounded-lg bg-surface2/40 border border-line/20"
+                                                            >
+                                                                <div className="flex flex-col min-w-0">
+                                                                    <div className="flex items-center gap-2">
+                                                                        <span className="text-[10px] text-text font-medium capitalize">
+                                                                            {res.type.replace(/_/g, ' ')}
+                                                                        </span>
+                                                                        <ActionStatusIndicator result={res} />
                                                                     </div>
-                                                                    <div className="text-right ml-4">
-                                                                        <div className="text-[10px] text-text font-medium">
-                                                                            {res.new_value ?? '—'}
-                                                                            {res.type.includes('temp') ? '°C' : ''}
-                                                                        </div>
-                                                                        {res.verified_value !== undefined &&
-                                                                            res.verified_value !== null && (
-                                                                                <div className="text-[8px] text-muted italic">
-                                                                                    Read back:{' '}
-                                                                                    <span
-                                                                                        className={
-                                                                                            res.verification_success
-                                                                                                ? 'text-emerald-400'
-                                                                                                : 'text-red-400'
-                                                                                        }
-                                                                                    >
-                                                                                        {res.verified_value}
-                                                                                        {res.type.includes('temp')
-                                                                                            ? '°C'
-                                                                                            : ''}
-                                                                                    </span>
-                                                                                </div>
-                                                                            )}
-                                                                    </div>
+                                                                    {res.entity_id && (
+                                                                        <span className="text-[8px] text-muted truncate font-mono">
+                                                                            {res.entity_id}
+                                                                        </span>
+                                                                    )}
                                                                 </div>
-                                                            ))}
+                                                                <div className="text-right ml-4">
+                                                                    <div className="text-[10px] text-text font-medium">
+                                                                        {res.new_value ?? '—'}
+                                                                        {res.type.includes('temp') ? '°C' : ''}
+                                                                    </div>
+                                                                    {res.verified_value !== undefined &&
+                                                                        res.verified_value !== null && (
+                                                                            <div className="text-[8px] text-muted italic">
+                                                                                Read back:{' '}
+                                                                                <span
+                                                                                    className={
+                                                                                        res.verification_success
+                                                                                            ? 'text-emerald-400'
+                                                                                            : 'text-red-400'
+                                                                                    }
+                                                                                >
+                                                                                    {res.verified_value}
+                                                                                    {res.type.includes('temp')
+                                                                                        ? '°C'
+                                                                                        : ''}
+                                                                                </span>
+                                                                            </div>
+                                                                        )}
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                /* Fallback for old records */
+                                                <div className="mt-3">
+                                                    <div className="text-[9px] text-muted uppercase tracking-wide mb-1.5">
+                                                        Commanded (What We Set)
+                                                    </div>
+                                                    <div className="grid grid-cols-3 md:grid-cols-6 gap-2 text-[10px]">
+                                                        <div className="flex flex-col">
+                                                            <span className="text-muted/60">Work Mode</span>
+                                                            <span className="text-text font-medium">
+                                                                {record.commanded_work_mode ?? '—'}
+                                                            </span>
+                                                        </div>
+                                                        <div className="flex flex-col">
+                                                            <span className="text-muted/60">Grid Charging</span>
+                                                            <span
+                                                                className={
+                                                                    record.commanded_grid_charging
+                                                                        ? 'text-good'
+                                                                        : 'text-muted/40'
+                                                                }
+                                                            >
+                                                                {record.commanded_grid_charging ? 'ON' : 'OFF'}
+                                                            </span>
+                                                        </div>
+                                                        <div className="flex flex-col">
+                                                            <span className="text-muted/60">Charge I</span>
+                                                            <span
+                                                                className={
+                                                                    record.commanded_charge_current_a
+                                                                        ? 'text-good'
+                                                                        : 'text-muted/40'
+                                                                }
+                                                            >
+                                                                {record.commanded_charge_current_a ?? '—'}{' '}
+                                                                {record.commanded_unit ?? 'A'}
+                                                            </span>
+                                                        </div>
+                                                        <div className="flex flex-col">
+                                                            <span className="text-muted/60">Discharge I</span>
+                                                            <span
+                                                                className={
+                                                                    record.commanded_discharge_current_a
+                                                                        ? 'text-warn'
+                                                                        : 'text-muted/40'
+                                                                }
+                                                            >
+                                                                {record.commanded_discharge_current_a ?? '—'}{' '}
+                                                                {record.commanded_unit ?? 'A'}
+                                                            </span>
+                                                        </div>
+                                                        <div className="flex flex-col">
+                                                            <span className="text-muted/60">SoC Target</span>
+                                                            <span className="text-text">
+                                                                {record.commanded_soc_target ?? '—'}%
+                                                            </span>
+                                                        </div>
+                                                        <div className="flex flex-col">
+                                                            <span className="text-muted/60">Water Temp</span>
+                                                            <span
+                                                                className={
+                                                                    record.commanded_water_temp &&
+                                                                    record.commanded_water_temp > 50
+                                                                        ? 'text-warn'
+                                                                        : 'text-muted/40'
+                                                                }
+                                                            >
+                                                                {record.commanded_water_temp ?? '—'}°C
+                                                            </span>
                                                         </div>
                                                     </div>
-                                                )}
-                                            </div>
+                                                </div>
+                                            )}
 
                                             {/* Before State */}
                                             <div className="mt-3">
