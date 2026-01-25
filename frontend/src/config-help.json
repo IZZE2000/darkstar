@@ -21,7 +21,7 @@
   "water_heating.defer_up_to_hours": "Allow deferring \"today's\" heating into early tomorrow morning (up to N hours) if cheaper",
   "water_heating.block_start_penalty_sek": "Penalty per heating start (higher = more consolidated bulk heating)",
   "water_heating.max_hours_between_heating": "Max gap before comfort penalty (only used if enable_top_ups is true)",
-  "water_heating.comfort_level": "1-5 (Economy\u2192Maximum) - controls gap penalty",
+  "water_heating.comfort_level": "1-5 (Economy\u2192Maximum) - controls reliability and block penalties",
   "water_heating.min_spacing_hours": "Min gap between starts to avoid efficiency loss",
   "water_heating.spacing_penalty_sek": "Soft penalty for frequent starts",
   "water_heating.enable_top_ups": "Enable spaced top-up heating blocks (vs bulk heating only)",

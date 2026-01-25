@@ -533,3 +533,21 @@ data_quality:
 * [x] **Maximum Testing:** Verify Level 5 prioritizes quota regardless of cost (up to 300 SEK penalty).
 * [x] **Documentation:** Update relevant docs explaining new comfort level behavior and penalty mapping.
 * [x] **Final Validation:** Confirm comfort levels provide meaningful Economy vs Comfort trade-off.
+
+---
+
+### [DONE] REV // F38 — Critical Asyncio Executor Fix
+
+**Goal:** Fix critical `RuntimeError` in executor engine where `asyncio.run()` is called from within a running event loop, breaking the executor.
+
+**Plan:**
+
+#### Phase 1: Engine Async Refactor [DONE]
+* [x] **Async Engine:** Convert `ExecutorEngine._tick`, `run_once` to async methods.
+* [x] **Await Actions:** Replace `asyncio.run(dispatcher.execute)` with `await dispatcher.execute`.
+* [x] **Loop Management:** Update `resume` and `_run_loop` to correctly schedule the async tick using `asyncio.create_task` or `asyncio.run` as appropriate for the context.
+* [x] **Tests:** Verify fix with `tests/test_executor_engine.py` to ensure no `RuntimeError`.
+
+#### Phase 2: Verification [DONE]
+* [x] **Action Verification:** Ensure async actions (HA calls) execute correctly.
+* [x] **Logging:** Verify execution history is logged successfully after async refactor.

@@ -221,7 +221,7 @@ def config_to_kepler_config(
         ),
         # Rev WH2: Smart Water Heating Logic
         force_water_on_slots=force_water_on_slots,
-        defer_up_to_hours=float(wh_cfg.get("defer_up_to_hours", 6.0)),
+        defer_up_to_hours=float(wh_cfg.get("defer_up_to_hours", 0.0)),
         # Rev E4: Export Toggle
         enable_export=bool(planner_config.get("export", {}).get("enable_export", True)),
     )

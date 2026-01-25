@@ -124,6 +124,9 @@ class ExecutorEngine:
         # Recent errors tracking (Phase 3)
         self.recent_errors = collections.deque(maxlen=10)
 
+        # Async background tasks reference (RUF006 fix)
+        self._background_tasks = set()
+
     def _get_db_path(self) -> str:
         """Get the path to the learning database."""
         # Use the same database as the learning engine
@@ -415,8 +418,17 @@ class ExecutorEngine:
 
         # Trigger immediate tick to apply scheduled action without waiting
         try:
-            self._tick()
-            logger.info("Immediate tick executed after resume")
+            # Trigger immediate tick to apply scheduled action without waiting
+            try:
+                # Issue 0 Fix: Use create_task for async tick execution
+                loop = asyncio.get_running_loop()
+                task = loop.create_task(self._tick())
+                self._background_tasks.add(task)
+                task.add_done_callback(self._background_tasks.discard)
+                logger.info("Immediate tick scheduled after resume")
+            except RuntimeError:
+                # If called from a sync context without a loop (unlikely in FastAPI but possible in tests)
+                logger.warning("Could not schedule immediate tick: no running event loop")
         except Exception as e:
             logger.warning("Failed to run immediate tick after resume: %s", e)
 
@@ -463,8 +475,15 @@ class ExecutorEngine:
             reason="Executor paused - idle mode",
         )
 
-        self.dispatcher.execute(idle_decision)
-        logger.info("Idle mode applied: zero export, no grid charge, water off")
+        # Fix: Schedule async execution
+        try:
+            loop = asyncio.get_running_loop()
+            task = loop.create_task(self.dispatcher.execute(idle_decision))
+            self._background_tasks.add(task)
+            task.add_done_callback(self._background_tasks.discard)
+            logger.info("Idle mode actions scheduled (async)")
+        except RuntimeError:
+            logger.warning("Could not apply idle mode: no running event loop")
 
     def _check_pause_reminder(self) -> None:
         """Check if 30-minute pause reminder should be sent."""
@@ -644,7 +663,7 @@ class ExecutorEngine:
             self._thread.join(timeout=5)
             logger.info("Executor stopped")
 
-    def run_once(self) -> dict[str, Any]:
+    async def run_once(self) -> dict[str, Any]:
         """
         Run a single execution tick synchronously.
 
@@ -653,12 +672,19 @@ class ExecutorEngine:
         if not self.ha_client and not self.init_ha_client():
             return {"success": False, "error": "Failed to initialize HA client"}
 
-        return self._tick()
+        return await self._tick()
 
     def _run_loop(self) -> None:
         """Main execution loop running in background thread."""
+        try:
+            asyncio.run(self._async_run_loop())
+        except Exception as e:
+            logger.exception("Fatal error in executor background loop: %s", e)
+
+    async def _async_run_loop(self) -> None:
+        """Async implementation of the background loop."""
         tz = pytz.timezone(self.config.timezone)
-        logger.info("Executor background loop started")
+        logger.info("Executor background loop started (async)")
 
         while not self._stop_event.is_set():
             # Reload config to get latest settings
@@ -668,14 +694,14 @@ class ExecutorEngine:
             if not self.config.enabled:
                 logger.debug("Executor disabled in config, sleeping")
                 self.status.last_skip_reason = "disabled_in_config"
-                self._stop_event.wait(10)  # Check every 10s
+                await asyncio.sleep(10)  # Check every 10s
                 continue
 
             # Check if paused
             if self.is_paused:
                 logger.debug("Executor paused, sleeping")
                 self.status.last_skip_reason = "paused_by_user"
-                self._stop_event.wait(10)
+                await asyncio.sleep(10)
                 continue
 
             # Calculate next run time
@@ -691,8 +717,26 @@ class ExecutorEngine:
                     wait_seconds,
                     next_run.isoformat(),
                 )
-                if self._stop_event.wait(wait_seconds):
-                    break  # Stop event was set during wait
+                # Async wait with check for stop event
+                # We can't easily "wait on event" in async without an async event
+                # So we sleep in chunks or just sleep.
+                # Since _stop_event is threading.Event, we can't await it directly.
+                # We'll just sleep. If stop event is set, loop checks at top.
+                # To be more responsive, we could sleep in small increments, but
+                # strictly sticking to asyncio.sleep is fine for now.
+
+                # Correction: We should check stop_event periodically if wait is long
+                # But since we are inside asyncio.run(), the threading event set from outside
+                # is the signaling mechanism.
+
+                # Let's use a small loop for responsiveness
+                end_wait = time.time() + wait_seconds
+                while time.time() < end_wait:
+                    if self._stop_event.is_set():
+                        return
+                    sleep_time = min(1.0, end_wait - time.time())
+                    await asyncio.sleep(sleep_time)
+
                 # Re-check current time after waiting
                 now = datetime.now(tz)
 
@@ -720,7 +764,10 @@ class ExecutorEngine:
             try:
                 tick_start = datetime.now(tz)
                 logger.info("Executing scheduled tick at %s", tick_start.isoformat())
-                self._tick()
+
+                # The Core Fix: await the async tick
+                await self._tick()
+
                 tick_duration = (datetime.now(tz) - tick_start).total_seconds()
 
                 # Rev PERF2: Performance Logging
@@ -752,7 +799,7 @@ class ExecutorEngine:
 
         return next_boundary
 
-    def _tick(self) -> dict[str, Any]:
+    async def _tick(self) -> dict[str, Any]:
         """
         Execute one tick of the executor loop.
 
@@ -1014,7 +1061,8 @@ class ExecutorEngine:
             if self.dispatcher:
                 # REV UI11 Phase 7: Execute async actions
                 try:
-                    action_results = asyncio.run(self.dispatcher.execute(decision))
+                    # Fix Issue 0: Await expected coroutine properly
+                    action_results = await self.dispatcher.execute(decision)
                 except Exception as e:
                     logger.error("Failed to execute async actions: %s", e)
                     # Create a dummy failed result for the log

@@ -360,6 +360,7 @@ class TestGetStatus:
         assert status["shadow_mode"] is False
 
 
+@pytest.mark.asyncio
 class TestRunOnce:
     """Test ExecutorEngine.run_once (single tick)."""
 
@@ -411,20 +412,20 @@ class TestRunOnce:
 
                     yield engine
 
-    def test_run_once_returns_result(self, engine, temp_schedule):
+    async def test_run_once_returns_result(self, engine, temp_schedule):
         """run_once returns a result dict."""
         # Create empty schedule
         with Path(temp_schedule).open("w", encoding="utf-8") as f:
             json.dump({"schedule": []}, f)
 
-        result = engine.run_once()
+        result = await engine.run_once()
 
         assert isinstance(result, dict)
         assert "success" in result
         assert "executed_at" in result
         assert "actions" in result
 
-    def test_run_once_skips_when_automation_off(self, engine, temp_schedule):
+    async def test_run_once_skips_when_automation_off(self, engine, temp_schedule):
         """run_once skips when automation toggle is off."""
         engine.ha_client.get_state_value.side_effect = None
         engine.ha_client.get_state_value.return_value = "off"
@@ -432,13 +433,13 @@ class TestRunOnce:
         with Path(temp_schedule).open("w", encoding="utf-8") as f:
             json.dump({"schedule": []}, f)
 
-        result = engine.run_once()
+        result = await engine.run_once()
 
         assert result["success"] is True
         # Check that it was skipped
         assert any(a.get("reason") == "automation_disabled" for a in result["actions"])
 
-    def test_run_once_executes_with_schedule(self, engine, temp_schedule):
+    async def test_run_once_executes_with_schedule(self, engine, temp_schedule):
         """run_once executes actions when schedule exists."""
         tz = pytz.timezone("Europe/Stockholm")
         now = datetime.now(tz)
@@ -452,17 +453,17 @@ class TestRunOnce:
         with Path(temp_schedule).open("w", encoding="utf-8") as f:
             json.dump(schedule, f)
 
-        result = engine.run_once()
+        result = await engine.run_once()
 
         assert result["success"] is True
         assert len(result["actions"]) > 0
 
-    def test_run_once_logs_to_history(self, engine, temp_schedule):
+    async def test_run_once_logs_to_history(self, engine, temp_schedule):
         """run_once logs execution to history."""
         with Path(temp_schedule).open("w", encoding="utf-8") as f:
             json.dump({"schedule": []}, f)
 
-        engine.run_once()
+        await engine.run_once()
 
         # Check history has the record
         records = engine.history.get_history()
