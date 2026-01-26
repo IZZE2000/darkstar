@@ -170,7 +170,7 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 
 ---
 
-### [IN PROGRESS] REV // F40 — Fix Database Schema Drift (action_results Migration)
+### [DONE] REV // F40 — Fix Database Schema Drift (action_results Migration)
 
 **Goal:** Create missing Alembic migration for `action_results` column in `execution_log` table to fix `sqlite3.OperationalError` in HA add-on deployments.
 
@@ -191,13 +191,18 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] Test `alembic upgrade head` on clean database
 * [x] Test `alembic downgrade -1` to verify rollback works
 
-#### Phase 3: Test on Existing Database [IN PROGRESS]
+#### Phase 3: Test on Existing Database [DONE]
 * [x] Test migration on database with schema drift (missing `action_results` column)
-* [ ] Verify executor can successfully write to `action_results` column post-migration
-* [ ] Confirm no more `sqlite3.OperationalError: table execution_log has no column named action_results`
+* [x] Verify executor can successfully write to `action_results` column post-migration
+* [x] Confirm no more `sqlite3.OperationalError: table execution_log has no column named action_results`
 * [x] Test recorder service confirms `system_state` table exists (from previous migration)
 
-**Issue Found:** `alembic.ini` and `alembic/` directory were missing from `darkstar-dev/Dockerfile`, preventing migrations from running. Fixed by adding COPY commands (matching stable Dockerfile).
+**Issues Found & Fixed:**
+1. `alembic.ini` and `alembic/` directory missing from `darkstar-dev/Dockerfile` ✅
+2. Database migration block missing from `darkstar-dev/run.sh` ✅
+3. Missing `await` in `/api/executor/run` endpoint ✅
+
+**Result:** All schema errors resolved, executor "Run Now" button working, system fully operational.
 
 #### Phase 4: Schema Drift Audit [DONE]
 * [x] Compare all 23 model definitions in `backend/learning/models.py` against latest migrations
