@@ -277,11 +277,11 @@ class KeplerSolver:
 
             # Constraint 2: Soft Block Breaker (Rev K16 Phase 1 Pivot)
             # Replaces linear discomfort.
-            # Goal: Penalize blocks longer than 2.0 hours.
+            # Goal: Penalize blocks longer than comfort-level-dependent hours.
             # Logic: In any window of size (MaxBlock + 1), we should have at most MaxBlock heated slots.
             # If we have MaxBlock + 1, we are overshooting.
             if config.water_block_penalty_sek > 0:
-                max_block_hours = 2.0
+                max_block_hours = config.max_block_hours  # Rev K24: Dynamic per comfort level
                 max_block_slots = int(max_block_hours / avg_slot_hours)
                 # Window size = max_block_slots + 1 (e.g., 9 slots if max is 8)
                 window_size = max_block_slots + 1

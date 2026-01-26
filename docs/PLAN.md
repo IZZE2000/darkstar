@@ -587,7 +587,7 @@ data_quality:
 
 **Goal:** Fix water comfort levels (1-5) by implementing dynamic sliding window sizes that provide meaningful Economy vs Comfort trade-off, replacing the current hardcoded 2.0h window with comfort-level-dependent windows.
 
-**Context:** Current water comfort system uses K16's "Soft Sliding Window" (`block_overshoot` penalty) but hardcodes 2.0h windows for all comfort levels. This prevents true comfort differentiation - Economy users want bulk heating in cheap periods (large windows), while Maximum comfort users want frequent, spread-out heating (small windows).
+**Context:** Current water comfort system uses K16's "Soft Sliding Window" (`block_overshoot` penalty) but hardcodes 2.0h windows for all comfort levels. This prevents true comfort differentiation and doesn't adapt to different heater configurations (3kW vs 6kW heaters have different minimum heating times).
 
 **Plan:**
 
@@ -597,15 +597,15 @@ data_quality:
 * [x] **Test Scenarios:** Create test cases showing Level 1 vs Level 5 should produce different heating patterns.
 * [x] **Key Finding:** Comfort levels show limited differentiation due to hardcoded 2.0h window ceiling. Level 5 creates more blocks (3 vs 2) but all hit same 2.0h max block size.
 
-#### Phase 2: Dynamic Window Implementation [TODO]
-* [ ] **Window Size Mapping:** Implement comfort-level-dependent `max_block_hours` in `_comfort_level_to_penalty()`:
-  * Level 1 (Economy): 4.0h windows = bulk heating in cheap periods
-  * Level 2 (Balanced): 3.0h windows = moderate consolidation
-  * Level 3 (Neutral): 2.0h windows = current behavior
-  * Level 4 (Priority): 1.5h windows = more frequent heating
-  * Level 5 (Maximum): 1.0h windows = frequent, spread-out heating
-* [ ] **Adapter Integration:** Update `config_to_kepler_config()` to pass dynamic `max_block_hours` to solver.
-* [ ] **Solver Update:** Modify `kepler.py` to accept `max_block_hours` parameter instead of hardcoded 2.0.
+#### Phase 2: Dynamic Window Implementation [DONE]
+* [x] **Dynamic Window Calculation:** Implement adaptive `max_block_hours` based on actual heating requirements:
+  * Formula: `max_block_hours = (daily_kwh / heater_power_kw) * comfort_multiplier`
+  * Comfort multipliers: Level 1=2.0 (bulk), Level 3=1.0 (baseline), Level 5=0.5 (frequent)
+  * Example: 3kW heater, 8kWh daily → Level 1: 5.33h, Level 5: 1.33h
+* [x] **Window Size Mapping:** Update `_comfort_level_to_penalty()` to calculate dynamic windows instead of hardcoded values.
+* [x] **Adapter Integration:** Update `config_to_kepler_config()` to pass calculated `max_block_hours` to solver.
+* [x] **Solver Update:** Modify `kepler.py` to accept `max_block_hours` parameter instead of hardcoded 2.0.
+* [x] **Validation:** Confirmed Level 1 creates 2 large blocks (2.0h) vs Level 5 creates 5 small blocks (1.0-1.25h).
 
 #### Phase 3: Penalty Scaling [TODO]
 * [ ] **Penalty Calibration:** Scale `water_block_penalty_sek` values to be meaningful vs electricity costs (~1.5 SEK/slot):

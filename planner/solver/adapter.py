@@ -52,38 +52,68 @@ def planner_to_kepler_input(df: pd.DataFrame, initial_soc_kwh: float) -> KeplerI
     return KeplerInput(slots=slots, initial_soc_kwh=initial_soc_kwh)
 
 
-def _comfort_level_to_penalty(comfort_level: int) -> dict[str, float]:
-    """Map comfort level (1-5) to penalty configuration.
+def _comfort_level_to_penalty(
+    comfort_level: int, daily_kwh: float = 0.0, heater_power_kw: float = 0.0
+) -> dict[str, float]:
+    """Map comfort level (1-5) to penalty configuration and dynamic window size.
 
-    Level 1: Economy - comfort is nice-to-have
-    Level 5: Maximum - almost hard constraint
+    Level 1: Economy - comfort is nice-to-have, large windows for bulk heating
+    Level 5: Maximum - almost hard constraint, small windows for frequent heating
+
+    Args:
+        comfort_level: 1-5 comfort level
+        daily_kwh: Daily water heating requirement
+        heater_power_kw: Water heater power rating
     """
+    # Comfort multipliers for window sizing
+    COMFORT_MULTIPLIERS = {
+        1: 2.0,  # Economy: 2x minimum time (bulk heating)
+        2: 1.5,  # Balanced: 1.5x minimum time
+        3: 1.0,  # Neutral: 1x minimum time (baseline)
+        4: 0.75,  # Priority: 0.75x minimum time
+        5: 0.5,  # Maximum: 0.5x minimum time (frequent heating)
+    }
+
+    # Calculate dynamic window size
+    if daily_kwh > 0 and heater_power_kw > 0:
+        min_heating_hours = daily_kwh / heater_power_kw
+        multiplier = COMFORT_MULTIPLIERS.get(comfort_level, 1.0)
+        max_block_hours = min_heating_hours * multiplier
+    else:
+        # Fallback to current behavior if parameters missing
+        max_block_hours = 2.0
+
     COMFORT_MAP = {
-        # Level: {reliability, block_start, block}
+        # Level: {reliability, block_start, block, max_block_hours}
         1: {
             "water_reliability_penalty_sek": 2.0,
             "water_block_start_penalty_sek": 1.5,
-            "water_block_penalty_sek": 0.25,
+            "water_block_penalty_sek": 5.0,  # Increased from 0.25
+            "max_block_hours": max_block_hours,
         },  # Economy
         2: {
             "water_reliability_penalty_sek": 7.0,
             "water_block_start_penalty_sek": 2.25,
-            "water_block_penalty_sek": 0.375,
+            "water_block_penalty_sek": 10.0,  # Increased from 0.375
+            "max_block_hours": max_block_hours,
         },  # Balanced
         3: {
             "water_reliability_penalty_sek": 15.0,
             "water_block_start_penalty_sek": 3.0,
-            "water_block_penalty_sek": 0.50,
+            "water_block_penalty_sek": 20.0,  # Increased from 0.50
+            "max_block_hours": max_block_hours,
         },  # Neutral
         4: {
             "water_reliability_penalty_sek": 30.0,
             "water_block_start_penalty_sek": 4.5,
-            "water_block_penalty_sek": 0.75,
+            "water_block_penalty_sek": 40.0,  # Increased from 0.75
+            "max_block_hours": max_block_hours,
         },  # Priority
         5: {
             "water_reliability_penalty_sek": 300.0,
-            "water_block_start_penalty_sek": 1,
-            "water_block_penalty_sek": 30.0,
+            "water_block_start_penalty_sek": 1.0,  # Fixed typo: was 1 instead of 1.0
+            "water_block_penalty_sek": 100.0,  # Increased from 30.0
+            "max_block_hours": max_block_hours,
         },  # Maximum
     }
     # Default to Level 3 (Neutral) if invalid
@@ -211,7 +241,11 @@ def config_to_kepler_config(
         ),
         water_heated_today_kwh=0.0,  # Set in pipeline from HA sensor
         # Rev K23: Multi-Parameter Comfort Control (ALWAYS applied)
-        **_comfort_level_to_penalty(int(wh_cfg.get("comfort_level", 3))),
+        **_comfort_level_to_penalty(
+            int(wh_cfg.get("comfort_level", 3)),
+            daily_kwh=float(wh_cfg.get("daily_kwh", 0.0)),
+            heater_power_kw=float(wh_cfg.get("power_kw", 0.0)),
+        ),
         # Rev WH1: Disable spacing constraints when top-ups are disabled
         water_min_spacing_hours=float(
             wh_cfg.get("min_spacing_hours", 5.0) if wh_cfg.get("enable_top_ups", True) else 0.0

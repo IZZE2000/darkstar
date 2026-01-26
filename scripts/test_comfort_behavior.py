@@ -39,12 +39,17 @@ def test_comfort_level(level: int, scenario_name: str):
     config["water_heating"]["comfort_level"] = level
 
     # Get penalty mapping
-    penalties = _comfort_level_to_penalty(level)
+    penalties = _comfort_level_to_penalty(
+        level,
+        daily_kwh=config["water_heating"]["daily_kwh"],
+        heater_power_kw=config["water_heating"]["power_kw"],
+    )
     print(
         f"Penalties: reliability={penalties['water_reliability_penalty_sek']:.1f}, "
         f"block_start={penalties['water_block_start_penalty_sek']:.1f}, "
         f"block={penalties['water_block_penalty_sek']:.2f}"
     )
+    print(f"Dynamic window: {penalties['max_block_hours']:.2f}h (vs 2.0h hardcoded)")
 
     # Convert to Kepler config
     kepler_config = config_to_kepler_config(config)

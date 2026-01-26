@@ -39,6 +39,7 @@ class KeplerConfig:
     water_comfort_penalty_sek: float = 0.50  # Penalty per hour beyond gap threshold
     water_block_penalty_sek: float = 0.0  # Set by config (default 0.50)
     water_reliability_penalty_sek: float = 0.0  # Set by config (default 1000.0)
+    max_block_hours: float = 2.0  # Rev K24: Dynamic window size per comfort level
     water_min_spacing_hours: float = (
         4.0  # Rev K21/PERF1: STRICT min gap between starts. Hard Constraint.
     )
