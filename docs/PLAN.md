@@ -191,11 +191,13 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] Test `alembic upgrade head` on clean database
 * [x] Test `alembic downgrade -1` to verify rollback works
 
-#### Phase 3: Test on Existing Database [PLANNED]
-* [ ] Test migration on database with schema drift (missing `action_results` column)
+#### Phase 3: Test on Existing Database [IN PROGRESS]
+* [x] Test migration on database with schema drift (missing `action_results` column)
 * [ ] Verify executor can successfully write to `action_results` column post-migration
 * [ ] Confirm no more `sqlite3.OperationalError: table execution_log has no column named action_results`
-* [ ] Test recorder service confirms `system_state` table exists (from previous migration)
+* [x] Test recorder service confirms `system_state` table exists (from previous migration)
+
+**Issue Found:** `alembic.ini` and `alembic/` directory were missing from `darkstar-dev/Dockerfile`, preventing migrations from running. Fixed by adding COPY commands (matching stable Dockerfile).
 
 #### Phase 4: Schema Drift Audit [DONE]
 * [x] Compare all 23 model definitions in `backend/learning/models.py` against latest migrations
