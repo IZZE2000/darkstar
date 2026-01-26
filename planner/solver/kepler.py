@@ -369,11 +369,11 @@ class KeplerSolver:
 
         try:
             # Try GLPK first (installed in Alpine Docker image) with timeout
-            solver_cmd = pulp.GLPK_CMD(msg=False, timeLimit=90)
+            solver_cmd = pulp.GLPK_CMD(msg=False, timeLimit=30)
             prob.solve(solver_cmd)
         except Exception:
             # Fall back to CBC if GLPK not available, also with timeout
-            solver_cmd = pulp.PULP_CBC_CMD(msg=False, timeLimit=90)
+            solver_cmd = pulp.PULP_CBC_CMD(msg=False, timeLimit=30)
             prob.solve(solver_cmd)
 
         solve_end = time.time()

@@ -6,6 +6,7 @@ due to hardcoded 2.0h windows and inadequate penalty scaling.
 """
 
 import sys
+import time
 from pathlib import Path
 
 # Add project root to path
@@ -87,7 +88,11 @@ def test_comfort_level(level: int, scenario_name: str):
 
     # Solve
     solver = KeplerSolver()
+    solve_start = time.time()
     result = solver.solve(input_data, kepler_config)
+    solve_elapsed = time.time() - solve_start
+
+    print(f"   🔧 Actual solve time: {solve_elapsed:.3f}s (reported: {result.solve_time_ms:.1f}ms)")
 
     if not result.is_optimal:
         print(f"❌ Solver failed: {result.status_msg}")
@@ -131,31 +136,48 @@ def test_comfort_level(level: int, scenario_name: str):
 
 def main():
     """Test comfort levels and compare behavior."""
+    import time
+
+    script_start = time.time()
+
     print("🔍 Testing Water Comfort Level Behavior")
     print("=" * 50)
 
     results = []
+    level_names = {1: "Economy", 2: "Balanced", 3: "Neutral", 4: "Priority", 5: "Maximum"}
 
-    # Test extreme levels
-    results.append(test_comfort_level(1, "Economy"))
-    results.append(test_comfort_level(5, "Maximum"))
+    # Test all levels
+    for level in [1, 2, 3, 4, 5]:
+        level_start = time.time()
+        results.append(test_comfort_level(level, level_names[level]))
+        level_elapsed = time.time() - level_start
+        print(f"   ⏱️  Level {level} total time: {level_elapsed:.2f}s\n")
 
     # Compare results
     print(f"\n{'=' * 50}")
     print("📊 COMPARISON RESULTS")
     print(f"{'=' * 50}")
 
-    if len(results) == 2 and all(r for r in results):
-        r1, r5 = results
-        print(f"Level 1 (Economy):  {r1['blocks']} blocks, max {r1['max_block_size']} slots")
-        print(f"Level 5 (Maximum):  {r5['blocks']} blocks, max {r5['max_block_size']} slots")
+    if all(r for r in results):
+        for r in results:
+            level_name = level_names[r["level"]]
+            print(
+                f"Level {r['level']} ({level_name:8s}): {r['blocks']} blocks, "
+                f"max {r['max_block_size']} slots, solve: {r['solve_time'] * 1000:.1f}ms"
+            )
 
-        if r1["blocks"] == r5["blocks"] and r1["max_block_size"] == r5["max_block_size"]:
-            print("❌ IDENTICAL BEHAVIOR - Comfort levels are broken!")
+        # Check for smooth progression
+        block_counts = [r["blocks"] for r in results]
+        if block_counts == sorted(block_counts):
+            print("\n✅ Smooth progression detected (fewer → more blocks)")
         else:
-            print("✅ Different behavior detected")
+            print("\n⚠️  WARNING: Progression may not be smooth!")
+            print(f"   Block counts: {block_counts}")
     else:
         print("❌ Test failed - could not compare results")
+
+    script_elapsed = time.time() - script_start
+    print(f"\n⏱️  Total script time: {script_elapsed:.2f}s")
 
 
 if __name__ == "__main__":

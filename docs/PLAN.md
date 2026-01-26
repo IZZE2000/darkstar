@@ -607,11 +607,20 @@ data_quality:
 * [x] **Solver Update:** Modify `kepler.py` to accept `max_block_hours` parameter instead of hardcoded 2.0.
 * [x] **Validation:** Confirmed Level 1 creates 2 large blocks (2.0h) vs Level 5 creates 5 small blocks (1.0-1.25h).
 
-#### Phase 3: Penalty Scaling [TODO]
-* [ ] **Penalty Calibration:** Scale `water_block_penalty_sek` values to be meaningful vs electricity costs (~1.5 SEK/slot):
-  * Level 1: Low penalty (5-10 SEK) = allows window violations for cheap prices
-  * Level 5: High penalty (50-100 SEK) = strictly enforces small windows
-* [ ] **Balance Testing:** Ensure penalties are strong enough to affect behavior but not so high they dominate electricity costs.
+#### Phase 3: Penalty Scaling & Multiplier Tuning [DONE]
+* [x] **Multiplier Refinement:** Test and adjust comfort multipliers for optimal behavior:
+  * Implemented: Level 1=1.5x, Level 5=0.25x (smooth progression)
+  * Tested all 5 levels: Level 1=2 blocks, Level 5=8 blocks
+* [x] **Penalty Calibration:** Scale `water_block_penalty_sek` values to be meaningful vs electricity costs (~1.5 SEK/slot):
+  * Implemented: Level 1=0.5 SEK, Level 5=10.0 SEK (3-7x electricity cost)
+  * Added detailed documentation explaining penalty application scope
+* [x] **Bulk Mode Override:** Repurpose deprecated `enable_top_ups` as surgical bulk heating override:
+  * `enable_top_ups: false` → Override ONLY block parameters (24h windows, 0 SEK penalty)
+  * Preserves `water_reliability_penalty_sek` and `water_block_start_penalty_sek` from comfort level
+  * Tested: Level 5 + bulk mode = 3 blocks (vs 8 blocks without)
+* [x] **Balance Testing:** Verified penalties create meaningful trade-offs between comfort and cost.
+* [x] **Config Cleanup:** Removed redundant `daily_kwh` parameter, use `min_kwh_per_day` for both purposes.
+* [x] **Solver Timeout:** Reduced from 90s to 30s for faster failure detection.
 
 #### Phase 4: Validation & Testing [TODO]
 * [ ] **Behavioral Testing:** Verify Level 1 produces bulk heating patterns while Level 5 produces frequent heating.

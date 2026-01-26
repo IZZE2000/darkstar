@@ -67,52 +67,65 @@ def _comfort_level_to_penalty(
     """
     # Comfort multipliers for window sizing
     COMFORT_MULTIPLIERS = {
-        1: 2.0,  # Economy: 2x minimum time (bulk heating)
-        2: 1.5,  # Balanced: 1.5x minimum time
-        3: 1.0,  # Neutral: 1x minimum time (baseline)
-        4: 0.75,  # Priority: 0.75x minimum time
-        5: 0.5,  # Maximum: 0.5x minimum time (frequent heating)
+        1: 1.5,  # Economy: Larger windows = bulk heating in cheapest period
+        2: 1.0,  # Balanced: Moderate windows
+        3: 0.8,  # Neutral: Slight spacing preference
+        4: 0.5,  # Priority: More frequent heating
+        5: 0.25,  # Maximum: Very frequent = stable temperature
     }
 
     # Calculate dynamic window size
     if daily_kwh > 0 and heater_power_kw > 0:
         min_heating_hours = daily_kwh / heater_power_kw
-        multiplier = COMFORT_MULTIPLIERS.get(comfort_level, 1.0)
+        multiplier = COMFORT_MULTIPLIERS.get(comfort_level, 0.8)
         max_block_hours = min_heating_hours * multiplier
     else:
         # Fallback to current behavior if parameters missing
         max_block_hours = 2.0
+
+    # Penalty parameters explained:
+    # - water_reliability_penalty_sek: Applied ONCE PER DAY when daily minimum (min_kwh_per_day) is not met.
+    #   Higher values = stricter enforcement of daily heating requirement.
+    #   Example: 300 SEK = 300 SEK total penalty if day fails to meet minimum.
+    # - water_block_start_penalty_sek: Applied ONCE PER HEATING BLOCK when a new heating session starts.
+    #   Higher values = preference for fewer, longer blocks vs many short blocks.
+    #   Example: 1.5 SEK = 1.5 SEK penalty for each heating block created.
+    # - water_block_penalty_sek: Applied PER SLOT when heating block exceeds max_block_hours.
+    #   Higher values = stricter enforcement of window size limits.
+    #   Example: 10 SEK = 10 SEK penalty for each 15-minute slot that overshoots the window.
+    # - max_block_hours: Maximum duration for a single heating block (calculated dynamically).
+    #   Smaller values = more frequent heating = more stable temperature.
 
     COMFORT_MAP = {
         # Level: {reliability, block_start, block, max_block_hours}
         1: {
             "water_reliability_penalty_sek": 2.0,
             "water_block_start_penalty_sek": 1.5,
-            "water_block_penalty_sek": 5.0,  # Increased from 0.25
+            "water_block_penalty_sek": 0.5,
             "max_block_hours": max_block_hours,
         },  # Economy
         2: {
             "water_reliability_penalty_sek": 7.0,
             "water_block_start_penalty_sek": 2.25,
-            "water_block_penalty_sek": 10.0,  # Increased from 0.375
+            "water_block_penalty_sek": 1.0,
             "max_block_hours": max_block_hours,
         },  # Balanced
         3: {
             "water_reliability_penalty_sek": 15.0,
             "water_block_start_penalty_sek": 3.0,
-            "water_block_penalty_sek": 20.0,  # Increased from 0.50
+            "water_block_penalty_sek": 2.0,
             "max_block_hours": max_block_hours,
         },  # Neutral
         4: {
             "water_reliability_penalty_sek": 30.0,
             "water_block_start_penalty_sek": 4.5,
-            "water_block_penalty_sek": 40.0,  # Increased from 0.75
+            "water_block_penalty_sek": 5.0,
             "max_block_hours": max_block_hours,
         },  # Priority
         5: {
             "water_reliability_penalty_sek": 300.0,
-            "water_block_start_penalty_sek": 1.0,  # Fixed typo: was 1 instead of 1.0
-            "water_block_penalty_sek": 100.0,  # Increased from 30.0
+            "water_block_start_penalty_sek": 1.0,
+            "water_block_penalty_sek": 10.0,
             "max_block_hours": max_block_hours,
         },  # Maximum
     }
@@ -120,6 +133,26 @@ def _comfort_level_to_penalty(
     params = COMFORT_MAP.get(comfort_level, COMFORT_MAP[3]).copy()
     # Explicitly disable legacy gap penalty
     params["water_comfort_penalty_sek"] = 0.0
+    return params
+
+
+def _apply_bulk_mode_override(params: dict[str, float]) -> dict[str, float]:
+    """Apply bulk heating mode override - forces single block behavior.
+
+    Overrides ONLY block-related parameters while preserving reliability penalties.
+    This allows users to request bulk heating (single block) while maintaining
+    their chosen reliability level (e.g., Level 5 + bulk mode = strict reliability
+    but consolidated heating).
+
+    Args:
+        params: Penalty parameters from comfort level
+
+    Returns:
+        Modified parameters with bulk mode overrides
+    """
+    params["max_block_hours"] = 24.0  # Allow entire day as one block
+    params["water_block_penalty_sek"] = 0.0  # No penalty for long blocks
+    # Keep water_reliability_penalty_sek and water_block_start_penalty_sek unchanged
     return params
 
 
@@ -241,10 +274,21 @@ def config_to_kepler_config(
         ),
         water_heated_today_kwh=0.0,  # Set in pipeline from HA sensor
         # Rev K23: Multi-Parameter Comfort Control (ALWAYS applied)
-        **_comfort_level_to_penalty(
-            int(wh_cfg.get("comfort_level", 3)),
-            daily_kwh=float(wh_cfg.get("daily_kwh", 0.0)),
-            heater_power_kw=float(wh_cfg.get("power_kw", 0.0)),
+        # Rev K24: Apply bulk mode override if enable_top_ups=false
+        **(
+            _apply_bulk_mode_override(
+                _comfort_level_to_penalty(
+                    int(wh_cfg.get("comfort_level", 3)),
+                    daily_kwh=float(wh_cfg.get("min_kwh_per_day", 0.0)),
+                    heater_power_kw=float(wh_cfg.get("power_kw", 0.0)),
+                )
+            )
+            if not wh_cfg.get("enable_top_ups", True)
+            else _comfort_level_to_penalty(
+                int(wh_cfg.get("comfort_level", 3)),
+                daily_kwh=float(wh_cfg.get("min_kwh_per_day", 0.0)),
+                heater_power_kw=float(wh_cfg.get("power_kw", 0.0)),
+            )
         ),
         # Rev WH1: Disable spacing constraints when top-ups are disabled
         water_min_spacing_hours=float(
