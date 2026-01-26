@@ -171,83 +171,52 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 
 ---
 
-## **REV // XX - BACKLOG TASK: Data Quality Spike Filtering** (Rewrite title!)
+### [DONE] REV // H5 — Battery SoC Fallback for Unavailable Sensor
 
-### **Problem Statement**
-Home Assistant sensors occasionally report unrealistic spikes (e.g., 0W → 15,000W → 2,500W
-) that corrupt ML training data and forecasting accuracy. Need intelligent filtering to
-remove obvious sensor glitches while preserving legitimate rapid changes.
+**Goal:** Prevent SoC from dropping to 0% in charts when Home Assistant reports the battery sensor as "unavailable". Use last known good value from database instead.
 
-### **Requirements**
-1. Filter obvious sensor spikes and glitches from HA data
-2. Preserve legitimate rapid changes (heat pump startup, etc.)
-3. Apply sensor-specific filtering rules based on physical limits
-4. Configurable filtering parameters per sensor type
-5. Minimal performance impact on data collection pipeline
+**Problem:** When HA sensor goes unavailable (e.g., inverter communication glitch), the recorder defaults to 0%, creating false data spikes in charts and corrupting historical tracking.
 
-### **Proposed Solution**
-Implement hybrid filtering approach in inputs.py with:
-- Simple threshold filter for obvious spikes (>500% change)
-- Sensor-specific physical limits (min/max values)
-- Rate-of-change limits per sensor type
-- Configurable settings in config.yaml
+**Solution:** Store last known good SoC in database. When HA returns unavailable, use the cached value. Skip recording entirely on startup until first valid reading is obtained.
 
-### **Implementation Plan**
+**Plan:**
 
-Task 1: Create Data Quality Filter Module
-- Add backend/data_quality/filters.py with filtering functions
-- Implement threshold, median, and rate-of-change filters
-- Add sensor-specific limit definitions
-- Demo: Filter functions remove spikes while preserving legitimate changes
+#### Phase 1: Database Schema [DONE]
+* [x] Create Alembic migration for `system_state` table with columns: `key` (TEXT PRIMARY KEY), `value` (TEXT), `updated_at` (TIMESTAMP)
+* [x] Add SQLAlchemy model `SystemState` in `backend/learning/models.py`
+* [x] Test migration applies cleanly on fresh and existing databases
 
-Task 2: Add Configuration Schema
-- Extend config.yaml with data_quality section
-- Define sensor limits for battery_soc, pv_power, load_power, grid_power, temperature
-- Add enable/disable toggle for filtering
-- Demo: Configurable filtering parameters per sensor type
+#### Phase 2: State Persistence Layer [DONE]
+* [x] Add helper functions in `backend/learning/store.py`:
+  * `async def get_system_state(key: str) -> str | None` - Fetch cached value
+  * `async def set_system_state(key: str, value: str) -> None` - Update cached value
+* [x] Use key `"last_known_soc"` for battery SoC storage
+* [x] Test read/write operations work correctly
 
-Task 3: Integrate Filtering in Data Pipeline
-- Modify inputs.py to apply filters after HA data collection
-- Add filtering to get_ha_sensor_data() function
-- Log filtering activity for monitoring
-- Demo: Sensor data cleaned before ML processing
+#### Phase 3: Recorder Fallback Logic [DONE]
+* [x] Modify `backend/recorder.py` `record_slot_observation()`:
+  * When `get_ha_sensor_float(soc_entity)` returns `None`:
+    * Fetch `last_known_soc` from database
+    * If found: use cached value and log warning "Using last known SoC (unavailable sensor)"
+    * If not found: skip recording entirely, log "No valid SoC available, skipping observation"
+  * When valid SoC obtained: update `last_known_soc` in database
+* [x] Test with simulated unavailable sensor (mock HA response)
 
-Task 4: Add Filtering Metrics
-- Track filtering statistics (spikes removed, data quality scores)
-- Add filtering metrics to health check script
-- Include data quality indicators in Aurora dashboard
-- Demo: Visibility into data quality and filtering effectiveness
+#### Phase 4: Testing & Validation [DONE]
+* [x] Test scenario: HA sensor goes unavailable mid-day → chart shows flat line (last known value) instead of drop to 0%
+* [x] Test scenario: System startup with no cached value → no recording until valid reading
+* [x] Test scenario: System startup with cached value → uses cache until fresh reading available
+* [x] Verify chart data shows smooth SoC line without 0% spikes
 
-Task 5: Testing & Validation
-- Test with historical spike data
-- Validate ML model accuracy improvement
-- Ensure legitimate rapid changes preserved
-- Demo: Improved forecast accuracy with filtered data
+#### Phase 5: Historical Data Repair [DONE]
+* [x] Create repair script `scripts/repair_soc.py`
+* [x] Run repair script to fix historical gaps (interpolated 41 entries)
+* [x] Verify fix with `scripts/detect_soc_drops.py`
 
-### **Configuration Example**
-yaml
-data_quality:
-  enable_filtering: true
-  sensor_limits:
-    battery_soc:
-      min: 0
-      max: 100
-      max_change_per_minute: 10
-    pv_power:
-      min: 0
-      max: 15000
-      max_change_per_minute: 5000
-    load_power:
-      min: 0
-      max: 20000
-      max_change_per_minute: 8000
-
-
-### **Success Criteria**
-1. ✅ Sensor spikes automatically filtered from data pipeline
-2. ✅ Legitimate rapid changes preserved (heat pump, EV charging)
-3. ✅ Configurable filtering per sensor type
-4. ✅ Improved ML model accuracy with cleaner training data
-5. ✅ Data quality metrics visible in monitoring
+#### Phase 6: Post-Review Polish [DONE]
+* [x] Fix Alembic migration comment mismatch
+* [x] Add error logging for corrupt cache in `recorder.py`
+* [x] Remove dead code in `recorder.py`
+* [x] Add test case for corrupt cache
 
 ---

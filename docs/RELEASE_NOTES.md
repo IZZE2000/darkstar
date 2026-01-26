@@ -1,3 +1,34 @@
+## [v2.6.0] - Dynamic Water Heating & Advanced Mode - 2026-01-26
+
+> [!IMPORTANT]
+> **DYNAMIC WATER HEATING & ADVANCED MODE**
+> This release marks a major milestone in Darkstar's transition to an intelligent agent. It introduces a "Dynamic Water Heating" engine that adapts to your comfort preferences, a "Trust-but-Verify" execution system that proves commands work, and a completely redesigned "Advanced Mode" for settings.
+
+**🌟 Key Enhancements**
+
+- **Dynamic Water Heating (Rev K16, K23, K24)**
+    - **Dynamic Windows**: Comfort levels 1-5 now intelligently resize heating blocks. Level 1 (Economy) groups heating into large, efficient chunks. Level 5 (Maximum) allows frequent top-ups for endless hot water.
+    - **Performance**: The new Kepler solver optimization significantly reduces solve times.
+    - **Smart Penalties**: Fully tunable penalties for block length, starts, and reliability.
+
+- **Advanced Mode & UI Polish (Rev UI10, UI12, K17)**
+    - **Standard Mode**: A clean, minimal interface for everyday use.
+    - **Advanced Mode**: Toggle this to unlock technical parameters, solver constraints, and the new embedded Debug tab.
+    - **Animations**: Smooth transitions when toggling modes.
+
+- **Trust-but-Verify Execution (Rev UI11)**
+    - **Entity Visibility**: See exactly which Home Assistant entity (e.g., `number.inverter_max_charge`) is being controlled.
+    - **Status Verification**: A new "traffic light" system in Execution History shows if a command succeeded (Green), failed (Red), or was skipped (Blue).
+    - **Shadow Mode**: Clearly distinguishes "What If" shadow actions from real commands.
+
+**🛠️ Technical Improvements**
+
+- **Critical Executor Fix (Rev F38)**: Rewrote the Executor Engine to be fully `async`, eliminating race conditions and `RuntimeError` crashes during heavy load.
+- **Test Suite Stabilization (Rev F39)**: Fixed all regression tests. reliable green builds are back.
+- **Configuration Exposure (Rev K17)**: Almost every hardcoded solver constraint is now exposed in `config.yaml` for power users.
+
+---
+
 ## [v2.5.10-beta] - Add-on Solver Stability Fix (CBC) - 2026-01-22
 
 > [!IMPORTANT]

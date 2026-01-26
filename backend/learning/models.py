@@ -267,6 +267,14 @@ class VacationState(Base):
     updated_at: Mapped[str | None] = mapped_column(String)
 
 
+class SystemState(Base):
+    __tablename__ = "system_state"
+
+    key: Mapped[str] = mapped_column(String, primary_key=True)
+    value: Mapped[str | None] = mapped_column(Text)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class DataQualityDaily(Base):
     __tablename__ = "data_quality_daily"
 

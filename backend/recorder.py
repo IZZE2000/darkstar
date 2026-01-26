@@ -108,7 +108,37 @@ async def record_observation_from_current_state(
 
     # Battery
     soc_entity = input_sensors.get("battery_soc")
-    soc_percent = (await get_ha_sensor_float(soc_entity)) or 0.0 if soc_entity else 0.0
+    soc_percent = None
+    if soc_entity:
+        soc_percent = await get_ha_sensor_float(soc_entity)
+
+    if soc_percent is None:
+        # Fallback: Try to get last known SoC from DB
+        cached_soc = await store.get_system_state("last_known_soc")
+        if cached_soc and soc_entity:
+            try:
+                soc_percent = float(cached_soc)
+                logger.warning(
+                    f"Battery SoC sensor ({soc_entity}) unavailable. "
+                    f"Using last known value: {soc_percent:.1f}%"
+                )
+            except ValueError:
+                logger.error(
+                    f"Cached SoC value is corrupted: '{cached_soc}'. "
+                    "Cannot use fallback. Skipping observation."
+                )
+                soc_percent = None
+
+        if soc_percent is None and soc_entity:
+            logger.warning(
+                f"Battery SoC sensor ({soc_entity}) unavailable and no valid cached value. "
+                "Skipping observation record."
+            )
+            await store.close()
+            return
+    else:
+        # Valid SoC obtained - update cache
+        await store.set_system_state("last_known_soc", str(soc_percent))
 
     # Fetch Price Data (REV // Complete Cost Reality Fix)
     prices = await get_current_slot_prices(config)

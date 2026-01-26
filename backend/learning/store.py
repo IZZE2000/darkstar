@@ -18,6 +18,7 @@ from backend.learning.models import (
     SlotForecast,
     SlotObservation,
     SlotPlan,
+    SystemState,
     TrainingEpisode,
 )
 
@@ -392,6 +393,30 @@ class LearningStore:
                     "last_updated": stmt.excluded.last_updated,
                     "change_count": ReflexState.change_count + 1,
                 },
+            )
+            await session.execute(stmt)
+            await session.commit()
+
+    async def get_system_state(self, key: str) -> str | None:
+        """
+        Get the specific system state value by key using Async SQLAlchemy.
+        """
+        async with self.AsyncSession() as session:
+            state = await session.get(SystemState, key)
+            if state:
+                return state.value
+            return None
+
+    async def set_system_state(self, key: str, value: str) -> None:
+        """
+        Set or update a system state value using Async SQLAlchemy.
+        """
+        now = datetime.now(self.timezone)
+        async with self.AsyncSession() as session:
+            stmt = sqlite_insert(SystemState).values(key=key, value=value, updated_at=now)
+            stmt = stmt.on_conflict_do_update(
+                index_elements=["key"],
+                set_={"value": stmt.excluded.value, "updated_at": stmt.excluded.updated_at},
             )
             await session.execute(stmt)
             await session.commit()
