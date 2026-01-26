@@ -167,3 +167,38 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
   * Solar only (minimal system)
 * [ ] **Regression Test:** Verify desktop tooltip/legend still works correctly
 * [ ] **Mobile Test:** Test bottom sheet tooltip on various screen sizes (320px-428px)
+
+---
+
+### [IN PROGRESS] REV // F40 — Fix Database Schema Drift (action_results Migration)
+
+**Goal:** Create missing Alembic migration for `action_results` column in `execution_log` table to fix `sqlite3.OperationalError` in HA add-on deployments.
+
+**Context:** The `action_results` column was added to the `ExecutionLog` model without creating a corresponding Alembic migration, causing runtime errors when the executor attempts to log detailed action results. This blocks the darkstar-dev add-on from functioning correctly.
+
+**Plan:**
+
+#### Phase 1: Create Migration [DONE]
+* [x] Generate new Alembic migration file: `alembic/versions/d8f3a1c9e4b5_add_action_results_to_execution_log.py`
+* [x] Set `down_revision = "b4c2b7eb00b2"` (latest migration: system_state table)
+* [x] Use `batch_alter_table` for SQLite compatibility (following pattern from `cc7e520017af`)
+* [x] Add `action_results` column as nullable `Text` type (matches model definition line 325)
+* [x] Implement downgrade path that drops the column using `batch_alter_table`
+
+#### Phase 2: Verify Migration Chain [DONE]
+* [x] Run `alembic history` to verify migration chain integrity
+* [x] Confirm new migration is HEAD with no branches
+* [x] Test `alembic upgrade head` on clean database
+* [x] Test `alembic downgrade -1` to verify rollback works
+
+#### Phase 3: Test on Existing Database [PLANNED]
+* [ ] Test migration on database with schema drift (missing `action_results` column)
+* [ ] Verify executor can successfully write to `action_results` column post-migration
+* [ ] Confirm no more `sqlite3.OperationalError: table execution_log has no column named action_results`
+* [ ] Test recorder service confirms `system_state` table exists (from previous migration)
+
+#### Phase 4: Schema Drift Audit [PLANNED]
+* [ ] Compare all 23 model definitions in `backend/learning/models.py` against latest migrations
+* [ ] Verify each table's columns match between SQLAlchemy models and Alembic schema
+* [ ] Document any additional drift found (if any)
+* [ ] Create follow-up migrations if needed
