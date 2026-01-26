@@ -13,7 +13,7 @@
 
 - **Advanced Mode & UI Polish (Rev UI10, UI12, K17)**
     - **Standard Mode**: A clean, minimal interface for everyday use.
-    - **Advanced Mode**: Toggle this to unlock technical parameters, solver constraints, and the new embedded Debug tab.
+    - **Advanced Mode**: Toggle this to unlock technical parameters, solver constraints, and the moved embedded Debug tab.
     - **Animations**: Smooth transitions when toggling modes.
 
 - **Trust-but-Verify Execution (Rev UI11)**
@@ -26,6 +26,20 @@
 - **Critical Executor Fix (Rev F38)**: Rewrote the Executor Engine to be fully `async`, eliminating race conditions and `RuntimeError` crashes during heavy load.
 - **Test Suite Stabilization (Rev F39)**: Fixed all regression tests. reliable green builds are back.
 - **Configuration Exposure (Rev K17)**: Almost every hardcoded solver constraint is now exposed in `config.yaml` for power users.
+- **Battery SoC Fallback (Rev H5)**: The system now persists the last known Battery SoC during sensor outages, preventing charts from dropping to 0%.
+
+### 📜 Full Changelog
+
+*   **REV K24:** Dynamic Water Comfort Windows (Adaptive block sizing)
+*   **REV F39:** Test Suite Stabilisation (0 failures)
+*   **REV H5:** Battery SoC Fallback (Data Persistence)
+*   **REV F38:** Critical Asyncio Executor Fix (Engine Stability)
+*   **REV K23:** Water Comfort Multi-Parameter Control (Economy vs Comfort scaling)
+*   **REV UI12:** Move Debug Tab to Settings (Advanced Mode integration)
+*   **REV UI11:** Enhanced Execution History (Entity visibility & Verification)
+*   **REV UI10:** Advanced Settings Mode (Clean UI vs Power User UI)
+*   **REV K17:** Configuration Exposure & Polish (Solver constraints)
+*   **REV K16:** Water Heating Optimization (Soft constraints & Performance)
 
 ---
 
