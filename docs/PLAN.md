@@ -197,8 +197,10 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [ ] Confirm no more `sqlite3.OperationalError: table execution_log has no column named action_results`
 * [ ] Test recorder service confirms `system_state` table exists (from previous migration)
 
-#### Phase 4: Schema Drift Audit [PLANNED]
-* [ ] Compare all 23 model definitions in `backend/learning/models.py` against latest migrations
-* [ ] Verify each table's columns match between SQLAlchemy models and Alembic schema
-* [ ] Document any additional drift found (if any)
-* [ ] Create follow-up migrations if needed
+#### Phase 4: Schema Drift Audit [DONE]
+* [x] Compare all 23 model definitions in `backend/learning/models.py` against latest migrations
+* [x] Verify each table's columns match between SQLAlchemy models and Alembic schema
+* [x] Document any additional drift found (if any)
+* [x] Create follow-up migrations if needed
+
+**Audit Results:** ✅ No critical drift found. One benign legacy column (`learning_daily_metrics.updated_at`) exists in DB but not in model - no functional impact. Full report: `docs/reports/schema_audit_f40.md`
