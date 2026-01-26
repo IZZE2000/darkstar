@@ -137,7 +137,7 @@ def deep_merge_missing(target, source):
     return is_modified
 
 # Perform migration
-modified_config = deep_merge_missing(config, default_config)
+config_was_modified = deep_merge_missing(config, default_config)
 
 try:
     if secrets_path.exists():
@@ -149,7 +149,7 @@ except Exception as e:
     print(f"[run.sh] Error loading secrets.yaml: {e}")
     secrets = {}
 
-modified_config = False
+modified_config = config_was_modified
 modified_secrets = False
 
 # -----------------------------------------------------------------------------
