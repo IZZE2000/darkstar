@@ -580,3 +580,45 @@ data_quality:
 #### Phase 7: Final Validation [DONE]
 * [x] **Full Test Suite:** Run `uv run python -m pytest` and verify 0 failures.
 * [x] **Run Linting:** Verify `./scripts/lint.sh` passes.
+
+---
+
+### REV // K24 — Dynamic Water Comfort Windows
+
+**Goal:** Fix water comfort levels (1-5) by implementing dynamic sliding window sizes that provide meaningful Economy vs Comfort trade-off, replacing the current hardcoded 2.0h window with comfort-level-dependent windows.
+
+**Context:** Current water comfort system uses K16's "Soft Sliding Window" (`block_overshoot` penalty) but hardcodes 2.0h windows for all comfort levels. This prevents true comfort differentiation - Economy users want bulk heating in cheap periods (large windows), while Maximum comfort users want frequent, spread-out heating (small windows).
+
+**Plan:**
+
+#### Phase 1: Investigation & Baseline [DONE]
+* [x] **Current Behavior Analysis:** Document current `block_overshoot` penalty behavior with 2.0h hardcoded windows.
+* [x] **Benchmark Script:** Run `scripts/benchmark_kepler.py` to establish performance baseline before changes.
+* [x] **Test Scenarios:** Create test cases showing Level 1 vs Level 5 should produce different heating patterns.
+* [x] **Key Finding:** Comfort levels show limited differentiation due to hardcoded 2.0h window ceiling. Level 5 creates more blocks (3 vs 2) but all hit same 2.0h max block size.
+
+#### Phase 2: Dynamic Window Implementation [TODO]
+* [ ] **Window Size Mapping:** Implement comfort-level-dependent `max_block_hours` in `_comfort_level_to_penalty()`:
+  * Level 1 (Economy): 4.0h windows = bulk heating in cheap periods
+  * Level 2 (Balanced): 3.0h windows = moderate consolidation
+  * Level 3 (Neutral): 2.0h windows = current behavior
+  * Level 4 (Priority): 1.5h windows = more frequent heating
+  * Level 5 (Maximum): 1.0h windows = frequent, spread-out heating
+* [ ] **Adapter Integration:** Update `config_to_kepler_config()` to pass dynamic `max_block_hours` to solver.
+* [ ] **Solver Update:** Modify `kepler.py` to accept `max_block_hours` parameter instead of hardcoded 2.0.
+
+#### Phase 3: Penalty Scaling [TODO]
+* [ ] **Penalty Calibration:** Scale `water_block_penalty_sek` values to be meaningful vs electricity costs (~1.5 SEK/slot):
+  * Level 1: Low penalty (5-10 SEK) = allows window violations for cheap prices
+  * Level 5: High penalty (50-100 SEK) = strictly enforces small windows
+* [ ] **Balance Testing:** Ensure penalties are strong enough to affect behavior but not so high they dominate electricity costs.
+
+#### Phase 4: Validation & Testing [TODO]
+* [ ] **Behavioral Testing:** Verify Level 1 produces bulk heating patterns while Level 5 produces frequent heating.
+* [ ] **Performance Testing:** Ensure solve times remain <3s after dynamic window implementation.
+* [ ] **Edge Case Testing:** Test extreme scenarios (very cheap/expensive periods) to ensure comfort levels still differentiate.
+
+#### Phase 5: Documentation & Release [TODO]
+* [ ] **User Documentation:** Update comfort level descriptions to explain window size behavior.
+* [ ] **Technical Documentation:** Document the two-parameter comfort system (window size + penalty).
+* [ ] **Final Validation:** Confirm all comfort levels (1-5) produce visibly different heating schedules.
