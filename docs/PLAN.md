@@ -583,11 +583,21 @@ data_quality:
 
 ---
 
-### REV // K24 — Dynamic Water Comfort Windows
+### [DONE] REV // K24 — Dynamic Water Comfort Windows
 
 **Goal:** Fix water comfort levels (1-5) by implementing dynamic sliding window sizes that provide meaningful Economy vs Comfort trade-off, replacing the current hardcoded 2.0h window with comfort-level-dependent windows.
 
-**Context:** Current water comfort system uses K16's "Soft Sliding Window" (`block_overshoot` penalty) but hardcodes 2.0h windows for all comfort levels. This prevents true comfort differentiation and doesn't adapt to different heater configurations (3kW vs 6kW heaters have different minimum heating times).
+**Status:** ✅ Complete - All 5 phases implemented and validated.
+
+**Results:**
+- Dynamic window calculation: `(daily_kwh / heater_power_kw) × comfort_multiplier`
+- Comfort multipliers: 1.5x (Economy) → 0.25x (Maximum)
+- Penalty scaling: 0.5-10 SEK for block violations
+- Bulk mode override: `enable_top_ups: false` for single-block heating
+- Behavioral validation: Level 1=1-2 blocks, Level 5=7-8 blocks
+- Performance: <0.08s solve times in real-world scenarios
+
+**Context:** Current water comfort system uses K16's "Soft Sliding Window" (`block_overshoot` penalty) but hardcoded 2.0h windows for all comfort levels. This prevented true comfort differentiation and didn't adapt to different heater configurations (3kW vs 6kW heaters have different minimum heating times).
 
 **Plan:**
 
@@ -627,7 +637,7 @@ data_quality:
 * [x] **Performance Testing:** Real-world scenarios solve in <0.08s. Test scenarios may timeout (30s) but this is acceptable.
 * [x] **Edge Case Testing:** Tested extreme scenarios (flat, spike, cheap prices) - differentiation maintained across all cases.
 
-#### Phase 5: Documentation & Release [TODO]
-* [ ] **User Documentation:** Update comfort level descriptions to explain window size behavior.
-* [ ] **Technical Documentation:** Document the two-parameter comfort system (window size + penalty).
-* [ ] **Final Validation:** Confirm all comfort levels (1-5) produce visibly different heating schedules
+#### Phase 5: Documentation & Release [DONE]
+* [x] **User Documentation:** Updated USER_MANUAL.md with comfort level descriptions explaining window size behavior and bulk mode.
+* [x] **Technical Documentation:** Updated DEVELOPER.md with two-parameter comfort system (window size + penalty) and dynamic calculation formula.
+* [x] **Final Validation:** Confirmed all comfort levels (1-5) produce visibly different heating schedules (Phase 4 testing).

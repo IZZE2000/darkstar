@@ -70,10 +70,21 @@ You'll see an "S-Index" score on the dashboard. This measures **volatility**.
 *   **Water Boost**: Triggers the water heater immediately, ignoring price. Useful if you need a hot bath *now*.
 
 ### Water Heating Comfort
-In **Settings -> Parameters**, you can set the Water Heater "Comfort Level".
-*   **Economy**: ONLY heats when prices are rock bottom. You might have lukewarm water.
-*   **Balanced**: Good mix of savings and comfort.
-*   **Priority/Lux**: Heats whenever the tank temp drops, mostly ignoring price.
+In **Dashboard -> Water Comfort**, you can set the Water Heater "Comfort Level" (1-5).
+
+The comfort level controls **two key parameters**:
+1. **Window Size** - How long each heating session can be
+2. **Penalties** - How strictly the system enforces these windows
+
+**Comfort Levels:**
+- **Level 1 (Economy)**: Large windows (4h+) = bulk heating in cheapest periods. May have lukewarm water between sessions.
+- **Level 2 (Balanced)**: Moderate windows (2.7h) = good mix of savings and comfort.
+- **Level 3 (Neutral)**: Baseline windows (2.1h) = slight preference for spacing.
+- **Level 4 (Priority)**: Small windows (1.3h) = more frequent heating throughout the day.
+- **Level 5 (Maximum)**: Tiny windows (0.7h) = very frequent heating = most stable temperature.
+
+**Bulk Mode Override:**
+Set `enable_top_ups: false` in config to force single-block bulk heating regardless of comfort level. This preserves reliability penalties but allows one large heating session per day.
 
 ### Shadow Mode
 In **Settings -> Advanced**, you can enable **Shadow Mode**.

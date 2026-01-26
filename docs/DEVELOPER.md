@@ -173,16 +173,37 @@ System parameters are defined in `config.yaml`. Credentials live in `secrets.yam
 *   **Home Assistant**: `url` and `token`.
 *   **LLM**: API keys for "The Advisor" (e.g., OpenRouter).
 
-### Water Heating Comfort Levels (Rev K23)
-The "Comfort Level" slider (1-5) controls the trade-off between reliability (getting hot water) and economy (waiting for cheap prices). It maps to specific solver penalties:
+### Water Heating Comfort Levels (Rev K24)
+The "Comfort Level" slider (1-5) controls the trade-off between reliability (getting hot water) and economy (waiting for cheap prices).
 
-| Level | Name | Reliability Penalty | Block Start Penalty | Block Penalty | Behavior |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **1** | Economy | 5.0 | 1.5 | 0.25 | Strictly follows price. May skip daily quota if prices are >5 SEK. |
-| **2** | Balanced | 15.0 | 2.25 | 0.375 | Balances comfort and cost. |
-| **3** | Neutral | 25.0 | 3.0 | 0.50 | **Default.** Reliable hot water, optimizes placement. |
-| **4** | Priority | 60.0 | 4.5 | 0.75 | Prioritizes hitting quota over most price fluctuations. |
-| **5** | Maximum | 300.0 | 7.5 | 1.0 | Aggressive guarantee. Will heat even during expensive peaks if needed. |
+**Rev K24 introduces dynamic window sizing** - the system adapts heating block sizes based on your actual heater configuration (power rating and daily requirement).
+
+**Two-Parameter System:**
+1. **Window Size (`max_block_hours`)** - Calculated dynamically: `(daily_kwh / heater_power_kw) × comfort_multiplier`
+2. **Penalties** - Applied when constraints are violated
+
+**Comfort Level Mapping:**
+
+| Level | Name | Window Multiplier | Reliability Penalty | Block Start Penalty | Block Penalty | Behavior |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **1** | Economy | 1.5× | 2.0 SEK/day | 1.5 SEK/block | 0.5 SEK/slot | Large windows = bulk heating in cheapest periods |
+| **2** | Balanced | 1.0× | 7.0 SEK/day | 2.25 SEK/block | 1.0 SEK/slot | Moderate windows = balanced approach |
+| **3** | Neutral | 0.8× | 15.0 SEK/day | 3.0 SEK/block | 2.0 SEK/slot | **Default.** Slight spacing preference |
+| **4** | Priority | 0.5× | 30.0 SEK/day | 4.5 SEK/block | 5.0 SEK/slot | Small windows = more frequent heating |
+| **5** | Maximum | 0.25× | 300.0 SEK/day | 1.0 SEK/block | 10.0 SEK/slot | Tiny windows = very frequent heating |
+
+**Example:** 3kW heater, 8kWh daily requirement (2.67h minimum heating time)
+- Level 1: 4.0h windows → 2 blocks per day
+- Level 3: 2.1h windows → 3-4 blocks per day
+- Level 5: 0.67h windows → 7-8 blocks per day
+
+**Bulk Mode Override:**
+Set `enable_top_ups: false` to surgically override block parameters:
+- `max_block_hours = 24.0` (allow entire day as one block)
+- `water_block_penalty_sek = 0.0` (no penalty for long blocks)
+- Preserves reliability and block start penalties from comfort level
+
+This allows users to request bulk heating while maintaining their chosen reliability level (e.g., Level 5 + bulk mode = strict reliability but consolidated heating).
 
 ---
 
