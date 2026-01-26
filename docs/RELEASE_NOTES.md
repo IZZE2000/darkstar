@@ -1,10 +1,10 @@
-## [v2.6.0] - Dynamic Water Heating & Advanced Mode - 2026-01-26
+## [v2.5.11-beta] - Dynamic Water Heating & Advanced Mode - 2026-01-26
 
 > [!IMPORTANT]
 > **DYNAMIC WATER HEATING & ADVANCED MODE**
 > This release marks a major milestone in Darkstar's transition to an intelligent agent. It introduces a "Dynamic Water Heating" engine that adapts to your comfort preferences, a "Trust-but-Verify" execution system that proves commands work, and a completely redesigned "Advanced Mode" for settings.
 
-**🌟 Key Enhancements**
+**☀️ Key Enhancements**
 
 - **Dynamic Water Heating (Rev K16, K23, K24)**
     - **Dynamic Windows**: Comfort levels 1-5 now intelligently resize heating blocks. Level 1 (Economy) groups heating into large, efficient chunks. Level 5 (Maximum) allows frequent top-ups for endless hot water.
@@ -30,6 +30,7 @@
 
 ### 📜 Full Changelog
 
+*   **REV // F40:** Fix Database Schema Drift (action_results Migration)
 *   **REV K24:** Dynamic Water Comfort Windows (Adaptive block sizing)
 *   **REV F39:** Test Suite Stabilisation (0 failures)
 *   **REV H5:** Battery SoC Fallback (Data Persistence)

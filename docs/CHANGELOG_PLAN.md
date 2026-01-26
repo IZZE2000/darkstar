@@ -12,6 +12,50 @@ This document contains the archive of all completed revisions. It serves as the 
 
 This era focused on implementing a dynamic water heating comfort system (K23, K24) and resolving critical stability issues in the executor and test suite (F38, F39).
 
+### [DONE] REV // F40 — Fix Database Schema Drift (action_results Migration)
+
+**Goal:** Create missing Alembic migration for `action_results` column in `execution_log` table to fix `sqlite3.OperationalError` in HA add-on deployments.
+
+**Context:** The `action_results` column was added to the `ExecutionLog` model without creating a corresponding Alembic migration, causing runtime errors when the executor attempts to log detailed action results. This blocks the darkstar-dev add-on from functioning correctly.
+
+**Plan:**
+
+#### Phase 1: Create Migration [DONE]
+* [x] Generate new Alembic migration file: `alembic/versions/d8f3a1c9e4b5_add_action_results_to_execution_log.py`
+* [x] Set `down_revision = "b4c2b7eb00b2"` (latest migration: system_state table)
+* [x] Use `batch_alter_table` for SQLite compatibility (following pattern from `cc7e520017af`)
+* [x] Add `action_results` column as nullable `Text` type (matches model definition line 325)
+* [x] Implement downgrade path that drops the column using `batch_alter_table`
+
+#### Phase 2: Verify Migration Chain [DONE]
+* [x] Run `alembic history` to verify migration chain integrity
+* [x] Confirm new migration is HEAD with no branches
+* [x] Test `alembic upgrade head` on clean database
+* [x] Test `alembic downgrade -1` to verify rollback works
+
+#### Phase 3: Test on Existing Database [DONE]
+* [x] Test migration on database with schema drift (missing `action_results` column)
+* [x] Verify executor can successfully write to `action_results` column post-migration
+* [x] Confirm no more `sqlite3.OperationalError: table execution_log has no column named action_results`
+* [x] Test recorder service confirms `system_state` table exists (from previous migration)
+
+**Issues Found & Fixed:**
+1. `alembic.ini` and `alembic/` directory missing from `darkstar-dev/Dockerfile` ✅
+2. Database migration block missing from `darkstar-dev/run.sh` ✅
+3. Missing `await` in `/api/executor/run` endpoint ✅
+
+**Result:** All schema errors resolved, executor "Run Now" button working, system fully operational.
+
+#### Phase 4: Schema Drift Audit [DONE]
+* [x] Compare all 23 model definitions in `backend/learning/models.py` against latest migrations
+* [x] Verify each table's columns match between SQLAlchemy models and Alembic schema
+* [x] Document any additional drift found (if any)
+* [x] Create follow-up migrations if needed
+
+**Audit Results:** ✅ No critical drift found. One benign legacy column (`learning_daily_metrics.updated_at`) exists in DB but not in model - no functional impact. Full report: `docs/reports/schema_audit_f40.md`
+
+---
+
 ### [DONE] REV // H5 — Battery SoC Fallback for Unavailable Sensor
 
 **Goal:** Prevent SoC from dropping to 0% in charts when Home Assistant reports the battery sensor as "unavailable". Use last known good value from database instead.
