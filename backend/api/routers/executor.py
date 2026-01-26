@@ -143,8 +143,8 @@ async def run_once() -> dict[str, str]:
     """Trigger a single loop run."""
     executor = get_executor_instance()
     if executor:
-        success = executor.run_once()
-        return {"status": "success" if success else "error"}
+        result = await executor.run_once()
+        return {"status": "success" if result.get("success") else "error"}
     return {"status": "error", "message": "Executor unavailable"}
 
 
