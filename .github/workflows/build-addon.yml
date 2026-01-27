@@ -112,7 +112,11 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Force checkout the current branch to push the update there
+          # 1. Clean the workspace (discard build-time config changes)
+          # We re-apply them cleanly after the pull to avoid conflicts
+          git checkout .
+
+          # 2. Checkout target branch and update
           git checkout ${{ github.ref_name }}
           git pull origin ${{ github.ref_name }} --rebase
 
