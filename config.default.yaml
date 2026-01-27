@@ -191,7 +191,7 @@ grid:
 
 # Kepler Solver (MILP optimizer settings)
 kepler:
-  ramping_cost_sek_per_kw: 0.05        # Penalty for power changes between slots (reduces sawtooth)
+  ramping_cost_sek_per_kw: 0.01        # Penalty for power changes between slots (reduces sawtooth)
   target_soc_penalty_sek: 10.0         # Penalty for missing the S-Index target SoC (higher = stricter)
   curtailment_penalty_sek: 0.1         # Penalty for wasting available solar power
 
