@@ -176,7 +176,9 @@ class KeplerSolver:
                 prob += ramp_down[t] == 0
 
             # Objective Terms
-            slot_wear_cost = (charge[t] + discharge[t]) * config.wear_cost_sek_per_kwh
+            # Wear cost modeling: Apply 50% of config value per action (charge OR discharge)
+            # so that a full cycle (charge + discharge) costs exactly config.wear_cost_sek_per_kwh
+            slot_wear_cost = (charge[t] + discharge[t]) * config.wear_cost_sek_per_kwh * 0.5
             slot_import_cost = grid_import[t] * s.import_price_sek_kwh
             effective_export_price = s.export_price_sek_kwh - config.export_threshold_sek_per_kwh
             slot_export_revenue = grid_export[t] * effective_export_price
@@ -413,7 +415,7 @@ class KeplerSolver:
                 else:
                     w_kw = 0.0
 
-                wear = (c_val + d_val) * config.wear_cost_sek_per_kwh
+                wear = (c_val + d_val) * config.wear_cost_sek_per_kwh * 0.5
                 cost = (i_val * s.import_price_sek_kwh) - (e_val * s.export_price_sek_kwh) + wear
                 final_total_cost += cost
 
