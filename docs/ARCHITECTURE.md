@@ -773,3 +773,40 @@ The **Learning Database** (`planner_learning.db`) contains multiple critical tab
 | **HA Add-on** | `/app/` (read-only) | `/share/darkstar/` | `/config/darkstar/` |
 
 The symlink strategy ensures the same relative path (`data/`) works correctly in both environments.
+
+---
+
+## 15. ML Model Deployment Strategy (Rev A24)
+
+Darkstar uses a **"Seed & Drift"** strategy to manage Machine Learning models, balancing the need for reliable factory defaults with the necessity of local personalized training.
+
+### 15.1 The Problem
+- **Factory Defaults**: Users need a working model out-of-the-box (Cold Start).
+- **Local Training**: Over time, the system trains models specific to the user's home (Drift).
+- **Persistence**: Docker bind mounts (like `/data` to `/share/darkstar`) shadow the image's internal directories, making factory defaults invisible if placed directly in `data/`.
+- **Git Conflicts**: Users pulling updates would get merge conflicts if their locally trained models were tracked by Git.
+
+### 15.2 The Solution
+
+1.  **Golden Copy (`ml/models/defaults/`)**:
+    - The "Factory Default" models are shipped as part of the application code.
+    - They are **immutable** and tracked by Git.
+    - Located in `/app/ml/models/defaults/` in the container.
+
+2.  **Runtime Models (`data/ml/models/`)**:
+    - The active models used by the application.
+    - Located in persistent storage (e.g., `/share/darkstar/ml/models/`).
+    - **Ignored by Git** (`.gitignore`), preventing update conflicts.
+
+3.  **Bootstrap Script (`ml/bootstrap.py`)**:
+    - Runs on every backend startup (via `backend/main.py`).
+    - **Logic**:
+        - **Check**: Is `data/ml/models/` empty?
+        - **Seed**: If YES, copy models from `ml/models/defaults/`.
+        - **Respect**: If NO, do nothing (preserve user's trained models).
+        - **Backup**: Always copy defaults to `data/ml/models/defaults/` so users can manually "Factory Reset" if needed.
+
+### 15.3 Deployment Flow
+1.  **Build Time**: `Dockerfile` copies `ml/models/defaults/` to the image.
+2.  **Startup**: `ml/bootstrap.py` checks persistent storage.
+3.  **Training**: `train.py` saves new models to `data/ml/models/`, overwriting the runtime files but **never** touching the `ml/models/defaults/` directory.
