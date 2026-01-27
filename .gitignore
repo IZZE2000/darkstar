@@ -71,7 +71,8 @@ Thumbs.db
 # RL models (ignored)
 ml/models/antares_*
 ml/models/backup/
-data/ml/models/backup/
+data/ml/models/
+!ml/models/defaults/
 
 # Legacy n8n workflows (not needed in Darkstar)
 pytz

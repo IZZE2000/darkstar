@@ -43,9 +43,11 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 
 ```
 
-### [STATUS] Rev ID — Title
+### [STATUS] REV // ID — Title
 
 **Goal:** Short description of the objective.
+**Context:** Short description of the context and issues.
+
 **Plan:**
 
 #### Phase 1: [STATUS]
@@ -63,10 +65,6 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 ## REVISION STREAM:
 
 ---
-
-
----
-
 
 ### [PLANNED] REV // K22 — Effekttariff (Active Guard)
 
@@ -167,3 +165,40 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
   * Solar only (minimal system)
 * [ ] **Regression Test:** Verify desktop tooltip/legend still works correctly
 * [ ] **Mobile Test:** Test bottom sheet tooltip on various screen sizes (320px-428px)
+
+---
+
+### [PLANNED] REV // A24 — Production Model Deployment
+
+ **Goal:** Implement a "Seed & Drift" deployment strategy for ML models to solve Git conflicts, Docker persistence, and eliminate dangerous model duplication.
+
+ **Context:**
+ 1.  **Duplicate Tracking:** We currently track models in *both* `ml/models/*.lgb` (Stale, Jan 22) and `data/ml/models/*.lgb` (Fresh, Jan 27). This causes confusion and "clean slate" failures.
+ 2.  **Git Conflicts:** Users training locally (`data/ml/models`) cannot pull because Git tracks those files.
+ 3.  **Docker Persistence:** `run.sh` logic is brittle and fails to reliably bootstrap defaults.
+
+ **Plan:**
+
+ #### Phase 1: Promote & Restructure [DONE]
+ * [x] **Promote Fresh Models:** Copy the *latest* models from `data/ml/models/*.lgb` to `ml/models/defaults/` (New Source of Truth).
+ * [x] **Purge Stale Models:** Delete the old `ml/models/*.lgb` files.
+ * [x] **Update Gitignore:**
+     *   Ignore `data/ml/models/*.lgb` (Active runtime).
+     *   Allow `ml/models/defaults/*.lgb` (Immutable defaults).
+ * [x] **Commit:** Push the new structure, effectively "freezing" the latest local training as the new factory default.
+
+ #### Phase 2: Robust Bootstrapping [PLANNED]
+ * [ ] **Create `ml/bootstrap.py`:**
+     *   **Path Logic:** Use `Path(__file__)` relative paths to safely locate defaults in both Docker (`/app/ml/models/defaults`) and Local (`./ml/models/defaults`).
+     *   **Logic:** `ensure_active_models()` checks if `data/ml/models` is empty. If so, copy from defaults. If not, **touch nothing**.
+     *   **Defaults Backup:** Always copy defaults to `data/ml/models/defaults/` for potential "Factory Reset" features.
+ * [ ] **Integration:** Call duplicate-safe bootstrap in `backend/main.py`.
+
+ #### Phase 3: Deployment Config [PLANNED]
+ * [ ] **Dockerfile:** Add `COPY ml/models/defaults/ /app/ml/models/defaults/`.
+ * [ ] **run.sh:** Remove lines 283-309 (Bash bootstrap). Rely 100% on Python.
+ * [ ] **Rollback Safety:** If bootstrap fails, log "CRITICAL" but allow app start (will revert to heuristic/Open-Meteo).
+
+ #### Phase 4: Validation [PLANNED]
+ * [ ] **Manual Rollback Test:** Simulate corrupt models and verify app survives.
+ * [ ] **Fresh Start Test:** Move `data/ml/models` aside, restart, verify defaults appear.
