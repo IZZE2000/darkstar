@@ -187,17 +187,17 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
      *   Allow `ml/models/defaults/*.lgb` (Immutable defaults).
  * [x] **Commit:** Push the new structure, effectively "freezing" the latest local training as the new factory default.
 
- #### Phase 2: Robust Bootstrapping [PLANNED]
- * [ ] **Create `ml/bootstrap.py`:**
+ #### Phase 2: Robust Bootstrapping [DONE]
+ * [x] **Create `ml/bootstrap.py`:**
      *   **Path Logic:** Use `Path(__file__)` relative paths to safely locate defaults in both Docker (`/app/ml/models/defaults`) and Local (`./ml/models/defaults`).
      *   **Logic:** `ensure_active_models()` checks if `data/ml/models` is empty. If so, copy from defaults. If not, **touch nothing**.
      *   **Defaults Backup:** Always copy defaults to `data/ml/models/defaults/` for potential "Factory Reset" features.
- * [ ] **Integration:** Call duplicate-safe bootstrap in `backend/main.py`.
+ * [x] **Integration:** Call duplicate-safe bootstrap in `backend/main.py`.
 
- #### Phase 3: Deployment Config [PLANNED]
- * [ ] **Dockerfile:** Add `COPY ml/models/defaults/ /app/ml/models/defaults/`.
- * [ ] **run.sh:** Remove lines 283-309 (Bash bootstrap). Rely 100% on Python.
- * [ ] **Rollback Safety:** If bootstrap fails, log "CRITICAL" but allow app start (will revert to heuristic/Open-Meteo).
+ #### Phase 3: Deployment Config [DONE]
+ * [x] **Dockerfile:** Add `COPY ml/models/defaults/ /app/ml/models/defaults/`.
+ * [x] **run.sh:** Remove lines 283-309 (Bash bootstrap). Rely 100% on Python.
+ * [x] **Rollback Safety:** If bootstrap fails, log "CRITICAL" but allow app start (will revert to heuristic/Open-Meteo).
 
  #### Phase 4: Validation [PLANNED]
  * [ ] **Manual Rollback Test:** Simulate corrupt models and verify app survives.
