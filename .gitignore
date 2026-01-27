@@ -90,3 +90,5 @@ data/planner_learning.db-shm
 data/planner_learning.db-wal
 
 .kiro/
+
+docs/prompts/
