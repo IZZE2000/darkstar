@@ -279,34 +279,7 @@ ln -sf /config/darkstar/secrets.yaml /app/secrets.yaml
 mkdir -p /share/darkstar
 ln -sf /share/darkstar /app/data
 
-# -----------------------------------------------------------------------------
-# ML MODEL BOOTSTRAP (REV PERS2)
-# -----------------------------------------------------------------------------
-# On first boot, copy shipped baseline models to persistent storage.
-# User-trained models are NEVER overwritten - only missing models are copied.
-mkdir -p /share/darkstar/ml/models
-SHIPPED_MODELS_DIR="/app/ml/models"
-PERSISTENT_MODELS_DIR="/share/darkstar/ml/models"
 
-if ls "${SHIPPED_MODELS_DIR}"/*.lgb 1> /dev/null 2>&1; then
-    COPIED_COUNT=0
-    for model_file in "${SHIPPED_MODELS_DIR}"/*.lgb; do
-        model_name=$(basename "$model_file")
-        if [ ! -f "${PERSISTENT_MODELS_DIR}/${model_name}" ]; then
-            cp "$model_file" "${PERSISTENT_MODELS_DIR}/"
-            log "📦 Copied baseline model: ${model_name}"
-            COPIED_COUNT=$((COPIED_COUNT + 1))
-        fi
-    done
-    if [ "$COPIED_COUNT" -gt 0 ]; then
-        log "✅ Bootstrapped ${COPIED_COUNT} baseline ML models to persistent storage."
-    else
-        log "✅ All ML models already present in persistent storage."
-    fi
-else
-    log "⚠️  WARNING: No shipped ML models found at ${SHIPPED_MODELS_DIR}"
-    log "   Forecasting will fall back to Open-Meteo/baseline until models are trained."
-fi
 
 # -----------------------------------------------------------------------------
 # DATABASE MIGRATION (ALEMBIC)

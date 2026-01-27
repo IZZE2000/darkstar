@@ -50,6 +50,15 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("🚀 Darkstar ASGI Server Starting...")
 
+    # 0. Model Bootstrap (REV // A24)
+    # Ensure ML models are seeded before anything else tries to load them
+    try:
+        from ml.bootstrap import ensure_active_models
+
+        ensure_active_models()
+    except Exception as e:
+        logger.error(f"❌ Model bootstrap failed: {e}")
+
     # 1. Container/Environment Debugging (Task 4)
     import os
     import sys

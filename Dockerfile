@@ -55,6 +55,7 @@ COPY bin/ ./bin/
 COPY ml/*.py ./ml/
 # Models are generated at runtime (Clean Slate strategy)
 RUN mkdir -p ml/models
+COPY ml/models/defaults/ ./ml/models/defaults/
 COPY inputs.py ./
 COPY scripts/ ./scripts/
 COPY scripts/docker-entrypoint.sh /entrypoint.sh
