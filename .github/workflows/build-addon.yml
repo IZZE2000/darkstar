@@ -112,17 +112,16 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Force checkout dev branch to push the update there
-          git checkout .
-          git fetch origin dev
-          git checkout dev
+          # Force checkout the current branch to push the update there
+          git checkout ${{ github.ref_name }}
+          git pull origin ${{ github.ref_name }} --rebase
 
           # Re-apply the version bump to the dev branch file
           sed -i "s/^version: .*/version: \"${{ steps.setup.outputs.version }}\"/" darkstar-dev/config.yaml
 
           git add darkstar-dev/config.yaml
           git commit -m "chore(dev): bump version to ${{ steps.setup.outputs.version }} [skip ci]"
-          git push origin dev
+          git push origin ${{ github.ref_name }}
 
   release:
     needs: build
