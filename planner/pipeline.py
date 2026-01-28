@@ -193,9 +193,9 @@ class PlannerPipeline:
         tz = pytz.timezone(timezone_name)
         if now_override:
             if now_override.tzinfo is None:
-                now_slot = pytz.utc.localize(now_override).astimezone(tz).ceil("15min")
+                now_slot = pd.Timestamp(now_override, tz="UTC").tz_convert(tz).ceil("15min")
             else:
-                now_slot = now_override.astimezone(tz).ceil("15min")
+                now_slot = pd.Timestamp(now_override).tz_convert(tz).ceil("15min")
         else:
             now_slot = pd.Timestamp.now(tz=tz).floor("15min")
 
@@ -469,11 +469,11 @@ class PlannerPipeline:
 
             # Target penalty derived from risk_appetite
             RISK_PENALTY_MAP = {
-                1: 100.0,  # Safety: Strong incentive to hit target
-                2: 100.0,  # Conservative
-                3: 100.0,  # Neutral
-                4: 100.0,  # Aggressive
-                5: 100.0,  # Gambler: Easy to trade off for profit
+                1: 200.0,  # Safety: Strong incentive to hit target
+                2: 200.0,
+                3: 200.0,
+                4: 200.0,
+                5: 200.0,
             }
             risk_appetite = int(s_index_cfg.get("risk_appetite", 3))
             kepler_config.target_soc_penalty_sek = RISK_PENALTY_MAP.get(risk_appetite, 8.0)

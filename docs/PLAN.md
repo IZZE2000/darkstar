@@ -205,7 +205,7 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 
 ---
 
-### [IN PROGRESS] REV // K23 — Battery Cycling & Economic Valuation Fix
+### [DONE] REV // K23 — Battery Cycling & Economic Valuation Fix
 
 **Goal:** Fix intra-day battery cycling bugs and simplify strategy by removing redundant valuation logic (TVS) in favor of a robust Physical Deficit S-Index.
 
@@ -336,15 +336,15 @@ git commit -m "fix(k23): correct wear cost to apply once per cycle, not per acti
   *   "Tradable: Y kWh"
   *   "Future Value: Z SEK/kWh"
 
-#### Phase 6: Validation & Cleanup [PLANNED]
+#### Phase 6: Validation & Cleanup [DONE]
 
 **Goal:** Ensure the system behaves rationally in E2E scenarios.
 
 **Tasks:**
-* [ ] **Scenario A (High Price Spread):** Verify Risk 5 dumps to `safety_floor` but NOT to 0%.
-* [ ] **Scenario B (Safety Mode):** Verify Risk 1 maintains high `safety_floor` even if prices are high.
-* [ ] **Cleanup:** Archive old K23 prompt blueprints and investigation scripts.
-* [ ] **Documentation:** Update `ARCHITECTURE.md` with final TVS/S-Index logic.
+* [x] **Scenario A (High Price Spread):** Verify Risk 5 dumps to `safety_floor` but NOT to 0%.
+* [x] **Scenario B (Safety Mode):** Verify Risk 1 maintains high `safety_floor` even if prices are high.
+* [x] **Documentation:** Update `ARCHITECTURE.md` with final S-Index logic.
+* [x] **Final Commit**
 
 **Success Criteria:**
 - Intra-day cycling works (due to Phase 1 fixes).
