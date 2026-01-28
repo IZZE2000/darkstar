@@ -251,7 +251,7 @@ Beta tester (v2.5.11-beta) reported "flat schedule" (no charging/cycling) with R
 3. Ramping cost 0.01 SEK/kW is optimal (enables cycling + prevents sawtooth)
 4. Terminal Value System still needed for target miss issue
 
-#### Phase 1: Fix Wear Cost Bug [PLANNED]
+#### Phase 1: Fix Wear Cost Bug [DONE]
 
 **Problem:** Wear cost is currently applied to BOTH charge AND discharge energy, doubling the cost per cycle.
 - Config says: `wear_cost_sek_per_kwh: 0.20` (intention: 0.20 SEK per full cycle)
@@ -260,10 +260,10 @@ Beta tester (v2.5.11-beta) reported "flat schedule" (no charging/cycling) with R
 
 **Solution:** Apply 50% of config value per action (charge OR discharge), so full cycle = 100%.
 
-* [ ] Modify `planner/solver/kepler.py:179`
-* [ ] **Before:** `slot_wear_cost = (charge[t] + discharge[t]) * config.wear_cost_sek_per_kwh`
-* [ ] **After:** `slot_wear_cost = (charge[t] + discharge[t]) * config.wear_cost_sek_per_kwh * 0.5`
-* [ ] Add inline comment explaining formula:
+* [x] Modify `planner/solver/kepler.py:179`
+* [x] **Before:** `slot_wear_cost = (charge[t] + discharge[t]) * config.wear_cost_sek_per_kwh`
+* [x] **After:** `slot_wear_cost = (charge[t] + discharge[t]) * config.wear_cost_sek_per_kwh * 0.5`
+* [x] Add inline comment explaining formula:
 ```python
 # Wear cost modeling: Apply 50% of config value per action (charge OR discharge)
 # so that a full cycle (charge + discharge) costs exactly config.wear_cost_sek_per_kwh
@@ -271,13 +271,13 @@ Beta tester (v2.5.11-beta) reported "flat schedule" (no charging/cycling) with R
 slot_wear_cost = (charge[t] + discharge[t]) * config.wear_cost_sek_per_kwh * 0.5
 ```
 
-* [ ] **Verification:**
-  * [ ] Run `uv run python debugging/test_ramping_values.py`
-  * [ ] Confirm output shows `Wear (CORRECT): 0.20 SEK` (not 0.40 SEK)
-  * [ ] Verify 0.05 SEK/kW ramping NOW permits cycling (friction reduced from 0.81 to 0.61 SEK)
-  * [ ] If 0.05 still blocks, confirm 0.01 works as before
+* [x] **Verification:**
+  * [x] Run `uv run python debugging/test_ramping_values.py`
+  * [x] Confirm output shows `Wear (CORRECT): 0.20 SEK` (not 0.40 SEK)
+  * [x] Verify 0.05 SEK/kW ramping NOW permits cycling (friction reduced from 0.81 to 0.61 SEK)
+  * [x] If 0.05 still blocks, confirm 0.01 works as before
 
-* [ ] **Commit:**
+* [x] **Commit:**
 ```
 git commit -m "fix(k23): correct wear cost to apply once per cycle, not per action
 
@@ -287,239 +287,74 @@ git commit -m "fix(k23): correct wear cost to apply once per cycle, not per acti
 - Addresses REV K23 Phase 1"
 ```
 
-#### Phase 2: Implement Terminal Value System [PLANNED]
+#### Phase 2: Terminal Value System (TVS) [PLANNED]
 
 **Goal:** Enable economically correct battery valuation so stored energy has intrinsic value based on future prices and risk appetite.
 
 **Design:**
-- Terminal value = `avg(future_prices_in_horizon) × RISK_MULTIPLIER[risk_appetite]`
-- Applied to final SoC only: `terminal_credit = soc[T] × terminal_value_sek_kwh`
-- Higher risk = lower multiplier = more willing to discharge now
-- Lower risk = higher multiplier = prefer holding energy for future
+- **Terminal Value (SEK/kWh)** = `avg(future_prices_in_horizon) × RISK_MULTIPLIER`
+- **Logic:** Value stored energy based on what we could sell it for tomorrow (or save by not buying).
+- **Risk Multipliers:**
+  - Risk 1 (Safety): `1.30x` (Hoard energy)
+  - Risk 2 (Caution): `1.15x` (Conservative)
+  - Risk 3 (Neutral): `1.00x` (Fair value)
+  - Risk 4 (Bold): `0.90x` (Pro-cycling)
+  - Risk 5 (Gambler): `0.80x` (Aggressive cycling)
 
-**Risk Multiplier Reasoning:**
+**Tasks:**
+* [ ] Create `planner/strategy/terminal_value.py`.
+* [ ] Integrate into `planner/pipeline.py` (pass calculated value to Kepler overrides).
+* [ ] Verify Kepler receives the correct `terminal_value_sek_kwh`.
 
-| Risk Level | Multiplier | Interpretation | Behavior |
-|------------|-----------|----------------|----------|
-| 1 (Safety) | 1.50× | Battery worth 150% of future avg | Very conservative - hold energy for emergencies |
-| 2 (Caution) | 1.25× | Battery worth 125% of future avg | Conservative - prefer holding over selling |
-| 3 (Neutral) | 1.00× | Battery worth exactly future avg | Balanced - fair economic valuation |
-| 4 (Bold) | 0.75× | Battery worth 75% of future avg | Aggressive - willing to discharge for smaller spreads |
-| 5 (Gambler) | 0.50× | Battery worth 50% of future avg | Very aggressive - maximize immediate profit |
+#### Phase 3: S-Index Refactor (Physical Deficit) [PLANNED]
 
-**Rationale:**
-- Risk 1-2: Users prioritize backup power over profit → overvalue stored energy
-- Risk 3: Pure economic optimization → energy worth exactly future opportunity cost
-- Risk 4-5: Users prioritize arbitrage profit → undervalue stored energy to enable cycling
+**Goal:** Replace "Fixed Buffer" logic with "Physical Deficit" logic. The safety floor should react to *actual* future scarcity, not just a blind percentage.
 
-**Implementation Steps:**
+**Design:**
+- **Safety Floor (kWh)** = `MinSoC + (Capacity * Deficit_Ratio * Risk_Multiplier) + Weather_Buffer`
+- **Deficit Ratio:** `(Load_Forecast - PV_Forecast) / Load_Forecast` (Clamped at 0 if PV > Load)
+- **Risk Multipliers:**
+  - Risk 1: `1.30x` deficit coverage.
+  - Risk 2: `1.15x` deficit coverage.
+  - Risk 3: `1.00x` deficit coverage.
+  - Risk 4: `0.90x` deficit coverage.
+  - Risk 5: `0.80x` deficit coverage.
+- **Weather Buffer:** Explicit adders for Snow/Cold defined in Blueprint.
 
-* [ ] **Step 2.1:** Create `planner/strategy/terminal_value.py`
-```python
-"""
-Terminal Value System (Rev K23)
-Calculate economic value of end-of-horizon battery SoC.
-"""
-from typing import List
+**Tasks:**
+* [ ] Refactor `planner/strategy/s_index.py`:
+  * [ ] Implement `calculate_deficit_ratio()`
+  * [ ] Implement `calculate_safety_floor()` (replacing `calculate_dynamic_target_soc`)
+  * [ ] Add weather buffer logic (Snow/Temp/Cloud).
+* [ ] Update `planner/pipeline.py` to use `safety_floor` as the target for TVS/Kepler.
 
-# Risk appetite to terminal value multiplier mapping
-RISK_MULTIPLIERS = {
-    1: 1.50,  # Safety: Overvalue stored energy (backup priority)
-    2: 1.25,  # Caution: Modest overvalue (conservative)
-    3: 1.00,  # Neutral: Fair value (pure economics)
-    4: 0.75,  # Bold: Modest undervalue (pro-cycling)
-    5: 0.50,  # Gambler: Aggressive undervalue (max cycling)
-}
+#### Phase 4: Internal Telemetry & UI [PLANNED]
 
-def calculate_terminal_value(
-    import_prices_sek_kwh: List[float],
-    risk_appetite: int = 3,
-) -> float:
-    """
-    Calculate terminal value (SEK/kWh) for battery SoC at end of horizon.
+**Goal:** Vizualize the strategy on the Dashboard so the user (and we) can see *why* the agent is acting.
 
-    Args:
-        import_prices_sek_kwh: Future import prices in planning horizon
-        risk_appetite: 1 (Safety) to 5 (Gambler)
+**Metrics to Add (API & UI):**
+*   `safety_floor_kwh`: The "Do Not Cross" line.
+*   `tradable_energy_kwh`: `Current SoC - Safety Floor` (The energy available for arbitrage).
+*   `terminal_value_sek`: The calculated future value per kWh.
 
-    Returns:
-        Terminal value in SEK/kWh
+**Tasks:**
+* [ ] Update `backend/api/routers/services.py` or `telemetry` to expose these new computed values.
+* [ ] Update `frontend/src/components/dashboard/BatteryCard.tsx` (or StrategyCard) to display:
+  *   "Safety Floor: X kWh"
+  *   "Tradable: Y kWh"
+  *   "Future Value: Z SEK/kWh"
 
-    Examples:
-        >>> calculate_terminal_value([2.0, 3.0, 4.0], risk_appetite=3)
-        3.0  # avg(2,3,4) × 1.0 = 3.0
-        >>> calculate_terminal_value([2.0, 3.0, 4.0], risk_appetite=5)
-        1.5  # avg(2,3,4) × 0.5 = 1.5
-    """
-    if not import_prices_sek_kwh:
-        return 0.0
+#### Phase 5: Validation & Cleanup [PLANNED]
 
-    avg_price = sum(import_prices_sek_kwh) / len(import_prices_sek_kwh)
-    multiplier = RISK_MULTIPLIERS.get(risk_appetite, 1.0)
+**Goal:** Ensure the system behaves rationally in E2E scenarios.
 
-    terminal_value = avg_price * multiplier
-
-    # Debug logging
-    print(f"[TVS] Horizon prices: min={min(import_prices_sek_kwh):.2f}, "
-          f"max={max(import_prices_sek_kwh):.2f}, avg={avg_price:.2f}")
-    print(f"[TVS] Risk {risk_appetite} → multiplier {multiplier}× → "
-          f"terminal_value={terminal_value:.2f} SEK/kWh")
-
-    return terminal_value
-```
-
-* [ ] **Step 2.2:** Integrate into `planner/pipeline.py`
-  * [ ] Find where `KeplerConfig` is created (search for `config_to_kepler_config`)
-  * [ ] Import terminal value calculator: `from planner.strategy.terminal_value import calculate_terminal_value`
-  * [ ] Extract prices from `df['import_price_sek_kwh'].tolist()`
-  * [ ] Get `risk_appetite` from `planner_config.get('risk_appetite', 3)`
-  * [ ] Calculate: `terminal_value = calculate_terminal_value(prices, risk_appetite)`
-  * [ ] Pass to adapter in `overrides` dict: `overrides={'terminal_value_sek_kwh': terminal_value}`
-
-* [ ] **Step 2.3:** Update `planner/solver/adapter.py:193-197`
-  * [ ] Current code already reads `terminal_value_sek_kwh` from overrides (line 193)
-  * [ ] Verify it's passed correctly to `KeplerConfig` (line 265)
-  * [ ] No changes needed - already handles dynamic terminal value!
-
-* [ ] **Step 2.4:** Keep safety backstop
-  * [ ] Do NOT remove `target_soc_penalty_sek` - keep as belt-and-suspenders
-  * [ ] Terminal value handles economics, penalty handles edge cases
-  * [ ] Can reduce penalty later if TVS proves sufficient
-
-* [ ] **Verification:**
-  * [ ] Run `uv run python debugging/test_terminal_value_fix.py`
-  * [ ] Confirm Risk 5 now charges to target (0.96 kWh) with TVS enabled
-  * [ ] Test all risk levels 1-5:
-    * [ ] Risk 1: Should hold energy aggressively (minimal discharge)
-    * [ ] Risk 3: Should show balanced behavior
-    * [ ] Risk 5: Should discharge aggressively but still hit target
-  * [ ] Verify terminal value logging shows correct multipliers
-  * [ ] Check final SoC meets target in Scenario A (before 13:00)
-
-* [ ] **Commit:**
-```
-git commit -m "feat(k23): implement terminal value system for economic SoC valuation
-
-- Create planner/strategy/terminal_value.py with risk-based multipliers
-- Risk 1-5 map to 1.5×/1.25×/1.0×/0.75×/0.5× future avg price
-- Integrate into pipeline.py for dynamic calculation
-- Keep target_soc_penalty as safety backstop
-- Addresses REV K23 Phase 2
-
-Multiplier reasoning:
-- Low risk (1-2): Overvalue stored energy for backup priority
-- Neutral (3): Fair economic value = future opportunity cost
-- High risk (4-5): Undervalue to enable aggressive cycling"
-```
-
-#### Phase 3: Update Ramping Cost Settings UI [PLANNED]
-
-* [ ] Edit `frontend/src/pages/settings/types.ts` line 792
-* [ ] **Before:**
-```typescript
-helper: 'Penalty for rapid battery power changes (higher = smoother power flow, reduces "sawtooth" behavior).',
-```
-* [ ] **After:**
-```typescript
-helper: 'Penalty for rapid battery power changes. Prevents sawtooth patterns (C.C.C) when too low. Lower values (0.01) enable aggressive arbitrage cycling but allow some gaps. Higher values (0.05+) create perfectly smooth blocks but may block small spreads. Recommended: 0.01-0.02 SEK/kW for active cycling, 0.03-0.05 SEK/kW for conservative operation.',
-```
-
-* [ ] **Verification:**
-  * [ ] Start frontend dev server: `cd frontend && pnpm dev`
-  * [ ] Navigate to Settings → Parameters → Arbitrage & Economics → Advanced Tuning
-  * [ ] Hover over "Ramping Cost" field
-  * [ ] Confirm tooltip shows updated guidance text
-  * [ ] Verify line breaks and formatting render correctly
-
-* [ ] **Commit:**
-```
-git commit -m "docs(k23): clarify ramping cost impact on battery cycling behavior
-
-- Update tooltip to explain sawtooth prevention vs cycling trade-off
-- Add recommended ranges: 0.01-0.02 (active) vs 0.03-0.05 (conservative)
-- Addresses REV K23 Phase 3"
-```
-
-#### Phase 4: E2E Validation [PLANNED]
-
-* [ ] **Step 4.1:** Update `debugging/reproduce_beta_flat_schedule.py`
-  * [ ] Modify `get_config()` to accept `terminal_value_sek_kwh` param
-  * [ ] Import fixed wear cost logic (or wait for Phase 1 fix to merge)
-  * [ ] Add test case with TVS enabled:
-```python
-# Test 4: Fixed System (Wear Fix + TVS + 0.01 Ramping)
-config4 = get_config(
-    ramping_cost=0.01,
-    terminal_value_sek_kwh=calculate_terminal_value(prices, risk_appetite=5)
-)
-```
-
-* [ ] **Step 4.2:** Run full test suite
-  * [ ] Execute: `uv run python debugging/reproduce_beta_flat_schedule.py`
-  * [ ] Capture output to `debugging/validation_output_k23.txt`
-
-* [ ] **Success Criteria:**
-  * [ ] ✅ Scenario A (before 13:00): Charges to target (0.96 kWh)
-  * [ ] ✅ Scenario A: Shows intra-day cycling (charge + discharge > 0.5 kWh)
-  * [ ] ✅ Scenario A: Gap analysis shows smooth blocks (`CCC...DDDD`)
-  * [ ] ✅ Scenario B (after 13:00): Maintains existing cycling behavior
-  * [ ] ✅ Both scenarios: Final SoC ≥ target (no penalty paid)
-  * [ ] ✅ Wear cost output: 0.20 SEK (not 0.40 SEK)
-  * [ ] ✅ Total friction: ≤0.25 SEK per kWh cycled
-
-* [ ] **Commit:**
-```
-git commit -m "test(k23): validate wear fix + TVS + ramping changes
-
-- Update reproduce_beta_flat_schedule.py with fixed system tests
-- Confirm cycling activates in Scenario A (before 13:00)
-- Verify smooth block patterns (no sawtooth)
-- Validate all success criteria met
-- Addresses REV K23 Phase 4"
-```
-
-#### Phase 5: Documentation [PLANNED]
-
-* [ ] **Step 5.1:** Update `docs/ARCHITECTURE.md`
-  * [ ] Add new section: "Terminal Value System (Rev K23)"
-  * [ ] Document risk multiplier table and reasoning
-  * [ ] Explain wear cost modeling (0.5× per action = 1× per cycle)
-  * [ ] Add ramping cost guidance (when to use 0.01 vs 0.05)
-
-* [ ] **Step 5.2:** Update code comments
-  * [ ] `planner/solver/kepler.py:179` - Already done in Phase 1
-  * [ ] `config.default.yaml:194` - Add ramping cost guidance:
-```yaml
-ramping_cost_sek_per_kw: 0.01  # Prevents sawtooth (C.C.C) patterns.
-                                # 0.01-0.02: Active cycling, some gaps OK
-                                # 0.03-0.05: Smooth blocks, may block small spreads
-```
-
-* [ ] **Step 5.3:** Archive investigation scripts
-  * [ ] Create `debugging/archive/k23/`
-  * [ ] Move all K23 scripts: `mv debugging/{detailed_cost_breakdown,why_no_cycling,test_terminal_value_fix,test_no_ramping_cost,test_ramping_values}.py debugging/archive/k23/`
-  * [ ] Keep `reproduce_beta_flat_schedule.py` in main debugging/ (useful for regression tests)
-
-* [ ] **Step 5.4:** Update PLAN.md
-  * [ ] Mark all K23 phases as [DONE]
-  * [ ] Move entire REV K23 section to `docs/CHANGELOG_PLAN.md` (prepend to top)
-  * [ ] Update CHANGELOG entry date to completion date
-
-* [ ] **Commit:**
-```
-git commit -m "docs(k23): document terminal value system and cost modeling fixes
-
-- Add TVS design to ARCHITECTURE.md with risk multiplier reasoning
-- Document wear cost formula (0.5× per action)
-- Add ramping cost guidance to config.default.yaml
-- Archive investigation scripts to debugging/archive/k23/
-- Move completed K23 plan to CHANGELOG_PLAN.md
-- Addresses REV K23 Phase 5"
-```
+**Tasks:**
+* [ ] **Scenario A (High Price Spread):** Verify Risk 5 dumps to `safety_floor` but NOT to 0%.
+* [ ] **Scenario B (Safety Mode):** Verify Risk 1 maintains high `safety_floor` even if prices are high.
+* [ ] **Cleanup:** Archive old K23 prompt blueprints and investigation scripts.
+* [ ] **Documentation:** Update `ARCHITECTURE.md` with final TVS/S-Index logic.
 
 **Success Criteria:**
-- Beta tester at 5% SoC charges to target even at 3.20 SEK prices (terminal value fix) ✅
-- Intra-day cycling activates with ≥0.60 SEK net spread after wear fix (was 0.80 SEK) ✅
-- No sawtooth patterns with 0.01 SEK/kW ramping (gap analysis confirms) ✅
-- Risk levels 1-5 show expected progression (conservative → aggressive) ✅
-- All tests pass with fixed code ✅
+- Intra-day cycling works (due to Phase 1 fixes).
+- End-of-day SoC is economically rational (TVS).
+- Safety buffer scales with actual weather risk (S-Index).
