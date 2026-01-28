@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
+import { createPortal } from 'react-dom'
 import { ChevronDown, X, Search } from 'lucide-react'
 
 interface Entity {
@@ -31,9 +32,13 @@ export default function EntitySelect({
     const [open, setOpen] = useState(false)
     const [search, setSearch] = useState('')
     const [highlightIndex, setHighlightIndex] = useState(0)
+    const [coords, setCoords] = useState({ top: 0, left: 0, width: 0 })
+
     const containerRef = useRef<HTMLDivElement>(null)
+    const triggerRef = useRef<HTMLButtonElement>(null)
     const inputRef = useRef<HTMLInputElement>(null)
     const listRef = useRef<HTMLDivElement>(null)
+    const dropdownRef = useRef<HTMLDivElement>(null)
 
     // Find the selected entity for display
     const selectedEntity = entities.find((e) => e.entity_id === value)
@@ -71,10 +76,37 @@ export default function EntitySelect({
         setHighlightIndex(0)
     }, [filtered.length])
 
+    // Update coordinates when opening
+    useEffect(() => {
+        if (open && triggerRef.current) {
+            const updatePosition = () => {
+                if (triggerRef.current) {
+                    const rect = triggerRef.current.getBoundingClientRect()
+                    setCoords({
+                        top: rect.bottom + 4,
+                        left: rect.left,
+                        width: rect.width,
+                    })
+                }
+            }
+            updatePosition()
+            window.addEventListener('resize', updatePosition)
+            window.addEventListener('scroll', updatePosition, true)
+
+            return () => {
+                window.removeEventListener('resize', updatePosition)
+                window.removeEventListener('scroll', updatePosition, true)
+            }
+        }
+    }, [open])
+
     // Close on outside click
     useEffect(() => {
         const handleClickOutside = (e: MouseEvent) => {
-            if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+            const inContainer = containerRef.current?.contains(e.target as Node)
+            const inDropdown = dropdownRef.current?.contains(e.target as Node)
+
+            if (!inContainer && !inDropdown) {
                 setOpen(false)
                 setSearch('')
             }
@@ -142,6 +174,7 @@ export default function EntitySelect({
         <div ref={containerRef} className="relative">
             {/* Trigger button */}
             <button
+                ref={triggerRef}
                 type="button"
                 disabled={disabled}
                 onClick={() => {
@@ -186,67 +219,79 @@ export default function EntitySelect({
             </button>
 
             {/* Dropdown */}
-            {open && (
-                <div className="absolute z-50 mt-1 w-full min-w-[280px] max-h-[300px] overflow-hidden rounded-lg border border-line bg-surface shadow-float">
-                    {/* Search input */}
-                    <div className="p-2 border-b border-line">
-                        <div className="relative">
-                            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted" />
-                            <input
-                                ref={inputRef}
-                                type="text"
-                                value={search}
-                                onChange={(e) => setSearch(e.target.value)}
-                                onKeyDown={handleKeyDown}
-                                placeholder="Search entities..."
-                                className="w-full pl-8 pr-3 py-1.5 rounded-md bg-surface2 border border-line text-sm text-text placeholder:text-muted focus:outline-none focus:ring-1 focus:ring-accent/40"
-                            />
+            {open &&
+                createPortal(
+                    <div
+                        ref={dropdownRef}
+                        style={{
+                            position: 'fixed',
+                            top: coords.top,
+                            left: coords.left,
+                            width: coords.width,
+                            zIndex: 9999,
+                        }}
+                        className="max-h-[300px] overflow-hidden rounded-lg border border-line bg-surface shadow-float animate-in fade-in zoom-in-95 duration-100"
+                    >
+                        {/* Search input */}
+                        <div className="p-2 border-b border-line">
+                            <div className="relative">
+                                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted" />
+                                <input
+                                    ref={inputRef}
+                                    type="text"
+                                    value={search}
+                                    onChange={(e) => setSearch(e.target.value)}
+                                    onKeyDown={handleKeyDown}
+                                    placeholder="Search entities..."
+                                    className="w-full pl-8 pr-3 py-1.5 rounded-md bg-surface2 border border-line text-sm text-text placeholder:text-muted focus:outline-none focus:ring-1 focus:ring-accent/40"
+                                />
+                            </div>
                         </div>
-                    </div>
 
-                    {/* Entity list */}
-                    <div ref={listRef} className="max-h-[240px] overflow-y-auto p-1">
-                        {filtered.length === 0 ? (
-                            <div className="px-3 py-4 text-center text-sm text-muted">No entities found</div>
-                        ) : (
-                            Object.entries(grouped).map(([domain, domainEntities]) => (
-                                <div key={domain} className="mb-1">
-                                    <div className="px-2 py-1 text-[10px] uppercase tracking-wider text-muted/70 font-medium">
-                                        {domain}
-                                    </div>
-                                    {domainEntities.map((entity) => {
-                                        const idx = flatList.findIndex((e) => e.entity_id === entity.entity_id)
-                                        const isHighlighted = idx === highlightIndex
-                                        const isSelected = entity.entity_id === value
+                        {/* Entity list */}
+                        <div ref={listRef} className="max-h-[240px] overflow-y-auto p-1 scrollbar-thin">
+                            {filtered.length === 0 ? (
+                                <div className="px-3 py-4 text-center text-sm text-muted">No entities found</div>
+                            ) : (
+                                Object.entries(grouped).map(([domain, domainEntities]) => (
+                                    <div key={domain} className="mb-1">
+                                        <div className="px-2 py-1 text-[10px] uppercase tracking-wider text-muted/70 font-medium">
+                                            {domain}
+                                        </div>
+                                        {domainEntities.map((entity) => {
+                                            const idx = flatList.findIndex((e) => e.entity_id === entity.entity_id)
+                                            const isHighlighted = idx === highlightIndex
+                                            const isSelected = entity.entity_id === value
 
-                                        return (
-                                            <button
-                                                key={entity.entity_id}
-                                                type="button"
-                                                data-highlighted={isHighlighted}
-                                                onClick={() => handleSelect(entity)}
-                                                className={`
+                                            return (
+                                                <button
+                                                    key={entity.entity_id}
+                                                    type="button"
+                                                    data-highlighted={isHighlighted}
+                                                    onClick={() => handleSelect(entity)}
+                                                    className={`
                                                     w-full text-left px-2 py-1.5 rounded-md text-sm
                                                     transition-colors
                                                     ${isHighlighted ? 'bg-accent/20 text-text' : 'text-text hover:bg-surface2'}
                                                     ${isSelected ? 'font-medium' : ''}
                                                 `}
-                                            >
-                                                <div className="truncate">
-                                                    {entity.friendly_name || entity.entity_id}
-                                                </div>
-                                                <div className="text-[10px] text-muted truncate">
-                                                    {entity.entity_id}
-                                                </div>
-                                            </button>
-                                        )
-                                    })}
-                                </div>
-                            ))
-                        )}
-                    </div>
-                </div>
-            )}
+                                                >
+                                                    <div className="truncate">
+                                                        {entity.friendly_name || entity.entity_id}
+                                                    </div>
+                                                    <div className="text-[10px] text-muted truncate">
+                                                        {entity.entity_id}
+                                                    </div>
+                                                </button>
+                                            )
+                                        })}
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>,
+                    document.body,
+                )}
         </div>
     )
 }

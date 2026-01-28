@@ -9,16 +9,16 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 
 | Prefix | Area | Examples |
 |--------|------|----------|
-| **K** | Kepler (MILP solver) | K1-K19 |
+| **K** | Kepler (MILP solver) | F41 |
 | **E** | Executor | E1 |
-| **A** | Aurora (ML) | A25-A29 |
+| **A** | Aurora (ML) | A29 |
 | **H** | History/DB | H1 |
 | **O** | Onboarding | O1 |
-| **UI** | User Interface | UI1, UI2 |
+| **UI** | User Interface | UI2 |
 | **DS** | Design System | DS1 |
-| **F** | Fixes/Bugfixes | F1-F6 |
+| **F** | Fixes/Bugfixes | F6 |
 | **DX** | Developer Experience | DX1 |
-| **ARC** | Architecture | ARC1-ARC* |
+| **ARC** | Architecture | ARC1 |
 
 ---
 
@@ -350,3 +350,26 @@ git commit -m "fix(k23): correct wear cost to apply once per cycle, not per acti
 - Intra-day cycling works (due to Phase 1 fixes).
 - End-of-day SoC is economically rational (TVS).
 - Safety buffer scales with actual weather risk (S-Index).
+
+---
+
+### [DONE] REV // F41 — Settings Dropdown Portal Fix
+
+**Goal:** Fix dropdown clipping in the settings page by implementing React Portals for `EntitySelect` and `ServiceSelect`.
+
+**Context:**
+- `EntitySelect` and `ServiceSelect` render dropdowns inline.
+- Parent containers (motion divs/cards) in settings use `overflow-hidden`.
+- Dropdowns are clipped and invisible when opened.
+- `Select.tsx` already uses `createPortal` and works correctly.
+
+**Plan:**
+
+#### Phase 1: Portal implementation [DONE]
+* [x] Implement `createPortal` and coordinate tracking in `EntitySelect.tsx`.
+* [x] Implement `createPortal` and coordinate tracking in `ServiceSelect.tsx`.
+* [x] Ensure `zIndex` and position calculations account for scrolls/resizes.
+
+#### Phase 2: Validation [DONE]
+* [x] Verify all dropdowns in "System", "Parameters", and "Advanced" tabs.
+* [x] Verify mobile responsiveness and clipping behavior.
