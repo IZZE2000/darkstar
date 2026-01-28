@@ -168,208 +168,28 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 
 ---
 
-### [PLANNED] REV // A24 — Production Model Deployment
+### [DONE] REV // F42 — Ghost Notifications & Default Config Cleanup
 
- **Goal:** Implement a "Seed & Drift" deployment strategy for ML models to solve Git conflicts, Docker persistence, and eliminate dangerous model duplication.
-
- **Context:**
- 1.  **Duplicate Tracking:** We currently track models in *both* `ml/models/*.lgb` (Stale, Jan 22) and `data/ml/models/*.lgb` (Fresh, Jan 27). This causes confusion and "clean slate" failures.
- 2.  **Git Conflicts:** Users training locally (`data/ml/models`) cannot pull because Git tracks those files.
- 3.  **Docker Persistence:** `run.sh` logic is brittle and fails to reliably bootstrap defaults.
-
- **Plan:**
-
- #### Phase 1: Promote & Restructure [DONE]
- * [x] **Promote Fresh Models:** Copy the *latest* models from `data/ml/models/*.lgb` to `ml/models/defaults/` (New Source of Truth).
- * [x] **Purge Stale Models:** Delete the old `ml/models/*.lgb` files.
- * [x] **Update Gitignore:**
-     *   Ignore `data/ml/models/*.lgb` (Active runtime).
-     *   Allow `ml/models/defaults/*.lgb` (Immutable defaults).
- * [x] **Commit:** Push the new structure, effectively "freezing" the latest local training as the new factory default.
-
- #### Phase 2: Robust Bootstrapping [DONE]
- * [x] **Create `ml/bootstrap.py`:**
-     *   **Path Logic:** Use `Path(__file__)` relative paths to safely locate defaults in both Docker (`/app/ml/models/defaults`) and Local (`./ml/models/defaults`).
-     *   **Logic:** `ensure_active_models()` checks if `data/ml/models` is empty. If so, copy from defaults. If not, **touch nothing**.
-     *   **Defaults Backup:** Always copy defaults to `data/ml/models/defaults/` for potential "Factory Reset" features.
- * [x] **Integration:** Call duplicate-safe bootstrap in `backend/main.py`.
-
- #### Phase 3: Deployment Config [DONE]
- * [x] **Dockerfile:** Add `COPY ml/models/defaults/ /app/ml/models/defaults/`.
- * [x] **run.sh:** Remove lines 283-309 (Bash bootstrap). Rely 100% on Python.
- * [x] **Rollback Safety:** If bootstrap fails, log "CRITICAL" but allow app start (will revert to heuristic/Open-Meteo).
-
- #### Phase 4: Validation [PLANNED]
- * [ ] **Manual Rollback Test:** Simulate corrupt models and verify app survives.
- * [ ] **Fresh Start Test:** Move `data/ml/models` aside, restart, verify defaults appear.
-
----
-
-### [DONE] REV // K23 — Battery Cycling & Economic Valuation Fix
-
-**Goal:** Fix intra-day battery cycling bugs and simplify strategy by removing redundant valuation logic (TVS) in favor of a robust Physical Deficit S-Index.
+**Goal:** Eliminate "Ghost" entities re-appearing after deletion due to `soft_merge_defaults` filling in keys from `config.default.yaml`.
 
 **Context:**
-Beta tester (v2.5.11-beta) reported "flat schedule" (no charging/cycling) with Risk Appetite 5 despite 1.37 SEK price spread and being below target SoC (5% actual vs 6% target). Investigation revealed TWO separate issues requiring fixes.
+- `backend/config_migration.py` fills missing user config keys bundle from `config.default.yaml`.
+- The default config contains specific entity IDs (e.g., "notify.mobile_app_sebastians_iphone") which re-appear if a user deletes them.
+- This results in "Ghost" entities and invalid service calls in the Executor.
 
 **Plan:**
 
-#### Phase 0: Root Cause Investigation [DONE]
+#### Phase 1: Configuration Hygiene [DONE]
+* [x] **Refactor `config.default.yaml`**: Set all `input_sensors`, `executor.inverter`, and `notifications` entity IDs to `""` (empty string).
+    *   Preserve keys for structure/documentation.
+    *   Remove personal data.
+*   *Note: Existing user configs will NOT be touched. Users with legacy defaults in their `config.yaml` will remain as-is.*
 
-**Scripts Created:**
-- `debugging/reproduce_beta_flat_schedule.py` - Reproduces beta scenario with real SE4 prices
-- `debugging/detailed_cost_breakdown.py` - Manual economic calculations
-- `debugging/why_no_cycling.py` - Investigates cycling economics
-- `debugging/test_terminal_value_fix.py` - Tests if TVS fixes cycling (it doesn't!)
-- `debugging/test_no_ramping_cost.py` - Isolates ramping cost impact
-- `debugging/test_ramping_values.py` - Tests optimal ramping value with gap analysis
-
-**Issue #1: Target Miss (Terminal Value = 0)**
-- Solver pays 0.32 SEK penalty instead of charging 0.16 kWh at 2.25 SEK (costs 0.43 SEK)
-- Economically rational under current system, but undesirable behavior
-- **Fix:** Implement Terminal Value System so stored energy has intrinsic value
-
-**Issue #2: No Intra-Day Cycling (Wear + Ramping Costs Too High)**
-- Theoretical profit: 1.37 SEK spread - 0.38 SEK efficiency loss = 0.99 SEK gross
-- **BUG 1 - Wear Cost Doubled:** `(charge[t] + discharge[t]) * 0.20` applies wear to BOTH actions
-  - Expected: 0.20 SEK per full cycle
-  - Actual: 0.40 SEK per full cycle (DOUBLE!)
-  - Code: `planner/solver/kepler.py:179`
-- **BUG 2 - Ramping Cost Too High:** 0.05 SEK/kW creates ~0.41 SEK friction per cycle
-  - Combined friction: 0.40 (wear) + 0.41 (ramp) = 0.81 SEK > 0.59 SEK profit → BLOCKS cycling
-  - Testing showed 0.01 SEK/kW enables cycling while preventing sawtooth patterns
-  - Gap analysis: 0.00 produces `C.C` gaps, 0.01 produces smooth `CCC` blocks
-
-**Terminal Value Testing Results:**
-- Terminal value DOES fix target miss (charges 0.17 kWh to hit 0.96 kWh target) ✅
-- Terminal value does NOT fix intra-day cycling (because cycle ends at same SoC = zero delta) ❌
-- Cycling issue is purely cost-based, not terminal value related
-
-**Key Findings:**
-1. Two separate bugs compound to block cycling
-2. Fix wear cost bug FIRST (highest impact: saves 0.20 SEK per cycle)
-3. Ramping cost 0.01 SEK/kW is optimal (enables cycling + prevents sawtooth)
-4. Terminal Value System still needed for target miss issue
-
-#### Phase 1: Fix Wear Cost Bug [DONE]
-
-**Problem:** Wear cost is currently applied to BOTH charge AND discharge energy, doubling the cost per cycle.
-- Config says: `wear_cost_sek_per_kwh: 0.20` (intention: 0.20 SEK per full cycle)
-- Current behavior: `(charge[t] + discharge[t]) * 0.20` = 0.40 SEK for 1 kWh cycle
-- Expected behavior: 0.20 SEK for 1 kWh cycle
-
-**Solution:** Apply 50% of config value per action (charge OR discharge), so full cycle = 100%.
-
-* [x] Modify `planner/solver/kepler.py:179`
-* [x] **Before:** `slot_wear_cost = (charge[t] + discharge[t]) * config.wear_cost_sek_per_kwh`
-* [x] **After:** `slot_wear_cost = (charge[t] + discharge[t]) * config.wear_cost_sek_per_kwh * 0.5`
-* [x] Add inline comment explaining formula:
-```python
-# Wear cost modeling: Apply 50% of config value per action (charge OR discharge)
-# so that a full cycle (charge + discharge) costs exactly config.wear_cost_sek_per_kwh
-# Example: 0.20 SEK/kWh config → 0.10/action → 0.20 total for 1 kWh cycle
-slot_wear_cost = (charge[t] + discharge[t]) * config.wear_cost_sek_per_kwh * 0.5
-```
-
-* [x] **Verification:**
-  * [x] Run `uv run python debugging/test_ramping_values.py`
-  * [x] Confirm output shows `Wear (CORRECT): 0.20 SEK` (not 0.40 SEK)
-  * [x] Verify 0.05 SEK/kW ramping NOW permits cycling (friction reduced from 0.81 to 0.61 SEK)
-  * [x] If 0.05 still blocks, confirm 0.01 works as before
-
-* [x] **Commit:**
-```
-git commit -m "fix(k23): correct wear cost to apply once per cycle, not per action
-
-- Multiply wear_cost_sek_per_kwh by 0.5 in slot calculation
-- Full cycle (charge + discharge) now costs exactly config value
-- Reduces friction from 0.40 to 0.20 SEK per kWh cycled
-- Addresses REV K23 Phase 1"
-```
-
-#### Phase 2: Terminal Value System (TVS) [ABANDONED/REVERT]
-
-**Goal:** Enable economically correct battery valuation so stored energy has intrinsic value.
-**Outcome:** Implemented but found to be redundant. The "Blind Spot" is better solved by the S-Index (Physical Deficit) + High Penalties.
-**Decision:** Remove TVS to reduce complexity.
-
-* [x] Create `planner/strategy/terminal_value.py`. [REVERTING]
-* [x] Integrate into `planner/pipeline.py`. [REVERTING]
-
-#### Phase 3: S-Index Refactor (Physical Deficit) [DONE]
-
-**Goal:** Replace "Fixed Buffer" logic with "Physical Deficit" logic.
-**Pivot:** Instead of variable penalties, use a **Hard Soft-Constraint** (High Penalty) for the Safety Floor.
-
-**Design:**
-- **Safety Floor (kWh)** = `MinSoC + (Capacity * Deficit_Ratio * Risk_Multiplier) + Weather_Buffer`
-- **Penalty:** `200.0 SEK` (Fixed High Penalty) - "Do Not Violate unless impossible".
-- **Risk Multipliers (Aggressive):**
-  - Risk 4: `0.50x` deficit coverage.
-  - Risk 5: `0.00x` deficit coverage (Gambler).
-
-**Tasks:**
-* [x] Refactor `planner/strategy/s_index.py` (Physical Deficit).
-* [x] Update `planner/pipeline.py` to target Safety Floor.
-* [x] **Calibration:** Finalize multipliers (0.50/0.00) and Penalties (200 SEK).
-
-#### Phase 4: Architecture Simplification (Cleanup) [DONE]
-
-**Goal:** Remove the redundant TVS code.
-
-* [x] **Delete:** `planner/strategy/terminal_value.py`.
-* [x] **Cleanup:** Remove TVS logic from `planner/pipeline.py`.
-
-#### Phase 5: Internal Telemetry & UI [DONE]
-
-**Goal:** Vizualize the strategy on the Dashboard so the user (and we) can see *why* the agent is acting.
-
-**Metrics to Add (API & UI):**
-*   `safety_floor_kwh`: The physical safety floor (min allowed SoC) driven by the deficit.
-*   `s_index_deficit_kwh`: The forecasted shortage (Load - PV) explaining *why* the floor is high.
-*   *(Existing)* `strategy_factor`: The risk multiplier.
-
-**Tasks:**
-* [x] Update `backend/api/routers/services.py` or `telemetry` to expose these new computed values.
-* [x] Update `frontend/src/components/dashboard/BatteryCard.tsx` (actually `CommandDomains.tsx`) to display:
-  *   "Safety Floor: X kWh"
-  *   "Tradable: Y kWh"
-  *   "Future Value: Z SEK/kWh"
-
-#### Phase 6: Validation & Cleanup [DONE]
-
-**Goal:** Ensure the system behaves rationally in E2E scenarios.
-
-**Tasks:**
-* [x] **Scenario A (High Price Spread):** Verify Risk 5 dumps to `safety_floor` but NOT to 0%.
-* [x] **Scenario B (Safety Mode):** Verify Risk 1 maintains high `safety_floor` even if prices are high.
-* [x] **Documentation:** Update `ARCHITECTURE.md` with final S-Index logic.
-* [x] **Final Commit**
-
-**Success Criteria:**
-- Intra-day cycling works (due to Phase 1 fixes).
-- End-of-day SoC is economically rational (TVS).
-- Safety buffer scales with actual weather risk (S-Index).
-
----
-
-### [DONE] REV // F41 — Settings Dropdown Portal Fix
-
-**Goal:** Fix dropdown clipping in the settings page by implementing React Portals for `EntitySelect` and `ServiceSelect`.
-
-**Context:**
-- `EntitySelect` and `ServiceSelect` render dropdowns inline.
-- Parent containers (motion divs/cards) in settings use `overflow-hidden`.
-- Dropdowns are clipped and invisible when opened.
-- `Select.tsx` already uses `createPortal` and works correctly.
-
-**Plan:**
-
-#### Phase 1: Portal implementation [DONE]
-* [x] Implement `createPortal` and coordinate tracking in `EntitySelect.tsx`.
-* [x] Implement `createPortal` and coordinate tracking in `ServiceSelect.tsx`.
-* [x] Ensure `zIndex` and position calculations account for scrolls/resizes.
-
-#### Phase 2: Validation [DONE]
-* [x] Verify all dropdowns in "System", "Parameters", and "Advanced" tabs.
-* [x] Verify mobile responsiveness and clipping behavior.
+#### Phase 2: Backend Defense [DONE]
+* [x] **Executor Safety (`executor/actions.py`)**:
+    *   Modify `send_notification` to return early (no-op) if `service` is an empty string.
+    *   Add defensive check for `None` service.
+*   [x] **Health Check Update (`backend/health.py`)**:
+    *   Update `check_entities` to ignore keys with empty string values (do not flag as "Missing Entity" or "Critical").
+*   [x] **Config Loader (`executor/config.py`)**:
+    *   Verify `_str_or_none` utility correctly converts `""` to `None` for internal handling.

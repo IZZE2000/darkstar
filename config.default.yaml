@@ -32,8 +32,8 @@ system:
   inverter:
     max_power_kw: 8.0                 # Maximum inverter AC power output
   location:
-    latitude: 55.493221                # Decimal degrees, positive north (for PV forecasting)
-    longitude: 13.111221               # Decimal degrees, positive east (for PV forecasting)
+    latitude: 55.123                # Decimal degrees, positive north (for PV forecasting)
+    longitude: 13.123               # Decimal degrees, positive east (for PV forecasting)
   solar_array:
     azimuth: 150                       # Panel direction: 0°=North, 90°=East, 180°=South, 270°=West
     kwp: 10                            # Total DC peak power of PV array in kilowatts
@@ -201,36 +201,36 @@ kepler:
 # Input Sensors (entities Darkstar READS from Home Assistant)
 input_sensors:
   # Context sensors for ML features
-  alarm_state: alarm_control_panel.alarmo        # Alarm panel for occupancy detection (ML feature)
-  vacation_mode: input_boolean.vacation_mode     # Vacation mode toggle (reduces load forecasts)
+  alarm_state: ""        # Alarm panel for occupancy detection (ML feature)
+  vacation_mode: ""     # Vacation mode toggle (reduces load forecasts)
 
   # Core energy sensors (real-time power)
-  battery_soc: sensor.inverter_battery           # Current battery state of charge (%)
-  pv_power: sensor.inverter_pv_power             # Current PV production (W or kW)
-  load_power: sensor.inverter_load_power         # Current load consumption (W or kW)
-  battery_power: sensor.inverter_battery_power   # Current battery power (+ discharge, - charge)
-  water_power: sensor.vvb_power                  # Current water heater power (W or kW)
-  grid_power: sensor.inverter_grid_power         # Current grid power (+ import, - export) (Used if meter_type=net)
-  grid_import_power: sensor.grid_import_power    # Current grid import power (W/kW) (Used if meter_type=dual)
-  grid_export_power: sensor.grid_export_power    # Current grid export power (W/kW) (Used if meter_type=dual)
+  battery_soc: ""           # Current battery state of charge (%)
+  pv_power: ""             # Current PV production (W or kW)
+  load_power: ""         # Current load consumption (W or kW)
+  battery_power: ""   # Current battery power (+ discharge, - charge)
+  water_power: ""                  # Current water heater power (W or kW)
+  grid_power: ""         # Current grid power (+ import, - export) (Used if meter_type=net)
+  grid_import_power: ""    # Current grid import power (W/kW) (Used if meter_type=dual)
+  grid_export_power: ""    # Current grid export power (W/kW) (Used if meter_type=dual)
 
   # Cumulative energy sensors (totals)
-  total_battery_charge: sensor.inverter_total_battery_charge      # Cumulative battery charge (kWh)
-  total_battery_discharge: sensor.inverter_total_battery_discharge # Cumulative battery discharge (kWh)
-  total_grid_export: sensor.inverter_total_energy_export          # Cumulative grid export (kWh)
-  total_grid_import: sensor.inverter_total_energy_import          # Cumulative grid import (kWh)
-  total_load_consumption: sensor.inverter_total_load_consumption  # Cumulative load (kWh)
-  total_pv_production: sensor.inverter_total_production           # Cumulative PV production (kWh)
-  water_heater_consumption: sensor.vvb_energy_daily               # Water heater daily energy (kWh)
+  total_battery_charge: ""      # Cumulative battery charge (kWh)
+  total_battery_discharge: "" # Cumulative battery discharge (kWh)
+  total_grid_export: ""          # Cumulative grid export (kWh)
+  total_grid_import: ""          # Cumulative grid import (kWh)
+  total_load_consumption: ""  # Cumulative load (kWh)
+  total_pv_production: ""           # Cumulative PV production (kWh)
+  water_heater_consumption: ""               # Water heater daily energy (kWh)
 
   # Daily sensors for Dashboard "Today's Stats" card
-  today_grid_import: sensor.inverter_today_energy_import          # Today's grid import (kWh)
-  today_grid_export: sensor.inverter_today_energy_export          # Today's grid export (kWh)
-  today_battery_charge: sensor.inverter_today_battery_charge      # Today's battery charge (kWh)
-  today_battery_discharge: sensor.inverter_today_battery_discharge # Today's battery discharge (kWh)
-  today_pv_production: sensor.inverter_today_production           # Today's PV production (kWh)
-  today_load_consumption: sensor.inverter_today_load_consumption  # Today's load consumption (kWh)
-  today_net_cost: sensor.daily_cost                               # Today's net electricity cost
+  today_grid_import: ""          # Today's grid import (kWh)
+  today_grid_export: ""          # Today's grid export (kWh)
+  today_battery_charge: ""       # Today's battery charge (kWh)
+  today_battery_discharge: "" # Today's battery discharge (kWh)
+  today_pv_production: ""           # Today's PV production (kWh)
+  today_load_consumption: ""  # Today's load consumption (kWh)
+  today_net_cost: ""                               # Today's net electricity cost
 
 # Executor (control loop that WRITES to Home Assistant)
 executor:
@@ -241,24 +241,24 @@ executor:
   history_retention_days: 30                     # Keep execution history for N days
 
   # Toggle entities (read by executor to check if enabled)
-  automation_toggle_entity: input_boolean.darkstar_enable           # Master enable/disable switch
-  manual_override_entity: input_boolean.darkstar_manual_override    # Manual override active flag
-  soc_target_entity: input_number.master_soc_target                 # Target maintenance level. Acts as a discharge floor (won't discharge below this %) AND a grid charge target (won't charge above this % from grid). Required for inverters like Deye (behavior for other inverters unknown).
+  automation_toggle_entity: ""           # Master enable/disable switch
+  manual_override_entity: ""    # Manual override active flag
+  soc_target_entity: ""                 # Target maintenance level. Acts as a discharge floor (won't discharge below this %) AND a grid charge target (won't charge above this % from grid). Required for inverters like Deye (behavior for other inverters unknown).
 
   # Inverter Control Entities (executor WRITES to these)
   inverter:
-    work_mode_entity: select.inverter_work_mode                     # Inverter mode selector
+    work_mode_entity: ""                     # Inverter mode selector
     work_mode_export: "Export First"                                # Value for export mode
     work_mode_zero_export: "Zero Export To CT"                      # Value for zero-export mode
-    grid_charging_entity: switch.inverter_battery_grid_charging     # Enable/disable grid charging
-    max_charging_current_entity: number.inverter_battery_max_charging_current     # Max charge current (A)
-    max_discharging_current_entity: number.inverter_battery_max_discharging_current  # Max discharge current (A)
-    grid_max_export_power_entity: number.inverter_export_surplus_power           # Max grid export power (Watts)
+    grid_charging_entity: ""     # Enable/disable grid charging
+    max_charging_current_entity: ""     # Max charge current (A)
+    max_discharging_current_entity: ""  # Max discharge current (A)
+    grid_max_export_power_entity: ""           # Max grid export power (Watts)
 
     # Control Unit Configuration (REV E3)
     control_unit: "A"                                                 # "A" (Amperes) or "W" (Watts)
-    max_charging_power_entity:                                        # Entity for max charge power (W)
-    max_discharging_power_entity:                                     # Entity for max discharge power (W)
+    max_charging_power_entity: ""                                       # Entity for max charge power (W)
+    max_discharging_power_entity: ""                                    # Entity for max discharge power (W)
 
   # Controller Parameters (electrical conversion constants)
   controller:
@@ -276,7 +276,7 @@ executor:
   # The executor controls your water heater by setting a target temperature.
   # These temps define the operating modes:
   water_heater:
-    target_entity: input_number.vvbtemp  # HA entity to control
+    target_entity: ""  # HA entity to control
     temp_off: 40       # Idle mode (legionella-safe minimum)
     temp_normal: 60    # Scheduled heating target (used by planner)
     temp_boost: 70     # Manual boost button (Dashboard/Executor)
@@ -284,7 +284,7 @@ executor:
 
   # Notifications (via Home Assistant notify service)
   notifications:
-    service: notify.mobile_app_sebastians_iphone  # HA notify service to use
+    service: ""  # HA notify service to use
     on_charge_start: true              # Notify when grid charging starts
     on_charge_stop: false              # Notify when grid charging stops
     on_export_start: true              # Notify when export/discharge starts

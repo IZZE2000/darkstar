@@ -62,7 +62,7 @@ class WaterHeaterConfig:
 class NotificationConfig:
     """Notification settings per action type."""
 
-    service: str = "notify.mobile_app_phone"
+    service: str | None = None
     on_charge_start: bool = True
     on_charge_stop: bool = False
     on_export_start: bool = True
@@ -222,7 +222,7 @@ def load_executor_config(config_path: str = "config.yaml") -> ExecutorConfig:
         else {}
     )
     notifications = NotificationConfig(
-        service=str(notif_data.get("service", NotificationConfig.service)),
+        service=_str_or_none(notif_data.get("service", NotificationConfig.service)),
         on_charge_start=bool(notif_data.get("on_charge_start", NotificationConfig.on_charge_start)),
         on_charge_stop=bool(notif_data.get("on_charge_stop", NotificationConfig.on_charge_stop)),
         on_export_start=bool(notif_data.get("on_export_start", NotificationConfig.on_export_start)),

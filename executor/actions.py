@@ -171,7 +171,7 @@ class HAClient:
 
     def send_notification(
         self,
-        service: str,
+        service: str | None,
         title: str,
         message: str,
         data: dict[str, Any] | None = None,
@@ -188,6 +188,9 @@ class HAClient:
         Returns:
             True if successful, False otherwise
         """
+        if not service:
+            return False
+
         # Parse service name (e.g., "notify.mobile_app_phone" -> domain="notify", service="mobile_app_phone")
         parts = service.split(".", 1)
         if len(parts) != 2:
