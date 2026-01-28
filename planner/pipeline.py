@@ -376,15 +376,6 @@ class PlannerPipeline:
             force_water_on_slots=force_water_slots_indices,  # Rev WH2
         )
 
-        # ------------------------------------------------------------------
-        # Rev K23 Phase 4: TVS Removed (Simplified Architecture)
-        # Terminal value is correctly handled by S-Index buffer logic + Kepler
-        # ------------------------------------------------------------------
-        kepler_config.terminal_value_sek_kwh = 0.0
-
-        # Merge TVS debug placeholder for visibility (explicitly disabled)
-        s_index_debug["tvs"] = {"status": "removed_phase4"}
-
         # Rev O1: Disable water heating in Kepler if no water heater
         if not has_water_heater:
             logger.info("No water heater - disabling water heating optimization")

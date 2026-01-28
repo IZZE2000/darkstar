@@ -25,8 +25,7 @@ class KeplerConfig:
     max_export_power_kw: float | None = None
     max_import_power_kw: float | None = None
     target_soc_kwh: float | None = None  # Minimum SoC at end of horizon
-    target_soc_penalty_sek: float = 0.0  # Set by config (default 10.0)
-    terminal_value_sek_kwh: float = 0.0  # Value of energy left in battery
+    target_soc_penalty_sek: float = 0.0  # Set by pipeline (Safety Floor penalty)
     curtailment_penalty_sek: float = 0.0  # Penalty for wasting available solar power
     ramping_cost_sek_per_kw: float = 0.0  # Penalty for power changes
     export_threshold_sek_per_kwh: float = 0.0  # Min spread to export
@@ -117,7 +116,6 @@ class KeplerResultSlot:
     import_price_sek_kwh: float = 0.0
     export_price_sek_kwh: float = 0.0
     water_heat_kw: float = 0.0  # Rev K17: Water heating power in this slot
-    terminal_credit_sek: float = 0.0  # Rev K25: Debug term
     is_optimal: bool = True
 
 

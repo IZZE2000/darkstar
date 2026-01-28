@@ -89,7 +89,6 @@ class StrategyContext:
     s_index_factor: float = 1.0
     pv_bias_adjustment: float = 0.0
     load_bias_adjustment: float = 0.0
-    terminal_value_sek: float = 0.0
     vacation_mode: bool = False
     weather_volatility: float = 0.0
 

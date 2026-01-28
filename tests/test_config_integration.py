@@ -28,9 +28,6 @@ def test_config_mapping(default_config):
     # Create dummy slots/overrides
     k_config = config_to_kepler_config(raw_config)
 
-    # 1. Target SoC Penalty
-    assert k_config.target_soc_penalty_sek == raw_config["kepler"]["target_soc_penalty_sek"]
-
     # 2. Curtailment Penalty
     assert k_config.curtailment_penalty_sek == raw_config["kepler"]["curtailment_penalty_sek"]
 

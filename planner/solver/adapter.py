@@ -168,7 +168,7 @@ def config_to_kepler_config(
     Args:
         planner_config: Main configuration dictionary
         overrides: Optional runtime overrides
-        slots: Optional list of KeplerInputSlot for dynamic terminal_value calculation
+        slots: Optional list of KeplerInputSlot (Legacy argument, currently unused)
     """
     system = planner_config.get("system", {})
     battery = system.get("battery", planner_config.get("battery", {}))
@@ -188,13 +188,6 @@ def config_to_kepler_config(
         if overrides and key in overrides:
             val = overrides[key]
         return float(val) if val is not None else default
-
-    # Calculate terminal value
-    terminal_value = get_val("terminal_value_sek_kwh", 0.0)
-    # If terminal value is 0 (default), we don't infer one automatically anymore
-    # to avoid making discharge profitable when it shouldn't be (prevent "dumping").
-    # The user can explicitly set 'terminal_value_sek_kwh' in config if they want credit.
-    pass
 
     wh_cfg = planner_config.get("water_heating", {})
 
@@ -260,17 +253,9 @@ def config_to_kepler_config(
                 "ramping_cost_sek_per_kw", get_val("ramping_cost_sek_per_kw", 0.05)
             )
         ),
-        export_threshold_sek_per_kwh=get_val("export_threshold_sek_per_kwh", 0.0),
-        target_soc_penalty_sek=float(
-            planner_config.get("kepler", {}).get(
-                "target_soc_penalty_sek", get_val("target_soc_penalty_sek", 10.0)
-            )
-        ),
         curtailment_penalty_sek=float(
             planner_config.get("kepler", {}).get("curtailment_penalty_sek", 0.1)
         ),
-        # Rev K23: terminal_value = max(avg_future_price, stored_energy_cost)
-        terminal_value_sek_kwh=terminal_value,
         # Water heating as deferrable load
         water_heating_power_kw=float(wh_cfg.get("power_kw", 0.0)),
         water_heating_min_kwh=float(wh_cfg.get("min_kwh_per_day", 0.0)),

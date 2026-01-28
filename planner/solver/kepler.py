@@ -313,12 +313,7 @@ class KeplerSolver:
             # REMOVED in Rev K16 Phase 1: Replaced by linear discomfort cost which naturally
             # breaks up blocks if penalty is low enough.
 
-        # Terminal Value
-        terminal_value = (
-            soc[T] * config.terminal_value_sek_kwh if config.terminal_value_sek_kwh != 0 else 0.0
-        )
-
-        # Set Objective
+        # Terminal SoC Target (BIDIRECTIONAL soft constraint)
         # - min_soc violation: HARD penalty (1000 SEK/kWh)
         # - target violation: SOFT penalty (from config, derived from risk_appetite)
         #   * UNDER target: Risk penalty (configurable)
@@ -326,7 +321,6 @@ class KeplerSolver:
         # - gap violation: SOFT comfort penalty (Rev K18)
         prob += (
             pulp.lpSum(total_cost)
-            - terminal_value
             + MIN_SOC_PENALTY * pulp.lpSum(soc_violation)
             + gap_violation_penalty  # Deprecated in K16 (0.0)
             + gap_violation_penalty  # Deprecated in K16 (0.0)
@@ -419,8 +413,6 @@ class KeplerSolver:
                 cost = (i_val * s.import_price_sek_kwh) - (e_val * s.export_price_sek_kwh) + wear
                 final_total_cost += cost
 
-                t_credit = (soc_val * config.terminal_value_sek_kwh) / (T + 1) if T >= 0 else 0.0
-
                 result_slots.append(
                     KeplerResultSlot(
                         start_time=s.start_time,
@@ -434,7 +426,6 @@ class KeplerSolver:
                         import_price_sek_kwh=s.import_price_sek_kwh,
                         export_price_sek_kwh=s.export_price_sek_kwh,
                         water_heat_kw=w_kw,
-                        terminal_credit_sek=t_credit,
                         is_optimal=True,
                     )
                 )
