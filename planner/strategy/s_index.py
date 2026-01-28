@@ -694,6 +694,11 @@ def calculate_safety_floor(
 
     risk_appetite = int(s_index_cfg.get("risk_appetite", 3))
 
+    # Scaling Factor: What % of capacity corresponds to a 100% Deficit?
+    # Default 0.5 (50%) means if Deficit=1.0, we hold 50% capacity as buffer (before Risk mult).
+    # This prevents holding 100% capacity just because it's winter.
+    max_safety_buffer_pct = float(s_index_cfg.get("max_safety_buffer_percent", 50.0)) / 100.0
+
     # 2. Calculate Deficit Ratio (Horizon = Next 24-48h)
     # We look at the full available forecast in df
     total_load = df["load_forecast_kwh"].sum()
@@ -709,12 +714,13 @@ def calculate_safety_floor(
         1: 1.30,
         2: 1.15,
         3: 1.00,
-        4: 0.90,
-        5: 0.80,
+        4: 0.50,
+        5: 0.00,
     }
     risk_multiplier = RISK_MULTIPLIERS.get(risk_appetite, 1.0)
 
-    base_reserve_kwh = deficit_ratio * capacity_kwh * risk_multiplier
+    # Base Reserve = Deficit Ratio * (Capacity * Scaling Limit) * Risk Multiplier
+    base_reserve_kwh = deficit_ratio * (capacity_kwh * max_safety_buffer_pct) * risk_multiplier
 
     # 4. Weather Buffer (Explicit adders)
     weather_buffer_kwh = 0.0
@@ -764,6 +770,7 @@ def calculate_safety_floor(
         "deficit_ratio": round(deficit_ratio, 4),
         "risk_appetite": risk_appetite,
         "risk_multiplier": risk_multiplier,
+        "max_safety_buffer_pct": max_safety_buffer_pct,
         "base_reserve_kwh": round(base_reserve_kwh, 2),
         "weather_buffer_kwh": round(weather_buffer_kwh, 2),
         "weather_details": weather_debug,

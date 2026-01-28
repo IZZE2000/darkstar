@@ -22,7 +22,10 @@ def test_calculate_deficit_ratio():
 def test_calculate_safety_floor_defaults():
     # Base Config
     battery_config = {"capacity_kwh": 10.0, "min_soc_percent": 10.0}  # Min 1.0 kWh
-    s_index_cfg = {"risk_appetite": 3}  # Neutral (1.0x)
+    s_index_cfg = {
+        "risk_appetite": 3,
+        "max_safety_buffer_percent": 50.0,
+    }  # Neutral (1.0x), Scale 0.5
 
     # DataFrame with Deficit (0.4 ratio)
     # Load 100, PV 60
@@ -35,20 +38,21 @@ def test_calculate_safety_floor_defaults():
 
     # Expected:
     # Deficit Ratio = 0.4
-    # Base Reserve = 0.4 * 10.0 * 1.0 = 4.0 kWh
+    # Capacity Scale = 10.0 * 0.5 = 5.0
+    # Base Reserve = 0.4 * 5.0 * 1.0 = 2.0 kWh
     # Weather Buffer = 0 (defaults)
-    # Floor = 1.0 (Min) + 4.0 = 5.0 kWh
+    # Floor = 1.0 (Min) + 2.0 = 3.0 kWh
 
     floor, debug = calculate_safety_floor(df, battery_config, s_index_cfg, "UTC")
 
-    assert floor == 5.0
+    assert floor == 3.0
     assert debug["deficit_ratio"] == 0.4
-    assert debug["base_reserve_kwh"] == 4.0
+    assert debug["base_reserve_kwh"] == 2.0
 
 
 def test_calculate_safety_floor_weather_adders():
     battery_config = {"capacity_kwh": 10.0, "min_soc_percent": 10.0}  # Min 1.0 kWh
-    s_index_cfg = {"risk_appetite": 3}
+    s_index_cfg = {"risk_appetite": 3, "max_safety_buffer_percent": 50.0}
 
     # DataFrame with Surplus (Ratio 0.0)
     df = pd.DataFrame(
@@ -81,13 +85,15 @@ def test_calculate_safety_floor_risk_multipliers():
         }
     )
 
-    # Risk 1 (Safety): 1.3x -> Reserve = 0.5 * 10 * 1.3 = 6.5
-    cfg_risk1 = {"risk_appetite": 1}
+    # Scale 0.5 (Default) -> Max Buffer = 5.0 kWh
+
+    # Risk 1 (Safety): 1.3x -> Reserve = 0.5 * 5.0 * 1.3 = 3.25
+    cfg_risk1 = {"risk_appetite": 1, "max_safety_buffer_percent": 50.0}
     floor1, _ = calculate_safety_floor(df, battery_config, cfg_risk1, "UTC")
 
-    # Risk 5 (Gambler): 0.8x -> Reserve = 0.5 * 10 * 0.8 = 4.0
-    cfg_risk5 = {"risk_appetite": 5}
+    # Risk 5 (Gambler): 0.8x -> Reserve = 0.5 * 5.0 * 0.8 = 2.0
+    cfg_risk5 = {"risk_appetite": 5, "max_safety_buffer_percent": 50.0}
     floor5, _ = calculate_safety_floor(df, battery_config, cfg_risk5, "UTC")
 
-    assert floor1 == 6.5
-    assert floor5 == 4.0
+    assert floor1 == 3.25
+    assert floor5 == 2.0

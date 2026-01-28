@@ -36,7 +36,6 @@ from planner.strategy.s_index import (
     calculate_probabilistic_s_index,
     calculate_safety_floor,
 )
-from planner.strategy.terminal_value import TerminalValueSystem
 from planner.vacation_state import load_last_anti_legionella, save_last_anti_legionella
 
 logger = logging.getLogger("darkstar.planner")
@@ -298,6 +297,14 @@ class PlannerPipeline:
             battery_cap = float(active_config.get("battery", {}).get("capacity_kwh", 13.5) or 13.5)
             target_soc_pct = (target_soc_kwh / battery_cap) * 100.0 if battery_cap > 0 else 0.0
 
+            logger.info(
+                "S-Index: Mode=physical_deficit, Deficit=%.3f, Floor=%.2f kWh (Start: %.2f%%), Risk=%d",
+                soc_debug.get("deficit_ratio", 0.0),
+                target_soc_kwh,
+                target_soc_pct,
+                s_index_cfg.get("risk_appetite", 3),
+            )
+
             # Extract raw factor from s_debug (handle both naming conventions)
             raw_factor = s_index_debug.get("raw_factor", s_index_debug.get("factor_unclamped"))
 
@@ -370,23 +377,13 @@ class PlannerPipeline:
         )
 
         # ------------------------------------------------------------------
-        # Rev K23: Terminal Value System (TVS)
-        # Calculate intrinsic value of stored energy at end of horizon
+        # Rev K23 Phase 4: TVS Removed (Simplified Architecture)
+        # Terminal value is correctly handled by S-Index buffer logic + Kepler
         # ------------------------------------------------------------------
-        tvs = TerminalValueSystem(active_config)
-        terminal_value, tvs_debug = tvs.calculate_terminal_value(future_df, now_slot)
-        kepler_config.terminal_value_sek_kwh = terminal_value
+        kepler_config.terminal_value_sek_kwh = 0.0
 
-        # Merge TVS debug into s_index_debug for visibility
-        s_index_debug["tvs"] = tvs_debug
-
-        logger.info(
-            "TVS: Terminal Value = %.4f SEK/kWh (Method: %s, Risk: %.2f)",
-            terminal_value,
-            tvs_debug.get("method"),
-            tvs_debug.get("risk_multiplier"),
-        )
-        # ------------------------------------------------------------------
+        # Merge TVS debug placeholder for visibility (explicitly disabled)
+        s_index_debug["tvs"] = {"status": "removed_phase4"}
 
         # Rev O1: Disable water heating in Kepler if no water heater
         if not has_water_heater:
@@ -481,11 +478,11 @@ class PlannerPipeline:
 
             # Target penalty derived from risk_appetite
             RISK_PENALTY_MAP = {
-                1: 20.0,  # Safety: Strong incentive to hit target
-                2: 14.0,  # Conservative
-                3: 8.0,  # Neutral
-                4: 5.0,  # Aggressive
-                5: 2.0,  # Gambler: Easy to trade off for profit
+                1: 100.0,  # Safety: Strong incentive to hit target
+                2: 100.0,  # Conservative
+                3: 100.0,  # Neutral
+                4: 100.0,  # Aggressive
+                5: 100.0,  # Gambler: Easy to trade off for profit
             }
             risk_appetite = int(s_index_cfg.get("risk_appetite", 3))
             kepler_config.target_soc_penalty_sek = RISK_PENALTY_MAP.get(risk_appetite, 8.0)

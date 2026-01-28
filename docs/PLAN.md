@@ -207,7 +207,7 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 
 ### [IN PROGRESS] REV // K23 — Battery Cycling & Economic Valuation Fix
 
-**Goal:** Fix two critical bugs blocking intra-day battery cycling and implement Terminal Value System for economically correct battery valuation.
+**Goal:** Fix intra-day battery cycling bugs and simplify strategy by removing redundant valuation logic (TVS) in favor of a robust Physical Deficit S-Index.
 
 **Context:**
 Beta tester (v2.5.11-beta) reported "flat schedule" (no charging/cycling) with Risk Appetite 5 despite 1.37 SEK price spread and being below target SoC (5% actual vs 6% target). Investigation revealed TWO separate issues requiring fixes.
@@ -287,64 +287,56 @@ git commit -m "fix(k23): correct wear cost to apply once per cycle, not per acti
 - Addresses REV K23 Phase 1"
 ```
 
-#### Phase 2: Terminal Value System (TVS) [DONE]
+#### Phase 2: Terminal Value System (TVS) [ABANDONED/REVERT]
 
-**Goal:** Enable economically correct battery valuation so stored energy has intrinsic value based on future prices and risk appetite.
+**Goal:** Enable economically correct battery valuation so stored energy has intrinsic value.
+**Outcome:** Implemented but found to be redundant. The "Blind Spot" is better solved by the S-Index (Physical Deficit) + High Penalties.
+**Decision:** Remove TVS to reduce complexity.
 
-**Design:**
-- **Terminal Value (SEK/kWh)** = `avg(future_prices_in_horizon) × RISK_MULTIPLIER`
-- **Logic:** Value stored energy based on what we could sell it for tomorrow (or save by not buying).
-- **Risk Multipliers:**
-  - Risk 1 (Safety): `1.30x` (Hoard energy)
-  - Risk 2 (Caution): `1.15x` (Conservative)
-  - Risk 3 (Neutral): `1.00x` (Fair value)
-  - Risk 4 (Bold): `0.90x` (Pro-cycling)
-  - Risk 5 (Gambler): `0.80x` (Aggressive cycling)
-
-**Tasks:**
-* [x] Create `planner/strategy/terminal_value.py`.
-* [x] Integrate into `planner/pipeline.py` (pass calculated value to Kepler overrides).
-* [x] Verify Kepler receives the correct `terminal_value_sek_kwh`.
+* [x] Create `planner/strategy/terminal_value.py`. [REVERTING]
+* [x] Integrate into `planner/pipeline.py`. [REVERTING]
 
 #### Phase 3: S-Index Refactor (Physical Deficit) [DONE]
 
-**Goal:** Replace "Fixed Buffer" logic with "Physical Deficit" logic. The safety floor should react to *actual* future scarcity, not just a blind percentage.
+**Goal:** Replace "Fixed Buffer" logic with "Physical Deficit" logic.
+**Pivot:** Instead of variable penalties, use a **Hard Soft-Constraint** (High Penalty) for the Safety Floor.
 
 **Design:**
 - **Safety Floor (kWh)** = `MinSoC + (Capacity * Deficit_Ratio * Risk_Multiplier) + Weather_Buffer`
-- **Deficit Ratio:** `(Load_Forecast - PV_Forecast) / Load_Forecast` (Clamped at 0 if PV > Load)
-- **Risk Multipliers:**
-  - Risk 1: `1.30x` deficit coverage.
-  - Risk 2: `1.15x` deficit coverage.
-  - Risk 3: `1.00x` deficit coverage.
-  - Risk 4: `0.90x` deficit coverage.
-  - Risk 5: `0.80x` deficit coverage.
-- **Weather Buffer:** Explicit adders for Snow/Cold defined in Blueprint.
+- **Penalty:** `200.0 SEK` (Fixed High Penalty) - "Do Not Violate unless impossible".
+- **Risk Multipliers (Aggressive):**
+  - Risk 4: `0.50x` deficit coverage.
+  - Risk 5: `0.00x` deficit coverage (Gambler).
 
 **Tasks:**
-* [x] Refactor `planner/strategy/s_index.py`:
-  * [x] Implement `calculate_deficit_ratio()`
-  * [x] Implement `calculate_safety_floor()` (replacing `calculate_dynamic_target_soc`)
-  * [x] Add weather buffer logic (Snow/Temp/Cloud).
-* [x] Update `planner/pipeline.py` to use `safety_floor` as the target for TVS/Kepler.
+* [x] Refactor `planner/strategy/s_index.py` (Physical Deficit).
+* [x] Update `planner/pipeline.py` to target Safety Floor.
+* [x] **Calibration:** Finalize multipliers (0.50/0.00) and Penalties (200 SEK).
 
-#### Phase 4: Internal Telemetry & UI [PLANNED]
+#### Phase 4: Architecture Simplification (Cleanup) [DONE]
+
+**Goal:** Remove the redundant TVS code.
+
+* [x] **Delete:** `planner/strategy/terminal_value.py`.
+* [x] **Cleanup:** Remove TVS logic from `planner/pipeline.py`.
+
+#### Phase 5: Internal Telemetry & UI [PLANNED]
 
 **Goal:** Vizualize the strategy on the Dashboard so the user (and we) can see *why* the agent is acting.
 
 **Metrics to Add (API & UI):**
-*   `safety_floor_kwh`: The "Do Not Cross" line.
-*   `tradable_energy_kwh`: `Current SoC - Safety Floor` (The energy available for arbitrage).
-*   `terminal_value_sek`: The calculated future value per kWh.
+*   `safety_floor_kwh`: The physical safety floor (min allowed SoC) driven by the deficit.
+*   `s_index_deficit_kwh`: The forecasted shortage (Load - PV) explaining *why* the floor is high.
+*   *(Existing)* `strategy_factor`: The risk multiplier.
 
 **Tasks:**
 * [ ] Update `backend/api/routers/services.py` or `telemetry` to expose these new computed values.
-* [ ] Update `frontend/src/components/dashboard/BatteryCard.tsx` (or StrategyCard) to display:
+* [ ] Update `frontend/src/components/dashboard/BatteryCard.tsx` to display:
   *   "Safety Floor: X kWh"
   *   "Tradable: Y kWh"
   *   "Future Value: Z SEK/kWh"
 
-#### Phase 5: Validation & Cleanup [PLANNED]
+#### Phase 6: Validation & Cleanup [PLANNED]
 
 **Goal:** Ensure the system behaves rationally in E2E scenarios.
 
