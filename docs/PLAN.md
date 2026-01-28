@@ -287,7 +287,7 @@ git commit -m "fix(k23): correct wear cost to apply once per cycle, not per acti
 - Addresses REV K23 Phase 1"
 ```
 
-#### Phase 2: Terminal Value System (TVS) [PLANNED]
+#### Phase 2: Terminal Value System (TVS) [DONE]
 
 **Goal:** Enable economically correct battery valuation so stored energy has intrinsic value based on future prices and risk appetite.
 
@@ -302,9 +302,9 @@ git commit -m "fix(k23): correct wear cost to apply once per cycle, not per acti
   - Risk 5 (Gambler): `0.80x` (Aggressive cycling)
 
 **Tasks:**
-* [ ] Create `planner/strategy/terminal_value.py`.
-* [ ] Integrate into `planner/pipeline.py` (pass calculated value to Kepler overrides).
-* [ ] Verify Kepler receives the correct `terminal_value_sek_kwh`.
+* [x] Create `planner/strategy/terminal_value.py`.
+* [x] Integrate into `planner/pipeline.py` (pass calculated value to Kepler overrides).
+* [x] Verify Kepler receives the correct `terminal_value_sek_kwh`.
 
 #### Phase 3: S-Index Refactor (Physical Deficit) [PLANNED]
 

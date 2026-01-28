@@ -37,6 +37,7 @@ from planner.strategy.s_index import (
     calculate_future_risk_factor,
     calculate_probabilistic_s_index,
 )
+from planner.strategy.terminal_value import TerminalValueSystem
 from planner.vacation_state import load_last_anti_legionella, save_last_anti_legionella
 
 logger = logging.getLogger("darkstar.planner")
@@ -377,6 +378,25 @@ class PlannerPipeline:
             kepler_input.slots,
             force_water_on_slots=force_water_slots_indices,  # Rev WH2
         )
+
+        # ------------------------------------------------------------------
+        # Rev K23: Terminal Value System (TVS)
+        # Calculate intrinsic value of stored energy at end of horizon
+        # ------------------------------------------------------------------
+        tvs = TerminalValueSystem(active_config)
+        terminal_value, tvs_debug = tvs.calculate_terminal_value(future_df, now_slot)
+        kepler_config.terminal_value_sek_kwh = terminal_value
+
+        # Merge TVS debug into s_index_debug for visibility
+        s_index_debug["tvs"] = tvs_debug
+
+        logger.info(
+            "TVS: Terminal Value = %.4f SEK/kWh (Method: %s, Risk: %.2f)",
+            terminal_value,
+            tvs_debug.get("method"),
+            tvs_debug.get("risk_multiplier"),
+        )
+        # ------------------------------------------------------------------
 
         # Rev O1: Disable water heating in Kepler if no water heater
         if not has_water_heater:

@@ -64,7 +64,7 @@ from planner.strategy.s_index import (
     calculate_target_soc_risk_factor,
 )
 from planner.strategy.terminal_value import (
-    calculate_terminal_value,
+    TerminalValueSystem,
 )
 
 __all__ = [
@@ -77,11 +77,11 @@ __all__ = [
     # Solver
     "KeplerSolver",
     "PlannerInput",
-    # Pipeline
     "PlannerPipeline",
     # Types
     "SlotData",
     "StrategyContext",
+    "TerminalValueSystem",
     "apply_manual_plan",
     "build_forecast_dataframe",
     "build_price_dataframe",
@@ -90,7 +90,6 @@ __all__ = [
     "calculate_dynamic_target_soc",
     "calculate_future_risk_factor",
     "calculate_target_soc_risk_factor",
-    "calculate_terminal_value",
     "config_to_kepler_config",
     # Output
     "dataframe_to_json_response",
