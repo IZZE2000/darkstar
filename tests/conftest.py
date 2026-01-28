@@ -47,13 +47,6 @@ input_sensors:
 
     # Run init
     try:
-        # Check if we are already in an event loop
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            # In some test environments, an event loop might already be running
-            # We use a separate thread or just run it if possible
-            # But usually session fixtures run before the loop starts
-            pass
         asyncio.run(init_db())
     except Exception as e:
         print(f"Warning during test DB init: {e}")

@@ -625,3 +625,150 @@ def calculate_dynamic_target_soc(
     }
 
     return target_soc_pct, target_soc_kwh, debug
+
+
+# ------------------------------------------------------------------
+# REV K23 Phase 3: Physical Deficit Logic (S-Index Refactor)
+# ------------------------------------------------------------------
+
+
+def calculate_deficit_ratio(
+    total_load: float,
+    total_pv: float,
+) -> float:
+    """
+    Calculate the physical energy deficit ratio.
+
+    Ratio = (Load - PV) / Load
+
+    - Ratio > 0: Deficit (Load > PV) -> Need safety buffer
+    - Ratio <= 0: Surplus (PV >= Load) -> No safety buffer needed (0)
+
+    Args:
+        total_load: Sum of load forecast (kWh)
+        total_pv: Sum of PV forecast (kWh)
+
+    Returns:
+        float: Deficit ratio [0.0, 1.0] (Clamped at 0)
+    """
+    if total_load <= 0:
+        return 0.0
+
+    deficit = total_load - total_pv
+    if deficit <= 0:
+        return 0.0
+
+    return min(1.0, deficit / total_load)
+
+
+def calculate_safety_floor(
+    df: pd.DataFrame,
+    battery_config: dict[str, Any],
+    s_index_cfg: dict[str, Any],
+    timezone_name: str,
+    fetch_temperature_fn: Callable[[list[int], Any], Any] | None = None,
+) -> tuple[float, dict[str, Any]]:
+    """
+    Calculate the Safety Floor (Min kWh) based on Physical Deficit.
+
+    Logic:
+    1. Calculate Deficit Ratio over horizon (Load - PV)
+    2. Base Reserve = Deficit Ratio * Capacity * Risk Multiplier
+    3. Weather Buffer = Snow + Temp + Clouds
+    4. Floor = MinSoC + Base Reserve + Weather Buffer
+
+    Args:
+        df: DataFrame with 'load_forecast_kwh', 'pv_forecast_kwh', etc.
+        battery_config: Battery config (capacity, min_soc)
+        s_index_cfg: Strategy config (risk_appetite)
+        timezone_name: Timezone string
+        fetch_temperature_fn: Callback for weather data
+
+    Returns:
+        Tuple of (safety_floor_kwh, debug_data)
+    """
+    # 1. Config & Inputs
+    capacity_kwh = float(battery_config.get("capacity_kwh", 13.5))
+    min_soc_pct = float(battery_config.get("min_soc_percent", 5.0))
+    min_soc_kwh = (min_soc_pct / 100.0) * capacity_kwh
+
+    risk_appetite = int(s_index_cfg.get("risk_appetite", 3))
+
+    # 2. Calculate Deficit Ratio (Horizon = Next 24-48h)
+    # We look at the full available forecast in df
+    total_load = df["load_forecast_kwh"].sum()
+    total_pv = df["pv_forecast_kwh"].sum()
+
+    deficit_ratio = calculate_deficit_ratio(total_load, total_pv)
+
+    # 3. Risk Multipliers (How much of the deficit do we need to cover?)
+    # Risk 1 (Safety): Cover 130% of deficit (Paranoid)
+    # Risk 3 (Neutral): Cover 100% of deficit
+    # Risk 5 (Gambler): Cover 80% of deficit
+    RISK_MULTIPLIERS = {
+        1: 1.30,
+        2: 1.15,
+        3: 1.00,
+        4: 0.90,
+        5: 0.80,
+    }
+    risk_multiplier = RISK_MULTIPLIERS.get(risk_appetite, 1.0)
+
+    base_reserve_kwh = deficit_ratio * capacity_kwh * risk_multiplier
+
+    # 4. Weather Buffer (Explicit adders)
+    weather_buffer_kwh = 0.0
+    weather_debug = {}
+
+    # Needs weather data (Temp, Snow, Cloud)
+    # We assume 'snow_prob', 'temperature_c', 'cloud_cover' might be in DF or fetchable
+    # For now, check DF columns if available, or use fetch_fn/heuristics
+
+    # A. Temperature (Cold = High risk)
+    avg_temp = 20.0
+    if "temperature_c" in df.columns:
+        avg_temp = df["temperature_c"].mean()
+
+    if avg_temp < 0:
+        weather_buffer_kwh += 1.0  # Sub-zero
+        weather_debug["temp_adder"] = 1.0
+    if avg_temp < -10:
+        weather_buffer_kwh += 1.0  # Extreme cold (Total +2.0)
+        weather_debug["temp_adder"] = 2.0
+
+    # B. Snow (If available in forecast)
+    if "snow_prob" in df.columns:
+        snow_hours = (df["snow_prob"] > 50).sum()
+        if snow_hours > 0:
+            snow_adder = 0.5 * (snow_hours / 24.0)
+            weather_buffer_kwh += snow_adder
+            weather_debug["snow_adder"] = round(snow_adder, 2)
+
+    # C. Cloud Cover (High clouds = PV uncertainty)
+    if "cloud_cover" in df.columns:
+        avg_cloud = df["cloud_cover"].mean()
+        if avg_cloud > 70:
+            weather_buffer_kwh += 0.5
+            weather_debug["cloud_adder"] = 0.5
+
+    # 5. Calculate Final Floor
+    raw_floor = min_soc_kwh + base_reserve_kwh + weather_buffer_kwh
+
+    # Clamp to physical limits
+    safety_floor_kwh = max(min_soc_kwh, min(capacity_kwh, raw_floor))
+
+    debug = {
+        "method": "physical_deficit",
+        "total_load": round(total_load, 2),
+        "total_pv": round(total_pv, 2),
+        "deficit_ratio": round(deficit_ratio, 4),
+        "risk_appetite": risk_appetite,
+        "risk_multiplier": risk_multiplier,
+        "base_reserve_kwh": round(base_reserve_kwh, 2),
+        "weather_buffer_kwh": round(weather_buffer_kwh, 2),
+        "weather_details": weather_debug,
+        "min_soc_kwh": round(min_soc_kwh, 2),
+        "calculated_floor_kwh": round(safety_floor_kwh, 2),
+    }
+
+    return safety_floor_kwh, debug

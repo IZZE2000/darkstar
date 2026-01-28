@@ -33,9 +33,8 @@ from planner.solver.kepler import KeplerSolver
 from planner.strategy.manual_plan import apply_manual_plan
 from planner.strategy.s_index import (
     calculate_dynamic_s_index,
-    calculate_dynamic_target_soc,
-    calculate_future_risk_factor,
     calculate_probabilistic_s_index,
+    calculate_safety_floor,
 )
 from planner.strategy.terminal_value import TerminalValueSystem
 from planner.vacation_state import load_last_anti_legionella, save_last_anti_legionella
@@ -283,40 +282,31 @@ class PlannerPipeline:
 
                 s_index_debug.update(s_debug or {})
 
-            # Calculate Future Risk (D2) for Target SoC
-            risk_factor, risk_debug = await calculate_future_risk_factor(
+            # Rev K23 Phase 3: Physical Deficit Logic
+            # Replaces legacy Risk Factor + Dynamic Target SoC logic
+            target_soc_kwh, soc_debug = calculate_safety_floor(
                 df,
+                active_config.get("battery", {}),
                 s_index_cfg,
                 timezone_name,
-                daily_pv_forecast=input_data.get("daily_pv_forecast"),
-                daily_load_forecast=input_data.get("daily_load_forecast"),
                 fetch_temperature_fn=lambda days, t: fetch_temperature_forecast(
                     days, t, active_config
                 ),
             )
 
-            # Calculate Dynamic Target SoC
-            # Pass raw_factor for weather adjustment (independent of risk level)
-            raw_factor_for_weather = risk_debug.get(
-                "raw_factor_with_weather", risk_debug.get("raw_factor", 1.0)
-            )
-            target_soc_pct, target_soc_kwh, soc_debug = calculate_dynamic_target_soc(
-                risk_factor,
-                active_config.get("battery", {}),
-                s_index_cfg,
-                raw_factor=raw_factor_for_weather,
-            )
+            # Derive percentage for UI/Legacy compatibility
+            battery_cap = float(active_config.get("battery", {}).get("capacity_kwh", 13.5) or 13.5)
+            target_soc_pct = (target_soc_kwh / battery_cap) * 100.0 if battery_cap > 0 else 0.0
 
             # Extract raw factor from s_debug (handle both naming conventions)
-            raw_factor = s_debug.get("raw_factor", s_debug.get("factor_unclamped"))
+            raw_factor = s_index_debug.get("raw_factor", s_index_debug.get("factor_unclamped"))
 
             s_index_debug = {
-                "mode": "decoupled",
+                "mode": "physical_deficit",
                 "base_factor": base_factor,
                 "effective_load_margin": effective_load_margin,
-                "raw_factor": raw_factor,
-                "future_risk": risk_debug,
-                "target_soc": soc_debug,
+                "raw_factor": raw_factor,  # Kept for visibility of D1 margin
+                "safety_floor": soc_debug,
             }
 
             # Apply Safety Margins (PV confidence, Load inflation, Overlays)

@@ -306,7 +306,7 @@ git commit -m "fix(k23): correct wear cost to apply once per cycle, not per acti
 * [x] Integrate into `planner/pipeline.py` (pass calculated value to Kepler overrides).
 * [x] Verify Kepler receives the correct `terminal_value_sek_kwh`.
 
-#### Phase 3: S-Index Refactor (Physical Deficit) [PLANNED]
+#### Phase 3: S-Index Refactor (Physical Deficit) [DONE]
 
 **Goal:** Replace "Fixed Buffer" logic with "Physical Deficit" logic. The safety floor should react to *actual* future scarcity, not just a blind percentage.
 
@@ -322,11 +322,11 @@ git commit -m "fix(k23): correct wear cost to apply once per cycle, not per acti
 - **Weather Buffer:** Explicit adders for Snow/Cold defined in Blueprint.
 
 **Tasks:**
-* [ ] Refactor `planner/strategy/s_index.py`:
-  * [ ] Implement `calculate_deficit_ratio()`
-  * [ ] Implement `calculate_safety_floor()` (replacing `calculate_dynamic_target_soc`)
-  * [ ] Add weather buffer logic (Snow/Temp/Cloud).
-* [ ] Update `planner/pipeline.py` to use `safety_floor` as the target for TVS/Kepler.
+* [x] Refactor `planner/strategy/s_index.py`:
+  * [x] Implement `calculate_deficit_ratio()`
+  * [x] Implement `calculate_safety_floor()` (replacing `calculate_dynamic_target_soc`)
+  * [x] Add weather buffer logic (Snow/Temp/Cloud).
+* [x] Update `planner/pipeline.py` to use `safety_floor` as the target for TVS/Kepler.
 
 #### Phase 4: Internal Telemetry & UI [PLANNED]
 

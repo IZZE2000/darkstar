@@ -58,9 +58,11 @@ from planner.strategy.manual_plan import apply_manual_plan
 
 # Strategy functions
 from planner.strategy.s_index import (
+    calculate_deficit_ratio,
     calculate_dynamic_s_index,
     calculate_dynamic_target_soc,
     calculate_future_risk_factor,
+    calculate_safety_floor,
     calculate_target_soc_risk_factor,
 )
 from planner.strategy.terminal_value import (
@@ -86,9 +88,11 @@ __all__ = [
     "build_forecast_dataframe",
     "build_price_dataframe",
     # Strategy
+    "calculate_deficit_ratio",
     "calculate_dynamic_s_index",
     "calculate_dynamic_target_soc",
     "calculate_future_risk_factor",
+    "calculate_safety_floor",
     "calculate_target_soc_risk_factor",
     "config_to_kepler_config",
     # Output
