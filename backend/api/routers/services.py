@@ -414,6 +414,7 @@ async def get_energy_today() -> dict[str, float]:
         "today_pv_production",
         "today_load_consumption",
         "today_battery_charge",
+        "today_battery_discharge",
         "today_net_cost",
     ]
 
@@ -435,7 +436,18 @@ async def get_energy_today() -> dict[str, float]:
     pv_kwh = results[2] or 0.0
     load_kwh = results[3] or 0.0
     batt_chg_kwh = results[4] or 0.0
-    net_cost = results[5] or 0.0
+    batt_dis_kwh = results[5] or 0.0
+    net_cost = results[6] or 0.0
+
+    # Calculate Cycles
+    battery_cycles = 0.0
+    try:
+        cap = float(config.get("battery", {}).get("capacity_kwh", 0.0))
+        if cap > 0:
+            # Cycles = Discharged Energy / Capacity
+            battery_cycles = batt_dis_kwh / cap
+    except Exception:
+        pass
 
     return {
         "solar": round(pv_kwh, 2),
@@ -445,7 +457,7 @@ async def get_energy_today() -> dict[str, float]:
         "grid_import_kwh": round(grid_imp_kwh, 2),
         "grid_export_kwh": round(grid_exp_kwh, 2),
         "battery_charge_kwh": round(batt_chg_kwh, 2),
-        "battery_cycles": 0,
+        "battery_cycles": round(battery_cycles, 2),
         "pv_production_kwh": round(pv_kwh, 2),
         "load_consumption_kwh": round(load_kwh, 2),
         "net_cost_kr": round(net_cost, 2),

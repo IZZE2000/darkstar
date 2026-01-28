@@ -228,6 +228,7 @@ input_sensors:
   today_grid_import: sensor.inverter_today_energy_import          # Today's grid import (kWh)
   today_grid_export: sensor.inverter_today_energy_export          # Today's grid export (kWh)
   today_battery_charge: sensor.inverter_today_battery_charge      # Today's battery charge (kWh)
+  today_battery_discharge: sensor.inverter_today_battery_discharge # Today's battery discharge (kWh)
   today_pv_production: sensor.inverter_today_production           # Today's PV production (kWh)
   today_load_consumption: sensor.inverter_today_load_consumption  # Today's load consumption (kWh)
   today_net_cost: sensor.daily_cost                               # Today's net electricity cost

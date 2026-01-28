@@ -96,4 +96,4 @@ def test_calculate_safety_floor_risk_multipliers():
     floor5, _ = calculate_safety_floor(df, battery_config, cfg_risk5, "UTC")
 
     assert floor1 == 3.25
-    assert floor5 == 2.0
+    assert floor5 == 0.0

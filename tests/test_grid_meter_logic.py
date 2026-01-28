@@ -45,7 +45,13 @@ async def test_recorder_net_meter_mode(mock_config, mock_get_sensor, mock_store)
 
     # Make store.store_slot_observations an AsyncMock
     mock_store.return_value.store_slot_observations = AsyncMock()
+    mock_store.return_value.initialize = AsyncMock()
+    mock_store.return_value.get_system_state = AsyncMock(return_value=None)
+    mock_store.return_value.set_system_state = AsyncMock()
     mock_store.return_value.close = AsyncMock()
+    # Support async context manager
+    mock_store.return_value.__aenter__ = AsyncMock(return_value=mock_store.return_value)
+    mock_store.return_value.__aexit__ = AsyncMock(return_value=None)
 
     # Run
     await record_observation_from_current_state()
@@ -80,7 +86,13 @@ async def test_recorder_dual_meter_mode(mock_config, mock_get_sensor, mock_store
 
     # Make store.store_slot_observations an AsyncMock
     mock_store.return_value.store_slot_observations = AsyncMock()
+    mock_store.return_value.initialize = AsyncMock()
+    mock_store.return_value.get_system_state = AsyncMock(return_value=None)
+    mock_store.return_value.set_system_state = AsyncMock()
     mock_store.return_value.close = AsyncMock()
+    # Support async context manager
+    mock_store.return_value.__aenter__ = AsyncMock(return_value=mock_store.return_value)
+    mock_store.return_value.__aexit__ = AsyncMock(return_value=None)
 
     # Run
     await record_observation_from_current_state()

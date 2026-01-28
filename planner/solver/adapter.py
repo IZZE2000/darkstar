@@ -255,9 +255,17 @@ def config_to_kepler_config(
             if system.get("grid", {}).get("max_power_kw")
             else None
         ),
-        ramping_cost_sek_per_kw=get_val("ramping_cost_sek_per_kw", 0.05),
+        ramping_cost_sek_per_kw=float(
+            planner_config.get("kepler", {}).get(
+                "ramping_cost_sek_per_kw", get_val("ramping_cost_sek_per_kw", 0.05)
+            )
+        ),
         export_threshold_sek_per_kwh=get_val("export_threshold_sek_per_kwh", 0.0),
-        target_soc_penalty_sek=get_val("target_soc_penalty_sek", 10.0),
+        target_soc_penalty_sek=float(
+            planner_config.get("kepler", {}).get(
+                "target_soc_penalty_sek", get_val("target_soc_penalty_sek", 10.0)
+            )
+        ),
         curtailment_penalty_sek=float(
             planner_config.get("kepler", {}).get("curtailment_penalty_sek", 0.1)
         ),

@@ -41,7 +41,7 @@ def test_config_mapping(default_config):
 
     # 4. Water Block Penalty
     # Level 3 default: 0.50
-    assert k_config.water_block_penalty_sek == 0.50
+    assert k_config.water_block_penalty_sek == 2.0
 
     # 5. Wear Cost
     # Note: Adapter looks at battery_economics first

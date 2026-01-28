@@ -33,7 +33,13 @@ async def test_recorder_sign_convention_discharge(
     mock_store = MagicMock()
     # Mock async method on the store instance
     mock_store.store_slot_observations = AsyncMock()
+    mock_store.initialize = AsyncMock()
+    mock_store.get_system_state = AsyncMock(return_value=None)
+    mock_store.set_system_state = AsyncMock()
     mock_store.close = AsyncMock()
+    # Support async context manager
+    mock_store.__aenter__ = AsyncMock(return_value=mock_store)
+    mock_store.__aexit__ = AsyncMock(return_value=None)
     mock_store_cls.return_value = mock_store
 
     # Setup sensor values
@@ -71,7 +77,13 @@ async def test_recorder_sign_convention_charge(
     mock_store = MagicMock()
     # Mock async method on the store instance
     mock_store.store_slot_observations = AsyncMock()
+    mock_store.initialize = AsyncMock()
+    mock_store.get_system_state = AsyncMock(return_value=None)
+    mock_store.set_system_state = AsyncMock()
     mock_store.close = AsyncMock()
+    # Support async context manager
+    mock_store.__aenter__ = AsyncMock(return_value=mock_store)
+    mock_store.__aexit__ = AsyncMock(return_value=None)
     mock_store_cls.return_value = mock_store
 
     # -2.0 kW (Negative) -> Should be CHARGE in new logic

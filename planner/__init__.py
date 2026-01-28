@@ -65,9 +65,6 @@ from planner.strategy.s_index import (
     calculate_safety_floor,
     calculate_target_soc_risk_factor,
 )
-from planner.strategy.terminal_value import (
-    TerminalValueSystem,
-)
 
 __all__ = [
     "BatteryConfig",
@@ -83,7 +80,6 @@ __all__ = [
     # Types
     "SlotData",
     "StrategyContext",
-    "TerminalValueSystem",
     "apply_manual_plan",
     "build_forecast_dataframe",
     "build_price_dataframe",
