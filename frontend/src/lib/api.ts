@@ -3,6 +3,15 @@ export type PlannerSIndex = {
     risk_factor?: number
     factor?: number
     adjusted_factor?: number
+    safety_floor?: {
+        method?: string
+        deficit_ratio?: number
+        calculated_floor_kwh?: number
+        base_reserve_kwh?: number
+        weather_buffer_kwh?: number
+        risk_multiplier?: number
+        [key: string]: unknown
+    }
     [key: string]: unknown
 }
 

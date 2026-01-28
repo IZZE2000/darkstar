@@ -42,6 +42,9 @@ interface StrategyCardProps {
     sIndex: number | null
     cycles: number | null
     riskLabel?: string
+    safetyFloor?: number | null
+    deficitRatio?: number | null
+    batteryCapacity?: number | null
 }
 
 interface ControlParametersProps {
@@ -318,7 +321,24 @@ export function ResourcesDomain({
     )
 }
 
-export function StrategyDomain({ soc, socTarget, sIndex, cycles, riskLabel }: StrategyCardProps) {
+export function StrategyDomain({
+    soc,
+    socTarget,
+    sIndex,
+    cycles,
+    riskLabel,
+    safetyFloor,
+    deficitRatio,
+    batteryCapacity,
+}: StrategyCardProps) {
+    // Calculate tradable amount
+    let tradableKwh: number | null = null
+    let floorPct: number | null = null
+    if (safetyFloor != null && batteryCapacity && batteryCapacity > 0) {
+        tradableKwh = Math.max(0, batteryCapacity - safetyFloor)
+        floorPct = (safetyFloor / batteryCapacity) * 100
+    }
+
     return (
         <Card className="p-4 flex flex-col h-full relative overflow-hidden">
             <div className="absolute inset-0 bg-ai/[0.01]" />
@@ -346,19 +366,50 @@ export function StrategyDomain({ soc, socTarget, sIndex, cycles, riskLabel }: St
                         </div>
                     </div>
                 </div>
+            </div>
 
-                {/* S-Index */}
+            {/* S-Index Details Grid (Bottom Row) */}
+            <div className="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-line/30 relative z-10">
+                {/* 1. S-Index */}
                 <div>
                     <div className="text-[10px] text-muted uppercase tracking-wider mb-1">S-Index</div>
                     <div className="text-lg font-semibold text-text">{sIndex ? `x${sIndex.toFixed(2)}` : '—'}</div>
                     <div className="text-[10px] text-ai/80">Strategy Factor</div>
                 </div>
 
-                {/* Cycles / Risk */}
+                {/* 2. Cycles / Risk */}
                 <div>
                     <div className="text-[10px] text-muted uppercase tracking-wider mb-1">Cycles</div>
                     <div className="text-lg font-semibold text-text">{cycles?.toFixed(1) ?? '—'}</div>
                     <div className="text-[10px] text-muted">{riskLabel ? riskLabel : 'Daily usage'}</div>
+                </div>
+
+                {/* 3. Safety Floor - New for Rev K23 */}
+                <div>
+                    <div className="text-[10px] text-muted uppercase tracking-wider mb-1">Safety Floor</div>
+                    <div className="text-lg font-semibold text-text">
+                        {safetyFloor != null ? `${safetyFloor.toFixed(1)}` : '—'}{' '}
+                        <span className="text-[10px] font-normal text-muted">kWh</span>
+                    </div>
+                    <div className="text-[10px] text-muted">
+                        {floorPct != null ? `${floorPct.toFixed(0)}% Reserved` : 'Min charge'}
+                    </div>
+                </div>
+
+                {/* 4. Deficit / Tradable - New for Rev K23 */}
+                <div>
+                    <div className="text-[10px] text-muted uppercase tracking-wider mb-1">
+                        {tradableKwh != null ? 'Tradable' : 'Deficit'}
+                    </div>
+                    <div className="text-lg font-semibold text-text">
+                        {tradableKwh != null
+                            ? tradableKwh.toFixed(1)
+                            : deficitRatio != null
+                              ? (deficitRatio * 100).toFixed(0) + '%'
+                              : '—'}
+                        {tradableKwh != null && <span className="text-[10px] font-normal text-muted"> kWh</span>}
+                    </div>
+                    <div className="text-[10px] text-muted">{tradableKwh != null ? 'Available' : 'Load/PV Gap'}</div>
                 </div>
             </div>
         </Card>

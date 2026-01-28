@@ -390,9 +390,9 @@ export default function Dashboard() {
                         setTodayStats((prev) =>
                             prev
                                 ? {
-                                    ...prev,
-                                    pvForecast: parseFloat(dailyTotal.toFixed(1)),
-                                }
+                                      ...prev,
+                                      pvForecast: parseFloat(dailyTotal.toFixed(1)),
+                                  }
                                 : null,
                         )
                     }
@@ -798,10 +798,11 @@ export default function Dashboard() {
                                 <div className="flex items-center gap-2">
                                     <div className="flex items-center gap-2 text-[10px] text-muted">
                                         <span
-                                            className={`inline-flex h-2 w-2 rounded-full ${automationConfig?.enable_scheduler
+                                            className={`inline-flex h-2 w-2 rounded-full ${
+                                                automationConfig?.enable_scheduler
                                                     ? 'bg-good shadow-[0_0_0_2px_rgba(var(--color-good),0.4)]'
                                                     : 'bg-line'
-                                                }`}
+                                            }`}
                                         />
                                         <span>{automationConfig?.enable_scheduler ? 'Active' : 'Disabled'}</span>
                                     </div>
@@ -822,8 +823,9 @@ export default function Dashboard() {
                                 <button
                                     onClick={() => fetchAllData()}
                                     disabled={isRefreshing}
-                                    className={`rounded-full p-1 transition ${isRefreshing ? 'bg-surface2 text-muted' : 'text-muted hover:text-accent'
-                                        }`}
+                                    className={`rounded-full p-1 transition ${
+                                        isRefreshing ? 'bg-surface2 text-muted' : 'text-muted hover:text-accent'
+                                    }`}
                                     title="Manual sync"
                                 >
                                     <span className={`inline-block text-[10px] ${isRefreshing ? 'animate-spin' : ''}`}>
@@ -894,6 +896,9 @@ export default function Dashboard() {
                             } as Record<number, string>
                         )[riskAppetite] || 'Neutral'
                     }
+                    safetyFloor={plannerMeta?.s_index?.safety_floor?.calculated_floor_kwh ?? null}
+                    deficitRatio={plannerMeta?.s_index?.safety_floor?.deficit_ratio ?? null}
+                    batteryCapacity={batteryCapacity}
                 />
             </div>
         </main>

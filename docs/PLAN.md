@@ -320,7 +320,7 @@ git commit -m "fix(k23): correct wear cost to apply once per cycle, not per acti
 * [x] **Delete:** `planner/strategy/terminal_value.py`.
 * [x] **Cleanup:** Remove TVS logic from `planner/pipeline.py`.
 
-#### Phase 5: Internal Telemetry & UI [PLANNED]
+#### Phase 5: Internal Telemetry & UI [DONE]
 
 **Goal:** Vizualize the strategy on the Dashboard so the user (and we) can see *why* the agent is acting.
 
@@ -330,8 +330,8 @@ git commit -m "fix(k23): correct wear cost to apply once per cycle, not per acti
 *   *(Existing)* `strategy_factor`: The risk multiplier.
 
 **Tasks:**
-* [ ] Update `backend/api/routers/services.py` or `telemetry` to expose these new computed values.
-* [ ] Update `frontend/src/components/dashboard/BatteryCard.tsx` to display:
+* [x] Update `backend/api/routers/services.py` or `telemetry` to expose these new computed values.
+* [x] Update `frontend/src/components/dashboard/BatteryCard.tsx` (actually `CommandDomains.tsx`) to display:
   *   "Safety Floor: X kWh"
   *   "Tradable: Y kWh"
   *   "Future Value: Z SEK/kWh"
