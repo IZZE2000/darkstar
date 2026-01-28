@@ -77,10 +77,12 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [ ] Add `grid.import_breach_penalty_enabled` (Default: false) to `config.default.yaml`.
 * [ ] Add `grid.import_breach_limit_kw` (Default: 11.0) for the hard executor limit.
 * [ ] Add override entities to `executor.config`.
+* [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
 
 #### Phase 2: Planner Logic (Economic) [PLANNED]
 * [ ] **Planner Logic:** Pass the penalty cost to Kepler if enabled.
 * [ ] **Re-planning:** Trigger re-plan if penalty configuration changes.
+* [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
 
 #### Phase 3: Executor Active Guard (Reactive) [PLANNED]
 * [ ] **Monitor:** In `executor/engine.py` `_tick`, check `grid_import_power` vs `import_breach_limit_kw`.
@@ -91,6 +93,7 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
         *   Log "Grid Breach Detected! Engaging Emergency Shedding".
 * [ ] **Recovery:** Hysteresis logic to release overrides when grid import drops.
 * [ ] **Frontend:** Add controls to `Settings > Grid`.
+* [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
 
 ---
 
@@ -125,6 +128,7 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [ ] **Auto-positioning:** Calculate node positions dynamically based on enabled node count
 * [ ] **EV Placeholder:** Add EV node entry (`configKey: 'system.has_ev'`, disabled by default)
 * [ ] **Particle Streams:** Only render connections between enabled nodes
+* [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
 
 #### Phase 2: ChartCard Mobile UX [PLANNED]
 * [ ] **Bottom Sheet Tooltip:** Replace standard Chart.js tooltip with fixed bottom overlay on mobile:
@@ -140,6 +144,7 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
   borderWidth: 2,
   borderRadius: 4,
   ```
+* [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
 
 #### Phase 3: Legend Polish [PLANNED]
 * [ ] **Circle Markers Only:** Replace dotted SoC lines with circle markers:
@@ -155,6 +160,7 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
   ```
 * [ ] **Mobile Viewport Detection:** Add responsive hook for tooltip mode switching
 * [ ] **Overlay Menu Mobile:** Ensure toggle buttons are touch-friendly (44px+ tap targets)
+* [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
 
 #### Phase 5: Testing & Validation [PLANNED]
 * [ ] **Feature Combination Testing:** Verify conditional rendering works for:
@@ -165,6 +171,7 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
   * Solar only (minimal system)
 * [ ] **Regression Test:** Verify desktop tooltip/legend still works correctly
 * [ ] **Mobile Test:** Test bottom sheet tooltip on various screen sizes (320px-428px)
+* [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
 
 ---
 
@@ -193,3 +200,15 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
     *   Update `check_entities` to ignore keys with empty string values (do not flag as "Missing Entity" or "Critical").
 *   [x] **Config Loader (`executor/config.py`)**:
     *   Verify `_str_or_none` utility correctly converts `""` to `None` for internal handling.
+
+---
+
+### [DONE] REV // F43-HOTFIX — Fix Darkstar-Dev Dockerfile Build
+
+**Goal:** Fix `lstat /ml/models: no such file or directory` error during build.
+
+**Context:** The `darkstar-dev/Dockerfile` contained a stale `COPY` instruction referencing `ml/models/*.lgb` files which were deleted in REV A24.
+
+**Changes:**
+1.  Update `darkstar-dev/Dockerfile` to remove stale `COPY` instruction.
+2.  Add correct instructions to copy `ml/models/defaults/` to runtime location, matching the main `Dockerfile`.
