@@ -4,6 +4,86 @@ This document contains the archive of all completed revisions. It serves as the 
 
 ---
 
+### [PLANNED] REV // UI14 — UX Polish & Config Documentation
+
+**Goal:** Improve dashboard responsiveness, fix timer state issues, fix chart zoom behavior, and document the learning engine configuration.
+
+**Context:**
+- Planning button lacks granular feedback during long solves.
+- Water boost timer is brittle and disappears on re-render/sync.
+- Chart zoom is buggy (resets on update) and lacks a manual reset mechanism.
+- `learning` section in `config.default.yaml` lacks descriptive comments.
+
+**Plan:**
+
+#### Phase 1: Planning Button & Water Boost Timer [DONE]
+
+**Architecture:** WebSocket-based real-time status updates for both features.
+
+**Task 1: Backend - Planner Progress Events**
+* [x] Modify `backend/services/planner_service.py`:
+  * Add `_current_phase: str | None` and `_phase_start_time: datetime | None` instance variables
+  * Add `async def _emit_progress(phase: str, elapsed_ms: float)` helper method
+  * Add `def get_status() -> dict` method for HTTP fallback
+  * Instrument `run_once()` to emit WebSocket events at 5+ phases:
+    1. `fetching_inputs` - Initial phase
+    2. `fetching_prices` - Before price data fetch
+    3. `applying_learning` - Before learning overlays
+    4. `running_solver` - Before Kepler solver
+    5. `applying_schedule` - After solver, before save
+    6. `complete` - After successful save
+* [x] Add `GET /api/planner/status` endpoint in `backend/api/routers/legacy.py`
+* [x] Test: Run planner and verify WebSocket `planner_progress` events are emitted with `{phase: str, elapsed_ms: float}`
+
+**Task 2: Frontend - Planning Button WebSocket Integration**
+* [x] Modify `frontend/src/components/QuickActions.tsx`:
+  * Import `getSocket()` from `lib/socket.ts`
+  * Add `useEffect` to connect WebSocket and listen for `planner_progress` events
+  * Update `plannerPhase` state to `{phase: string, elapsed_ms: number} | null`
+  * Update button text to show phase name + elapsed time (e.g., "Running solver... (15s)")
+  * WebSocket auto-reconnects automatically (built into socket.io)
+* [x] Test: Click "Run Planner" and verify real-time status updates with elapsed time
+
+**Task 3: Backend - Water Boost WebSocket Events**
+* [x] Modify `executor/engine.py`:
+  * Add `_last_boost_state: dict | None` and `_last_boost_broadcast: float` instance variables
+  * Add `_emit_water_boost_status()` method to emit events on change or periodically
+  * Call from `set_water_boost()`, `clear_water_boost()`, and `_tick()`
+  * Emit periodic status every 30s even if unchanged (for new WebSocket clients)
+  * Event payload: `{active: bool, expires_at: ISO string, remaining_seconds: int}`
+* [x] Test: Activate boost and verify WebSocket event is emitted with correct payload
+
+**Task 4: Frontend - Water Boost Timer WebSocket Integration**
+* [x] Modify `frontend/src/components/CommandDomains.tsx`:
+  * Import `getSocket()` from `lib/socket.ts`
+  * Add `useEffect` to connect WebSocket and listen for `water_boost_updated` events
+  * Update `boostExpiresAt` and `boostSecondsRemaining` from WebSocket events
+  * Keep local countdown `useEffect` for smooth 1s UI updates (keyed on `boostExpiresAt`)
+  * Remove 30s polling for water boost (replaced by WebSocket push)
+  * Add defensive null checks in countdown logic
+  * WebSocket auto-reconnects automatically (built into socket.io)
+* [x] Test: Activate boost, verify timer counts down smoothly, survives re-renders, and syncs with backend
+
+**USER VERIFICATION AND COMMIT:** Stop and let the user verify all 4 tasks.
+
+#### Phase 2: Chart Zoom & Reset [DONE]
+* [x] **Zoom Tracking:** Added `userHasZoomedRef` and `lastHadTomorrowPricesRef` to track user interaction and tomorrow prices availability
+* [x] **Event Listeners:** Added `onZoomComplete` and `onPanComplete` callbacks to detect user zoom/pan actions
+* [x] **Smart Preservation:** Modified data update logic to preserve zoom only when user has actively zoomed/panned
+* [x] **Auto-Reset on Tomorrow Prices:** Automatically resets to full 48h view when tomorrow prices become available
+* [x] **Reset Button:** Added "Reset Zoom" button (left of "Overlays"), only visible when actively zoomed
+* [x] **USER VERIFICATION AND COMMIT:** Stop and let the user verify.
+
+#### Phase 3: Configuration Documentation [DONE]
+* [x] **Config Comments:** Added comprehensive inline documentation to `learning:` section explaining:
+  - Telemetry, Analyst (Auto-Tune), and Reflex components
+  - Each configuration key with detailed purpose and behavior
+  - Rate limits for Aurora Reflex parameter tuning
+* [x] **Cleanup:** Removed deprecated keys (`default_battery_cost_sek_per_kwh`, `sensor_map`) that are no longer used
+* [x] **USER VERIFICATION AND COMMIT:** Stop and let the user verify.
+
+---
+
 ### [DONE] REV // UI7 — Mobile Polish & Extensible Architecture
 
 **Goal:** Fix chart tooltip/legend issues, and make PowerFlowCard extensible for future nodes (EV, heat pump, etc.) using a Node Registry pattern.
