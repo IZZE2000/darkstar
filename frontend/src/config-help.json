@@ -50,7 +50,6 @@
   "automation.ml_training.enabled": "Enable automatic ML model retraining",
   "automation.ml_training.run_days": "Days of week to train (0=Mon, 6=Sun)",
   "automation.ml_training.run_time": "Time of day to run training (HH:MM)",
-  "learning.default_battery_cost_sek_per_kwh": "Conservative default until dynamic cost is recorded",
   "nordpool.price_area": "Nordpool bidding zone (SE1-SE4, NO1-NO5, DK1-DK2, FI, etc.)",
   "nordpool.currency": "Price currency",
   "nordpool.resolution_minutes": "Slot resolution (15, 30, or 60)",

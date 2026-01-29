@@ -144,26 +144,33 @@ automation:
     error_correction_enabled: true     # Enable training of error correction models (requires graduated models)
 
 # Learning Engine (Aurora Reflex)
+# Learning Engine Configuration
+# The learning system has three main components:
+# 1. Telemetry: Records planner decisions, forecasts, and actual outcomes to SQLite
+# 2. Analyst (Auto-Tune): Adjusts forecast overlays based on historical bias (hourly load/PV corrections)
+# 3. Reflex: Tunes physical/policy parameters (S-Index, PV confidence, battery cost) based on safety/ROI analysis
 learning:
-  enable: true
-  sqlite_path: "data/planner_learning.db"
-  horizon_days: 7
-  min_improvement_threshold: 0.015
-  auto_tune_enabled: true
-  reflex_enabled: true
-  error_correction_enabled: true  # Enable ML error correction models
-  min_sample_threshold: 2
-  default_battery_cost_sek_per_kwh: 0.02  # Conservative default until dynamic cost is recorded
-  sensor_map: {}
+  enable: true                         # Master switch: enables telemetry storage and learning features
+  sqlite_path: "data/planner_learning.db"  # Database path for storing planner telemetry (observations, forecasts, plans, metrics)
+  horizon_days: 3                      # Number of days of Aurora ML forecasts to generate (2-7 days, affects CPU usage)
+  min_improvement_threshold: 0.015     # Minimum improvement (0-1 scale) required before applying learned adjustments (prevents noise)
+  auto_tune_enabled: true              # Enable Analyst: automatically adjusts forecast overlays based on historical bias (hourly load/PV corrections)
+  reflex_enabled: true                 # Enable Reflex: tunes physical/policy parameters (S-Index, PV confidence, battery cost, capacity) based on safety/confidence/ROI/capacity analysis
+  error_correction_enabled: true       # Enable ML error correction models (requires graduated Aurora models, Level 2+)
+  min_sample_threshold: 2              # Minimum data points required before applying learned adjustments (prevents premature tuning with insufficient data)
+
+  # Rate Limits for Aurora Reflex Parameter Tuning
+  # These limits prevent instability by capping how much each parameter can change per day
+  # Reflex analyzes historical data and gradually adjusts parameters within these bounds
   max_daily_param_change:
-    pv_confidence_percent: 1.0
-    load_safety_margin_percent: 1.0
-    battery_use_margin_sek: 0.02
-    export_profit_margin_sek: 0.02
-    s_index_base_factor: 0.05
-    s_index_pv_deficit_weight: 0.1
-    s_index_temp_weight: 0.1
-    future_price_guard_buffer_sek: 0.05
+    pv_confidence_percent: 1.0         # Max daily change to PV forecast confidence (percentage points per day)
+    load_safety_margin_percent: 1.0    # Max daily change to load forecast safety margin (percentage points per day)
+    battery_use_margin_sek: 0.02       # Max daily change to battery use margin (SEK per day)
+    export_profit_margin_sek: 0.02     # Max daily change to export profit margin (SEK per day)
+    s_index_base_factor: 0.05          # Max daily change to S-Index base factor (absolute value per day, prevents aggressive reserve changes)
+    s_index_pv_deficit_weight: 0.1     # Max daily change to S-Index PV deficit weight (absolute value per day)
+    s_index_temp_weight: 0.1           # Max daily change to S-Index temperature weight (absolute value per day)
+    future_price_guard_buffer_sek: 0.05  # Max daily change to future price guard buffer (SEK per day)
 
 # Nordpool API Configuration (electricity prices)
 nordpool:
@@ -306,7 +313,7 @@ executor:
     low_soc_export_floor: 20           # SoC % at which to prevent planned exports
 
     # Excess PV threshold: Minimum surplus PV power (kW) to trigger water heating.
-    # When PV production exceeds load by this amount AND battery is >50%,
+    # When PV production exceeds load by this amount AND battery is >95%,
     # the executor will heat water to dump free solar energy.
     excess_pv_threshold_kw: 2.0        # Surplus PV (kW) needed to trigger PV dump
 

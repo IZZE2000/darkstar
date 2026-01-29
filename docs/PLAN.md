@@ -167,6 +167,10 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] **Reset Button:** Added "Reset Zoom" button (left of "Overlays"), only visible when actively zoomed
 * [x] **USER VERIFICATION AND COMMIT:** Stop and let the user verify.
 
-#### Phase 3: Configuration Documentation [PLANNED]
-* [ ] **Config Comments:** Add detailed comments to the `learning:` section in `config.default.yaml` explaining auto-tuning and Reflex thresholds.
-* [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify.
+#### Phase 3: Configuration Documentation [DONE]
+* [x] **Config Comments:** Added comprehensive inline documentation to `learning:` section explaining:
+  - Telemetry, Analyst (Auto-Tune), and Reflex components
+  - Each configuration key with detailed purpose and behavior
+  - Rate limits for Aurora Reflex parameter tuning
+* [x] **Cleanup:** Removed deprecated keys (`default_battery_cost_sek_per_kwh`, `sensor_map`) that are no longer used
+* [x] **USER VERIFICATION AND COMMIT:** Stop and let the user verify.

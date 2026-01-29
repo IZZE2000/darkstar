@@ -193,7 +193,7 @@ class OverrideEvaluator:
         if (
             excess_pv >= self.excess_pv_threshold_kw
             and state.current_water_temp < self.water_temp_max
-            and state.current_soc_percent >= 50  # Only if battery is healthy
+            and state.current_soc_percent >= 95  # Only if battery is healthy
         ):
             return OverrideResult(
                 override_needed=True,
