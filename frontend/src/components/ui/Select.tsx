@@ -89,19 +89,20 @@ export default function Select({
         setHighlightIndex(0)
     }, [filtered.length, open])
 
+    const updatePosition = () => {
+        if (triggerRef.current) {
+            const rect = triggerRef.current.getBoundingClientRect()
+            setCoords({
+                top: rect.bottom + 4, // 4px gap
+                left: rect.left,
+                width: rect.width,
+            })
+        }
+    }
+
     // Update coordinates when opening
     useEffect(() => {
-        if (open && triggerRef.current) {
-            const updatePosition = () => {
-                if (triggerRef.current) {
-                    const rect = triggerRef.current.getBoundingClientRect()
-                    setCoords({
-                        top: rect.bottom + 4, // 4px gap
-                        left: rect.left,
-                        width: rect.width,
-                    })
-                }
-            }
+        if (open) {
             updatePosition()
             window.addEventListener('resize', updatePosition)
             window.addEventListener('scroll', updatePosition, true) // Capture scroll to update pos
@@ -150,6 +151,7 @@ export default function Select({
         if (!open) {
             if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown') {
                 e.preventDefault()
+                updatePosition()
                 setOpen(true)
             }
             return
@@ -189,6 +191,9 @@ export default function Select({
                 disabled={disabled}
                 onClick={() => {
                     if (!disabled) {
+                        if (!open) {
+                            updatePosition()
+                        }
                         setOpen(!open)
                         if (!open && searchable) {
                             setTimeout(() => inputRef.current?.focus(), 0)

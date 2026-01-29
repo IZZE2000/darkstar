@@ -76,19 +76,20 @@ export default function EntitySelect({
         setHighlightIndex(0)
     }, [filtered.length])
 
+    const updatePosition = () => {
+        if (triggerRef.current) {
+            const rect = triggerRef.current.getBoundingClientRect()
+            setCoords({
+                top: rect.bottom + 4,
+                left: rect.left,
+                width: rect.width,
+            })
+        }
+    }
+
     // Update coordinates when opening
     useEffect(() => {
-        if (open && triggerRef.current) {
-            const updatePosition = () => {
-                if (triggerRef.current) {
-                    const rect = triggerRef.current.getBoundingClientRect()
-                    setCoords({
-                        top: rect.bottom + 4,
-                        left: rect.left,
-                        width: rect.width,
-                    })
-                }
-            }
+        if (open) {
             updatePosition()
             window.addEventListener('resize', updatePosition)
             window.addEventListener('scroll', updatePosition, true)
@@ -135,6 +136,7 @@ export default function EntitySelect({
         if (!open) {
             if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown') {
                 e.preventDefault()
+                updatePosition()
                 setOpen(true)
             }
             return
@@ -179,6 +181,9 @@ export default function EntitySelect({
                 disabled={disabled}
                 onClick={() => {
                     if (!disabled) {
+                        if (!open) {
+                            updatePosition()
+                        }
                         setOpen(!open)
                         if (!open) {
                             setTimeout(() => inputRef.current?.focus(), 0)
