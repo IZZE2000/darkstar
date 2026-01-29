@@ -109,26 +109,14 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 
 **Plan:**
 
-#### Phase 1: PowerFlowCard Node Registry [PLANNED]
-* [ ] **Define Node Registry Types:** Create extensible registry structure:
-  ```typescript
-  interface FlowNodeConfig {
-    id: 'solar' | 'house' | 'battery' | 'grid' | 'water' | 'ev'
-    configKey: string  // e.g., 'system.has_solar', 'system.has_water_heater'
-    position: { x: number; y: number }
-    dataAccessor: (data: PowerFlowData) => NodeData
-    connections: string[]  // defines valid flow connections
-  }
-  ```
-* [ ] **Update PowerFlowCard Props:** Add `systemConfig?: Partial<SystemConfig>` prop to receive config
-* [ ] **Config-Driven Enabled Check:** Replace hardcoded nodes with registry filtered by config flags:
-  * `system.has_solar` → solar node
-  * `system.has_battery` → battery node
-  * `system.has_water_heater` → water node
-* [ ] **Auto-positioning:** Calculate node positions dynamically based on enabled node count
-* [ ] **EV Placeholder:** Add EV node entry (`configKey: 'system.has_ev'`, disabled by default)
-* [ ] **Particle Streams:** Only render connections between enabled nodes
-* [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
+#### Phase 1: PowerFlowCard Node Registry [DONE]
+* [x] **Define Node Registry Types:** Create extensible registry structure
+* [x] **Update PowerFlowCard Props:** Add `systemConfig?: Partial<SystemConfig>` prop to receive config
+* [x] **Config-Driven Enabled Check:** Replace hardcoded nodes with registry filtered by config flags
+* [x] **Auto-positioning:** Calculate node positions dynamically based on enabled node count
+* [x] **EV Placeholder:** Add EV node entry (`configKey: 'system.has_ev'`, hidden by default)
+* [x] **Particle Streams:** Only render connections between enabled nodes
+* [x] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
 
 #### Phase 2: ChartCard Mobile UX [PLANNED]
 * [ ] **Bottom Sheet Tooltip:** Replace standard Chart.js tooltip with fixed bottom overlay on mobile:

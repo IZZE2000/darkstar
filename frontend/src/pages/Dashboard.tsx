@@ -93,6 +93,7 @@ export default function Dashboard() {
     const [healthStatus, setHealthStatus] = useState<HealthResponse | null>(null)
     // Phase 3: Executor health status
     const [executorHealth, setExecutorHealth] = useState<import('../lib/api').ExecutorHealthResponse | null>(null)
+    const [config, setConfig] = useState<any>(null)
     const [lastProcessedErrorTime, setLastProcessedErrorTime] = useState<string | null>(null)
 
     const { toast } = useToast()
@@ -160,6 +161,7 @@ export default function Dashboard() {
             try {
                 const data = await Api.config()
                 if (data) {
+                    setConfig(data)
                     const vacationCfg = data.water_heating?.vacation_mode
                     setVacationMode(vacationCfg?.enabled || false)
                 }
@@ -187,6 +189,7 @@ export default function Dashboard() {
             // Process critical data: Config
             if (bundle.config) {
                 const data = bundle.config
+                setConfig(data)
                 // Risk appetite
                 const sIndex = (data as Record<string, unknown>).s_index as Record<string, unknown> | undefined
                 if (typeof sIndex?.risk_appetite === 'number') setRiskAppetite(sIndex.risk_appetite)
@@ -744,6 +747,7 @@ export default function Dashboard() {
                     <div className="flex-1 min-h-0">
                         <AdvisorCard
                             isLoading={isRefreshing}
+                            systemConfig={config}
                             powerFlowData={{
                                 solar: {
                                     kw: livePower.pv_kw ?? 0,

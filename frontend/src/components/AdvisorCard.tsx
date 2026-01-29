@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * AdvisorCard.tsx
  *
@@ -7,10 +8,12 @@
 import { useState } from 'react'
 import Card from './Card'
 import SmartAdvisor from './SmartAdvisor'
-import PowerFlowCard, { type PowerFlowData } from './PowerFlowCard'
+import PowerFlowCard from './PowerFlowCard'
+import { type PowerFlowData } from './PowerFlowRegistry'
 
 interface AdvisorCardProps {
     powerFlowData?: PowerFlowData
+    systemConfig?: any
     isLoading?: boolean
 }
 
@@ -27,7 +30,7 @@ function Skeleton() {
     )
 }
 
-export default function AdvisorCard({ powerFlowData, isLoading }: AdvisorCardProps) {
+export default function AdvisorCard({ powerFlowData, systemConfig, isLoading }: AdvisorCardProps) {
     const [view] = useState<'advisor' | 'powerflow'>('powerflow')
 
     // Default data when no live metrics available
@@ -53,7 +56,7 @@ export default function AdvisorCard({ powerFlowData, isLoading }: AdvisorCardPro
                     <SmartAdvisorContent />
                 ) : (
                     <div className="h-full flex items-center justify-center">
-                        <PowerFlowCard data={data} />
+                        <PowerFlowCard data={data} systemConfig={systemConfig} />
                     </div>
                 )}
             </div>
