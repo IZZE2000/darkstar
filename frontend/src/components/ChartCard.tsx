@@ -43,10 +43,29 @@ const chartOptions: ChartConfiguration['options'] = {
             borderWidth: 1,
             padding: 12,
             displayColors: true,
+            usePointStyle: true,
             // Nudge the tooltip away from the exact cursor/data point
             caretPadding: 8,
             yAlign: 'bottom',
             callbacks: {
+                labelPointStyle: function (context) {
+                    const dataset = context.dataset as ChartDataset
+                    // Dashed lines get filled circle markers
+                    if (dataset.borderDash && dataset.borderDash.length > 0) {
+                        return { pointStyle: 'circle', rotation: 0 }
+                    }
+                    // Solid lines get filled rect markers
+                    return { pointStyle: 'rectRounded', rotation: 0 }
+                },
+                labelColor: function (context) {
+                    // Return the dataset color for both border and background to make markers solid/filled
+                    const color = context.dataset.borderColor as string
+                    return {
+                        borderColor: color,
+                        backgroundColor: color,
+                        borderWidth: 0,
+                    }
+                },
                 title: function (context) {
                     return context[0].label
                 },

@@ -4,6 +4,30 @@ This document contains the archive of all completed revisions. It serves as the 
 
 ---
 
+### [DONE] REV // UI7 — Mobile Polish & Extensible Architecture
+
+**Goal:** Fix chart tooltip/legend issues, and make PowerFlowCard extensible for future nodes (EV, heat pump, etc.) using a Node Registry pattern.
+
+**Plan:**
+
+#### Phase 1: PowerFlowCard Node Registry [DONE]
+* [x] **Define Node Registry Types:** Create extensible registry structure
+* [x] **Update PowerFlowCard Props:** Add `systemConfig?: Partial<SystemConfig>` prop to receive config
+* [x] **Config-Driven Enabled Check:** Replace hardcoded nodes with registry filtered by config flags
+* [x] **Auto-positioning:** Calculate node positions dynamically based on enabled node count
+* [x] **EV Placeholder:** Add EV node entry (`configKey: 'system.has_ev'`, hidden by default)
+* [x] **Particle Streams:** Only render connections between enabled nodes
+* [x] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
+
+#### Phase 2: Legend Polish [DONE]
+* [x] **Filled Color Boxes:** Fix tooltip color swatches to be completely filled with the dataset color, not just a box with a border.
+* [x] **Circle Tooltip Markers for dotted lines:** Replace dotted SoC lines legend markers with circle markers:
+  * SoC Target: Hollow circle (planned = target)
+  * SoC Actual: Filled circle (actual = achieved)
+* [x] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
+
+---
+
 ### [DONE] REV // UI13 — Unsaved Changes Warning
 
 **Goal:** Prevent configuration loss by aggressively warning users when they have unsaved changes.
