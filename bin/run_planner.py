@@ -32,15 +32,23 @@ def get_version_string():
         return os.environ.get("DARKSTAR_VERSION", "dev")
 
 
-async def main():
+async def main(progress_callback=None):
     config = load_yaml("config.yaml")
     automation = config.get("automation", {})
     if not automation.get("enable_scheduler", False):
         print("[planner] Scheduler disabled by config. Exiting.")
         return 0
 
+    # Phase: Fetching prices
+    if progress_callback:
+        await progress_callback("fetching_prices")
+
     # Build inputs and run planner
     input_data = await get_all_input_data("config.yaml")
+
+    # Phase: Applying learning
+    if progress_callback:
+        await progress_callback("applying_learning")
 
     # Persist inputs to Learning DB (Prices & Forecasts)
     try:
@@ -61,9 +69,17 @@ async def main():
     except Exception as e:
         print(f"[planner] Warning: Failed to persist inputs to DB: {e}")
 
+    # Phase: Running solver
+    if progress_callback:
+        await progress_callback("running_solver")
+
     # Run Planner Pipeline
     # This will generate and save schedule.json
     await generate_schedule(input_data, config=config, mode="full", save_to_file=True)
+
+    # Phase: Applying schedule
+    if progress_callback:
+        await progress_callback("applying_schedule")
 
     schedule_path = "schedule.json"
     print(f"[planner] Wrote schedule to {schedule_path}")

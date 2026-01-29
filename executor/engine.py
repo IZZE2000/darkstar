@@ -111,6 +111,8 @@ class ExecutorEngine:
 
         # Water boost state
         self._water_boost_until: datetime | None = None
+        self._last_boost_state: dict[str, Any] | None = None  # Track changes for WebSocket
+        self._last_boost_broadcast: float = 0.0  # Timestamp of last periodic broadcast
 
         # Override notification deduplication (Issue 3 fix)
         self._last_override_type: str | None = None
@@ -596,6 +598,9 @@ class ExecutorEngine:
             except Exception as e:
                 logger.error("Failed to apply water boost: %s", e)
 
+        # Emit WebSocket event
+        self._emit_water_boost_status(force=True)
+
         return {
             "success": True,
             "expires_at": expires_at.isoformat(),
@@ -618,6 +623,9 @@ class ExecutorEngine:
                 except Exception as e:
                     logger.error("Failed to reset water temp: %s", e)
 
+            # Emit WebSocket event
+            self._emit_water_boost_status(force=True)
+
         return {"success": True, "was_active": was_active}
 
     def get_water_boost_status(self) -> dict[str, Any] | None:
@@ -634,12 +642,42 @@ class ExecutorEngine:
                 self._water_boost_until = None
                 return None
 
-            remaining = (self._water_boost_until - now).total_seconds() / 60
+            remaining_seconds = int((self._water_boost_until - now).total_seconds())
             return {
                 "expires_at": self._water_boost_until.isoformat(),
-                "remaining_minutes": round(remaining, 1),
+                "remaining_seconds": remaining_seconds,
                 "temp_target": self.config.water_heater.temp_boost,
             }
+
+    def _emit_water_boost_status(self, force: bool = False) -> None:
+        """Emit water boost status via WebSocket if changed or forced."""
+        from backend.core.websockets import ws_manager
+
+        current_status = self.get_water_boost_status()
+
+        # Build event payload
+        if current_status:
+            payload = {
+                "active": True,
+                "expires_at": current_status["expires_at"],
+                "remaining_seconds": current_status["remaining_seconds"],
+            }
+        else:
+            payload = {"active": False, "expires_at": None, "remaining_seconds": 0}
+
+        # Check if status changed or periodic broadcast needed
+        status_changed = self._last_boost_state != payload
+        now = time.time()
+        periodic_broadcast_due = (now - self._last_boost_broadcast) >= 30.0
+
+        if status_changed or force or periodic_broadcast_due:
+            try:
+                ws_manager.emit_sync("water_boost_updated", payload)
+                self._last_boost_state = payload.copy()
+                self._last_boost_broadcast = now
+                logger.debug(f"Water boost status emitted: {payload}")
+            except Exception as e:
+                logger.warning(f"Failed to emit water boost status: {e}")
 
     def start(self) -> None:
         """Start the executor loop in a background thread."""
@@ -1139,6 +1177,9 @@ class ExecutorEngine:
                 emit_status_update(self.get_status())
             except Exception as e:
                 logger.debug("Failed to emit status update: %s", e)
+
+            # Broadcast water boost status (periodic + on change)
+            self._emit_water_boost_status()
 
         except Exception as e:
             logger.exception("Executor tick failed: %s", e)

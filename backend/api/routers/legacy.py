@@ -33,6 +33,18 @@ async def run_planner() -> dict[str, Any]:
         }
 
 
+@router.get("/api/planner/status")
+async def planner_status() -> dict[str, Any]:
+    """Get current planner execution status.
+
+    Returns:
+        phase: Current execution phase (idle, fetching_prices, etc.)
+        elapsed_ms: Time elapsed in current phase
+        is_running: Whether planner is currently executing
+    """
+    return planner_service.get_status()
+
+
 @router.get("/api/initial_state")
 async def initial_state() -> dict[str, Any]:
     """Bootstrap state for frontend."""

@@ -1,37 +1,69 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Play, Pause, Loader2, Rocket } from 'lucide-react'
 import { Api } from '../lib/api'
+import { getSocket } from '../lib/socket'
 
 interface QuickActionsProps {
     executorPaused: boolean
     onRefresh: () => void
 }
 
+interface PlannerProgress {
+    phase: string
+    elapsed_ms: number
+}
+
 export default function QuickActions({ executorPaused, onRefresh }: QuickActionsProps) {
     const [loading, setLoading] = useState<string | null>(null)
-    const [plannerPhase, setPlannerPhase] = useState<'idle' | 'planning' | 'executing' | 'done'>('idle')
+    const [plannerProgress, setPlannerProgress] = useState<PlannerProgress | null>(null)
     const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
 
     // Use prop directly
     const isPaused = executorPaused
 
+    // WebSocket connection for planner progress
+    useEffect(() => {
+        const socket = getSocket()
+
+        const handleProgress = (data: PlannerProgress) => {
+            setPlannerProgress(data)
+        }
+
+        const handleScheduleUpdated = () => {
+            setPlannerProgress({ phase: 'complete', elapsed_ms: 0 })
+            setTimeout(() => setPlannerProgress(null), 2000)
+            if (onRefresh) setTimeout(onRefresh, 500)
+        }
+
+        const handlePlannerError = () => {
+            setPlannerProgress(null)
+            setFeedback({ type: 'error', message: 'Planner failed' })
+            setTimeout(() => setFeedback(null), 3000)
+        }
+
+        socket.on('planner_progress', handleProgress)
+        socket.on('schedule_updated', handleScheduleUpdated)
+        socket.on('planner_error', handlePlannerError)
+
+        return () => {
+            socket.off('planner_progress', handleProgress)
+            socket.off('schedule_updated', handleScheduleUpdated)
+            socket.off('planner_error', handlePlannerError)
+        }
+    }, [onRefresh])
+
     const handleRunPlanner = async () => {
-        setPlannerPhase('planning')
+        setPlannerProgress({ phase: 'starting', elapsed_ms: 0 })
         setFeedback(null)
         try {
             // Planner run
             await Api.runPlanner()
-            setPlannerPhase('executing')
 
             // Executor run
             await Api.executor.run()
-            setPlannerPhase('done')
-
-            if (onRefresh) setTimeout(onRefresh, 500)
-            setTimeout(() => setPlannerPhase('idle'), 2000)
         } catch (err) {
             setFeedback({ type: 'error', message: err instanceof Error ? err.message : 'Failed' })
-            setPlannerPhase('idle')
+            setPlannerProgress(null)
         }
     }
 
@@ -57,17 +89,32 @@ export default function QuickActions({ executorPaused, onRefresh }: QuickActions
     }
 
     const getPlannerButtonText = () => {
-        switch (plannerPhase) {
-            case 'planning':
-                return 'Planning...'
-            case 'executing':
-                return 'Executing...'
-            case 'done':
+        if (!plannerProgress) return 'Run Planner'
+
+        const seconds = Math.floor(plannerProgress.elapsed_ms / 1000)
+        const timeStr = seconds > 0 ? ` (${seconds}s)` : ''
+
+        switch (plannerProgress.phase) {
+            case 'starting':
+                return 'Starting...'
+            case 'fetching_inputs':
+                return `Fetching inputs...${timeStr}`
+            case 'fetching_prices':
+                return `Fetching prices...${timeStr}`
+            case 'applying_learning':
+                return `Applying learning...${timeStr}`
+            case 'running_solver':
+                return `Running solver...${timeStr}`
+            case 'applying_schedule':
+                return `Applying schedule...${timeStr}`
+            case 'complete':
                 return 'Done ✓'
             default:
-                return 'Run Planner'
+                return `Planning...${timeStr}`
         }
     }
+
+    const isPlanning = plannerProgress !== null
 
     return (
         <div className="relative">
@@ -77,26 +124,26 @@ export default function QuickActions({ executorPaused, onRefresh }: QuickActions
                 <button
                     className={`relative overflow-hidden flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-[11px] font-semibold transition btn-glow-primary
                         ${
-                            plannerPhase !== 'idle'
+                            isPlanning
                                 ? 'bg-surface border border-accent/50 text-accent cursor-wait'
                                 : 'bg-accent hover:bg-accent2 text-[#100f0e]'
                         }`}
                     onClick={handleRunPlanner}
-                    disabled={plannerPhase !== 'idle'}
+                    disabled={isPlanning}
                     title="Run planner and execute"
                 >
                     {/* Progress Bar Background */}
                     <div
                         className={`absolute left-0 top-0 bottom-0 transition-all duration-[2000ms] ease-out pointer-events-none ${
-                            plannerPhase === 'idle' ? 'bg-transparent' : 'bg-accent/50'
+                            !isPlanning ? 'bg-transparent' : 'bg-accent/50'
                         }`}
                         style={{
-                            width: plannerPhase === 'idle' ? '0%' : plannerPhase === 'done' ? '100%' : '90%',
+                            width: !isPlanning ? '0%' : plannerProgress?.phase === 'complete' ? '100%' : '90%',
                         }}
                     />
 
                     <div className="relative z-10 flex items-center gap-2">
-                        {plannerPhase === 'planning' || plannerPhase === 'executing' ? (
+                        {isPlanning && plannerProgress?.phase !== 'complete' ? (
                             <Loader2 className="h-4 w-4 animate-spin" />
                         ) : (
                             <Rocket className="h-4 w-4" />

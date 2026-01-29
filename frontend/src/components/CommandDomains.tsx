@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import Card from './Card'
 import { Api, ExecutorStatusResponse } from '../lib/api'
+import { getSocket } from '../lib/socket'
 import { useToast } from '../lib/useToast'
 
 // --- Types ---
@@ -449,24 +450,38 @@ export function ControlParameters({
 
     const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-    // Fetch initial status and sync
-    const fetchStatus = useCallback(async () => {
-        try {
-            const [waterStatus, configData] = await Promise.all([Api.waterBoost.status(), Api.config()])
+    // WebSocket connection for water boost status
+    useEffect(() => {
+        const socket = getSocket()
 
-            // Water boost status
-            if (waterStatus.water_boost) {
-                const expires = new Date(waterStatus.water_boost.expires_at)
+        const handleWaterBoostUpdate = (data: {
+            active: boolean
+            expires_at: string | null
+            remaining_seconds: number
+        }) => {
+            if (data.active && data.expires_at) {
+                const expires = new Date(data.expires_at)
                 setBoostActive(true)
                 setBoostExpiresAt(expires)
-                const now = new Date()
-                const remaining = Math.max(0, Math.floor((expires.getTime() - now.getTime()) / 1000))
-                setBoostSecondsRemaining(remaining)
+                setBoostSecondsRemaining(data.remaining_seconds)
             } else {
                 setBoostActive(false)
                 setBoostExpiresAt(null)
                 setBoostSecondsRemaining(0)
             }
+        }
+
+        socket.on('water_boost_updated', handleWaterBoostUpdate)
+
+        return () => {
+            socket.off('water_boost_updated', handleWaterBoostUpdate)
+        }
+    }, [])
+
+    // Fetch initial status for vacation mode (water boost via WebSocket)
+    const fetchStatus = useCallback(async () => {
+        try {
+            const configData = await Api.config()
 
             // Vacation mode
             const vacationCfg = configData.water_heating?.vacation_mode
@@ -484,7 +499,7 @@ export function ControlParameters({
 
     useEffect(() => {
         fetchStatus()
-        const interval = setInterval(fetchStatus, 30000) // Sync every 30s
+        const interval = setInterval(fetchStatus, 30000) // Sync vacation mode every 30s
         return () => clearInterval(interval)
     }, [fetchStatus])
 
@@ -499,11 +514,24 @@ export function ControlParameters({
         }
     }, [propsBoostActive])
 
-    // Boost countdown timer
+    // Boost countdown timer (local 1s updates for smooth UI)
     useEffect(() => {
-        if (countdownRef.current) clearInterval(countdownRef.current)
-        if (!boostActive || !boostExpiresAt) return
+        if (countdownRef.current) {
+            clearInterval(countdownRef.current)
+            countdownRef.current = null
+        }
 
+        if (!boostActive || !boostExpiresAt) {
+            setBoostSecondsRemaining(0)
+            return
+        }
+
+        // Immediate update
+        const now = new Date()
+        const remaining = Math.max(0, Math.floor((boostExpiresAt.getTime() - now.getTime()) / 1000))
+        setBoostSecondsRemaining(remaining)
+
+        // Start countdown
         countdownRef.current = setInterval(() => {
             const now = new Date()
             const remaining = Math.floor((boostExpiresAt.getTime() - now.getTime()) / 1000)
@@ -511,13 +539,20 @@ export function ControlParameters({
                 setBoostActive(false)
                 setBoostExpiresAt(null)
                 setBoostSecondsRemaining(0)
+                if (countdownRef.current) {
+                    clearInterval(countdownRef.current)
+                    countdownRef.current = null
+                }
             } else {
                 setBoostSecondsRemaining(remaining)
             }
         }, 1000)
 
         return () => {
-            if (countdownRef.current) clearInterval(countdownRef.current)
+            if (countdownRef.current) {
+                clearInterval(countdownRef.current)
+                countdownRef.current = null
+            }
         }
     }, [boostActive, boostExpiresAt])
 
