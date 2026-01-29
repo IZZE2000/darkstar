@@ -769,15 +769,6 @@ export const parameterSections: SettingsSection[] = [
         description: 'Export thresholds, peak-only export, and degradation costs.',
         fields: [
             {
-                key: 'kepler.target_soc_penalty_sek',
-                label: 'Target SoC Penalty (SEK)',
-                helper: 'Penalty for missing the seasonal target SoC (higher = stricter adherence to reserve).',
-                path: ['kepler', 'target_soc_penalty_sek'],
-                type: 'number',
-                subsection: 'Advanced Tuning',
-                isAdvanced: true,
-            },
-            {
                 key: 'kepler.curtailment_penalty_sek',
                 label: 'Curtailment Penalty (SEK)',
                 helper: 'Penalty for wasting available solar power when battery is not full (higher = more aggressive charging).',
@@ -1300,25 +1291,6 @@ export const advancedSections: SettingsSection[] = [
                 options: [
                     { label: 'Probabilistic (P10/P90)', value: 'probabilistic' },
                     { label: 'Dynamic (Adaptive)', value: 'dynamic' },
-                ],
-                showIf: {
-                    configKey: 'system.has_battery',
-                    value: true,
-                    disabledText: "Enable 'Home battery installed' in System Profile to configure",
-                },
-            },
-            {
-                key: 's_index.risk_appetite',
-                label: 'Risk Appetite',
-                helper: '1 = Conservative (Safety first), 5 = Aggressive (Arbitrage focus).',
-                path: ['s_index', 'risk_appetite'],
-                type: 'select',
-                options: [
-                    { label: '1 - Ultra Safe', value: '1' },
-                    { label: '2 - Safe', value: '2' },
-                    { label: '3 - Neutral', value: '3' },
-                    { label: '4 - Aggressive', value: '4' },
-                    { label: '5 - Gambler', value: '5' },
                 ],
                 showIf: {
                     configKey: 'system.has_battery',

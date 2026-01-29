@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Api } from '../../lib/api'
 import { useToast } from '../../lib/useToast'
 import Card from '../../components/Card'
@@ -6,11 +7,17 @@ import Modal from '../../components/ui/Modal'
 import { useSettingsForm } from './hooks/useSettingsForm'
 import { SettingsField } from './components/SettingsField'
 import { advancedFieldList, advancedSections } from './types'
+import { UnsavedChangesBanner } from './components/UnsavedChangesBanner'
+import { NavigationBlockerDialog } from './components/NavigationBlockerDialog'
+import { useUnsavedChangesGuard } from './hooks/useUnsavedChangesGuard'
 
 export const AdvancedTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }) => {
+    const navigate = useNavigate()
     const { toast } = useToast()
-    const { form, fieldErrors, loading, saving, statusMessage, handleChange, save, reload } =
+    const { form, fieldErrors, loading, saving, statusMessage, handleChange, save, reload, isDirty } =
         useSettingsForm(advancedFieldList)
+
+    const blocker = useUnsavedChangesGuard(isDirty)
 
     const [resetModalOpen, setResetModalOpen] = useState(false)
     const [resetLoading, setResetLoading] = useState(false)
@@ -35,6 +42,8 @@ export const AdvancedTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode
 
     return (
         <div className="space-y-4">
+            <UnsavedChangesBanner visible={isDirty} onSave={() => save()} saving={saving} />
+
             {advancedSections.map((section) => (
                 <Card key={section.title} className="p-6">
                     <div className="flex items-baseline justify-between gap-2">
@@ -130,6 +139,18 @@ export const AdvancedTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode
                     </div>
                 </div>
             </Modal>
+
+            <NavigationBlockerDialog
+                visible={blocker.state === 'blocked'}
+                onStay={() => blocker.reset?.()}
+                onLeave={() => {
+                    if (blocker.location) {
+                        navigate(blocker.location.pathname + blocker.location.search, {
+                            state: { ...blocker.location.state, ignoreUnsavedChangesGuard: true },
+                        })
+                    }
+                }}
+            />
         </div>
     )
 }

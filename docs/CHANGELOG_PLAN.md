@@ -4,6 +4,101 @@ This document contains the archive of all completed revisions. It serves as the 
 
 ---
 
+### [DONE] REV // UI13 — Unsaved Changes Warning
+
+**Goal:** Prevent configuration loss by aggressively warning users when they have unsaved changes.
+
+**Context:**
+- Users (including beta testers) are missing the "Save" button or forgetting to save before navigating away.
+- Current `isDirty` state exists in `useSettingsForm` but provides no intrusive visual feedback.
+
+**Plan:**
+
+#### Phase 1: Visual Feedback (Banner & Toast) [DONE]
+* [x] **Persistent Sticky Banner:**
+    *   Create `UnsavedChangesBanner` component in `frontend/src/pages/settings/components/`.
+    *   Banner must appear immediately when `isDirty` is true.
+    *   Position: Fixed at the bottom or top of the viewport (sticky), visible effectively on mobile `frontend/src/pages/settings/components/`.
+    *   Content: "You have unsaved changes!" + "Save Now" button.
+    *   Animation: Use `framer-motion` for slide-in.
+* [x] **Toast Warning:**
+    *   Refine `useSettingsForm` to trigger a warning toast if trying to interact with safe elements while dirty (investigative).
+* [x] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
+
+#### Phase 2: Navigation Safety [DONE]
+* [x] **Browser Guard:**
+    *   Implement `useBeforeUnload` hook to trigger native browser warning on tab close/refresh.
+* [x] **React Router Guard:**
+    *   Implement `useBlocker` (React Router v6) to intercept internal navigation when `isDirty`.
+* [x] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
+
+---
+
+### [DONE] REV // F42 — Ghost Notifications & Default Config Cleanup
+
+**Goal:** Eliminate "Ghost" entities re-appearing after deletion due to `soft_merge_defaults` filling in keys from `config.default.yaml`.
+
+**Context:**
+- `backend/config_migration.py` fills missing user config keys bundle from `config.default.yaml`.
+- The default config contains specific entity IDs (e.g., "notify.mobile_app_sebastians_iphone") which re-appear if a user deletes them.
+- This results in "Ghost" entities and invalid service calls in the Executor.
+
+**Plan:**
+
+#### Phase 1: Configuration Hygiene [DONE]
+* [x] **Refactor `config.default.yaml`**: Set all `input_sensors`, `executor.inverter`, and `notifications` entity IDs to `""` (empty string).
+    *   Preserve keys for structure/documentation.
+    *   Remove personal data.
+*   *Note: Existing user configs will NOT be touched. Users with legacy defaults in their `config.yaml` will remain as-is.*
+
+#### Phase 2: Backend Defense [DONE]
+* [x] **Executor Safety (`executor/actions.py`)**:
+    *   Modify `send_notification` to return early (no-op) if `service` is an empty string.
+    *   Add defensive check for `None` service.
+*   [x] **Health Check Update (`backend/health.py`)**:
+    *   Update `check_entities` to ignore keys with empty string values (do not flag as "Missing Entity" or "Critical").
+*   [x] **Config Loader (`executor/config.py`)**:
+    *   Verify `_str_or_none` utility correctly converts `""` to `None` for internal handling.
+
+---
+
+### [DONE] REV // F43-HOTFIX — Fix Darkstar-Dev Dockerfile Build
+
+**Goal:** Fix `lstat /ml/models: no such file or directory` error during build.
+
+**Context:** The `darkstar-dev/Dockerfile` contained a stale `COPY` instruction referencing `ml/models/*.lgb` files which were deleted in REV A24.
+
+**Changes:**
+1.  Update `darkstar-dev/Dockerfile` to remove stale `COPY` instruction.
+2.  Add correct instructions to copy `ml/models/defaults/` to runtime location, matching the main `Dockerfile`.
+
+---
+
+### [DONE] REV // F44 — Executor Domain Awareness & Safety
+
+**Goal:** Enable executor to handle `select`, `input_select`, `number`, `input_number` domains dynamically and prevent unsafe control of `sensor` entities.
+
+**Context:**
+- The executor currently hardcodes service calls (e.g., `select.select_option`), causing failures when users configure `input_select` helpers.
+- Users sometimes mistakenly configure `sensor` entities (read-only) for control actions, leading to obscure failures.
+
+**Plan:**
+
+#### Phase 1: Domain-Aware Actions [DONE]
+* [x] **Update HAClient (`executor/actions.py`)**:
+    *   Make `set_select_option`, `set_switch`, `set_number` inspect the entity ID domain.
+    *   Route to appropriate service (`input_select.select_option` vs `select.select_option`).
+    *   Validate domain against allowed list for each action type.
+* [x] **Sensor Guard (`executor/actions.py`)**:
+    *   Explicitly reject entities starting with `sensor.` or `binary_sensor.` in setter methods.
+    *   Return a precise `ActionResult` error message: "Cannot control read-only entity 'sensor.xyz'".
+* [x] **Automated Testing**:
+    *   Add test cases for `input_*` variants of all control entities.
+    *   Add negative test cases for `sensor` entities.
+* [x] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
+
+---
+
 ## ERA // 17: Water Comfort V2, UI Polish & System Stability
 
 This era focused on implementing a dynamic water heating comfort system (K23, K24) and resolving critical stability issues in the executor and test suite (F38, F39).

@@ -138,11 +138,24 @@ export function buildPatch(
         const currentValue = getDeepValue<unknown>(original, field.path)
 
         const areEqual = (a: unknown, b: unknown, type: string): boolean => {
+            // Null/Undefined equivalence (covers missing keys vs explicitly null/empty)
+            if ((a === null || a === undefined) && (b === null || b === undefined)) return true
+
+            // Treat false as equal to null/undefined for boolean fields (assuming default is false)
+            if (type === 'boolean' && a === false && (b === null || b === undefined)) return true
+
             if (type === 'array') {
-                if (!Array.isArray(a) || !Array.isArray(b)) return false
-                if (a.length !== b.length) return false
-                return a.every((val, i) => val === b[i])
+                const arrA = Array.isArray(a) ? (a as unknown[]) : []
+                const arrB = Array.isArray(b) ? (b as unknown[]) : []
+                if (arrA.length !== arrB.length) return false
+                return arrA.every((val, i) => val === arrB[i])
             }
+            // Treat empty string as equal to null/undefined for text fields
+            if (a === '' && (b === null || b === undefined)) return true
+
+            // Allow loose equality for primitives (handles number vs string-in-select)
+            if (a == b) return true
+
             return a === b
         }
 

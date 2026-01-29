@@ -19,6 +19,7 @@ interface SettingsFieldProps {
     haEntities?: HaEntity[]
     haLoading?: boolean
     fullForm?: Record<string, string | boolean | number | undefined>
+    advancedMode?: boolean
 }
 
 export const SettingsField: React.FC<SettingsFieldProps> = ({

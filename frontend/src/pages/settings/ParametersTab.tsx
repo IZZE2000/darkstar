@@ -1,4 +1,5 @@
 import React from 'react'
+import { useNavigate } from 'react-router-dom'
 import Card from '../../components/Card'
 import { useSettingsForm } from './hooks/useSettingsForm'
 import { SettingsField } from './components/SettingsField'
@@ -6,10 +7,16 @@ import { parameterFieldList, parameterSections } from './types'
 import { shouldRenderField } from './logic'
 import { motion, AnimatePresence } from 'framer-motion'
 import { AdditionalAdvancedNotice, GlobalAdvancedLockedNotice } from './components/AdvancedLockedNotice'
+import { UnsavedChangesBanner } from './components/UnsavedChangesBanner'
+import { NavigationBlockerDialog } from './components/NavigationBlockerDialog'
+import { useUnsavedChangesGuard } from './hooks/useUnsavedChangesGuard'
 
 export const ParametersTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }) => {
-    const { form, fieldErrors, loading, saving, statusMessage, handleChange, save } =
+    const navigate = useNavigate()
+    const { form, fieldErrors, loading, saving, statusMessage, handleChange, save, isDirty } =
         useSettingsForm(parameterFieldList)
+
+    const blocker = useUnsavedChangesGuard(isDirty)
 
     if (loading) {
         return <Card className="p-6 text-sm text-muted">Loading optimization parameters…</Card>
@@ -25,6 +32,8 @@ export const ParametersTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMo
 
     return (
         <div className="space-y-4">
+            <UnsavedChangesBanner visible={isDirty} onSave={() => save()} saving={saving} />
+
             {parameterSections.map((section) => {
                 const isEntirelyAdvanced = section.fields.every((f) => f.isAdvanced)
                 const shouldShowCard = advancedMode || !isEntirelyAdvanced
@@ -122,6 +131,18 @@ export const ParametersTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMo
                     </div>
                 )}
             </div>
+
+            <NavigationBlockerDialog
+                visible={blocker.state === 'blocked'}
+                onStay={() => blocker.reset?.()}
+                onLeave={() => {
+                    if (blocker.location) {
+                        navigate(blocker.location.pathname + blocker.location.search, {
+                            state: { ...blocker.location.state, ignoreUnsavedChangesGuard: true },
+                        })
+                    }
+                }}
+            />
         </div>
     )
 }

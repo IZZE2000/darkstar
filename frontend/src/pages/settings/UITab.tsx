@@ -1,4 +1,5 @@
 import React from 'react'
+import { useNavigate } from 'react-router-dom'
 // Api and ThemeInfo commented out - Accent Theme card is hidden
 // import { Api, ThemeInfo } from '../../lib/api'
 import Card from '../../components/Card'
@@ -8,9 +9,16 @@ import { uiFieldList, uiSections } from './types'
 import { shouldRenderField } from './logic'
 import { motion, AnimatePresence } from 'framer-motion'
 import { AdditionalAdvancedNotice, GlobalAdvancedLockedNotice } from './components/AdvancedLockedNotice'
+import { UnsavedChangesBanner } from './components/UnsavedChangesBanner'
+import { NavigationBlockerDialog } from './components/NavigationBlockerDialog'
+import { useUnsavedChangesGuard } from './hooks/useUnsavedChangesGuard'
 
 export const UITab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }) => {
-    const { form, fieldErrors, loading, saving, statusMessage, handleChange, save } = useSettingsForm(uiFieldList)
+    const navigate = useNavigate()
+    const { form, fieldErrors, loading, saving, statusMessage, handleChange, save, isDirty } =
+        useSettingsForm(uiFieldList)
+
+    const blocker = useUnsavedChangesGuard(isDirty)
 
     // Themes state commented out - Accent Theme card is hidden
     // const [themes, setThemes] = useState<ThemeInfo[]>([])
@@ -61,6 +69,8 @@ export const UITab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }) =>
 
     return (
         <div className="space-y-4">
+            <UnsavedChangesBanner visible={isDirty} onSave={() => save()} saving={saving} />
+
             {/* Accent Theme Card - Hidden as per user request */}
             {/* ... */}
 
@@ -185,6 +195,18 @@ export const UITab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }) =>
                     </div>
                 )}
             </div>
+
+            <NavigationBlockerDialog
+                visible={blocker.state === 'blocked'}
+                onStay={() => blocker.reset?.()}
+                onLeave={() => {
+                    if (blocker.location) {
+                        navigate(blocker.location.pathname + blocker.location.search, {
+                            state: { ...blocker.location.state, ignoreUnsavedChangesGuard: true },
+                        })
+                    }
+                }}
+            />
         </div>
     )
 }

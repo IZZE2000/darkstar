@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Api } from '../../lib/api'
 import Card from '../../components/Card'
 import { useSettingsForm } from './hooks/useSettingsForm'
@@ -7,8 +8,12 @@ import { systemFieldList, systemSections } from './types'
 import { shouldRenderField } from './logic'
 import { motion, AnimatePresence } from 'framer-motion'
 import { AdditionalAdvancedNotice, GlobalAdvancedLockedNotice } from './components/AdvancedLockedNotice'
+import { UnsavedChangesBanner } from './components/UnsavedChangesBanner'
+import { NavigationBlockerDialog } from './components/NavigationBlockerDialog'
+import { useUnsavedChangesGuard } from './hooks/useUnsavedChangesGuard'
 
 export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }) => {
+    const navigate = useNavigate()
     const {
         form,
         fieldErrors,
@@ -20,7 +25,10 @@ export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }
         handleChange,
         save,
         reloadEntities,
+        isDirty,
     } = useSettingsForm(systemFieldList)
+
+    const blocker = useUnsavedChangesGuard(isDirty)
 
     const [haTestStatus, setHaTestStatus] = useState<string | null>(null)
 
@@ -66,6 +74,8 @@ export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }
 
     return (
         <div className="space-y-4">
+            <UnsavedChangesBanner visible={isDirty} onSave={() => save()} saving={saving} />
+
             {/* HA Add-on Guidance Banner */}
 
             {systemSections.map((section, idx) => {
@@ -351,6 +361,18 @@ export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }
                     </div>
                 )}
             </div>
+
+            <NavigationBlockerDialog
+                visible={blocker.state === 'blocked'}
+                onStay={() => blocker.reset?.()}
+                onLeave={() => {
+                    if (blocker.location) {
+                        navigate(blocker.location.pathname + blocker.location.search, {
+                            state: { ...blocker.location.state, ignoreUnsavedChangesGuard: true },
+                        })
+                    }
+                }}
+            />
         </div>
     )
 }

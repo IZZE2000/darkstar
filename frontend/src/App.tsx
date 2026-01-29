@@ -1,5 +1,12 @@
 import { useEffect, useState } from 'react'
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import {
+    createBrowserRouter,
+    RouterProvider,
+    Outlet,
+    createRoutesFromElements,
+    Route,
+    Navigate,
+} from 'react-router-dom'
 import Sidebar from './components/Sidebar'
 import ErrorBoundary from './components/ErrorBoundary'
 import Dashboard from './pages/Dashboard'
@@ -14,7 +21,7 @@ import { Api, HealthResponse } from './lib/api'
 import { SystemAlert } from './components/SystemAlert'
 import { ToastProvider } from './components/ui/Toast'
 
-export default function App() {
+function RootLayout() {
     const [backendOffline, setBackendOffline] = useState(false)
     const [healthStatus, setHealthStatus] = useState<HealthResponse | null>(null)
 
@@ -51,46 +58,68 @@ export default function App() {
         }
     }, [])
 
-    // Help React Router find the base path when running under HA Ingress
-    const getBasename = () => {
-        const base = document.querySelector('base')
-        const href = base?.getAttribute('href')
-        if (href && href.startsWith('/')) {
-            return href.replace(/\/$/, '') // Remove trailing slash
-        }
-        return '/'
-    }
+    return (
+        <>
+            <Sidebar />
+            <div className="lg:pl-[96px]">
+                {/* Show health alerts if not fully healthy */}
+                {healthStatus && !healthStatus.healthy && <SystemAlert health={healthStatus} />}
 
+                {/* Show backend offline banner only if no health status available */}
+                {backendOffline && !healthStatus && (
+                    <div className="bg-amber-900/80 border-b border-amber-500/60 text-amber-100 text-[11px] px-4 py-2 flex items-center justify-between">
+                        <span>Backend appears offline or degraded. Some data may be stale or unavailable.</span>
+                    </div>
+                )}
+                <Outlet />
+            </div>
+        </>
+    )
+}
+
+// Help React Router find the base path when running under HA Ingress
+const getBasename = () => {
+    const base = document.querySelector('base')
+    const href = base?.getAttribute('href')
+    if (href && href.startsWith('/')) {
+        return href.replace(/\/$/, '') // Remove trailing slash
+    }
+    return '/'
+}
+
+// Routes Definition
+const router = createBrowserRouter(
+    createRoutesFromElements(
+        <Route path="/" element={<RootLayout />}>
+            <Route index element={<Dashboard />} />
+            <Route path="executor" element={<Executor />} />
+            <Route path="aurora" element={<Aurora />} />
+            <Route path="debug" element={<Debug />} />
+            <Route path="settings" element={<Settings />} />
+            <Route path="design-system" element={<DesignSystem />} />
+            <Route path="power-flow-lab" element={<PowerFlowLab />} />
+            <Route path="chart-examples" element={<ChartExamples />} />
+            {/* Catch all - redirect to dashboard */}
+            <Route path="*" element={<Navigate to="/" replace />} />
+        </Route>,
+    ),
+    {
+        basename: getBasename(),
+        future: {
+            v7_relativeSplatPath: true,
+            v7_fetcherPersist: true,
+            v7_normalizeFormMethod: true,
+            v7_partialHydration: true,
+            v7_skipActionErrorRevalidation: true,
+        },
+    },
+)
+
+export default function App() {
     return (
         <ErrorBoundary>
             <ToastProvider>
-                <BrowserRouter
-                    basename={getBasename()}
-                    future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
-                >
-                    <Sidebar />
-                    <div className="lg:pl-[96px]">
-                        {/* Show health alerts if not fully healthy */}
-                        {healthStatus && !healthStatus.healthy && <SystemAlert health={healthStatus} />}
-
-                        {/* Show backend offline banner only if no health status available */}
-                        {backendOffline && !healthStatus && (
-                            <div className="bg-amber-900/80 border-b border-amber-500/60 text-amber-100 text-[11px] px-4 py-2 flex items-center justify-between">
-                                <span>Backend appears offline or degraded. Some data may be stale or unavailable.</span>
-                            </div>
-                        )}
-                        <Routes>
-                            <Route path="/" element={<Dashboard />} />
-                            <Route path="/executor" element={<Executor />} />
-                            <Route path="/aurora" element={<Aurora />} />
-                            <Route path="/debug" element={<Debug />} />
-                            <Route path="/settings" element={<Settings />} />
-                            <Route path="/design-system" element={<DesignSystem />} />
-                            <Route path="/power-flow-lab" element={<PowerFlowLab />} />
-                            <Route path="/chart-examples" element={<ChartExamples />} />
-                        </Routes>
-                    </div>
-                </BrowserRouter>
+                <RouterProvider router={router} future={{ v7_startTransition: true }} />
             </ToastProvider>
         </ErrorBoundary>
     )
