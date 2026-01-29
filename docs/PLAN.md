@@ -161,4 +161,31 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [ ] **Mobile Test:** Test bottom sheet tooltip on various screen sizes (320px-428px)
 * [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
 
+
 ---
+
+### [PLANNED] REV // UI14 — UX Polish & Config Documentation
+
+**Goal:** Improve dashboard responsiveness, fix timer state issues, fix chart zoom behavior, and document the learning engine configuration.
+
+**Context:**
+- Planning button lacks granular feedback during long solves.
+- Water boost timer is brittle and disappears on re-render/sync.
+- Chart zoom is buggy (resets on update) and lacks a manual reset mechanism.
+- `learning` section in `config.default.yaml` lacks descriptive comments.
+
+**Plan:**
+
+#### Phase 1: Planning Button & Water Boost Timer [PLANNED]
+* [ ] **Planning Progress:** Implement a multi-stage status indicator for the planning button in `QuickActions.tsx`.
+* [ ] **Boost Timer Fix:** Refactor `ControlParameters.tsx` to sync `boostExpiresAt` more reliably and survive re-renders.
+* [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify.
+
+#### Phase 2: Chart Zoom & Reset [PLANNED]
+* [ ] **Zoom Logic:** Update `ChartCard.tsx` to preserve zoom state during background data refreshes.
+* [ ] **Reset Button:** Add a "Reset Zoom" button to the ChartCard header.
+* [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify.
+
+#### Phase 3: Configuration Documentation [PLANNED]
+* [ ] **Config Comments:** Add detailed comments to the `learning:` section in `config.default.yaml` explaining auto-tuning and Reflex thresholds.
+* [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify.

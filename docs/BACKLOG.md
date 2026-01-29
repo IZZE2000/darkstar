@@ -40,8 +40,7 @@ This document contains ideas, improvements, and tasks that are not yet scheduled
 ## 📥 Inbox (User Added / Unsorted)
 
 <!-- Add new bugs/requests here. AI will wipe this section when processing. -->
-- Improve the planning button loading progress indicator.
-- [Bug] Water Boost timer disappears from UI button after a few seconds/minutes, but boost is still active. Backend correctly returns remaining time via `/api/executor/water-boost`. Frontend state management issue - timer component loses state on re-render. Button should show countdown timer until boost expires.
+
 - [Recurring] Check dependencies (`pnpm outdated` / `pip list --outdated`) every month.
 - Do we support direct PV export if profitable? It would make no sense to for example charge the battery then export from battery a sunny summer day where we have severe surplus solar and the prices are high midday.
 - Info for the inverter profiles expansion (add a task to create multiple profiles, do we need a unique default config for different brands?):
@@ -69,9 +68,6 @@ https://github.com/springfall2008/batpred/discussions/2529
 - Add improved progress indicators to UI so 75-second solves don't feel frozen.
 - Can we simplify the water constraints? It is extremely slow right now, and will get worse when we add more heat sources etc. (BRAINSTORM!)
 - Add sensor filtering for spikes or unavailable values
-- Zoom in the chartCard does no longer work properly! When i try to zoom it just wants to reset to the 48h to 24h view! It should only set that view on page reload, or maybe we need a "reset zoom" button?
-- We are missing the config key comments for the whole "# Learning Engine (Aurora Reflex)
-learning:" section in config.default.yaml
 - Can we improve the config soft merge so any new added keys are added to the same place as they are in the default config file?
 ---
 

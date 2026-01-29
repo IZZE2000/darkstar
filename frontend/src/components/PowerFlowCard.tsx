@@ -155,17 +155,50 @@ function Node({ x, y, node, label, value, subValue, glowIntensity, isCharging, c
 // =============================================================================
 
 export default function PowerFlowCard({ data, systemConfig, compact = false }: PowerFlowCardProps) {
-    // 1. Filter enabled nodes from registry
-    const enabledNodes = useMemo(() => {
-        return NODE_REGISTRY.filter((node) => {
-            if (!node.configKey) return true
-            // Support nested keys like 'system.has_solar'
-            const value = node.configKey.split('.').reduce((o: any, i) => o?.[i], systemConfig)
-            return value === true // ONLY show if explicitly enabled
-        })
+    // 1. Flatten config into dot-notation map for easy lookup
+    const configMap = useMemo(() => {
+        if (!systemConfig || typeof systemConfig !== 'object') return null
+        const map: Record<string, any> = {}
+        const flatten = (obj: any, prefix = '') => {
+            if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
+                for (const k in obj) {
+                    const path = prefix ? `${prefix}.${k}` : k
+                    if (typeof obj[k] === 'object' && !Array.isArray(obj[k])) {
+                        flatten(obj[k], path)
+                    } else {
+                        map[path] = obj[k]
+                    }
+                }
+            }
+        }
+        flatten(systemConfig)
+        return map
     }, [systemConfig])
 
-    // 2. Dynamic positioning logic
+    // 2. Filter enabled nodes based on config toggles
+    const enabledNodes = useMemo(() => {
+        // If config is null/loading, show standard hardware to prevent blank UI
+        if (!configMap) {
+            return NODE_REGISTRY.filter((n) => !n.configKey || ['solar', 'battery', 'water'].includes(n.id))
+        }
+
+        return NODE_REGISTRY.filter((node) => {
+            // House and Grid are always visible
+            if (!node.configKey) return true
+
+            // Check if toggle exists in config
+            const toggleValue = configMap[node.configKey]
+
+            if (toggleValue !== undefined) {
+                return toggleValue === true
+            }
+
+            // Fallback: show standard hardware if toggle not found
+            return ['solar', 'battery', 'water'].includes(node.id)
+        })
+    }, [configMap])
+
+    // 3. Dynamic positioning logic
     const { nodes } = useMemo(() => {
         const baseScale = compact ? 0.75 : 1
         const targetCenterX = compact ? 150 : 200
