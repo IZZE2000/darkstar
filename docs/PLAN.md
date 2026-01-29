@@ -212,3 +212,28 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 **Changes:**
 1.  Update `darkstar-dev/Dockerfile` to remove stale `COPY` instruction.
 2.  Add correct instructions to copy `ml/models/defaults/` to runtime location, matching the main `Dockerfile`.
+
+---
+
+### [DONE] REV // F44 — Executor Domain Awareness & Safety
+
+**Goal:** Enable executor to handle `select`, `input_select`, `number`, `input_number` domains dynamically and prevent unsafe control of `sensor` entities.
+
+**Context:**
+- The executor currently hardcodes service calls (e.g., `select.select_option`), causing failures when users configure `input_select` helpers.
+- Users sometimes mistakenly configure `sensor` entities (read-only) for control actions, leading to obscure failures.
+
+**Plan:**
+
+#### Phase 1: Domain-Aware Actions [DONE]
+* [x] **Update HAClient (`executor/actions.py`)**:
+    *   Make `set_select_option`, `set_switch`, `set_number` inspect the entity ID domain.
+    *   Route to appropriate service (`input_select.select_option` vs `select.select_option`).
+    *   Validate domain against allowed list for each action type.
+* [x] **Sensor Guard (`executor/actions.py`)**:
+    *   Explicitly reject entities starting with `sensor.` or `binary_sensor.` in setter methods.
+    *   Return a precise `ActionResult` error message: "Cannot control read-only entity 'sensor.xyz'".
+* [x] **Automated Testing**:
+    *   Add test cases for `input_*` variants of all control entities.
+    *   Add negative test cases for `sensor` entities.
+* [x] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes

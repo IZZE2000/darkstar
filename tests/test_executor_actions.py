@@ -151,8 +151,72 @@ class TestHAClientCallService:
             client = HAClient("http://ha:8123", "token123")
             client.set_switch("switch.charging", False)
 
+    def test_set_select_option_input_select(self):
+        """set_select_option works with input_select."""
+        with patch("executor.actions.requests.Session") as MockSession:
+            mock_session = MockSession.return_value
+            mock_session.post.return_value = MagicMock()
+
+            client = HAClient("http://ha:8123", "token123")
+            result = client.set_select_option("input_select.mode", "Export First")
+
+            assert result is True
             call_args = mock_session.post.call_args
-            assert "switch/turn_off" in call_args[0][0]
+            assert "input_select/select_option" in call_args[0][0]
+
+    def test_set_switch_input_boolean(self):
+        """set_switch works with input_boolean."""
+        with patch("executor.actions.requests.Session") as MockSession:
+            mock_session = MockSession.return_value
+            mock_session.post.return_value = MagicMock()
+
+            client = HAClient("http://ha:8123", "token123")
+            result = client.set_switch("input_boolean.override", True)
+
+            assert result is True
+            call_args = mock_session.post.call_args
+            assert "input_boolean/turn_on" in call_args[0][0]
+
+    def test_set_number_input_number(self):
+        """set_number works with input_number."""
+        with patch("executor.actions.requests.Session") as MockSession:
+            mock_session = MockSession.return_value
+            mock_session.post.return_value = MagicMock()
+
+            client = HAClient("http://ha:8123", "token123")
+            result = client.set_number("input_number.value", 10.0)
+
+            assert result is True
+            call_args = mock_session.post.call_args
+            assert "input_number/set_value" in call_args[0][0]
+
+    def test_set_input_number_alias(self):
+        """set_input_number calls set_number (which handles input_number correctly)."""
+        with patch("executor.actions.requests.Session") as MockSession:
+            mock_session = MockSession.return_value
+            mock_session.post.return_value = MagicMock()
+
+            client = HAClient("http://ha:8123", "token123")
+            result = client.set_input_number("input_number.test", 5.0)
+
+            assert result is True
+            call_args = mock_session.post.call_args
+            assert "input_number/set_value" in call_args[0][0]
+
+    def test_safety_guard_sensor(self):
+        """Safety guard prevents controlling sensor entities."""
+        client = HAClient("http://ha:8123", "token123")
+
+        assert client.set_select_option("sensor.mode", "test") is False
+        assert client.set_switch("binary_sensor.status", True) is False
+        assert client.set_number("sensor.value", 10) is False
+
+    def test_invalid_domain_rejected(self):
+        """Rejects domains not in allowed list for specific action."""
+        client = HAClient("http://ha:8123", "token123")
+
+        # 'switch' domain is not allowed for set_select_option
+        assert client.set_select_option("switch.mode", "test") is False
 
 
 class TestHAClientSendNotification:

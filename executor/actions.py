@@ -152,22 +152,73 @@ class HAClient:
             )
             return False
 
+    def _get_safe_domain(self, entity_id: str, allowed_domains: set[str]) -> str | None:
+        """
+        Get the domain from an entity ID and validate it is safe to control.
+
+        Args:
+            entity_id: The HA entity ID (e.g., 'input_select.mode')
+            allowed_domains: Set of allowed domains (e.g., {'select', 'input_select'})
+
+        Returns:
+            The domain string if valid, None if invalid or unsafe.
+        """
+        if not entity_id:
+            return None
+
+        parts = entity_id.split(".", 1)
+        if len(parts) != 2:
+            logger.error("Invalid entity_id format: %s", entity_id)
+            return None
+
+        domain = parts[0]
+
+        # Explicit safety guard against sensors
+        if domain in ("sensor", "binary_sensor"):
+            logger.error(
+                "SAFETY GUARD: Cannot control read-only entity '%s'. "
+                "Check config.yaml and use a controllable entity (e.g., input_number, helper).",
+                entity_id,
+            )
+            return None
+
+        if domain not in allowed_domains:
+            logger.error(
+                "Domain '%s' not allowed for this action. Allowed: %s. Entity: %s",
+                domain,
+                allowed_domains,
+                entity_id,
+            )
+            return None
+
+        return domain
+
     def set_select_option(self, entity_id: str, option: str) -> bool:
         """Set a select entity to a specific option."""
-        return self.call_service("select", "select_option", entity_id, {"option": option})
+        domain = self._get_safe_domain(entity_id, {"select", "input_select"})
+        if not domain:
+            return False
+        return self.call_service(domain, "select_option", entity_id, {"option": option})
 
     def set_switch(self, entity_id: str, state: bool) -> bool:
         """Turn a switch on or off."""
+        domain = self._get_safe_domain(entity_id, {"switch", "input_boolean"})
+        if not domain:
+            return False
         service = "turn_on" if state else "turn_off"
-        return self.call_service("switch", service, entity_id)
+        return self.call_service(domain, service, entity_id)
 
     def set_number(self, entity_id: str, value: float) -> bool:
         """Set a number entity to a specific value."""
-        return self.call_service("number", "set_value", entity_id, {"value": value})
+        domain = self._get_safe_domain(entity_id, {"number", "input_number"})
+        if not domain:
+            return False
+        return self.call_service(domain, "set_value", entity_id, {"value": value})
 
     def set_input_number(self, entity_id: str, value: float) -> bool:
         """Set an input_number entity to a specific value."""
-        return self.call_service("input_number", "set_value", entity_id, {"value": value})
+        # Alias to set_number which now handles both
+        return self.set_number(entity_id, value)
 
     def send_notification(
         self,
