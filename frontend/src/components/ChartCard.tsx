@@ -849,8 +849,8 @@ export default function ChartCard({
         }
     }, [overlays])
 
-    // Load overlay defaults and scaling values from config
-    // IMPORTANT: Only apply config overlay_defaults for NEW users (no localStorage)
+    // Load scaling values from config and set default overlays for new users
+    // All overlays are enabled by default - users can toggle them off via the chart controls
     useEffect(() => {
         const STORAGE_KEY = 'darkstar-chart-overlays'
         const hasStoredPreferences = localStorage.getItem(STORAGE_KEY) !== null
@@ -875,34 +875,25 @@ export default function ChartCard({
                     setPricingConfig({ vat, fees })
                 }
 
-                // ONLY apply config overlay_defaults if user has NO stored preferences
-                // This prevents config from overwriting user's explicit toggle changes
+                // For NEW users (no localStorage), enable all overlays by default
                 if (!hasStoredPreferences) {
-                    const overlayDefaults = config?.dashboard?.overlay_defaults
-                    if (overlayDefaults && typeof overlayDefaults === 'string') {
-                        const defaultOverlays = overlayDefaults.split(',').map((s) => s.trim().toLowerCase())
-                        const hasSocActualToken =
-                            defaultOverlays.includes('socactual') || defaultOverlays.includes('soc_actual')
-                        const parsedOverlays = {
-                            _version: 2,
-                            price: !defaultOverlays.includes('price_off'),
-                            pv: !defaultOverlays.includes('pv_off'),
-                            load: !defaultOverlays.includes('load_off'),
-                            charge: defaultOverlays.includes('charge'),
-                            discharge: defaultOverlays.includes('discharge'),
-                            export: defaultOverlays.includes('export'),
-                            water: defaultOverlays.includes('water'),
-                            socTarget: defaultOverlays.includes('soctarget') || defaultOverlays.includes('soc_target'),
-                            socProjected:
-                                defaultOverlays.includes('socprojected') || defaultOverlays.includes('soc_projected'),
-                            socActual: hasSocActualToken ? true : true, // Default to true
-                            showActual: false,
-                        }
-                        setOverlays(parsedOverlays)
-                    }
+                    setOverlays({
+                        _version: 2,
+                        price: true,
+                        pv: true,
+                        load: true,
+                        charge: true,
+                        discharge: true,
+                        export: true,
+                        water: true,
+                        socTarget: true,
+                        socProjected: true,
+                        socActual: true,
+                        showActual: false,
+                    })
                 }
             })
-            .catch((err) => console.error('Failed to load overlay defaults:', err))
+            .catch((err) => console.error('Failed to load config:', err))
     }, []) // No dependencies - only run once on mount
 
     useEffect(() => {

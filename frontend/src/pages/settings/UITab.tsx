@@ -38,32 +38,6 @@ export const UITab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }) =>
     }
 
     // const currentThemeIdx = config?.ui?.theme_accent_index ?? 0
-    const parseOverlayDefaults = (raw: string | undefined): Record<string, boolean> => {
-        if (!raw) return {}
-        try {
-            // Try to parse as JSON first (new format)
-            const parsed = JSON.parse(raw)
-            if (typeof parsed === 'object' && parsed !== null) {
-                return parsed as Record<string, boolean>
-            }
-        } catch {
-            // Fallback: handle comma-separated string (legacy format)
-            const obj: Record<string, boolean> = {}
-            raw.split(',').forEach((k) => {
-                const trimmed = k.trim().toLowerCase()
-                if (trimmed) obj[trimmed] = true
-            })
-            return obj
-        }
-        return {}
-    }
-
-    const overlayDefaults = parseOverlayDefaults(form['dashboard.overlay_defaults'])
-
-    const toggleOverlay = (key: string) => {
-        const next = { ...overlayDefaults, [key]: !overlayDefaults[key] }
-        handleChange('dashboard.overlay_defaults', JSON.stringify(next))
-    }
 
     const hasHiddenSections = uiSections.some((s) => s.fields.every((f) => f.isAdvanced))
 
@@ -140,30 +114,6 @@ export const UITab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }) =>
                                                 )}
                                         </AnimatePresence>
                                     </div>
-                                    {section.title === 'Dashboard Defaults' && (
-                                        <div className="mt-6 border-t border-line/30 pt-4">
-                                            <div className="text-[10px] uppercase tracking-widest text-muted font-bold mb-3">
-                                                Overlay Defaults
-                                            </div>
-                                            <div className="flex flex-wrap gap-2">
-                                                {['solar', 'battery', 'load', 'grid', 'water', 'forecast'].map(
-                                                    (key) => (
-                                                        <button
-                                                            key={key}
-                                                            onClick={() => toggleOverlay(key)}
-                                                            className={`rounded-lg px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider transition ${
-                                                                overlayDefaults[key]
-                                                                    ? 'bg-accent/20 text-accent border border-accent/30'
-                                                                    : 'bg-surface2 text-muted border border-line/50 hover:border-line'
-                                                            }`}
-                                                        >
-                                                            {key}
-                                                        </button>
-                                                    ),
-                                                )}
-                                            </div>
-                                        </div>
-                                    )}
                                 </Card>
                             </motion.div>
                         )}

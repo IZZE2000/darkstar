@@ -324,7 +324,6 @@ executor:
 # Dashboard Settings
 dashboard:
   auto_refresh_enabled: true           # Auto-refresh dashboard schedule display
-  overlay_defaults: "charge, soctarget, socprojected, water, export, load_off"  # Default chart overlays
 
 # Theme Settings
 ui:

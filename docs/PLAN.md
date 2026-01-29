@@ -109,19 +109,14 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 
 **Plan:**
 
-#### Phase 1: Remove Redundant Settings UI Section [PLANNED]
-* [ ] **Remove UI Section:** Delete "Overlay Defaults" section from `frontend/src/pages/settings/UITab.tsx` (lines 144-167)
-* [ ] **Remove Helper Functions:** Delete `parseOverlayDefaults()` function (lines 41-60), `toggleOverlay()` function (lines 62-65), and `overlayDefaults` variable (line 61)
-* [ ] **Keep Config Key:** Preserve `dashboard.overlay_defaults` in config for backward compatibility (first-time users)
-* [ ] **Add Documentation:** Add comment in `config.default.yaml` explaining key is only for new installations
-* [ ] **Verify:** Settings UI loads without errors, chart overlays still work via localStorage
-* [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, update plan status, then commit the changes
-
-#### Phase 2: Fix Config Key Alignment [PLANNED]
-* [ ] **Update Default Config:** Change `config.default.yaml` overlay_defaults from `"solar,battery,load"` to `"pv,load,socActual"` (matches Chart keys)
-* [ ] **Simplify Chart Parsing:** Remove legacy key mappings in `frontend/src/components/ChartCard.tsx` (lines 880-900) - use direct 1:1 mapping
-* [ ] **Document Valid Keys:** Add config comment listing valid keys: `pv, load, charge, discharge, export, water, socTarget, socProjected, socActual, price`
-* [ ] **Verify:** Fresh installation uses correct overlay keys, no console errors, chart displays expected overlays
+#### Phase 1: Remove Redundant Settings UI Section [DONE]
+* [x] **Remove UI Section:** Delete "Overlay Defaults" section from `frontend/src/pages/settings/UITab.tsx` (lines 144-167)
+* [x] **Remove Helper Functions:** Delete `parseOverlayDefaults()` function (lines 41-60), `toggleOverlay()` function (lines 62-65), and `overlayDefaults` variable (line 61)
+* [x] **Remove Config Key:** Delete `dashboard.overlay_defaults` from `config.default.yaml` and `config.yaml`
+* [x] **Remove Chart Parsing:** Delete config overlay parsing logic in `ChartCard.tsx` (lines ~878-900)
+* [x] **Default All On:** Set all overlays to enabled by default in Chart component (new users see everything, can opt-out)
+* [x] **Future-Proof:** New overlays will automatically be visible by default
+* [x] **Verify:** Settings UI loads without errors, chart overlays all enabled on fresh load, localStorage persistence still works
 * [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, update plan status, then commit the changes
 
 ---
