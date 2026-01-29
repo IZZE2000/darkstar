@@ -110,9 +110,55 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 **Plan:**
 
 #### Phase 1: Planning Button & Water Boost Timer [PLANNED]
-* [ ] **Planning Progress:** Implement a multi-stage status indicator for the planning button in `QuickActions.tsx`.
-* [ ] **Boost Timer Fix:** Refactor `ControlParameters.tsx` to sync `boostExpiresAt` more reliably and survive re-renders.
-* [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify.
+
+**Architecture:** WebSocket-based real-time status updates for both features.
+
+**Task 1: Backend - Planner Progress Events**
+* [ ] Modify `backend/services/planner_service.py`:
+  * Add `_current_phase: str | None` and `_phase_start_time: datetime | None` instance variables
+  * Add `async def _emit_progress(phase: str, elapsed_ms: float)` helper method
+  * Add `def get_status() -> dict` method for HTTP fallback
+  * Instrument `run_once()` to emit WebSocket events at 5+ phases:
+    1. `fetching_prices` - Before price data fetch
+    2. `fetching_forecasts` - Before forecast fetch
+    3. `applying_learning` - Before learning overlays
+    4. `running_solver` - Before Kepler solver
+    5. `applying_schedule` - After solver, before save
+    6. `complete` - After successful save
+* [ ] Add `GET /api/planner/status` endpoint in `backend/api/routers/planner.py`
+* [ ] Test: Run planner and verify WebSocket `planner_progress` events are emitted with `{phase: str, elapsed_ms: float, remaining_seconds: int}`
+
+**Task 2: Frontend - Planning Button WebSocket Integration**
+* [ ] Modify `frontend/src/components/QuickActions.tsx`:
+  * Import `getSocket()` from `lib/socket.ts`
+  * Add `useEffect` to connect WebSocket and listen for `planner_progress` events
+  * Update `plannerPhase` state to `{phase: string, elapsed_ms: number} | null`
+  * Update button text to show phase name + elapsed time (e.g., "Running solver... (15s)")
+  * Add automatic retry logic if WebSocket disconnects (reconnect every 2s)
+* [ ] Test: Click "Run Planner" and verify real-time status updates with elapsed time
+
+**Task 3: Backend - Water Boost WebSocket Events**
+* [ ] Modify `backend/executor/engine.py`:
+  * Add `_last_boost_state: dict | None` instance variable to track changes
+  * In `_tick()`, check if boost status changed and emit `water_boost_updated` event
+  * Emit periodic status every 30s even if unchanged (for new WebSocket clients)
+  * Event payload: `{active: bool, expires_at: ISO string, remaining_seconds: int}`
+* [ ] Modify `backend/api/routers/services.py`:
+  * After `set_water_boost()` success, emit `water_boost_updated` WebSocket event
+* [ ] Test: Activate boost and verify WebSocket event is emitted with correct payload
+
+**Task 4: Frontend - Water Boost Timer WebSocket Integration**
+* [ ] Modify `frontend/src/components/CommandDomains.tsx`:
+  * Import `getSocket()` from `lib/socket.ts`
+  * Add `useEffect` to connect WebSocket and listen for `water_boost_updated` events
+  * Update `boostExpiresAt` and `boostSecondsRemaining` from WebSocket events
+  * Keep local countdown `useEffect` for smooth 1s UI updates
+  * Remove 30s polling interval (replaced by WebSocket push)
+  * Add defensive null checks in countdown logic
+  * Add automatic retry logic if WebSocket disconnects
+* [ ] Test: Activate boost, verify timer counts down smoothly, survives re-renders, and syncs with backend
+
+**USER VERIFICATION AND COMMIT:** Stop and let the user verify all 4 tasks.
 
 #### Phase 2: Chart Zoom & Reset [PLANNED]
 * [ ] **Zoom Logic:** Update `ChartCard.tsx` to preserve zoom state during background data refreshes.
