@@ -159,10 +159,13 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 
 **USER VERIFICATION AND COMMIT:** Stop and let the user verify all 4 tasks.
 
-#### Phase 2: Chart Zoom & Reset [PLANNED]
-* [ ] **Zoom Logic:** Update `ChartCard.tsx` to preserve zoom state during background data refreshes.
-* [ ] **Reset Button:** Add a "Reset Zoom" button to the ChartCard header.
-* [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify.
+#### Phase 2: Chart Zoom & Reset [DONE]
+* [x] **Zoom Tracking:** Added `userHasZoomedRef` and `lastHadTomorrowPricesRef` to track user interaction and tomorrow prices availability
+* [x] **Event Listeners:** Added `onZoomComplete` and `onPanComplete` callbacks to detect user zoom/pan actions
+* [x] **Smart Preservation:** Modified data update logic to preserve zoom only when user has actively zoomed/panned
+* [x] **Auto-Reset on Tomorrow Prices:** Automatically resets to full 48h view when tomorrow prices become available
+* [x] **Reset Button:** Added "Reset Zoom" button (left of "Overlays"), only visible when actively zoomed
+* [x] **USER VERIFICATION AND COMMIT:** Stop and let the user verify.
 
 #### Phase 3: Configuration Documentation [PLANNED]
 * [ ] **Config Comments:** Add detailed comments to the `learning:` section in `config.default.yaml` explaining auto-tuning and Reflex thresholds.

@@ -761,6 +761,9 @@ export default function ChartCard({
     const currentDay = day || 'today'
     const ref = useRef<HTMLCanvasElement | null>(null)
     const chartRef = useRef<Chart | null>(null)
+    const userHasZoomedRef = useRef(false) // Track if user has manually zoomed/panned
+    const lastHadTomorrowPricesRef = useRef<boolean | null>(null) // Track tomorrow prices availability
+    const [isZoomed, setIsZoomed] = useState(false) // UI state for reset button visibility
     const [themeColors, setThemeColors] = useState<Record<string, string>>({})
     const [overlays, setOverlays] = useState(() => {
         // Load from localStorage if available, otherwise use defaults
@@ -942,6 +945,26 @@ export default function ChartCard({
             ),
             options: {
                 ...chartOptions,
+                plugins: {
+                    ...chartOptions?.plugins,
+                    zoom: {
+                        ...chartOptions?.plugins?.zoom,
+                        zoom: {
+                            ...chartOptions?.plugins?.zoom?.zoom,
+                            onZoomComplete: () => {
+                                userHasZoomedRef.current = true
+                                setIsZoomed(true)
+                            },
+                        },
+                        pan: {
+                            ...chartOptions?.plugins?.zoom?.pan,
+                            onPanComplete: () => {
+                                userHasZoomedRef.current = true
+                                setIsZoomed(true)
+                            },
+                        },
+                    },
+                },
                 scales: {
                     ...chartOptions?.scales,
                     y1: {
@@ -1036,14 +1059,29 @@ export default function ChartCard({
                     chartRef.current.data = liveData
                     chartRef.current.update()
 
-                    // Auto-zoom if no tomorrow prices available
-                    if (!liveData.hasTomorrowPrices) {
-                        // Zoom to show roughly first 24h (approx slots 0-96 for 15m resolution)
-                        // A value of 95 represents the 24th hour for 15min slots
-                        chartRef.current.zoomScale('x', { min: 0, max: 95 }, 'default')
-                    } else {
+                    // Check if tomorrow prices just became available
+                    const tomorrowPricesJustArrived =
+                        lastHadTomorrowPricesRef.current === false && liveData.hasTomorrowPrices
+
+                    // Update tracking ref
+                    lastHadTomorrowPricesRef.current = liveData.hasTomorrowPrices
+
+                    // Only apply auto-zoom if user hasn't manually zoomed, or if tomorrow prices just arrived
+                    if (tomorrowPricesJustArrived) {
+                        // Tomorrow prices arrived - reset to full 48h view
                         chartRef.current.resetZoom()
+                        userHasZoomedRef.current = false
+                        setIsZoomed(false)
+                    } else if (!userHasZoomedRef.current) {
+                        // User hasn't zoomed yet - apply initial auto-zoom logic
+                        if (!liveData.hasTomorrowPrices) {
+                            // Zoom to show roughly first 24h (approx slots 0-96 for 15m resolution)
+                            chartRef.current.zoomScale('x', { min: 0, max: 95 }, 'default')
+                        } else {
+                            chartRef.current.resetZoom()
+                        }
                     }
+                    // else: user has zoomed and tomorrow prices haven't changed - preserve zoom
                 }
             } catch (err) {
                 console.error('Chart update error:', err)
@@ -1077,6 +1115,20 @@ export default function ChartCard({
             <div className="flex items-baseline justify-between pb-2">
                 <div className="text-sm text-muted">Schedule Overview</div>
                 <div className="flex items-center gap-2">
+                    {isZoomed && (
+                        <button
+                            className="rounded-pill px-3 py-1 text-[11px] font-semibold uppercase tracking-wide border border-line/60 text-muted hover:border-accent hover:text-accent transition"
+                            onClick={() => {
+                                if (chartRef.current) {
+                                    chartRef.current.resetZoom()
+                                    userHasZoomedRef.current = false
+                                    setIsZoomed(false)
+                                }
+                            }}
+                        >
+                            Reset Zoom
+                        </button>
+                    )}
                     <button
                         className="rounded-pill px-3 py-1 text-[11px] font-semibold uppercase tracking-wide border border-line/60 text-muted hover:border-accent hover:text-accent transition"
                         onClick={() => setShowOverlayMenu((v) => !v)}
