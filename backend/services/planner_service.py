@@ -34,16 +34,15 @@ class PlannerService:
     def __init__(self) -> None:
         self._lock = asyncio.Lock()
         self._current_phase: str | None = None
-        self._phase_start_time: datetime | None = None
+        self._planner_start_time: datetime | None = None  # Track total elapsed time
 
     async def _emit_progress(self, phase: str) -> None:
         """Emit progress event via WebSocket."""
         self._current_phase = phase
-        self._phase_start_time = datetime.now()
 
         elapsed_ms = 0.0
-        if self._phase_start_time:
-            elapsed_ms = (datetime.now() - self._phase_start_time).total_seconds() * 1000
+        if self._planner_start_time:
+            elapsed_ms = (datetime.now() - self._planner_start_time).total_seconds() * 1000
 
         try:
             await ws_manager.emit(
@@ -64,8 +63,8 @@ class PlannerService:
             return {"phase": "idle", "elapsed_ms": 0, "is_running": False}
 
         elapsed_ms = 0.0
-        if self._phase_start_time:
-            elapsed_ms = (datetime.now() - self._phase_start_time).total_seconds() * 1000
+        if self._planner_start_time:
+            elapsed_ms = (datetime.now() - self._planner_start_time).total_seconds() * 1000
 
         return {
             "phase": self._current_phase,
@@ -92,7 +91,7 @@ class PlannerService:
         async with self._lock:
             start = datetime.now()
             planned_at = start
-            self._phase_start_time = start
+            self._planner_start_time = start  # Track total time from start
 
             try:
                 await self._emit_progress("fetching_inputs")
@@ -126,7 +125,7 @@ class PlannerService:
 
                 # Reset phase tracking
                 self._current_phase = None
-                self._phase_start_time = None
+                self._planner_start_time = None
 
                 return result
 
@@ -142,7 +141,7 @@ class PlannerService:
 
                 # Reset phase tracking
                 self._current_phase = None
-                self._phase_start_time = None
+                self._planner_start_time = None
 
                 return result
 

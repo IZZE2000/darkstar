@@ -45,17 +45,17 @@ export default function AdvisorCard({ powerFlowData, systemConfig, isLoading }: 
     const data = powerFlowData ?? defaultData
 
     return (
-        <Card className="h-full p-4 md:p-5 flex flex-col">
+        <Card className="h-full p-1 flex flex-col overflow-hidden">
             {/* Header removed to save space */}
 
             {/* Content */}
-            <div className="flex-1 min-h-0">
+            <div className="flex-1 flex items-center justify-center overflow-hidden">
                 {isLoading ? (
                     <Skeleton />
                 ) : view === 'advisor' ? (
                     <SmartAdvisorContent />
                 ) : (
-                    <div className="h-full flex items-center justify-center">
+                    <div className="w-full h-full">
                         <PowerFlowCard data={data} systemConfig={systemConfig} />
                     </div>
                 )}

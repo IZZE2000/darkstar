@@ -52,6 +52,17 @@ export default function QuickActions({ executorPaused, onRefresh }: QuickActions
         }
     }, [onRefresh])
 
+    // Force re-render every second during solver phase to update progress bar
+    useEffect(() => {
+        if (plannerProgress?.phase === 'running_solver') {
+            const interval = setInterval(() => {
+                // Trigger re-render by updating elapsed_ms
+                setPlannerProgress((prev) => (prev ? { ...prev, elapsed_ms: prev.elapsed_ms + 1000 } : null))
+            }, 1000)
+            return () => clearInterval(interval)
+        }
+    }, [plannerProgress?.phase])
+
     const handleRunPlanner = async () => {
         setPlannerProgress({ phase: 'starting', elapsed_ms: 0 })
         setFeedback(null)
@@ -102,15 +113,42 @@ export default function QuickActions({ executorPaused, onRefresh }: QuickActions
             case 'fetching_prices':
                 return `Fetching prices...${timeStr}`
             case 'applying_learning':
-                return `Applying learning...${timeStr}`
+                return `Preparing...${timeStr}`
             case 'running_solver':
-                return `Running solver...${timeStr}`
+                return `Solving...${timeStr}`
             case 'applying_schedule':
-                return `Applying schedule...${timeStr}`
+                return `Applying...${timeStr}`
             case 'complete':
                 return 'Done ✓'
             default:
                 return `Planning...${timeStr}`
+        }
+    }
+
+    const getProgressBarWidth = () => {
+        if (!plannerProgress) return '0%'
+        if (plannerProgress.phase === 'complete') return '100%'
+
+        // Estimate progress based on phase and elapsed time
+        const elapsed = plannerProgress.elapsed_ms / 1000 // seconds
+
+        switch (plannerProgress.phase) {
+            case 'starting':
+            case 'fetching_inputs':
+                return '5%'
+            case 'fetching_prices':
+                return '15%'
+            case 'applying_learning':
+                return '25%'
+            case 'running_solver': {
+                // Solver typically takes 3-10s, grow from 30% to 85%
+                const solverProgress = Math.min(55, elapsed * 5.5)
+                return `${30 + solverProgress}%`
+            }
+            case 'applying_schedule':
+                return '90%'
+            default:
+                return '10%'
         }
     }
 
@@ -134,11 +172,11 @@ export default function QuickActions({ executorPaused, onRefresh }: QuickActions
                 >
                     {/* Progress Bar Background */}
                     <div
-                        className={`absolute left-0 top-0 bottom-0 transition-all duration-[2000ms] ease-out pointer-events-none ${
+                        className={`absolute left-0 top-0 bottom-0 transition-all duration-500 ease-linear pointer-events-none ${
                             !isPlanning ? 'bg-transparent' : 'bg-accent/50'
                         }`}
                         style={{
-                            width: !isPlanning ? '0%' : plannerProgress?.phase === 'complete' ? '100%' : '90%',
+                            width: getProgressBarWidth(),
                         }}
                     />
 

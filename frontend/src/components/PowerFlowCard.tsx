@@ -53,7 +53,7 @@ function ParticleStream({ from, to, power, color, reverse }: ParticleStreamProps
                 y2={actualTo.y}
                 stroke={color}
                 strokeWidth={2}
-                strokeOpacity={0.2}
+                strokeOpacity={1}
             />
             {/* Animated particles - clean, regular spacing */}
             {absPower > 0.05 &&
@@ -96,56 +96,81 @@ interface NodeProps {
     compact?: boolean
 }
 
-function Node({ x, y, node, label, value, subValue, glowIntensity, isCharging, compact }: NodeProps) {
-    const baseRadius = compact ? 28 : 35
-    const glowRadius = baseRadius + 18 * glowIntensity
+function Node({ x, y, node, value, subValue, glowIntensity, isCharging, compact }: NodeProps) {
     const iconSize = compact ? 18 : 25
 
+    // Pill shape dimensions
+    const pillWidth = compact ? 90 : 110
+    const pillHeight = compact ? 40 : 50
+    const pillRadius = pillHeight / 2
+
     const IconComponent = (isCharging && node.lucideIconCharging) || node.lucideIcon
+
+    // TWEAK THESE VALUES:
+    const bgOpacity = 1.0 // Background opacity (0.0 to 1.0)
+    const textColor = '#1d1d1dff' // Text color (hex or rgb)
 
     return (
         <g transform={`translate(${x}, ${y})`}>
             {/* Glow effect */}
             {glowIntensity > 0.1 && (
-                <motion.circle
-                    r={glowRadius}
+                <motion.rect
+                    x={-pillWidth / 2 - 10}
+                    y={-pillHeight / 2 - 10}
+                    width={pillWidth + 20}
+                    height={pillHeight + 20}
+                    rx={pillRadius + 10}
+                    ry={pillRadius + 10}
                     fill={node.color}
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 0.1 + glowIntensity * 0.15 }}
                     transition={{ duration: 0.4 }}
                 />
             )}
-            {/* Base circle */}
-            <circle r={baseRadius} fill="rgb(var(--color-surface))" stroke={node.color} strokeWidth={2.5} />
-            {/* Lucide Icon */}
-            <foreignObject x={-iconSize / 2} y={-iconSize / 2} width={iconSize} height={iconSize}>
-                <IconComponent size={iconSize} style={{ color: node.color }} strokeWidth={1.5} />
+            {/* Pill background */}
+            <rect
+                x={-pillWidth / 2}
+                y={-pillHeight / 2}
+                width={pillWidth}
+                height={pillHeight}
+                rx={pillRadius}
+                ry={pillRadius}
+                fill={node.color}
+                fillOpacity={bgOpacity}
+            />
+            {/* Icon on the left (centered in the left radius) */}
+            <foreignObject
+                x={-pillWidth / 2 + pillRadius - iconSize / 2}
+                y={-iconSize / 2}
+                width={iconSize}
+                height={iconSize}
+            >
+                <IconComponent size={iconSize} style={{ color: textColor }} strokeWidth={1.5} />
             </foreignObject>
-            {/* Value (power) */}
+            {/* Value (power) - top right */}
             <text
-                y={baseRadius + 14}
-                textAnchor="middle"
-                fill="rgb(var(--color-text))"
-                fontSize={compact ? '10' : '11'}
+                x={-pillWidth / 2 + pillRadius + 20}
+                y={-2}
+                textAnchor="start"
+                fill={textColor}
+                fontSize={compact ? '11' : '12'}
                 fontWeight="600"
             >
                 {value}
             </text>
-            {/* Subvalue (daily energy) */}
-            {subValue && !compact && (
-                <text y={baseRadius + 26} textAnchor="middle" fill="rgb(var(--color-muted))" fontSize="9">
+            {/* Subvalue (daily energy) - bottom right */}
+            {subValue && (
+                <text
+                    x={-pillWidth / 2 + pillRadius + 20}
+                    y={12}
+                    textAnchor="start"
+                    fill={textColor}
+                    fontSize={compact ? '8' : '10'}
+                    opacity={0.7}
+                >
                     {subValue}
                 </text>
             )}
-            {/* Label */}
-            <text
-                y={baseRadius + (subValue && !compact ? 38 : 26)}
-                textAnchor="middle"
-                fill="rgb(var(--color-muted))"
-                fontSize={compact ? '8' : '9'}
-            >
-                {label}
-            </text>
         </g>
     )
 }
@@ -243,10 +268,10 @@ export default function PowerFlowCard({ data, systemConfig, compact = false }: P
         return { nodes: pos }
     }, [enabledNodes, compact])
 
-    const viewBox = compact ? '0 0 300 260' : '0 0 400 360'
+    const viewBox = compact ? '0 0 300 260' : '0 0 400 330'
 
     return (
-        <svg viewBox={viewBox} className="w-full h-full">
+        <svg viewBox={viewBox} className="w-full h-full" preserveAspectRatio="xMidYMid meet">
             {/* Connections with particles (Always connect to house) */}
             {enabledNodes.map((node) => {
                 if (node.id === 'house') return null
