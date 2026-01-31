@@ -7,18 +7,18 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 
 ## Revision Naming Conventions
 
-| Prefix | Area | Examples |
-|--------|------|----------|
-| **K** | Kepler (MILP solver) | F41 |
-| **E** | Executor | E1 |
-| **A** | Aurora (ML) | A29 |
-| **H** | History/DB | H1 |
-| **O** | Onboarding | O1 |
-| **UI** | User Interface | UI2 |
-| **DS** | Design System | DS1 |
-| **F** | Fixes/Bugfixes | F6 |
-| **DX** | Developer Experience | DX1 |
-| **ARC** | Architecture | ARC1 |
+| Prefix  | Area                 | Examples |
+| ------- | -------------------- | -------- |
+| **K**   | Kepler (MILP solver) | F41      |
+| **E**   | Executor             | E1       |
+| **A**   | Aurora (ML)          | A29      |
+| **H**   | History/DB           | H1       |
+| **O**   | Onboarding           | O1       |
+| **UI**  | User Interface       | UI2      |
+| **DS**  | Design System        | DS1      |
+| **F**   | Fixes/Bugfixes       | F6       |
+| **DX**  | Developer Experience | DX1      |
+| **ARC** | Architecture         | ARC1     |
 
 ---
 
@@ -94,5 +94,95 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [ ] **Recovery:** Hysteresis logic to release overrides when grid import drops.
 * [ ] **Frontend:** Add controls to `Settings > Grid`.
 * [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
+
+---
+
+### [PLANNED] REV // ARC13 — Multi-Inverter Profile System
+
+**Goal:** Enable Darkstar to support multiple inverter brands (Fronius, Victron, Solinteg, etc.) through a flexible profile system without requiring core code changes.
+
+**Context:** Darkstar currently hardcodes Deye/SunSynk inverter behavior. Beta users with Fronius and other brands need brand-specific entity mappings, work mode translations, and control patterns. A comprehensive vision document exists at `docs/INVERTER_PROFILES_VISION.md`. Additional research from Predbat shows Solinteg inverters use service call patterns for mode control (see: https://github.com/springfall2008/batpred/discussions/2529).
+
+**Plan:**
+
+#### Phase 1: Profile Infrastructure [PLANNED]
+* [ ] Create profile YAML schema (`profiles/schema.yaml`)
+* [ ] Implement profile loader (`executor/profiles.py`) with validation
+* [ ] Add `InverterProfile` dataclass with type hints (capabilities, entities, modes, behavior, defaults)
+* [ ] Add `system.inverter_profile` config key to `config.default.yaml`
+* [ ] Load profile based on config setting with fallback to "generic"
+* [ ] Add profile validation tests
+* [ ] **USER VERIFICATION AND COMMIT**
+
+#### Phase 2: Deye Profile Migration [PLANNED]
+* [ ] Create `profiles/deye.yaml` matching current hardcoded behavior
+* [ ] Refactor executor to use profile for entity lookups
+* [ ] Refactor executor to use profile for mode translations
+* [ ] Ensure 100% backward compatibility (existing Deye users unaffected)
+* [ ] Add integration tests comparing old vs new behavior
+* [ ] **USER VERIFICATION AND COMMIT**
+
+#### Phase 3: Config Seeding & Profile Setup Helper [PLANNED]
+* [ ] Add `defaults` section to profile YAML schema (suggested config values)
+* [ ] Implement startup warnings when entities are missing (log profile suggestions)
+* [ ] Create Settings UI "Profile Setup Helper" component
+* [ ] Add API endpoint `GET /api/profiles/{name}/suggestions` (returns suggested config keys)
+* [ ] Add "Apply Suggested Values" button in Settings UI (writes to config.yaml)
+* [ ] Show diff preview before applying suggestions
+* [ ] **USER VERIFICATION AND COMMIT**
+
+#### Phase 4: Fronius Profile Implementation [PLANNED]
+* [ ] Create `profiles/fronius.yaml` based on community feedback
+* [ ] Implement Watts-based control (vs Amperes for Deye)
+* [ ] Handle single battery mode select (no separate grid charging switch)
+* [ ] Add Fronius-specific mode translations ("Auto", "Discharge to grid", etc.)
+* [ ] Add config seeding defaults for Fronius entities
+* [ ] Beta test with Fronius users (Simon, Kristoffer)
+* [ ] **USER VERIFICATION AND COMMIT**
+
+#### Phase 5: Generic Profile & Documentation [PLANNED]
+* [ ] Create `profiles/generic.yaml` for unknown inverters
+* [ ] Provide sensible defaults and manual entity configuration
+* [ ] Write `docs/CREATING_INVERTER_PROFILES.md` (community contribution guide)
+* [ ] Add profile template (`profiles/template.yaml`)
+* [ ] Document Solinteg service call pattern as example for future profiles
+* [ ] Add profile validation to CI/CD
+* [ ] Update `docs/SETUP_GUIDE.md` with profile selection instructions
+* [ ] **USER VERIFICATION AND COMMIT**
+
+#### Phase 6: Community Expansion [PLANNED]
+* [ ] Accept community-contributed profiles (Victron, Goodwe, Solinteg, etc.)
+* [ ] Add profile marketplace documentation
+* [ ] Implement profile versioning and update notifications
+* [ ] Add profile auto-detection from HA entities (optional enhancement)
+* [ ] **USER VERIFICATION AND COMMIT**
+
+---
+### [PLANNED] REV // DX14 — Config Soft Merge Improvement
+
+**Goal:** Improve the config soft merge functionality so new keys are added to the same location as they appear in the default config file, maintaining proper structure and organization.
+
+**Context:** Currently when new configuration keys are added to `config.default.yaml`, the soft merge process doesn't preserve the structural organization and placement of these keys in the user's `config.yaml` file. This makes config files harder to read and maintain.
+
+**Plan:**
+
+#### Phase 1: Analysis & Design [PLANNED]
+* [ ] Analyze current soft merge implementation in config loading
+* [ ] Design structure-aware merge algorithm that preserves key positioning
+* [ ] Define test cases for various merge scenarios (nested keys, comments, ordering)
+* [ ] **USER VERIFICATION AND COMMIT**
+
+#### Phase 2: Implementation [PLANNED]
+* [ ] Implement structure-aware config merge function
+* [ ] Preserve comments and formatting where possible
+* [ ] Add validation to ensure no keys are lost during merge
+* [ ] Update config loading to use new merge function
+* [ ] **USER VERIFICATION AND COMMIT**
+
+#### Phase 3: Testing & Documentation [PLANNED]
+* [ ] Add unit tests for merge scenarios
+* [ ] Test with real config files (backup/restore safety)
+* [ ] Update documentation about config management
+* [ ] **USER VERIFICATION AND COMMIT**
 
 ---
