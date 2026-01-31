@@ -96,27 +96,3 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
 
 ---
-
-### [PLANNED] REV // UI15 — Chart Overlay Cleanup
-
-**Goal:** Remove redundant overlay configuration from Settings UI and align config keys with Chart component.
-
-**Context:**
-- Chart overlays are persisted to browser localStorage (user preference is source of truth)
-- Config `overlay_defaults` only affects first-time users on initial load
-- Settings UI "Overlay Defaults" section is redundant since users toggle overlays directly in the chart
-- Key mismatch exists: Settings uses `['solar', 'battery', 'load', 'grid', 'water', 'forecast']` but Chart uses `['pv', 'charge', 'discharge', 'export', 'socTarget', 'socProjected', 'socActual', 'water', 'load', 'price']`
-
-**Plan:**
-
-#### Phase 1: Remove Redundant Settings UI Section [DONE]
-* [x] **Remove UI Section:** Delete "Overlay Defaults" section from `frontend/src/pages/settings/UITab.tsx` (lines 144-167)
-* [x] **Remove Helper Functions:** Delete `parseOverlayDefaults()` function (lines 41-60), `toggleOverlay()` function (lines 62-65), and `overlayDefaults` variable (line 61)
-* [x] **Remove Config Key:** Delete `dashboard.overlay_defaults` from `config.default.yaml` and `config.yaml`
-* [x] **Remove Chart Parsing:** Delete config overlay parsing logic in `ChartCard.tsx` (lines ~878-900)
-* [x] **Default All On:** Set all overlays to enabled by default in Chart component (new users see everything, can opt-out)
-* [x] **Future-Proof:** New overlays will automatically be visible by default
-* [x] **Verify:** Settings UI loads without errors, chart overlays all enabled on fresh load, localStorage persistence still works
-* [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, update plan status, then commit the changes
-
----
