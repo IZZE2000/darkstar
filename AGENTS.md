@@ -73,9 +73,10 @@ from inputs import get_all_input_data
 
 ### Configuration
 - All user-configurable parameters in `config.yaml`
+- **Structural Enforcement**: `config.yaml` is strictly reordered on startup to match the order and comments of `config.default.yaml` (via "Template Fill" strategy).
+- **Comment Preservation**: Official comments from `config.default.yaml` are always preserved; user comments on standard keys are overwritten.
+- **Custom Keys**: Non-standard user keys are preserved and appended.
 - Use nested structure with logical groupings (battery, thresholds, etc.)
-- Provide default values in code for missing config keys
-- Validate configuration values on startup
 - `charging_strategy.price_smoothing_sek_kwh` controls price tolerance (smoothing block now covers only hysteresis settings)
 - `charging_strategy.block_consolidation_tolerance_sek` allows merging adjacent charge slots when price spread is within tolerance (fallback to smoothing when unset)
 - `charging_strategy.consolidation_max_gap_slots` caps how many zero-capacity slots can exist inside a consolidated block

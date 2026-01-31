@@ -124,7 +124,10 @@ Darkstar prioritizes a "zero-touch" update experience. If you introduce breaking
 
 1.  **Config Migrations**: Register a new `MigrationStep` in `backend/config_migration.py`.
     - These steps run automatically during the `backend/main.py` startup lifespan.
-    - Use `ruamel.yaml` to ensure user comments/formatting are preserved.
+    - **Structure Enforcement (Template Fill)**: Darkstar strictly enforces the structure and comments of `config.default.yaml`. It uses the default file as a template and injects user values into it.
+    - **Custom Keys**: Keys present in `config.yaml` but missing from the default are preserved and appended to the end of their respective sections (or the root).
+    - **Safety**: A `.bak` backup is automatically created before any configuration write.
+    - Use `ruamel.yaml` (already integrated in the migration pipeline) to handle round-trip processing.
 2.  **Database Migrations**: Darkstar uses **Alembic** for versioned migrations.
     - **Applying Migrations**: Run automatically on startup via `alembic upgrade head`.
     - **Creating Migrations**: If you change a model in `backend/learning/models.py`, generate a new migration:

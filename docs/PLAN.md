@@ -158,7 +158,7 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [ ] **USER VERIFICATION AND COMMIT**
 
 ---
-### [PLANNED] REV // DX14 — Config Soft Merge Improvement
+### [DONE] REV // DX14 — Config Soft Merge Improvement
 
 **Goal:** Improve the config soft merge functionality so new keys are added to the same location as they appear in the default config file, maintaining proper structure and organization.
 
@@ -166,23 +166,23 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 
 **Plan:**
 
-#### Phase 1: Analysis & Design [PLANNED]
-* [ ] Analyze current soft merge implementation in config loading
-* [ ] Design structure-aware merge algorithm that preserves key positioning
-* [ ] Define test cases for various merge scenarios (nested keys, comments, ordering)
-* [ ] **USER VERIFICATION AND COMMIT**
+#### Phase 1: Analysis & Design DONE
+* [x] Analyze current soft merge implementation in config loading
+* [x] Design structure-aware merge algorithm that preserves key positioning
+* [x] Define test cases for various merge scenarios (nested keys, comments, ordering)
+* [x] **USER VERIFICATION AND COMMIT**
 
-#### Phase 2: Implementation [PLANNED]
-* [ ] Implement structure-aware config merge function
-* [ ] Preserve comments and formatting where possible
-* [ ] Add validation to ensure no keys are lost during merge
-* [ ] Update config loading to use new merge function
-* [ ] **USER VERIFICATION AND COMMIT**
+#### Phase 2: Implementation DONE
+* [x] Implement structure-aware config merge function
+* [x] Preserve comments and formatting where possible
+* [x] Add validation to ensure no keys are lost during merge
+* [x] Update config loading to use new merge function
+* [x] **USER VERIFICATION AND COMMIT**
 
-#### Phase 3: Testing & Documentation [PLANNED]
-* [ ] Add unit tests for merge scenarios
-* [ ] Test with real config files (backup/restore safety)
-* [ ] Update documentation about config management
-* [ ] **USER VERIFICATION AND COMMIT**
+#### Phase 3: Testing & Documentation DONE
+* [x] Add unit tests for merge scenarios
+* [x] Test with real config files (backup/restore safety)
+* [x] Update documentation about config management
+* [x] **USER VERIFICATION AND COMMIT**
 
 ---

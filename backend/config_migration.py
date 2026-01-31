@@ -1,5 +1,6 @@
 import contextlib
 import logging
+import shutil
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -13,10 +14,11 @@ except ImportError:
 logger = logging.getLogger("darkstar.config_migration")
 
 # Type alias for migration functions
-MigrationStep = Callable[[Any], bool]
+# Returns: (modified_config, changed_bool)
+MigrationStep = Callable[[Any], tuple[Any, bool]]
 
 
-def migrate_battery_config(config: Any) -> bool:
+def migrate_battery_config(config: Any) -> tuple[Any, bool]:
     """
     Migration for REV F17: Unify Battery & Control Configuration.
     Moves hardware limits from executor.controller to root battery section.
@@ -33,7 +35,7 @@ def migrate_battery_config(config: Any) -> bool:
     controller = executor.get("controller", {})
 
     if not controller:
-        return False
+        return config, False
 
     # Mapping of (Legacy Key, New Key)
     mapping = {
@@ -60,83 +62,10 @@ def migrate_battery_config(config: Any) -> bool:
                 logger.info(f"Removed legacy {legacy_key} (already exists in battery.{new_key})")
                 changed = True
 
-    # Cleanup empty controller section if needed (optional)
-    # if not controller:
-    #    del executor["controller"]
-
-    return changed
+    return config, changed
 
 
-def soft_merge_defaults(config: Any) -> bool:
-    """
-    Migration for REV F18: Soft Merge Defaults & Version Sync.
-    Recursively fills missing keys from config.default.yaml into user config.
-    Also updates the 'version' field to match defaults.
-    """
-    changed = False
-    default_path = Path("config.default.yaml")
-
-    if not default_path.exists():
-        logger.warning("config.default.yaml not found, skipping soft merge.")
-        return False
-
-    try:
-        if YAML is None:
-            logger.warning("ruamel.yaml not installed, skipping soft merge.")
-            return False
-
-        yaml = YAML()
-        with default_path.open("r", encoding="utf-8") as f:
-            default_config = yaml.load(f)
-
-        if not default_config:
-            return False
-
-        # 1. Sync Version (Always update to match default)
-        if "version" in default_config and config.get("version") != default_config["version"]:
-            # If key exists, update it. If not, insert at top.
-            if "version" in config:
-                config["version"] = default_config["version"]
-            else:
-                config.insert(0, "version", default_config["version"])
-            logger.info(f"Updated config version to {default_config['version']}")
-            changed = True
-
-        # 2. Recursive Soft Merge
-        def recursive_merge(user_node: Any, default_node: dict, path: str = "") -> bool:
-            if not isinstance(user_node, dict):
-                logger.warning(
-                    f"Expected dict at {path or 'root'}, but found {type(user_node).__name__}. Cannot merge defaults here."
-                )
-                return False
-
-            node_changed = False
-            for key, default_val in default_node.items():
-                current_path = f"{path}.{key}" if path else key
-
-                if key not in user_node:
-                    # Key missing in user config -> Copy from default
-                    user_node[key] = default_val
-                    logger.info(f"Added missing key: {current_path}")
-                    node_changed = True
-                elif isinstance(user_node.get(key), dict) and isinstance(default_val, dict):
-                    # Both are dicts -> Recurse
-                    if recursive_merge(user_node[key], default_val, current_path):
-                        node_changed = True
-                # Else: Key exists and is not a dict (or type mismatch) -> Keep user value (Safe)
-
-            return node_changed
-
-        if recursive_merge(config, default_config):
-            changed = True
-
-    except Exception as e:
-        logger.error(f"Soft merge failed: {e}")
-
-    return changed
-
-
-def cleanup_obsolete_keys(config: Any) -> bool:
+def cleanup_obsolete_keys(config: Any) -> tuple[Any, bool]:
     """
     Migration for REV F19: Cleanup obsolete keys and move end_date.
     Matches the actual observed nesting in config.yaml.
@@ -159,12 +88,6 @@ def cleanup_obsolete_keys(config: Any) -> bool:
         changed = True
 
     # 2. Re-anchor end_date if it is "leaking" past comments
-    # In config.yaml it was found under vacation_mode but after the S-Index comment.
-    # We want to ensure it is grouped with other vacation_mode keys.
-    # To do this, we can pop and re-insert if we detect it's misplaced,
-    # but ruamel.yaml handles ordering during dump if we sort or re-insert.
-
-    # First, find where it is
     end_date_val = None
     source_parent = None
 
@@ -179,9 +102,6 @@ def cleanup_obsolete_keys(config: Any) -> bool:
         elif "vacation_mode" in wh and isinstance(wh["vacation_mode"], dict):
             vm = wh["vacation_mode"]
             if "end_date" in vm:
-                # It is already there! But is it misplaced (after comment)?
-                # Popping and re-inserting will usually put it at the end,
-                # which might still be after the comment if the comment is a 'leaf' comment.
                 end_date_val = vm.pop("end_date")
                 source_parent = "vacation_mode"
 
@@ -191,24 +111,41 @@ def cleanup_obsolete_keys(config: Any) -> bool:
         if "vacation_mode" not in config["water_heating"]:
             config["water_heating"]["vacation_mode"] = {}
 
-        # Re-inserting will put it at the end of vacation_mode.
-        # This is fine as long as we don't have that leaking comment as a footer.
         config["water_heating"]["vacation_mode"]["end_date"] = end_date_val
         logger.info(f"Re-aligned end_date to vacation_mode from {source_parent}")
         changed = True
 
-    return changed
+    return config, changed
 
 
-# List of migrations to run in order
-MIGRATIONS: list[MigrationStep] = [
-    migrate_battery_config,
-    soft_merge_defaults,
-    cleanup_obsolete_keys,
-]
+def template_aware_merge(default_cfg: dict, user_cfg: dict) -> None:
+    """
+    Uses default_cfg as the BASE (template).
+    Overwrites values from user_cfg.
+    Appends extra keys from user_cfg (recursively).
+    Modifies default_cfg IN PLACE.
+    """
+
+    def recursive_merge(target, source):
+        # 1. Update/Recurse on existing keys
+        for key, value in source.items():
+            if key in target:
+                if isinstance(target[key], dict) and isinstance(value, dict):
+                    recursive_merge(target[key], value)
+                else:
+                    # Copy value. Structure/comments of 'target' remain.
+                    target[key] = value
+            else:
+                # 2. Append new keys
+                logger.info(f"Preserving custom user key '{key}'")
+                target[key] = value
+
+    recursive_merge(default_cfg, user_cfg)
 
 
-async def migrate_config(config_path: str = "config.yaml") -> None:
+async def migrate_config(
+    config_path: str = "config.yaml", default_path: str = "config.default.yaml"
+) -> None:
     """
     Run all registered config migrations.
     Uses ruamel.yaml to preserve comments and structure.
@@ -224,127 +161,142 @@ async def migrate_config(config_path: str = "config.yaml") -> None:
         )
         return
 
+    # 1. Load User Config
     try:
         yaml = YAML()
         yaml.preserve_quotes = True
         yaml.indent(mapping=2, sequence=4, offset=2)
-        # Prevent wrapping of long lines (like entity IDs)
         yaml.width = 4096
 
         with path.open("r", encoding="utf-8") as f:
-            config = yaml.load(f)
+            user_config = yaml.load(f)
+
+        if user_config is None or not isinstance(user_config, dict):
+            logger.error(f"❌ Config {config_path} is invalid or empty.")
+            return
+
     except Exception as e:
-        logger.error(f"❌ Failed to read or parse config for migration: {e}")
+        logger.error(f"❌ Failed to read user config: {e}")
         return
 
-    if config is None:
-        return
+    # 2. Run In-Place Legacy Migrations (Cleanup) on User Config
+    # These prepare the user config to be merged cleanly
+    pre_merge_changes = False
 
-    if not isinstance(config, dict):
-        logger.error(
-            f"❌ Config migration aborted: Expected dictionary root in {config_path}, "
-            f"but found {type(config).__name__}. File might be corrupted."
-        )
+    # List of legacy cleanup steps
+    legacy_steps = [migrate_battery_config, cleanup_obsolete_keys]
+
+    for step in legacy_steps:
+        try:
+            user_config, changed = step(user_config)
+            if changed:
+                pre_merge_changes = True
+        except Exception as e:
+            logger.error(f"❌ Legacy migration step {step.__name__} failed: {e}")
+
+    # 3. Load Default Config (The Template)
+    def_path_obj = Path(default_path)
+    if not def_path_obj.exists():
+        logger.warning(f"{default_path} not found. Skipping template merge.")
+        # If we made legacy changes, save them at least.
+        if pre_merge_changes:
+            _write_config(path, user_config, yaml)
         return
 
     try:
-        any_changed = False
-        for step in MIGRATIONS:
-            try:
-                if step(config):
-                    any_changed = True
-            except Exception as step_error:
-                logger.error(f"❌ Migration step {step.__name__} failed: {step_error}")
+        with def_path_obj.open("r", encoding="utf-8") as f:
+            default_config = yaml.load(f)
+    except Exception as e:
+        logger.error(f"❌ Failed to read default config: {e}")
+        if pre_merge_changes:
+            _write_config(path, user_config, yaml)
+        return
 
-        if any_changed:
-            # SAFETY VALIDATION: Ensure we aren't about to write a non-dict or empty structure
-            if not isinstance(config, dict) or "version" not in config:
-                logger.error(
-                    "❌ Config migration produced an invalid structure! Aborting write to prevent corruption."
-                )
-                return
+    # 4. Perform Template Merge
+    # We use default_config as the base and fill it with user_config values
+    try:
+        # We need a deep copy of default structure to detect changes?
+        # Actually, we can just assume we want to write the new structure
+        # IF it differs from the original user_config structure.
+        # But 'user_config' object structure is messy. 'default_config' is clean.
+        # We ALWAYS want to write the clean structure if we are enforcing strict mode.
+        # BUT we only want to write if actual values changed OR structure changed.
+        # To simplify: We just write it. The IO cost is negligible on startup.
+        # But for safety, let's look at the result.
 
-            # Write strategy: Try atomic replacement, fallback to direct write for bind mounts
-            temp_path = path.with_suffix(".tmp")
-            backup_path = path.with_suffix(".bak")
-            log_prefix = "[CONTAINER]" if Path("/.dockerenv").exists() else "[HOST]"
+        # We clone default_config to 'final_config' to be safe?
+        # No, yaml.load() already gave us a fresh object.
+        final_config = default_config
 
-            try:
-                logger.info(f"{log_prefix} Migration: Writing updated config to {temp_path}")
-                with temp_path.open("w", encoding="utf-8") as f:
-                    yaml.dump(config, f)
+        # Sync Version explicitly
+        if "version" in user_config:
+            # Ensure version in final_config matches default (usually what we want)
+            # OR matches user? Usually migration brings it UP to default version.
+            pass
 
-                # Attempt 1: Atomic Replace (Safest)
-                try:
-                    # Path.replace use os.replace() which is atomic on Linux
-                    # but fails with EBUSY on Docker bind mounts or EXDEV if across mount points.
-                    temp_path.replace(path)
-                    logger.info(f"✅ {log_prefix} Successfully migrated {config_path} (Atomic)")
-                except OSError as e:
-                    import errno
+        template_aware_merge(final_config, user_config)
 
-                    # If it's a bind mount (EBUSY) or across filesystems (EXDEV), fallback to non-atomic
-                    if e.errno in (errno.EBUSY, errno.EXDEV, errno.ETXTBSY):
-                        logger.info(
-                            f"[INFO] {log_prefix} {config_path} is likely a Docker bind mount (Atomic replace failed: {e.strerror}). "
-                            "Switching to direct write strategy to preserve the mount."
-                        )
-
-                        # Non-atomic fallback for Bind Mounts:
-                        # 1. Create backup of current file
-                        if path.exists():
-                            import shutil
-
-                            shutil.copy2(path, backup_path)
-
-                        try:
-                            # 2. Open current file for writing (truncates it)
-                            # This works on bind mounts because we preserve the inode.
-                            with path.open("w", encoding="utf-8") as f:
-                                yaml.dump(config, f)
-
-                            # 3. Verify it's actually written and valid
-                            with path.open("r", encoding="utf-8") as f:
-                                check_config = yaml.load(f)
-                                if not check_config or not isinstance(check_config, dict):
-                                    raise ValueError(
-                                        "Verification failed: Written config is empty or invalid"
-                                    )
-
-                            logger.info(
-                                f"✅ {log_prefix} Successfully migrated {config_path} (Direct Write)"
-                            )
-
-                            # Cleanup backup on success
-                            if backup_path.exists():
-                                backup_path.unlink()
-
-                        except Exception as write_error:
-                            logger.error(f"❌ {log_prefix} Direct write failed: {write_error}")
-                            # 4. Restore from backup if we failed midway
-                            if backup_path.exists():
-                                logger.warning(
-                                    f"🔄 {log_prefix} Restoring {config_path} from backup..."
-                                )
-                                import shutil
-
-                                shutil.copy2(backup_path, path)
-                            raise
-                    else:
-                        # Some other OS error - re-raise
-                        logger.error(f"❌ {log_prefix} Migration failed with OS error: {e}")
-                        raise
-
-            finally:
-                # Cleanup temp file if it still exists
-                if temp_path.exists():
-                    with contextlib.suppress(Exception):
-                        temp_path.unlink()
-        else:
-            logger.debug("Config is already up to date")
+        # 5. Save (Strict Enforcement)
+        # We always save because we want to enforce the default structure/comments.
+        # To avoid unnecessary writes, we could compare dumped strings, but
+        # comment diffs make that hard. Let's just write safely.
+        _write_config(path, final_config, yaml)
 
     except Exception as e:
-        logger.error(f"❌ Failed to migrate config: {e}", exc_info=True)
+        logger.error(f"❌ Template merge failed: {e}", exc_info=True)
+
+
+def _write_config(path: Path, config: Any, yaml_instance: Any) -> None:
+    """Safely write config with backup."""
+
+    # SAFETY VALIDATION
+    if not isinstance(config, dict):
+        logger.error("❌ Invalid config structure. Aborting write.")
+        return
+
+    temp_path = path.with_name(path.name + ".tmp")
+    backup_path = path.with_name(path.name + ".bak")
+    log_prefix = "[CONTAINER]" if Path("/.dockerenv").exists() else "[HOST]"
+
+    try:
+        # Create Backup
+        if path.exists():
+            shutil.copy2(path, backup_path)
+
+        logger.info(f"{log_prefix} Writing updated config to {temp_path}")
+        with temp_path.open("w", encoding="utf-8") as f:
+            yaml_instance.dump(config, f)
+
+        # Atomic Replace
+        try:
+            temp_path.replace(path)
+            logger.info(f"✅ {log_prefix} Successfully updated {path} (Atomic)")
+            # Cleanup backup if successful?
+            # Maybe keep it for one cycle? No, usually cleanup.
+            # but let's keep .bak for safety in beta.
+        except OSError as e:
+            # Fallback for Bind Mounts (same as before)
+            import errno
+
+            if e.errno in (errno.EBUSY, errno.EXDEV, errno.ETXTBSY):
+                logger.info(f"{log_prefix} Bind mount detected, using direct write.")
+                shutil.copy2(
+                    temp_path, path
+                )  # Python copy is not atomic but works across filesystems
+                logger.info(f"✅ {log_prefix} Successfully updated {path} (Direct Copy)")
+            else:
+                raise
+
+    except Exception as e:
+        logger.error(f"❌ Write failed: {e}")
+        # Restore backup
+        if backup_path.exists():
+            logger.warning(f"🔄 Restoring {path} from backup...")
+            shutil.copy2(backup_path, path)
+    finally:
+        with contextlib.suppress(Exception):
+            if temp_path.exists():
+                temp_path.unlink()
 
 
 if __name__ == "__main__":

@@ -70,7 +70,7 @@ Items with clear requirements that are ready for implementation planning.
 
 #### [AURORA] Support multiple MPPT strings / Panel arrays
 
-**Goal:** Some users have multiple MPPT strings and panel arrays, we need to support this in the Aurora forecast.
+**Goal:** Some users have multiple MPPT strings and panel arrays, we need to support this in the Aurora forecast. Need to migrate config to use lists instead of singletons.
 
 ---
 
