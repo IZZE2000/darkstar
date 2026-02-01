@@ -37,8 +37,9 @@ COPY planner/ ./planner/
 COPY executor/ ./executor/
 COPY bin/ ./bin/
 COPY ml/*.py ./ml/
-# Ship baseline ML models with image (will be copied to persistent storage on first boot)
-COPY ml/models/*.lgb ./ml/models/
+# Models are generated at runtime (Clean Slate strategy)
+RUN mkdir -p ml/models
+COPY ml/models/defaults/ ./ml/models/defaults/
 COPY inputs.py ./
 
 # Copy frontend source and build (AFTER copying backend to avoid overwriting static assets)
