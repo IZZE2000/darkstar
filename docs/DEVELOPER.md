@@ -68,6 +68,11 @@ docker compose logs -f
 ```
 ---
 
+### Rebase after dev push:
+```bash
+git pull --rebase
+```
+
 ## Architecture & Algorithm
 
 Darkstar uses a three-layer brain to make decisions.
@@ -187,13 +192,13 @@ The "Comfort Level" slider (1-5) controls the trade-off between reliability (get
 
 **Comfort Level Mapping:**
 
-| Level | Name | Window Multiplier | Reliability Penalty | Block Start Penalty | Block Penalty | Behavior |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **1** | Economy | 1.5× | 2.0 SEK/day | 1.5 SEK/block | 0.5 SEK/slot | Large windows = bulk heating in cheapest periods |
-| **2** | Balanced | 1.0× | 7.0 SEK/day | 2.25 SEK/block | 1.0 SEK/slot | Moderate windows = balanced approach |
-| **3** | Neutral | 0.8× | 15.0 SEK/day | 3.0 SEK/block | 2.0 SEK/slot | **Default.** Slight spacing preference |
-| **4** | Priority | 0.5× | 30.0 SEK/day | 4.5 SEK/block | 5.0 SEK/slot | Small windows = more frequent heating |
-| **5** | Maximum | 0.25× | 300.0 SEK/day | 1.0 SEK/block | 10.0 SEK/slot | Tiny windows = very frequent heating |
+| Level | Name     | Window Multiplier | Reliability Penalty | Block Start Penalty | Block Penalty | Behavior                                         |
+| :---- | :------- | :---------------- | :------------------ | :------------------ | :------------ | :----------------------------------------------- |
+| **1** | Economy  | 1.5×              | 2.0 SEK/day         | 1.5 SEK/block       | 0.5 SEK/slot  | Large windows = bulk heating in cheapest periods |
+| **2** | Balanced | 1.0×              | 7.0 SEK/day         | 2.25 SEK/block      | 1.0 SEK/slot  | Moderate windows = balanced approach             |
+| **3** | Neutral  | 0.8×              | 15.0 SEK/day        | 3.0 SEK/block       | 2.0 SEK/slot  | **Default.** Slight spacing preference           |
+| **4** | Priority | 0.5×              | 30.0 SEK/day        | 4.5 SEK/block       | 5.0 SEK/slot  | Small windows = more frequent heating            |
+| **5** | Maximum  | 0.25×             | 300.0 SEK/day       | 1.0 SEK/block       | 10.0 SEK/slot | Tiny windows = very frequent heating             |
 
 **Example:** 3kW heater, 8kWh daily requirement (2.67h minimum heating time)
 - Level 1: 4.0h windows → 2 blocks per day
@@ -432,11 +437,11 @@ We support a "Dev on Main" workflow to allow rapid iteration without spamming th
     *   **Release**: Creates a GitHub Release with notes extracted from `docs/RELEASE_NOTES.md`.
 
 ### Summary of Git Flow
-| Action | Build Target | Architectures | Updates HA? | Git History |
-| :--- | :--- | :--- | :--- | :--- |
-| **Push to `main`** | `darkstar-dev` | `amd64` | ✅ (via dev branch) | Clean |
-| **Push to `dev`** | `darkstar-dev` | `amd64` | ✅ | Contains Bumps |
-| **Tag `v*`** | `darkstar` (Prod) | `amd64` + `aarch64` | ✅ | Release Tag |
+| Action             | Build Target      | Architectures       | Updates HA?        | Git History    |
+| :----------------- | :---------------- | :------------------ | :----------------- | :------------- |
+| **Push to `main`** | `darkstar-dev`    | `amd64`             | ✅ (via dev branch) | Clean          |
+| **Push to `dev`**  | `darkstar-dev`    | `amd64`             | ✅                  | Contains Bumps |
+| **Tag `v*`**       | `darkstar` (Prod) | `amd64` + `aarch64` | ✅                  | Release Tag    |
 
 ### Local Development
 If you are developing locally on a different architecture (e.g., Apple Silicon), it is recommended to test the standard `darkstar/` build or run via `pnpm run dev` directly as described in the Quick Start.

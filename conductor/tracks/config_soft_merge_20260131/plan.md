@@ -9,7 +9,7 @@ This plan follows the project workflow: 80% test coverage and task-based commits
 - [x] Task: Design structure-aware merge algorithm
     - [x] Define recursive merge logic that respects key ordering
     - [x] Create test scenarios (nested keys, multi-line comments)
-- [ ] Task: Conductor - User Manual Verification 'Phase 1: Analysis & Design' (Protocol in workflow.md)
+- [x] Task: Conductor - User Manual Verification 'Phase 1: Analysis & Design' (Protocol in workflow.md)
 
 ## Phase 2: Implementation
 - [x] Task: Implementation - Core Merge Logic
@@ -23,7 +23,7 @@ This plan follows the project workflow: 80% test coverage and task-based commits
 - [x] Task: Integration - Config Loading
     - [x] Update `migrate_config` to use the new logic
     - [x] Add integration test with mock `config.yaml` and `config.default.yaml`
-- [ ] Task: Conductor - User Manual Verification 'Phase 2: Implementation' (Protocol in workflow.md)
+- [x] Task: Conductor - User Manual Verification 'Phase 2: Implementation' (Protocol in workflow.md)
 
 ## Phase 3: Testing & Documentation
 - [x] Task: Regression Testing
