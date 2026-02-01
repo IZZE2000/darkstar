@@ -4,6 +4,35 @@ This document contains the archive of all completed revisions. It serves as the 
 
 ---
 
+### [DONE] REV // DX14 — Config Soft Merge Improvement
+
+**Goal:** Improve the config soft merge functionality so new keys are added to the same location as they appear in the default config file, maintaining proper structure and organization.
+
+**Context:** Currently when new configuration keys are added to `config.default.yaml`, the soft merge process doesn't preserve the structural organization and placement of these keys in the user's `config.yaml` file. This makes config files harder to read and maintain.
+
+**Plan:**
+
+#### Phase 1: Analysis & Design DONE
+* [x] Analyze current soft merge implementation in config loading
+* [x] Design structure-aware merge algorithm that preserves key positioning
+* [x] Define test cases for various merge scenarios (nested keys, comments, ordering)
+* [x] **USER VERIFICATION AND COMMIT**
+
+#### Phase 2: Implementation DONE
+* [x] Implement structure-aware config merge function
+* [x] Preserve comments and formatting where possible
+* [x] Add validation to ensure no keys are lost during merge
+* [x] Update config loading to use new merge function
+* [x] **USER VERIFICATION AND COMMIT**
+
+#### Phase 3: Testing & Documentation DONE
+* [x] Add unit tests for merge scenarios
+* [x] Test with real config files (backup/restore safety)
+* [x] Update documentation about config management
+* [x] **USER VERIFICATION AND COMMIT**
+
+---
+
 ### [DONE] REV // UI15 — Chart Overlay Cleanup
 
 **Goal:** Remove redundant overlay configuration from Settings UI and align config keys with Chart component.
@@ -2346,11 +2375,11 @@ This era focused on the transition to a public beta release, including infrastru
 
 **Bug Locations (lines in `executor/engine.py`):**
 
-| Line | Entity | Current Guard | Issue |
-|------|--------|---------------|-------|
-| 767 | `automation_toggle_entity` | `if self.ha_client:` | Missing entity None check |
-| 1109 | `work_mode_entity` | `if has_battery:` | Missing entity None check |
-| 1114 | `grid_charging_entity` | `if has_battery:` | Missing entity None check |
+| Line | Entity                       | Current Guard          | Issue                     |
+| ---- | ---------------------------- | ---------------------- | ------------------------- |
+| 767  | `automation_toggle_entity`   | `if self.ha_client:`   | Missing entity None check |
+| 1109 | `work_mode_entity`           | `if has_battery:`      | Missing entity None check |
+| 1114 | `grid_charging_entity`       | `if has_battery:`      | Missing entity None check |
 | 1121 | `water_heater.target_entity` | `if has_water_heater:` | Missing entity None check |
 
 **Tasks:**
@@ -2540,14 +2569,14 @@ This era focused on the transition to a public beta release, including infrastru
 ✅ **Completed Investigation:** See artifact `entity_categorization_matrix.md`
 
 **Summary of Findings:**
-| Category | Entities |
-|:---------|:---------|
-| Required INPUT (always) | `battery_soc`, `pv_power`, `load_power` |
-| Required INPUT (if water heater) | `water_power`, `water_heater_consumption` |
-| Required CONTROL (always) | `work_mode`, `grid_charging`, `max_charge_current`, `max_discharge_current`, `grid_max_export_power`, `soc_target_entity` |
-| Required CONTROL (if water heater) | `water_heater.target_entity` |
-| Optional INPUT | All dashboard stats, smart home toggles, user overrides, lifetime totals |
-| Optional CONTROL | None (all moved to Required or conditional) |
+| Category                           | Entities                                                                                                                  |
+| :--------------------------------- | :------------------------------------------------------------------------------------------------------------------------ |
+| Required INPUT (always)            | `battery_soc`, `pv_power`, `load_power`                                                                                   |
+| Required INPUT (if water heater)   | `water_power`, `water_heater_consumption`                                                                                 |
+| Required CONTROL (always)          | `work_mode`, `grid_charging`, `max_charge_current`, `max_discharge_current`, `grid_max_export_power`, `soc_target_entity` |
+| Required CONTROL (if water heater) | `water_heater.target_entity`                                                                                              |
+| Optional INPUT                     | All dashboard stats, smart home toggles, user overrides, lifetime totals                                                  |
+| Optional CONTROL                   | None (all moved to Required or conditional)                                                                               |
 
 **Label Fix:** `"Target SoC Feedback"` → `"Target SoC Output"` (it's a WRITE)
 
@@ -3519,12 +3548,12 @@ manager.open(() => socket.connect())
 6. **Testing Without Planner:** If unit testing, you may need to mock or pre-populate `slot_plans` table with test data.
 
 7. **Field Mapping Reference:**
-   | slot_plans Column | API Response Field | Conversion |
-   |-------------------|-------------------|------------|
-   | `planned_charge_kwh` | `battery_charge_kw` | ÷ 0.25 |
-   | `planned_discharge_kwh` | `battery_discharge_kw` | ÷ 0.25 |
-   | `planned_soc_percent` | `soc_target_percent` | None |
-   | `planned_export_kwh` | `export_kwh` | None |
+   | slot_plans Column       | API Response Field     | Conversion |
+   | ----------------------- | ---------------------- | ---------- |
+   | `planned_charge_kwh`    | `battery_charge_kw`    | ÷ 0.25     |
+   | `planned_discharge_kwh` | `battery_discharge_kw` | ÷ 0.25     |
+   | `planned_soc_percent`   | `soc_target_percent`   | None       |
+   | `planned_export_kwh`    | `export_kwh`           | None       |
 
 8. **Debug Console Cleanup:** After this REV is verified working, the debug console statements can be removed in a separate cleanup task.
 
@@ -4102,11 +4131,11 @@ manager.open(() => socket.connect())
 - `tests/test_config_validation.py` - 7 unit tests
 
 **Validation Rules:**
-| Toggle | Required Config | Severity | Rationale |
-|--------|-----------------|----------|-----------|
+| Toggle                   | Required Config              | Severity    | Rationale                          |
+| ------------------------ | ---------------------------- | ----------- | ---------------------------------- |
 | `has_water_heater: true` | `water_heating.power_kw > 0` | **WARNING** | Water scheduling silently disabled |
-| `has_battery: true` | `battery.capacity_kwh > 0` | **ERROR** | Breaks MILP solver |
-| `has_solar: true` | `system.solar_array.kwp > 0` | **WARNING** | PV forecasts will be zero |
+| `has_battery: true`      | `battery.capacity_kwh > 0`   | **ERROR**   | Breaks MILP solver                 |
+| `has_solar: true`        | `system.solar_array.kwp > 0` | **WARNING** | PV forecasts will be zero          |
 
 **Implementation:**
 - [x] In `planner/pipeline.py` `_validate_config()`:
@@ -4530,11 +4559,11 @@ This era marked the transition to a production-grade FastAPI backend and a major
 - **File:** `scripts/benchmark.py` (NEW)
 - **Baseline Results (2026-01-03):**
 
-| Endpoint | RPS | p50 | p95 | p99 |
-|----------|------|-------|-------|-------|
-| `/api/version` | 246 | 18ms | 23ms | 23ms |
-| `/api/config` | 104 | 47ms | 49ms | 50ms |
-| `/api/health` | 18 | 246ms | 329ms | 348ms |
+| Endpoint                | RPS | p50    | p95    | p99    |
+| ----------------------- | --- | ------ | ------ | ------ |
+| `/api/version`          | 246 | 18ms   | 23ms   | 23ms   |
+| `/api/config`           | 104 | 47ms   | 49ms   | 50ms   |
+| `/api/health`           | 18  | 246ms  | 329ms  | 348ms  |
 | `/api/aurora/dashboard` | 2.4 | 1621ms | 2112ms | 2204ms |
 
 > **Note:** `/api/health` is slow due to comprehensive async checks. `/api/aurora/dashboard` queries DB heavily.
@@ -5237,14 +5266,14 @@ Some settings exist in both HA (entities) and Darkstar (config). Users want:
 - Changes in HA → update Darkstar, changes in Darkstar → update HA
 
 **Current dual-source keys identified:**
-| Key | HA Entity | Config | Current Behavior |
-|-----|-----------|--------|------------------|
-| vacation_mode | `input_sensors.vacation_mode` | `water_heating.vacation_mode.enabled` | HA read for ML, config for anti-legionella (NOT synced) |
-| automation_enabled | `executor.automation_toggle_entity` | `executor.enabled` | HA for toggle, config for initial state |
+| Key                | HA Entity                           | Config                                | Current Behavior                                        |
+| ------------------ | ----------------------------------- | ------------------------------------- | ------------------------------------------------------- |
+| vacation_mode      | `input_sensors.vacation_mode`       | `water_heating.vacation_mode.enabled` | HA read for ML, config for anti-legionella (NOT synced) |
+| automation_enabled | `executor.automation_toggle_entity` | `executor.enabled`                    | HA for toggle, config for initial state                 |
 
 **Write-only keys (Darkstar → HA, no read-back):**
-| Key | HA Entity | Purpose |
-|-----|-----------|---------|
+| Key        | HA Entity                    | Purpose                                     |
+| ---------- | ---------------------------- | ------------------------------------------- |
 | soc_target | `executor.soc_target_entity` | Display/automation only, planner sets value |
 
 **Tasks:**
@@ -5348,13 +5377,13 @@ This phase promoted Kepler from shadow mode to primary planner, implemented stra
 **Goal:** Create a unified health check system that prevents crashes, validates all components, and shows user-friendly error banners.
 
 **Error Categories:**
-| Category | Examples | Severity |
-|----------|----------|----------|
-| HA Connection | HA unreachable, auth failed | CRITICAL |
-| Missing Entities | Sensors renamed/deleted | CRITICAL |
-| Config Errors | Wrong types, missing fields | CRITICAL |
-| Database | MariaDB connection failed | WARNING |
-| Planner/Executor | Generation or dispatch failed | WARNING |
+| Category         | Examples                      | Severity |
+| ---------------- | ----------------------------- | -------- |
+| HA Connection    | HA unreachable, auth failed   | CRITICAL |
+| Missing Entities | Sensors renamed/deleted       | CRITICAL |
+| Config Errors    | Wrong types, missing fields   | CRITICAL |
+| Database         | MariaDB connection failed     | WARNING  |
+| Planner/Executor | Generation or dispatch failed | WARNING  |
 
 **Implementation (2025-12-27):**
 - [x] **Phase 1 - Backend:** Created `backend/health.py` with `HealthChecker` class
@@ -5525,12 +5554,12 @@ Design Principles:
 
 Phase 4: Validation
 
-| Scenario | Solar | Battery | Water | Expected |
-|---|---|---|---|---|
-| Full system | ✓ | ✓ | ✓ | All features |
-| Battery only | ✗ | ✓ | ✗ | Grid arbitrage only |
-| Solar + Water | ✓ | ✗ | ✓ | Cheap heating, no battery |
-| Water only | ✗ | ✗ | ✓ | Cheapest price heating |
+| Scenario      | Solar | Battery | Water | Expected                  |
+| ------------- | ----- | ------- | ----- | ------------------------- |
+| Full system   | ✓     | ✓       | ✓     | All features              |
+| Battery only  | ✗     | ✓       | ✗     | Grid arbitrage only       |
+| Solar + Water | ✓     | ✗       | ✓     | Cheap heating, no battery |
+| Water only    | ✗     | ✗       | ✓     | Cheapest price heating    |
 
 ### [DONE] Rev F2 — Wear Cost Config Fix
 

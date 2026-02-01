@@ -158,31 +158,5 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [ ] **USER VERIFICATION AND COMMIT**
 
 ---
-### [DONE] REV // DX14 — Config Soft Merge Improvement
-
-**Goal:** Improve the config soft merge functionality so new keys are added to the same location as they appear in the default config file, maintaining proper structure and organization.
-
-**Context:** Currently when new configuration keys are added to `config.default.yaml`, the soft merge process doesn't preserve the structural organization and placement of these keys in the user's `config.yaml` file. This makes config files harder to read and maintain.
-
-**Plan:**
-
-#### Phase 1: Analysis & Design DONE
-* [x] Analyze current soft merge implementation in config loading
-* [x] Design structure-aware merge algorithm that preserves key positioning
-* [x] Define test cases for various merge scenarios (nested keys, comments, ordering)
-* [x] **USER VERIFICATION AND COMMIT**
-
-#### Phase 2: Implementation DONE
-* [x] Implement structure-aware config merge function
-* [x] Preserve comments and formatting where possible
-* [x] Add validation to ensure no keys are lost during merge
-* [x] Update config loading to use new merge function
-* [x] **USER VERIFICATION AND COMMIT**
-
-#### Phase 3: Testing & Documentation DONE
-* [x] Add unit tests for merge scenarios
-* [x] Test with real config files (backup/restore safety)
-* [x] Update documentation about config management
-* [x] **USER VERIFICATION AND COMMIT**
 
 ---
