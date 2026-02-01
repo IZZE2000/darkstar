@@ -1,3 +1,41 @@
+## [v2.5.12-beta] - UX Polish, Config Safety & Structure - 2026-02-01
+
+> [!IMPORTANT]
+> **UX POLISH & CONFIGURATION SAFETY**
+> This release brings User Experience improvements including "Unsaved Changes" protection, real-time feedback, and a smarter Configuration merging system that respects your file structure.
+
+**✨ Key Enhancements**
+
+- **UX Polish & Safety (Rev UI13, UI14, UI15, UI7)**
+    - **Unsaved Changes**: You will now be warned before navigating away if you have unsaved changes in Settings.
+    - **Real-Time Feedback**: The "Run Planner" button now shows real-time progress (e.g., "Fetching prices...", "Solving...").
+    - **Chart Improvements**: Fixed zoom behavior, added a "Reset Zoom" button, and simplified overlays.
+    - **Mobile**: The Power Flow card is now cleaner and extensible.
+
+- **Configuration Intelligence (Rev DX14, F42)**
+    - **Structure-Aware Merge**: When Darkstar updates your `config.yaml`, it now preserves your key order and comments, inserting new keys exactly where they belong.
+    - **Ghost Busters**: Fixed an issue where deleted entities would reappear from defaults.
+
+    > [!WARNING]
+    > **Structure Reset**: The new merging logic will reorganize your `config.yaml` to match the official structure of `config.default.yaml`. If you have heavily customized the order or grouping of keys, these changes will be reset to the standard layout. Your values and custom comments on non-standard keys are preserved. A backup is automatically created at `config.yaml.bak` before any changes are applied.
+
+- **Executor Robustness (Rev F44)**
+    - **Domain Awareness**: The executor now automatically handles `input_select` vs `select` and `input_number` vs `number` entities.
+    - **Safety Guard**: Prevents accidental attempts to control read-only `sensor` entities.
+
+### 📜 Full Changelog
+
+*   **REV DX14:** Config Soft Merge Improvement (Structure-aware)
+*   **REV UI15:** Chart Overlay Cleanup
+*   **REV UI14:** UX Polish & Config Documentation (Zoom, Timer, Planner Progress)
+*   **REV UI13:** Unsaved Changes Warning (Banner & Navigation Guard)
+*   **REV UI7:** Mobile Polish & Extensible Architecture
+*   **REV F44:** Executor Domain Awareness & Safety
+*   **REV F43-HOTFIX:** Fix Darkstar-Dev Dockerfile Build
+*   **REV F42:** Ghost Notifications & Default Config Cleanup
+
+---
+
 ## [v2.5.11-beta] - Dynamic Water Heating & Advanced Mode - 2026-01-26
 
 > [!IMPORTANT]
