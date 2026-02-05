@@ -54,7 +54,7 @@ modes:
     description: "Self-consumption mode"
     requires_grid_charging: false
 
-  grid_charge:
+  charge_from_grid:
     value: null
     description: "Charge battery from grid"
     requires_grid_charging: true

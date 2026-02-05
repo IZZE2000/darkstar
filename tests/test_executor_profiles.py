@@ -252,6 +252,9 @@ class TestProfileLoading:
         assert profile.metadata.name == "generic"
         assert profile.modes.export.value is not None
         assert profile.modes.zero_export.value is not None
+        # Check charge_from_grid mode (was grid_charge)
+        assert profile.modes.charge_from_grid is not None
+        assert profile.modes.charge_from_grid.requires_grid_charging is True
 
     def test_load_nonexistent_profile(self, tmp_path):
         """Test loading a non-existent profile raises error."""
