@@ -179,13 +179,13 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] Update executor config to handle new entities (ProfileEntities handles dynamic required fields)
 * [x] **COMPLETED 2026-02-05**
 
-#### Phase 3: Entity Setting Order Fix [PLANNED]
-* [ ] Add profile behavior flag: `requires_mode_settling: true`
-* [ ] Add profile behavior parameter: `mode_settling_ms: 500`
-* [ ] Update `executor/actions.py` to check `profile.behavior.requires_mode_settling`
-* [ ] Add 500ms delay after mode changes when flag is true
-* [ ] Ensure delay only applies to Fronius (profile-specific)
-* [ ] **COMMIT:** Mode settling implementation
+#### Phase 3: Entity Setting Order Fix [DONE]
+* [x] Add profile behavior flag: `requires_mode_settling: true`
+* [x] Add profile behavior parameter: `mode_settling_ms: 500`
+* [x] Update `executor/actions.py` to check `profile.behavior.requires_mode_settling`
+* [x] Add 500ms delay after mode changes when flag is true
+* [x] Ensure delay only applies to Fronius (profile-specific)
+* [x] **COMPLETED 2026-02-05**
 
 #### Phase 4: Grid Charging Behavior [PLANNED]
 * [ ] Add `grid_charge_round_step_w: 10.0` to Fronius behavior section

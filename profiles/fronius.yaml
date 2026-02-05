@@ -72,6 +72,8 @@ behavior:
   write_threshold_w: 100.0
   soc_target_is_discharge_floor: true
   soc_target_is_charge_ceiling: true
+  requires_mode_settling: true        # Fronius requires delay after mode select
+  mode_settling_ms: 500               # 500ms delay for stability
 
 defaults:
   suggested_entities:

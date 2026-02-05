@@ -379,6 +379,14 @@ class ActionDispatcher:
         # Apply work mode change
         success = self.ha.set_select_option(entity, target_mode)
 
+        # Mode settling delay (Rev IP1 Phase 3)
+        if success and self.profile and self.profile.behavior.requires_mode_settling:
+            settle_ms = self.profile.behavior.mode_settling_ms
+            logger.debug(
+                "Applying mode settling delay: %dms for %s", settle_ms, self.profile.metadata.name
+            )
+            await asyncio.sleep(settle_ms / 1000.0)
+
         # Verification
         verified_value = None
         verification_success = None

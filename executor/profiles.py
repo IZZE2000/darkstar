@@ -119,6 +119,13 @@ class ProfileBehavior:
     # Safety parameters
     inverter_ac_limit_kw: float = 8.0
 
+    # Mode settling behavior
+    requires_mode_settling: bool = False
+    mode_settling_ms: int = 0
+
+    # Grid Charge Specifics
+    grid_charge_round_step_w: float | None = None  # Specific rounding for grid charging
+
 
 @dataclass
 class ProfileDefaults:
@@ -333,6 +340,9 @@ def parse_profile(data: dict[str, Any]) -> InverterProfile:
         soc_target_is_discharge_floor=behavior_data.get("soc_target_is_discharge_floor", True),
         soc_target_is_charge_ceiling=behavior_data.get("soc_target_is_charge_ceiling", True),
         inverter_ac_limit_kw=behavior_data.get("inverter_ac_limit_kw", 8.0),
+        requires_mode_settling=behavior_data.get("requires_mode_settling", False),
+        mode_settling_ms=behavior_data.get("mode_settling_ms", 0),
+        grid_charge_round_step_w=behavior_data.get("grid_charge_round_step_w"),
     )
 
     # Parse defaults
