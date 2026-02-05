@@ -672,7 +672,7 @@ class ActionDispatcher:
     async def _set_soc_target(self, target: int) -> ActionResult:
         """Set SoC target."""
         start = time.time()
-        entity = self.config.soc_target_entity
+        entity = self.config.inverter.soc_target_entity
 
         if not _is_entity_configured(entity):
             # Check if this entity is actually required by the profile

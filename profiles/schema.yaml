@@ -54,7 +54,7 @@ entities:
   required:
     # Inverter control entities
     work_mode: null                        # Inverter work mode selector
-    soc_target: null                       # Battery SoC target (%)
+    soc_target_entity: null                # Battery SoC target (%)
 
     # Charging control (required if grid_charging_control is true)
     grid_charging_enable: null             # Grid charging on/off switch

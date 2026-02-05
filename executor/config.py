@@ -45,6 +45,7 @@ class InverterConfig:
     control_unit: str = "A"
     max_charging_power_entity: str | None = None
     max_discharging_power_entity: str | None = None
+    soc_target_entity: str | None = None
     # Dynamic entities for complex profiles (Rev IP2)
     custom_entities: dict[str, str | None] = field(default_factory=dict)
 
@@ -108,7 +109,6 @@ class ExecutorConfig:
 
     automation_toggle_entity: str | None = None
     manual_override_entity: str | None = None
-    soc_target_entity: str | None = None
 
     inverter: InverterConfig = field(default_factory=InverterConfig)
     water_heater: WaterHeaterConfig = field(default_factory=WaterHeaterConfig)
@@ -202,6 +202,10 @@ def load_executor_config(config_path: str = "config.yaml") -> ExecutorConfig:
         max_charging_power_entity=_str_or_none(inverter_data.get("max_charging_power_entity")),
         max_discharging_power_entity=_str_or_none(
             inverter_data.get("max_discharging_power_entity")
+        ),
+        soc_target_entity=_str_or_none(
+            inverter_data.get("soc_target_entity")
+            or executor_data.get("soc_target_entity")  # Fallback to legacy location
         ),
         # Capture all other keys as custom entities (Rev IP2)
         custom_entities={
@@ -342,7 +346,6 @@ def load_executor_config(config_path: str = "config.yaml") -> ExecutorConfig:
         interval_seconds=int(executor_data.get("interval_seconds", 300)),
         automation_toggle_entity=_str_or_none(executor_data.get("automation_toggle_entity")),
         manual_override_entity=_str_or_none(executor_data.get("manual_override_entity")),
-        soc_target_entity=_str_or_none(executor_data.get("soc_target_entity")),
         inverter=inverter,
         water_heater=water_heater,
         notifications=notifications,

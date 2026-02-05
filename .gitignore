@@ -94,3 +94,5 @@ data/planner_learning.db-wal
 .kiro/
 
 docs/prompts/
+
+.opencode

@@ -228,10 +228,9 @@ type QuickAction = {
     reason: string
 }
 
-// Entity config type
 type EntityConfig = {
-    soc_target_entity: string
     inverter: {
+        soc_target_entity: string
         work_mode_entity: string
         grid_charging_entity: string
         max_charging_current_entity: string

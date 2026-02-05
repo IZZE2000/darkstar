@@ -514,10 +514,10 @@ export const systemSections: SettingsSection[] = [
                 },
             },
             {
-                key: 'executor.soc_target_entity',
+                key: 'executor.inverter.soc_target_entity',
                 label: 'Target SoC Output',
                 helper: "Target maintenance level. Acts as a discharge floor (won't discharge below this %) AND a grid charge target (won't charge above this % from grid). Required for inverters like Deye (behavior for other inverters unknown).",
-                path: ['executor', 'soc_target_entity'],
+                path: ['executor', 'inverter', 'soc_target_entity'],
                 type: 'entity',
                 showIf: {
                     configKey: 'system.inverter_profile',

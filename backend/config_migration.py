@@ -118,6 +118,41 @@ def cleanup_obsolete_keys(config: Any) -> tuple[Any, bool]:
     return config, changed
 
 
+def migrate_soc_target_entity(config: Any) -> tuple[Any, bool]:
+    """
+    Migration for soc_target_entity: Move from root executor to executor.inverter.
+    """
+    changed = False
+
+    if "executor" not in config:
+        return config, False
+
+    executor = config["executor"]
+
+    # Check for legacy key
+    if "soc_target_entity" in executor:
+        legacy_val = executor.pop("soc_target_entity")
+
+        # Ensure target section exists
+        if "inverter" not in executor:
+            executor["inverter"] = {}
+
+        inverter = executor["inverter"]
+
+        # Only set if not already present (prefer existing new config)
+        if "soc_target_entity" not in inverter:
+            inverter["soc_target_entity"] = legacy_val
+            logger.info(
+                "Migrated executor.soc_target_entity -> executor.inverter.soc_target_entity"
+            )
+            changed = True
+        else:
+            logger.info("Removed legacy executor.soc_target_entity (already exists in inverter)")
+            changed = True
+
+    return config, changed
+
+
 def migrate_solar_arrays(config: Any) -> tuple[Any, bool]:
     """
     Migration for REV ARC14: Multi-Array PV Support.
@@ -212,7 +247,12 @@ async def migrate_config(
     pre_merge_changes = False
 
     # List of legacy cleanup steps
-    legacy_steps = [migrate_battery_config, cleanup_obsolete_keys, migrate_solar_arrays]
+    legacy_steps = [
+        migrate_battery_config,
+        cleanup_obsolete_keys,
+        migrate_solar_arrays,
+        migrate_soc_target_entity,
+    ]
 
     for step in legacy_steps:
         try:

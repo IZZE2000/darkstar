@@ -285,9 +285,9 @@ async def get_executor_config() -> dict[str, Any]:
         "interval_seconds": cfg.interval_seconds,
         "automation_toggle_entity": getattr(cfg, "automation_toggle_entity", None),
         "manual_override_entity": getattr(cfg, "manual_override_entity", None),
-        "soc_target_entity": getattr(cfg, "soc_target_entity", None),
         "inverter": {
             "work_mode_entity": cfg.inverter.work_mode_entity,
+            "soc_target_entity": getattr(cfg.inverter, "soc_target_entity", None),
             "grid_charging_entity": cfg.inverter.grid_charging_entity,
             "max_charging_current_entity": getattr(
                 cfg.inverter, "max_charging_current_entity", None
@@ -337,7 +337,7 @@ async def update_executor_config(request: Request) -> dict[str, str]:
         executor_cfg = cast("dict[str, Any]", config["executor"])
 
         # Update flat fields
-        for key in ["enabled", "shadow_mode", "interval_seconds", "soc_target_entity"]:
+        for key in ["enabled", "shadow_mode", "interval_seconds"]:
             if key in payload:
                 executor_cfg[key] = payload[key]
 
@@ -520,7 +520,7 @@ async def get_health(executor: ExecutorDep) -> dict[str, Any]:
     critical_entities = {
         "work_mode": executor.config.inverter.work_mode_entity,
         "grid_charging": executor.config.inverter.grid_charging_entity,
-        "soc_target": executor.config.soc_target_entity,
+        "soc_target": executor.config.inverter.soc_target_entity,
     }
     for name, entity in critical_entities.items():
         if not entity:

@@ -251,11 +251,10 @@ executor:
   # Toggle entities (read by executor to check if enabled)
   automation_toggle_entity: ""           # Master enable/disable switch
   manual_override_entity: ""    # Manual override active flag
-  soc_target_entity: ""                 # Target maintenance level. Acts as a discharge floor (won't discharge below this %) AND a grid charge target (won't charge above this % from grid). Required for inverters like Deye (behavior for other inverters unknown).
-
   # Inverter Control Entities (executor WRITES to these)
   inverter:
     work_mode_entity: ""                     # Inverter mode selector
+    soc_target_entity: ""                 # Target maintenance level. Acts as a discharge floor (won't discharge below this %) AND a grid charge target (won't charge above this % from grid). Required for inverters like Deye (behavior for other inverters unknown).
     work_mode_export: "Export First"                                # Value for export mode
     work_mode_zero_export: "Zero Export To CT"                      # Value for zero-export mode
     grid_charging_entity: ""     # Enable/disable grid charging

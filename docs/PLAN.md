@@ -264,3 +264,22 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] **COMPLETED 2026-02-05**
 
 * [x] **COMMIT (AMEND):** feat(ui): mobile hamburger and settings contrast polish
+
+---
+
+### [DONE] REV // F45 — Fix soc_target_entity Regression
+
+**Goal:** Resolve the "executor.inverter.soc_target_entity is not configured" error and standardize the entity's location.
+
+**Context:** The new profile system expects inverter-specific entities in `executor.inverter`, but `soc_target_entity` was left in the root `executor` config. This caused validation errors and confusion.
+
+**Plan:**
+
+#### Phase 1: Standardization & Migration [DONE]
+* [x] **Config:** Move `soc_target_entity` to `executor.inverter.soc_target_entity` in `config.default.yaml`.
+* [x] **Backend:** Update `executor/config.py` to read from new location with fallback to old location.
+* [x] **Backend:** Update `executor/actions.py` to use `config.inverter.soc_target_entity`.
+* [x] **Migration:** Implement explicit `migrate_soc_target_entity` in `backend/config_migration.py`.
+* [x] **Frontend:** Update `types.ts`, `Executor.tsx`, and `config-help.json` to reflect new path.
+* [x] **Validation:** Fix `profiles/schema.yaml` naming (`soc_target` -> `soc_target_entity`).
+* [x] **COMMIT:** fix(config): standardize soc_target_entity location and add migration
