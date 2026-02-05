@@ -636,6 +636,22 @@ class ActionDispatcher:
         entity = self.config.soc_target_entity
 
         if not _is_entity_configured(entity):
+            # Check if this entity is actually required by the profile
+            is_required = True
+            if self.profile:
+                # If we have a profile, check if soc_target_entity is in its required list
+                is_required = "soc_target_entity" in self.profile.entities.required
+
+            if not is_required:
+                # Silent skip - not configured and not required
+                return ActionResult(
+                    action_type="soc_target",
+                    success=True,
+                    message="",  # Empty message = no log
+                    skipped=True,
+                    duration_ms=int((time.time() - start) * 1000),
+                )
+
             logger.debug("Skipping soc_target action: entity not configured")
             return ActionResult(
                 action_type="soc_target",

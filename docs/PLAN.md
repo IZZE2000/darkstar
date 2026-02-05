@@ -205,7 +205,15 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] **Frontend:** Update `types.ts` to loosen `required` fields
 * [x] **Frontend:** Hide "Grid Charging Switch" for Fronius profile
 * [x] **Frontend:** Add missing Fronius entities (`minimum_reserve`, `grid_charge_power`)
+#### Phase 6: Config Validation & UX Fixes [DONE]
+* [x] **Backend:** Implement profile-aware config validation (removing hardcoded errors)
+* [x] **Frontend:** Update `types.ts` to loosen `required` fields
+* [x] **Frontend:** Hide "Grid Charging Switch" for Fronius profile
+* [x] **Frontend:** Add missing Fronius entities (`minimum_reserve`, `grid_charge_power`)
 * [x] **COMMIT:** fix(config): profile-aware validation and ui updates
+* [x] **Phase 6.1 (UI):** Add `soc_target_entity` to settings (Required for Deye/Generic)
+* [x] **Phase 6.2 (Logic):** Make `soc_target` silent-skip for profiles that don't require it (Fronius)
+* [x] **COMMIT:** fix(executor): conditional soc_target ui and silent skip
 
 
 ---

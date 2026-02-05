@@ -411,6 +411,18 @@ export const systemSections: SettingsSection[] = [
                 },
             },
             {
+                key: 'executor.inverter.soc_target_entity',
+                label: 'SoC Target Entity',
+                path: ['executor', 'inverter', 'soc_target_entity'],
+                type: 'entity',
+                helper: 'Sets the target Battery SoC (0-100%). Required for Deye/Generic, optional for others.',
+                showIf: {
+                    configKey: 'system.inverter_profile',
+                    value: ['deye', 'generic'],
+                    disabledText: "Select 'Deye' or 'Generic' profile to configure",
+                },
+            },
+            {
                 key: 'executor.inverter.minimum_reserve_entity',
                 label: 'Minimum Reserve',
                 path: ['executor', 'inverter', 'minimum_reserve_entity'],
