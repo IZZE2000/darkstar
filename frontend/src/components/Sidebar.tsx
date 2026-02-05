@@ -131,21 +131,16 @@ export default function Sidebar() {
                 </div>
             </aside>
 
-            {/* Mobile top bar + hamburger */}
-            <div className="lg:hidden fixed top-0 left-0 right-0 z-40 bg-surface/95 border-b border-line/60 flex items-center justify-between px-4 py-2">
+            {/* Mobile hamburger button */}
+            <div className="lg:hidden fixed top-4 left-4 z-40">
                 <button
                     type="button"
                     aria-label="Open navigation"
-                    className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-line/70 bg-surface2 text-muted hover:border-accent hover:text-accent"
+                    className="inline-flex h-12 w-12 items-center justify-center rounded-2xl border border-line/70 bg-surface shadow-float text-muted hover:border-accent hover:text-accent transition-colors"
                     onClick={() => setMobileOpen(true)}
                 >
-                    <Menu className="h-5 w-5" />
+                    <Menu className="h-6 w-6" />
                 </button>
-                <div className="flex items-center gap-2 text-[11px] text-muted">
-                    <DarkstarLogo className="h-5 w-5 text-accent" />
-                    <span className="font-mono">v{version}</span>
-                </div>
-                <div className="w-10" />
             </div>
 
             {/* Mobile nav overlay */}

@@ -35,6 +35,7 @@ module.exports = {
                 canvas: 'rgb(var(--color-canvas) / <alpha-value>)',
                 surface: 'rgb(var(--color-surface) / <alpha-value>)',
                 surface2: 'rgb(var(--color-surface2) / <alpha-value>)',
+                'surface-elevated': 'rgb(var(--color-surface-elevated) / <alpha-value>)',
                 line: 'rgb(var(--color-line) / <alpha-value>)',
                 text: 'rgb(var(--color-text) / <alpha-value>)',
                 muted: 'rgb(var(--color-muted) / <alpha-value>)',

@@ -241,3 +241,23 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] **COMPLETED 2026-02-05**
 
 ---
+
+### [DONE] REV // UI16 — Mobile UX Polish
+
+**Goal:** Improve mobile view by removing the intrusive menu banner and replacing it with a floating hamburger button.
+
+**Plan:**
+
+#### Phase 1: Sidebar Redesign [DONE]
+* [x] Remove full-width mobile top bar in `Sidebar.tsx`
+* [x] Implement fixed floating hamburger button (top-4 left-4)
+* [x] Verify click behavior and z-index transparency
+* [x] **COMPLETED 2026-02-05**
+
+#### Phase 2: Card Contrast & Shadows [DONE]
+* [x] Add `surface-elevated` token for nested card contrast
+* [x] Refine `shadow-float` and fix clipping in Settings tabs
+* [x] Fix `bg-surface1` inconsistency in `SolarArraysEditor.tsx`
+* [x] **COMPLETED 2026-02-05**
+
+* [x] **COMMIT (AMEND):** feat(ui): mobile hamburger and settings contrast polish

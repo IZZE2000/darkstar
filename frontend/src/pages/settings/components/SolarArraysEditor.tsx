@@ -54,7 +54,7 @@ export const SolarArraysEditor: React.FC<SolarArraysEditorProps> = ({ arrays, on
 
     return (
         <div className="space-y-4 col-span-2">
-            <div className="flex items-center justify-between bg-surface1 p-3 rounded-xl border border-line/20">
+            <div className="flex items-center justify-between bg-surface-elevated shadow-float p-3 rounded-xl border border-line/40">
                 <div className="flex items-center gap-3">
                     <span className="text-xs font-bold uppercase tracking-wider text-muted">Solar Arrays</span>
                     <Badge variant={totalKwp > 500 ? 'warning' : 'info'}>Total: {totalKwp.toFixed(1)} kWp</Badge>
@@ -81,9 +81,12 @@ export const SolarArraysEditor: React.FC<SolarArraysEditorProps> = ({ arrays, on
                 )}
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-2 overflow-visible pb-2">
                 {arrays.map((array, index) => (
-                    <div key={index} className="overflow-hidden border border-line/20 rounded-xl bg-surface1">
+                    <div
+                        key={index}
+                        className="overflow-hidden border border-line/40 rounded-xl bg-surface-elevated shadow-float"
+                    >
                         <button
                             type="button"
                             onClick={() => setExpandedIndex(expandedIndex === index ? null : index)}

@@ -115,7 +115,7 @@ export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }
                                 animate={{ opacity: 1, height: 'auto' }}
                                 exit={{ opacity: 0, height: 0 }}
                                 transition={{ duration: 0.3 }}
-                                className="overflow-hidden"
+                                className="overflow-visible pb-4"
                             >
                                 <div key={section.title}>
                                     {showDivider && (
@@ -174,10 +174,10 @@ export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }
                                                                 animate={{ opacity: 1, height: 'auto' }}
                                                                 exit={{ opacity: 0, height: 0 }}
                                                                 transition={{ duration: 0.3 }}
-                                                                className="col-span-2 overflow-hidden"
+                                                                className="col-span-2 overflow-visible pb-4"
                                                             >
                                                                 {subKey !== 'default' ? (
-                                                                    <Card className="p-4 bg-surface1 border border-line/20 rounded-xl mb-4">
+                                                                    <div className="p-4 bg-surface-elevated shadow-float border border-line/40 rounded-xl mb-4">
                                                                         <div className="text-sm font-semibold text-muted mb-3 uppercase tracking-wider">
                                                                             {subKey}
                                                                         </div>
@@ -250,7 +250,7 @@ export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }
                                                                                     )}
                                                                             </AnimatePresence>
                                                                         </div>
-                                                                    </Card>
+                                                                    </div>
                                                                 ) : (
                                                                     <div className="grid gap-4 sm:grid-cols-2 mb-4">
                                                                         <AnimatePresence initial={false}>
