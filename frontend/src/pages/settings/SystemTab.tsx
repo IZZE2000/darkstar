@@ -177,7 +177,7 @@ export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }
                                                                 className="col-span-2 overflow-visible pb-4"
                                                             >
                                                                 {subKey !== 'default' ? (
-                                                                    <div className="p-4 bg-surface-elevated shadow-float border border-line/40 rounded-xl mb-4">
+                                                                    <div className="p-4 bg-surface-elevated border border-line/40 rounded-xl mb-4">
                                                                         <div className="text-sm font-semibold text-muted mb-3 uppercase tracking-wider">
                                                                             {subKey}
                                                                         </div>

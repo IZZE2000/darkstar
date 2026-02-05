@@ -54,7 +54,7 @@ export const SolarArraysEditor: React.FC<SolarArraysEditorProps> = ({ arrays, on
 
     return (
         <div className="space-y-4 col-span-2">
-            <div className="flex items-center justify-between bg-surface-elevated shadow-float p-3 rounded-xl border border-line/40">
+            <div className="flex items-center justify-between bg-surface-elevated p-3 rounded-xl border border-line/40">
                 <div className="flex items-center gap-3">
                     <span className="text-xs font-bold uppercase tracking-wider text-muted">Solar Arrays</span>
                     <Badge variant={totalKwp > 500 ? 'warning' : 'info'}>Total: {totalKwp.toFixed(1)} kWp</Badge>
@@ -81,16 +81,16 @@ export const SolarArraysEditor: React.FC<SolarArraysEditorProps> = ({ arrays, on
                 )}
             </div>
 
-            <div className="space-y-2 overflow-visible pb-2">
+            <div className="space-y-4 overflow-visible pb-4">
                 {arrays.map((array, index) => (
                     <div
                         key={index}
-                        className="overflow-hidden border border-line/40 rounded-xl bg-surface-elevated shadow-float"
+                        className="overflow-visible border border-line/40 rounded-xl bg-surface-elevated mb-2"
                     >
                         <button
                             type="button"
                             onClick={() => setExpandedIndex(expandedIndex === index ? null : index)}
-                            className="w-full flex items-center justify-between p-3 hover:bg-surface2 transition-colors text-left"
+                            className="w-full flex items-center justify-between p-3 hover:bg-surface2 transition-colors text-left rounded-xl"
                         >
                             <div className="flex items-center gap-3">
                                 <div className="w-6 h-6 rounded-full bg-accent/10 border border-accent/20 flex items-center justify-center text-[10px] font-bold text-accent">
@@ -127,6 +127,7 @@ export const SolarArraysEditor: React.FC<SolarArraysEditorProps> = ({ arrays, on
                                     animate={{ height: 'auto', opacity: 1 }}
                                     exit={{ height: 0, opacity: 0 }}
                                     transition={{ duration: 0.2 }}
+                                    className="overflow-visible"
                                 >
                                     <div className="p-4 border-t border-line/10 grid grid-cols-1 sm:grid-cols-2 gap-4">
                                         <div className="sm:col-span-2">

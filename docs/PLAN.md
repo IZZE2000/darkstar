@@ -255,8 +255,11 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] **COMPLETED 2026-02-05**
 
 #### Phase 2: Card Contrast & Shadows [DONE]
-* [x] Add `surface-elevated` token for nested card contrast
-* [x] Refine `shadow-float` and fix clipping in Settings tabs
+* [x] **UI16-2: Card Contrast & Shadows**
+    - Added `surface-elevated` for nested cards.
+    - Deepened section shadows with `shadow-section` (60px radius).
+    - Removed shadows from elevated cards to fix clipping issues.
+    - Fixed `overflow` and padding across all settings tabs.
 * [x] Fix `bg-surface1` inconsistency in `SolarArraysEditor.tsx`
 * [x] **COMPLETED 2026-02-05**
 

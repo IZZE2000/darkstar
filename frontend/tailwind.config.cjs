@@ -62,6 +62,7 @@ module.exports = {
             },
             boxShadow: {
                 float: 'var(--shadow-float)',
+                'section-float': 'var(--shadow-section)',
                 inset1: 'var(--shadow-inset1)'
             }
         },

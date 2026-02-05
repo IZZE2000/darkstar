@@ -60,7 +60,7 @@ export const UITab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }) =>
                                 animate={{ opacity: 1, height: 'auto' }}
                                 exit={{ opacity: 0, height: 0 }}
                                 transition={{ duration: 0.3 }}
-                                className="overflow-hidden"
+                                className="overflow-visible pb-4"
                             >
                                 <Card className="p-6 mb-4">
                                     <div className="flex items-baseline justify-between gap-2">
@@ -85,7 +85,7 @@ export const UITab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }) =>
                                                             animate="animate"
                                                             exit="exit"
                                                             transition={{ duration: 0.2, ease: 'easeOut' }}
-                                                            className="overflow-hidden"
+                                                            className="overflow-visible pb-4"
                                                         >
                                                             <SettingsField
                                                                 field={field}

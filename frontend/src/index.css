@@ -48,7 +48,8 @@
     --color-ai: 139 92 246;
     /* #8B5CF6 Violet */
 
-    --shadow-float: 0 4px 20px rgba(0, 0, 0, 0.08);
+    --shadow-float: 0 4px 40px rgba(0, 0, 0, 0.08);
+    --shadow-section: 0 8px 60px rgba(0, 0, 0, 0.15);
     --shadow-inset1: inset 0 0 0 1px rgba(0, 0, 0, 0.04);
     --ring: 0 0% 0%;
 
@@ -132,7 +133,8 @@
     --color-ai: 139 92 246;
     /* #8B5CF6 Violet */
 
-    --shadow-float: 0 4px 20px rgba(0, 0, 0, 0.45);
+    --shadow-float: 0 4px 0px rgba(0, 0, 0, 0.3);
+    --shadow-section: 0 8px 60px rgba(0, 0, 0, 0.7);
     --shadow-inset1: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
     --ring: 0 0% 100%;
 
