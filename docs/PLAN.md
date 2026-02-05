@@ -194,13 +194,10 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] Add validation to prevent odd charging behavior
 * [x] **COMPLETED 2026-02-05**
 
-#### Phase 5: Testing & Documentation [PLANNED]
-* [ ] Test with Fronius beta users (Kristoffer, Simon)
-* [ ] Verify mode changes work correctly with new mappings
-* [ ] Verify entity order works (mode → controls)
-* [ ] Verify grid charging rounds to 10W increments
-* [ ] Update `docs/SETUP_GUIDE.md` with Fronius-specific notes
-* [ ] Document known limitations (zero_export may not exist)
-* [ ] **COMMIT:** Testing results and documentation
+#### Phase 5: Multi-Arch Build Support [DONE]
+* [x] Modify GitHub Actions to enable `aarch64` builds on dev/main
+* [x] Remove `if` conditions restricting non-amd64 builds
+* [x] **COMMIT:** feat(ci): enable multi-arch builds for dev
+* [x] **COMPLETED 2026-02-05**
 
 ---
