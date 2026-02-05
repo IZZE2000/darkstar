@@ -75,6 +75,12 @@ behavior:
   requires_mode_settling: true        # Fronius requires delay after mode select
   mode_settling_ms: 500               # 500ms delay for stability
 
+  # Grid Charge Specifics
+  # NOTE: Fronius grid charging efficiency is notoriously low (approx 50-60%)
+  # at low power levels (< 1000W). It improves at higher power.
+  # Beta feedback (Kristoffer) suggests 10W increments for stability.
+  grid_charge_round_step_w: 10.0      # Granular 10W rounding for grid charging
+
 defaults:
   suggested_entities:
     work_mode: "select.fronius_gen24_battery_mode"

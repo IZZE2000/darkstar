@@ -233,7 +233,14 @@ class Controller:
             raw_val = slot.charge_kw * 1000.0
 
             # Round to step
+            is_grid_charge = slot.charge_kw > 0
             step = self.profile.behavior.round_step_w if self.profile else self.config.round_step_w
+
+            # Use grid-specific rounding if available (Rev IP1 Phase 4)
+            if is_grid_charge and self.profile and self.profile.behavior.grid_charge_round_step_w:
+                step = self.profile.behavior.grid_charge_round_step_w
+                logger.debug("Using grid-specific rounding step: %.1fW", step)
+
             rounded = round(raw_val / step) * step
 
             # Clamp

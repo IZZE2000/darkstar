@@ -187,12 +187,12 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] Ensure delay only applies to Fronius (profile-specific)
 * [x] **COMPLETED 2026-02-05**
 
-#### Phase 4: Grid Charging Behavior [PLANNED]
-* [ ] Add `grid_charge_round_step_w: 10.0` to Fronius behavior section
-* [ ] Update executor controller to round grid charge commands to 10W
-* [ ] Document 50% efficiency limitation in profile comments
-* [ ] Add validation to prevent odd charging behavior
-* [ ] **COMMIT:** Grid charging rounding
+#### Phase 4: Grid Charging Behavior [DONE]
+* [x] Add `grid_charge_round_step_w: 10.0` to Fronius behavior section
+* [x] Update executor controller to round grid charge commands to 10W
+* [x] Document 50% efficiency limitation in profile comments
+* [x] Add validation to prevent odd charging behavior
+* [x] **COMPLETED 2026-02-05**
 
 #### Phase 5: Testing & Documentation [PLANNED]
 * [ ] Test with Fronius beta users (Kristoffer, Simon)
