@@ -240,6 +240,13 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] Validate profile using `validate_profiles.py`
 * [x] **COMPLETED 2026-02-05**
 
+#### Phase 3: Sungrow Forced Power Support [DONE]
+* [x] Add `forced_power_entity` to `ProfileEntities` (optional)
+* [x] Update `executor/actions.py` to write to `forced_power_entity` when in forced modes (Grid Charge, Force Discharge)
+* [x] Update `profiles/sungrow.yaml` to map `input_number.set_sg_forced_charge_discharge_power`
+* [x] Verify "Double-Writing" logic (Standard Limit + Forced Limit)
+* [x] **COMPLETED 2026-02-06**
+
 ---
 
 ### [DONE] REV // UI16 — Mobile UX Polish

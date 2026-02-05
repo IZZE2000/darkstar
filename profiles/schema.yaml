@@ -62,18 +62,18 @@ entities:
 
     # Resource management
     minimum_reserve: null                  # Minimum battery reserve percentage (%) - Required for Fronius
-66:
-67:     # Custom / Inverter-Specific Entities (Rev IP2)
-68:     # You can define any key here (e.g., ems_mode, charge_cmd) and reference it in 'set_entities'.
-69:     # The executor will look these up in config.yaml under 'executor.inverter'.
-70:     # ems_mode: null
-71:     # forced_charge_cmd: null
+    # Custom / Inverter-Specific Entities (Rev IP2)
+    # You can define any key here (e.g., ems_mode, charge_cmd) and reference it in 'set_entities'.
+    # The executor will look these up in config.yaml under 'executor.inverter'.
+    # ems_mode: null
+    # forced_charge_cmd: null
 
   # Optional entities (gracefully handled if missing)
   optional:
-    # Charge/discharge control
-    max_charging_current: null             # Max battery charge current (A)
-    max_discharging_current: null          # Max battery discharge current (A)
+    grid_charging_entity: null             # Entity to enable/disable grid charging (switch/select)
+    grid_charge_power_entity: null         # Entity to set grid charging power (number/input_number)
+    forced_power_entity: null              # Entity for power limits in Forced modes (Rev IP2 Phase 3)
+    grid_max_export_power_entity: null     # Entity to set export limit (number/input_number)
     max_charging_power: null               # Max battery charge power (W)
     max_discharging_power: null            # Max battery discharge power (W)
 

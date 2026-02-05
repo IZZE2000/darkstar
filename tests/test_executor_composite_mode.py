@@ -63,3 +63,45 @@ async def test_composite_mode_execution():
     # Verify auxiliary entities execution
     ha_client.set_select_option.assert_any_call("select.ems_mode", "Forced")
     ha_client.set_select_option.assert_any_call("select.charge_cmd", "Charge")
+
+
+@pytest.mark.asyncio
+async def test_forced_power_sync():
+    """Test that power limits are synced to forced_power_entity in forced modes."""
+
+    # 1. Setup Mock HA Client
+    ha_client = MagicMock(spec=HAClient)
+    ha_client.set_number = MagicMock(return_value=True)
+    # Mock get_state_value to return the "InternalMode" which we define as forced
+    ha_client.get_state_value = MagicMock(return_value="InternalMode")
+
+    # 2. Setup Config
+    config = ExecutorConfig(
+        inverter=InverterConfig(
+            work_mode_entity="select.master_mode",
+            max_charging_power_entity="number.max_charge_power",
+            custom_entities={"forced_power_entity": "number.forced_power_limit"},
+        )
+    )
+
+    # 3. Setup Profile
+    profile = InverterProfile(
+        metadata=ProfileMetadata(name="test", version="1.0.0", description="Test"),
+        capabilities=ProfileCapabilities(),
+        entities=ProfileEntities(optional={"forced_power_entity": "forced_power_limit"}),
+        modes=ProfileModes(charge_from_grid=WorkMode(value="InternalMode")),
+        behavior=ProfileBehavior(),
+    )
+
+    # 4. Create Dispatcher
+    dispatcher = ActionDispatcher(ha_client, config, profile=profile)
+
+    # 5. Execute Charge Limit Action
+    result = await dispatcher._set_charge_limit(2500.0, "W")
+
+    # 6. Verify
+    assert result.success is True
+    # Verify standard limit
+    ha_client.set_number.assert_any_call("number.max_charge_power", 2500.0)
+    # Verify sync to forced entity
+    ha_client.set_number.assert_any_call("number.forced_power_limit", 2500.0)

@@ -55,7 +55,9 @@ def validate_profile(file_path):
     # 5. Entity Format Check (simple regex-like check)
     def check_entities(entity_dict):
         for key, val in entity_dict.items():
-            if val and "." not in val:
+            # Rev IP2 Phase 3: Allow profile internal keys (no dots) for custom lookup
+            # We only enforce domain.name format if it's a "suggested" entity or a default HA entity
+            if val and "." not in val and key not in ["forced_power_entity"]:
                 errors.append(
                     f"Invalid HA entity ID format for '{key}': '{val}' (must be 'domain.name')"
                 )

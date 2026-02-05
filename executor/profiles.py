@@ -58,6 +58,7 @@ class ProfileEntities:
 
     # Optional entities
     optional: dict[str, str | None] = field(default_factory=dict)
+    # forced_power_entity: str | None = None  # Planned for Rev IP2 Phase 3 (Keeping as dict entry for consistency)
 
     def validate_required(self) -> tuple[bool, list[str]]:
         """
