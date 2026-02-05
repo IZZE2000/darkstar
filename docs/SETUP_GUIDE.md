@@ -12,12 +12,18 @@ Welcome to the Darkstar Public Beta! This guide will walk you through tuning you
 
 Navigate to **Settings -> System**. These are the "foundations" of your optimization.
 
-### 1.1 System Profile
-Enable the hardware you actually have.
-- **Solar panels installed**: Enable this to activate PV forecasting.
-- **Home battery installed**: Enable for battery arbitrage logic.
-- **Smart water heater**: Enable if you want Darkstar to control your boiler.
-- **Export**: This setting is currently not active.
+### 1.1 Inverter Profile
+The first and most important setting is your **Inverter Profile**. Darkstar uses profiles to automatically configure the correct entities and control logic for your specific hardware.
+- **Select Profile**: Choose your brand (e.g., `Deye`, `Fronius`).
+- **Generic Profile**: Use this if your brand is not listed. You will need to manually map all entities.
+- **Custom Profiles**: If you want to create your own profile, see the **[Profile Creation Guide](CREATING_INVERTER_PROFILES.md)**.
+
+> [!WARNING]
+> **Check Your Units! (Watts vs kW)"
+> This is the #1 setup error. Ensure Darkstar knows the correct unit:
+> - If your sensor emits **Watts** (e.g., `1500`), ensure your configuration matches (often auto-detected or specified in config).
+> - If your sensor emits **Kilowatts** (e.g., `1.5`), ensure units align.
+> *Mixing these up will cause the planner to think you have 1000x more power than you do!*
 
 ### 1.2 Location & Solar Array
 Darkstar uses the **Open-Meteo API** to predict your solar production based on weather forecasts.
@@ -61,18 +67,19 @@ Map your existing Home Assistant sensors so Darkstar can see your home status:
 
 ### 2.2 The "Hands" (Control Entities)
 Darkstar writes to these entities to execute the plan:
-- **Work Mode Selector**: The entity that switches your inverter mode.
+- **Work Mode Selector**: The entity that switches your inverter mode. (Automatically configured if using a profile).
 
 > [!TIP]
 > **Hardware Cheat Sheet: Common Inverter Mode Strings**
-> Darkstar sends text commands to change modes. Here are verified strings for popular brands:
+> If you are using the **Generic Profile**, you must provide the exact mode strings. Here are verified strings for popular brands:
 > | Brand | Export Mode String | Solar/Self-Use Mode String |
 > | :--- | :--- | :--- |
 > | **Solis** | `Feed-in Priority` | `Self-Use` |
 > | **Deye / SunSynk** | `Export First` | `Zero Export to CT` |
 > | **Huawei** | `General Mode` | `Time of Use` |
 > | **GoodWe** | `General Mode` | `Eco Mode` |
-> *Check your inverter integration documentation for exact case-sensitive strings. These are not verified!*
+> | **Fronius** | `Discharge to grid` | `Auto` |
+> *Check your inverter integration documentation for exact case-sensitive strings.*
 - **Grid Charging Switch**: Toggles charging from the grid.
 - **Current Limits**: Entities to set max Amps for charging/discharging.
 

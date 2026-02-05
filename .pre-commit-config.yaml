@@ -17,3 +17,12 @@ repos:
       - id: commitlint
         stages: [commit-msg]
         additional_dependencies: ['@commitlint/config-conventional']
+
+  - repo: local
+    hooks:
+      - id: validate-profiles
+        name: Validate Inverter Profiles
+        entry: uv run python scripts/validate_profiles.py
+        language: system
+        files: ^profiles/.*\.yaml$
+        pass_filenames: true

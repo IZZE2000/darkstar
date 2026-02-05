@@ -1,6 +1,14 @@
 # Inverter Profile Schema
 # This schema defines the structure for inverter profiles in Darkstar.
 # Profiles enable support for multiple inverter brands without code changes.
+#
+# HOW TO CREATE A NEW PROFILE:
+# 1. Copy this file or an existing profile (e.g., fronius.yaml) to your_brand.yaml
+# 2. Identify your inverter's HA entities (select, switch, number domains)
+# 3. Map Darkstar's capability flags to your inverter's features
+# 4. Define work mode translations in the 'modes' section
+# 5. Set sensible behavior defaults (min charge, step size, etc.)
+# 6. Validate using: uv run python scripts/validate_profiles.py your_brand.yaml
 
 # ==============================================================================
 # METADATA - Profile identification and documentation
@@ -20,20 +28,20 @@ metadata:
 # ==============================================================================
 capabilities:
   # Control capabilities
-  grid_charging_control: true          # Can enable/disable grid charging via entity
-  watts_based_control: false           # Uses Watts instead of Amperes for charge/discharge
-  service_call_mode: false             # Uses HA service calls instead of entity writes
-  separate_grid_charging_switch: true  # Has separate grid charging enable/disable entity
+  grid_charging_control: true          # Set to true if Darkstar should manage grid charging
+  watts_based_control: false           # false = Amperes (A), true = Watts (W)
+  service_call_mode: false             # RESERVED: Future support for complex service calls
+  separate_grid_charging_switch: true  # true if grid charging has its own ON/OFF switch entity
 
   # Work mode capabilities
-  supports_export_mode: true           # Supports export/discharge mode
-  supports_zero_export: true           # Supports zero-export mode
-  supports_self_consumption: true      # Supports self-consumption mode
+  supports_export_mode: true           # Can the inverter be forced to export/discharge battery?
+  supports_zero_export: true           # Can it prioritize local load without exporting?
+  supports_self_consumption: true      # Standard mode where PV charges battery/house
 
   # Advanced features
-  supports_soc_target: true            # Supports SoC target entity
-  supports_grid_export_limit: true     # Supports limiting grid export power
-  supports_force_discharge: false      # Supports force discharge mode (reactive)
+  supports_soc_target: true            # Can we set a battery SoC target percentage?
+  supports_grid_export_limit: true     # Can we cap the max Watts flowing to the grid?
+  supports_force_discharge: false      # Reactive: Force discharge at max power immediately
 
 # ==============================================================================
 # ENTITIES - Home Assistant entity mappings

@@ -32,6 +32,9 @@ modes:
   zero_export:
     value: "Auto"
     description: "Normal operation, prioritize local load"
+  self_consumption:
+    value: "Auto"
+    description: "Prioritize local consumption"
   hold:
     value: "Block discharging"
     description: "Keep battery charge for later use"

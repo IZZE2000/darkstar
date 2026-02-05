@@ -140,15 +140,15 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] Beta test with Fronius users (Simon, Kristoffer)
 * [x] **COMPLETED 2026-02-05**
 
-#### Phase 5: Generic Profile & Documentation [PLANNED]
-* [ ] Create `profiles/generic.yaml` for unknown inverters
-* [ ] Provide sensible defaults and manual entity configuration
-* [ ] Write `docs/CREATING_INVERTER_PROFILES.md` (community contribution guide)
-* [ ] Add profile template (`profiles/template.yaml`)
-* [ ] Document Solinteg service call pattern as example for future profiles
-* [ ] Add profile validation to CI/CD
-* [ ] Update `docs/SETUP_GUIDE.md` with profile selection instructions
-* [ ] **USER VERIFICATION AND COMMIT**
+#### Phase 5: Generic Profile & Documentation [DONE]
+* [x] Create `profiles/generic.yaml` for unknown inverters
+* [x] Provide sensible defaults and manual entity configuration
+* [x] Write `docs/CREATING_INVERTER_PROFILES.md` (community contribution guide)
+* [x] Update `profiles/schema.yaml` to serve as profile template
+* [x] Document Solinteg service call pattern (future enhancement discussion)
+* [x] Add profile validation to CI/CD (pre-commit)
+* [x] Update `docs/SETUP_GUIDE.md` with profile selection instructions
+* [x] **COMPLETED 2026-02-05**
 
 #### Phase 6: Community Expansion [PLANNED]
 * [ ] Accept community-contributed profiles (Victron, Goodwe, Solinteg, etc.)
