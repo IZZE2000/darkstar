@@ -10,6 +10,7 @@ import Select from '../../../components/ui/Select'
 import Switch from '../../../components/ui/Switch'
 import { Badge } from '../../../components/ui/Badge'
 import configHelp from '../../../config-help.json'
+import { SolarArraysEditor } from './SolarArraysEditor'
 
 interface SettingsFieldProps {
     field: BaseField
@@ -145,6 +146,14 @@ export const SettingsField: React.FC<SettingsFieldProps> = ({
                 )
             }
 
+            case 'solar_arrays':
+                return (
+                    <SolarArraysEditor
+                        arrays={JSON.parse(value || '[]')}
+                        onChange={(arrays) => onChange(field.key, JSON.stringify(arrays))}
+                        disabled={isDisabled}
+                    />
+                )
             case 'number':
             case 'text':
             case 'array':

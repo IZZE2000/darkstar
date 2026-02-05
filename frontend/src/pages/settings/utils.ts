@@ -72,6 +72,13 @@ export function parseFieldInput(field: BaseField, raw: string): unknown {
                 return Number.isNaN(num) ? value : num
             })
     }
+    if (field.type === 'solar_arrays') {
+        try {
+            return JSON.parse(raw)
+        } catch {
+            return []
+        }
+    }
     return trimmed
 }
 
@@ -149,6 +156,10 @@ export function buildPatch(
                 const arrB = Array.isArray(b) ? (b as unknown[]) : []
                 if (arrA.length !== arrB.length) return false
                 return arrA.every((val, i) => val === arrB[i])
+            }
+
+            if (type === 'solar_arrays') {
+                return JSON.stringify(a) === JSON.stringify(b)
             }
             // Treat empty string as equal to null/undefined for text fields
             if (a === '' && (b === null || b === undefined)) return true

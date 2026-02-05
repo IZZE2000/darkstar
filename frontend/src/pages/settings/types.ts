@@ -1,4 +1,14 @@
-export type FieldType = 'number' | 'text' | 'boolean' | 'entity' | 'service' | 'select' | 'array' | 'azimuth' | 'tilt'
+export type FieldType =
+    | 'number'
+    | 'text'
+    | 'boolean'
+    | 'entity'
+    | 'service'
+    | 'select'
+    | 'array'
+    | 'azimuth'
+    | 'tilt'
+    | 'solar_arrays'
 
 export interface HaEntity {
     entity_id: string
@@ -128,35 +138,11 @@ export const systemSections: SettingsSection[] = [
                 type: 'number',
             },
             {
-                key: 'system.solar_array.azimuth',
-                label: 'Solar azimuth (°)',
-                helper: 'Panel direction: 0° = North, 90° = East, 180° = South, 270° = West.',
-                path: ['system', 'solar_array', 'azimuth'],
-                type: 'azimuth',
-                showIf: {
-                    configKey: 'system.has_solar',
-                    value: true,
-                    disabledText: "Enable 'Solar panels installed' in System Profile to configure",
-                },
-            },
-            {
-                key: 'system.solar_array.tilt',
-                label: 'Solar tilt (°)',
-                helper: 'Angle from horizontal. 0° = flat, 90° = vertical.',
-                path: ['system', 'solar_array', 'tilt'],
-                type: 'tilt',
-                showIf: {
-                    configKey: 'system.has_solar',
-                    value: true,
-                    disabledText: "Enable 'Solar panels installed' in System Profile to configure",
-                },
-            },
-            {
-                key: 'system.solar_array.kwp',
-                label: 'Solar capacity (kWp)',
-                helper: 'Total DC peak power of the PV array.',
-                path: ['system', 'solar_array', 'kwp'],
-                type: 'number',
+                key: 'system.solar_arrays',
+                label: 'Solar Arrays',
+                path: ['system', 'solar_arrays'],
+                type: 'solar_arrays',
+                helper: 'Configure up to 6 solar arrays with different orientations.',
                 showIf: {
                     configKey: 'system.has_solar',
                     value: true,

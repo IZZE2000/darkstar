@@ -194,11 +194,11 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] Verify aggregate learning logic with tests
 * [x] **USER VERIFICATION AND COMMIT**
 
-#### Phase 4: Frontend UI [PLANNED]
-* [ ] Add Solar Arrays editor in Settings (add/remove arrays)
-* [ ] Display total kWp
-* [ ] Visual representation of array orientations (optional)
-* [ ] **USER VERIFICATION AND COMMIT**
+#### Phase 4: Frontend UI [DONE]
+* [x] Add Solar Arrays editor in Settings (add/remove arrays up to 6)
+* [x] Display total kWp and per-array orientations
+* [x] Integrated with backend via JSON serialization
+* [x] **USER VERIFICATION AND COMMIT**
 
 #### Phase 5: Testing & Documentation [PLANNED]
 * [ ] Test with multiple array configurations
