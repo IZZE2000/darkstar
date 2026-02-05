@@ -19,6 +19,7 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 | **F**   | Fixes/Bugfixes       | F6       |
 | **DX**  | Developer Experience | DX1      |
 | **ARC** | Architecture         | ARC1     |
+| **IP**  | Inverter Profiles    | IP1      |
 
 ---
 
@@ -97,7 +98,7 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 
 ---
 
-### [PLANNED] REV // ARC13 — Multi-Inverter Profile System
+### [DONE] REV // ARC13 — Multi-Inverter Profile System
 
 **Goal:** Enable Darkstar to support multiple inverter brands (Fronius, Victron, Solinteg, etc.) through a flexible profile system without requiring core code changes.
 
@@ -150,11 +151,62 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] Update `docs/SETUP_GUIDE.md` with profile selection instructions
 * [x] **COMPLETED 2026-02-05**
 
-#### Phase 6: Community Expansion [PLANNED]
-* [ ] Accept community-contributed profiles (Victron, Goodwe, Solinteg, etc.)
-* [ ] Add profile marketplace documentation
-* [ ] Implement profile versioning and update notifications
-* [ ] Add profile auto-detection from HA entities (optional enhancement)
-* [ ] **USER VERIFICATION AND COMMIT**
+---
+
+### [PLANNED] REV // IP1 — Fronius Profile Corrections
+
+**Goal:** Fix critical issues in the Fronius inverter profile based on official modbus documentation and beta user feedback.
+
+**Context:** After ARC13 completion, beta tester Kristoffer reported incorrect mode mappings. Analysis of the [Fronius modbus documentation](https://github.com/callifo/fronius_modbus) revealed:
+1. "Auto" mode is self-consumption with export (NOT zero export)
+2. Fronius requires mode to be set BEFORE controls (order dependency)
+3. Missing critical entities: Minimum Reserve and Grid Charge Power
+4. Grid charging must be rounded to 10W increments
+
+**Plan:**
+
+#### Phase 1: Mode Mapping Corrections [PLANNED]
+* [ ] Update `profiles/fronius.yaml` mode mappings:
+  * [ ] `self_consumption: "Auto"` (was incorrectly mapped to zero_export)
+  * [ ] `export: "Discharge to grid"` (update from current)
+  * [ ] `hold: "Block discharging"` (add new)
+  * [ ] `charge_from_grid: "Charge from grid"` (keep)
+  * [ ] `idle: "Maximum Storage"` (update)
+  * [ ] `zero_export: null` (may not exist on Fronius, needs beta testing)
+* [ ] Update mode descriptions to match Fronius documentation
+* [ ] Add comments explaining each mode's behavior
+* [ ] **COMMIT:** Mode mapping corrections
+
+#### Phase 2: Missing Entity Additions [PLANNED]
+* [ ] Add `minimum_reserve` to required entities in Fronius profile
+* [ ] Add `grid_charge_power` to required entities in Fronius profile
+* [ ] Update `profiles/schema.yaml` to document these entities
+* [ ] Add suggested entity mappings to `defaults.suggested_entities`
+* [ ] Update executor config to handle new entities
+* [ ] **COMMIT:** Entity additions
+
+#### Phase 3: Entity Setting Order Fix [PLANNED]
+* [ ] Add profile behavior flag: `requires_mode_settling: true`
+* [ ] Add profile behavior parameter: `mode_settling_ms: 500`
+* [ ] Update `executor/actions.py` to check `profile.behavior.requires_mode_settling`
+* [ ] Add 500ms delay after mode changes when flag is true
+* [ ] Ensure delay only applies to Fronius (profile-specific)
+* [ ] **COMMIT:** Mode settling implementation
+
+#### Phase 4: Grid Charging Behavior [PLANNED]
+* [ ] Add `grid_charge_round_step_w: 10.0` to Fronius behavior section
+* [ ] Update executor controller to round grid charge commands to 10W
+* [ ] Document 50% efficiency limitation in profile comments
+* [ ] Add validation to prevent odd charging behavior
+* [ ] **COMMIT:** Grid charging rounding
+
+#### Phase 5: Testing & Documentation [PLANNED]
+* [ ] Test with Fronius beta users (Kristoffer, Simon)
+* [ ] Verify mode changes work correctly with new mappings
+* [ ] Verify entity order works (mode → controls)
+* [ ] Verify grid charging rounds to 10W increments
+* [ ] Update `docs/SETUP_GUIDE.md` with Fronius-specific notes
+* [ ] Document known limitations (zero_export may not exist)
+* [ ] **COMMIT:** Testing results and documentation
 
 ---
