@@ -220,7 +220,7 @@ class TestOverrideEvaluatorExcessPVHeating:
         state = SystemState(
             current_pv_kw=5.0,
             current_load_kw=2.0,  # Excess = 3 kW
-            current_soc_percent=60.0,  # Healthy
+            current_soc_percent=95.0,  # Healthy (>= 95%)
             current_water_temp=55.0,  # Below boost temp
         )
 
