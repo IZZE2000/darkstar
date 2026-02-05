@@ -218,8 +218,15 @@ async def generate_forward_slots(
     except Exception as e:
         logger.warning(f"⚠️ Astro init failed: {e}")
 
-    # Get PV capacity for fallback scaling (default 10kW)
-    pv_capacity_kw = engine.config.get("system", {}).get("solar", {}).get("capacity_kw", 10.0)
+    # Get total PV capacity for fallback scaling (REV ARC14)
+    system_config = engine.config.get("system", {})
+    solar_arrays = system_config.get("solar_arrays", [])
+    if solar_arrays and isinstance(solar_arrays, list):
+        pv_capacity_kw = sum(float(a.get("kwp", 0.0)) for a in solar_arrays)
+    else:
+        # Fallback to legacy single array or default
+        solar_cfg = system_config.get("solar_array", {})
+        pv_capacity_kw = float(solar_cfg.get("kwp", 10.0))
 
     if has_pv_models:
         for q in quantiles:

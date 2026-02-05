@@ -188,10 +188,11 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] Log per-array forecast values at DEBUG level
 * [x] **USER VERIFICATION AND COMMIT**
 
-#### Phase 3: ML & Aurora Integration [PLANNED]
-* [ ] Verify `ml/forward.py` uses aggregate weather (no changes needed)
-* [ ] Ensure ML models learn from aggregate PV (total actual vs total predicted)
-* [ ] **USER VERIFICATION AND COMMIT**
+#### Phase 3: ML & Aurora Integration [DONE]
+* [x] Update `ml/forward.py`: Calculate total PV capacity for radiation fallback
+* [x] Update `backend/learning/engine.py`: Aggregate multiple PV sensors instead of overwriting
+* [x] Verify aggregate learning logic with tests
+* [x] **USER VERIFICATION AND COMMIT**
 
 #### Phase 4: Frontend UI [PLANNED]
 * [ ] Add Solar Arrays editor in Settings (add/remove arrays)
