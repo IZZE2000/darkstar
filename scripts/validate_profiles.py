@@ -40,8 +40,8 @@ def validate_profile(file_path):
     # 3. Entities Check
     entities = data.get("entities", {})
     required_entities = entities.get("required", {})
-    if "work_mode" not in required_entities:
-        errors.append("Missing entities.required.work_mode")
+    if "work_mode_entity" not in required_entities:
+        errors.append("Missing entities.required.work_mode_entity")
 
     # 4. Mode Completeness
     modes = data.get("modes", {})

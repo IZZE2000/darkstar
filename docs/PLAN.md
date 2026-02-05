@@ -153,7 +153,7 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 
 ---
 
-### [PLANNED] REV // IP1 — Fronius Profile Corrections
+### [IN PROGRESS] REV // IP1 — Fronius Profile Corrections
 
 **Goal:** Fix critical issues in the Fronius inverter profile based on official modbus documentation and beta user feedback.
 
@@ -199,5 +199,13 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] Remove `if` conditions restricting non-amd64 builds
 * [x] **COMMIT:** feat(ci): enable multi-arch builds for dev
 * [x] **COMPLETED 2026-02-05**
+
+#### Phase 6: Config Validation & UX Fixes [DONE]
+* [x] **Backend:** Implement profile-aware config validation (removing hardcoded errors)
+* [x] **Frontend:** Update `types.ts` to loosen `required` fields
+* [x] **Frontend:** Hide "Grid Charging Switch" for Fronius profile
+* [x] **Frontend:** Add missing Fronius entities (`minimum_reserve`, `grid_charge_power`)
+* [x] **COMMIT:** fix(config): profile-aware validation and ui updates
+
 
 ---

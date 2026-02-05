@@ -55,6 +55,7 @@ def test_validate_config_valid_config_no_issues():
             "inverter": {
                 "work_mode_entity": "select.inverter_work_mode",
                 "grid_charging_entity": "switch.inverter_grid_charging",
+                "soc_target_entity": "number.soc_target",
             },
         },
         "system": {"has_battery": True},

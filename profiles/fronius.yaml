@@ -19,13 +19,13 @@ capabilities:
 
 entities:
   required:
-    work_mode: "select.fronius_battery_mode"
-    max_charge_power: "number.fronius_charge_power"
-    max_discharge_power: "number.fronius_discharge_power"
-    minimum_reserve: "number.fronius_minimum_reserve"
-    grid_charge_power: "number.fronius_grid_charge_power"
+    work_mode_entity: "select.fronius_battery_mode"
+    max_charging_power_entity: "number.fronius_charge_power"
+    max_discharging_power_entity: "number.fronius_discharge_power"
+    minimum_reserve_entity: "number.fronius_minimum_reserve"
+    grid_charge_power_entity: "number.fronius_grid_charge_power"
   optional:
-    soc_target: "input_number.master_soc_target"
+    soc_target_entity: "input_number.master_soc_target"
 
 modes:
   # Export mode - Battery discharges to grid for profit
@@ -37,7 +37,7 @@ modes:
   # Zero export mode - Fronius does not appear to have a dedicated zero-export mode select.
   # We map it to Auto (Self consumption) which prioritizes local load.
   zero_export:
-    value: null
+    value: "Auto"
     description: "Prioritize local load (Note: Fronius handles export via dynamic power limit)"
     requires_grid_charging: false
 

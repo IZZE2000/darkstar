@@ -29,14 +29,14 @@ capabilities:
 entities:
   # These are defaults, users usually override them in config.yaml
   required:
-    work_mode: "select.deye_work_mode"
-    soc_target: "number.deye_battery_soc_limit_1"
-    grid_charging_enable: "switch.deye_grid_charging_1"
+    work_mode_entity: "select.deye_work_mode"
+    soc_target_entity: "number.deye_battery_soc_limit_1"
+    grid_charging_entity: "switch.deye_grid_charging_1"
 
   optional:
-    max_charging_current: "number.deye_battery_max_charge_current"
-    max_discharging_current: "number.deye_battery_max_discharge_current"
-    grid_max_export_power: "number.deye_grid_export_limit"
+    max_charging_current_entity: "number.deye_battery_max_charge_current"
+    max_discharging_current_entity: "number.deye_battery_max_discharge_current"
+    grid_max_export_power_entity: "number.deye_grid_export_limit"
 
 modes:
   export:

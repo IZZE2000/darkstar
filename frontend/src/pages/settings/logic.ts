@@ -15,6 +15,13 @@ export const shouldRenderField = (
         if (typeof expectedVal === 'boolean') {
             return (currentVal === 'true') === expectedVal
         }
+
+        // Support array of valid values (OR logic)
+        if (Array.isArray(expectedVal)) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            return expectedVal.includes(currentVal as any) || expectedVal.some((v) => String(v) === currentVal)
+        }
+
         // Otherwise, do a direct string comparison
         return currentVal === expectedVal
     }

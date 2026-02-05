@@ -30,7 +30,7 @@ export interface BaseField {
     /** Conditional visibility based on a single config key */
     showIf?: {
         configKey: string // e.g., 'system.has_water_heater'
-        value?: string | boolean | number // expected value (default: true)
+        value?: string | boolean | number | (string | boolean | number)[] // expected value(s)
         disabledText?: string // overlay text when disabled
     }
     /** All config keys must be truthy for field to be enabled */
@@ -404,11 +404,34 @@ export const systemSections: SettingsSection[] = [
                 path: ['executor', 'inverter', 'work_mode_entity'],
                 type: 'entity',
                 helper: 'Darkstar sets inverter mode (Export/Zero-Export).',
-                required: true,
                 showIf: {
                     configKey: 'system.has_battery',
                     value: true,
                     disabledText: "Enable 'Home battery installed' in System Profile to configure",
+                },
+            },
+            {
+                key: 'executor.inverter.minimum_reserve_entity',
+                label: 'Minimum Reserve',
+                path: ['executor', 'inverter', 'minimum_reserve_entity'],
+                type: 'entity',
+                helper: 'Hard limit for battery discharge.',
+                showIf: {
+                    configKey: 'system.inverter_profile',
+                    value: 'fronius',
+                    disabledText: "Select 'Fronius' profile to configure",
+                },
+            },
+            {
+                key: 'executor.inverter.grid_charge_power_entity',
+                label: 'Grid Charge Power',
+                path: ['executor', 'inverter', 'grid_charge_power_entity'],
+                type: 'entity',
+                helper: 'Target power level when charging from grid.',
+                showIf: {
+                    configKey: 'system.inverter_profile',
+                    value: 'fronius',
+                    disabledText: "Select 'Fronius' profile to configure",
                 },
             },
             {
@@ -417,11 +440,10 @@ export const systemSections: SettingsSection[] = [
                 path: ['executor', 'inverter', 'grid_charging_entity'],
                 type: 'entity',
                 helper: 'Darkstar enables/disables grid→battery charging.',
-                required: true,
                 showIf: {
-                    configKey: 'system.has_battery',
-                    value: true,
-                    disabledText: "Enable 'Home battery installed' in System Profile to configure",
+                    configKey: 'system.inverter_profile',
+                    value: ['deye', 'generic'],
+                    disabledText: 'Not required for selected profile',
                 },
             },
             {

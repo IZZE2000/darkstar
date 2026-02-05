@@ -5,6 +5,7 @@ from typing import Any, cast
 from fastapi import APIRouter, Body, HTTPException
 from ruamel.yaml import YAML
 
+from executor.profiles import get_profile_from_config
 from inputs import load_home_assistant_config, load_notifications_config, load_yaml
 
 logger = logging.getLogger("darkstar.api.config")
@@ -305,37 +306,46 @@ def _validate_config_for_save(config: dict[str, Any]) -> list[dict[str, str]]:
                 )
 
     # Executor: Critical entities (ERROR)
+    # REV IP2: Input validation is now Profile-Aware.
+    # We ask the active profile which entities are strictly required.
     executor_cfg = config.get("executor", {})
-    inverter_cfg = executor_cfg.get("inverter", {})
+    executor_enabled = executor_cfg.get("enabled", True)
+    has_battery = system_cfg.get("has_battery", True)
     input_sensors = config.get("input_sensors", {})
 
-    critical_entities = []
+    if executor_enabled and has_battery:
+        try:
+            active_profile = get_profile_from_config(config)
 
-    # Battery-specific entities
-    if system_cfg.get("has_battery", True):
-        critical_entities.extend(
-            [
-                (
-                    "executor.inverter.work_mode_entity",
-                    inverter_cfg.get("work_mode_entity"),
-                ),
-                (
-                    "executor.inverter.grid_charging_entity",
-                    inverter_cfg.get("grid_charging_entity"),
-                ),
-                ("input_sensors.battery_soc", input_sensors.get("battery_soc")),
-            ]
-        )
+            # Check for missing required entities as defined by the profile
+            missing_entities = active_profile.get_missing_entities(config)
 
-    for field_path, value in critical_entities:
-        if (
-            not value or str(value).strip() == "" or str(value).lower() == "none"
-        ) and executor_cfg.get("enabled", True):
+            for missing_key in missing_entities:
+                issues.append(
+                    {
+                        "severity": "error",
+                        "message": f"Profile '{active_profile.metadata.name}' requires {missing_key} to be configured.",
+                        "guidance": f"Please configure {missing_key} in the Settings - System tab.",
+                    }
+                )
+
+            # Global Requirement: Battery SoC is always needed for battery operations
+            if not input_sensors.get("battery_soc"):
+                issues.append(
+                    {
+                        "severity": "error",
+                        "message": "Executor requires input_sensors.battery_soc (Battery State of Charge).",
+                        "guidance": "Please configure input_sensors.battery_soc in the Settings - System tab.",
+                    }
+                )
+
+        except Exception as e:
+            # Fallback if profile loading fails
             issues.append(
                 {
-                    "severity": "error",
-                    "message": f"Executor is enabled but critical entity {field_path} is not configured.",
-                    "guidance": "Please configure this entity in the Settings - System tab.",
+                    "severity": "warning",
+                    "message": f"Could not load inverter profile for validation: {e!s}",
+                    "guidance": "Check system logs.",
                 }
             )
 
