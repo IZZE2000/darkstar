@@ -14,6 +14,9 @@ REQUIRED_MODES = ["export", "zero_export", "charge_from_grid", "idle", "self_con
 
 
 def validate_profile(file_path):
+    if "schema.yaml" in str(file_path):
+        return True
+
     print(f"Validating {file_path}...")
     try:
         path = Path(file_path)

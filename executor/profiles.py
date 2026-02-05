@@ -81,6 +81,9 @@ class WorkMode:
     value: str | None
     description: str = ""
     requires_grid_charging: bool = False  # Whether this mode needs grid_charging_entity=ON
+    # Composite mode settings (Rev IP2)
+    # Maps profile entity key -> value to set
+    set_entities: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -266,6 +269,7 @@ def _parse_work_mode(mode_data: dict[str, Any] | None) -> WorkMode:
         value=mode_data.get("value"),
         description=mode_data.get("description", ""),
         requires_grid_charging=mode_data.get("requires_grid_charging", False),
+        set_entities=mode_data.get("set_entities", {}),
     )
 
 

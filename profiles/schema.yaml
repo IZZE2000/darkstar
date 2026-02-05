@@ -62,6 +62,12 @@ entities:
 
     # Resource management
     minimum_reserve: null                  # Minimum battery reserve percentage (%) - Required for Fronius
+66:
+67:     # Custom / Inverter-Specific Entities (Rev IP2)
+68:     # You can define any key here (e.g., ems_mode, charge_cmd) and reference it in 'set_entities'.
+69:     # The executor will look these up in config.yaml under 'executor.inverter'.
+70:     # ems_mode: null
+71:     # forced_charge_cmd: null
 
   # Optional entities (gracefully handled if missing)
   optional:
@@ -93,6 +99,9 @@ modes:
     value: "Export First"                  # The exact string/value to write to HA
     description: "Battery discharge to grid enabled"
     requires_grid_charging: false          # Whether this mode requires grid_charging_entity=ON
+    # set_entities:                        # Optional: simultaneous entity updates (Rev IP2)
+    #   ems_mode: "Forced Mode"            # Key must match a custom entity key
+    #   discharge_cmd: "Start"
 
   # Zero export mode - Battery covers house load, no grid export
   zero_export:

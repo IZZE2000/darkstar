@@ -379,6 +379,45 @@ class ActionDispatcher:
         # Apply work mode change
         success = self.ha.set_select_option(entity, target_mode)
 
+        # Handle composite mode entities (Rev IP2)
+        # Some inverters (e.g. Sungrow) require setting multiple entities for a single mode change
+        if success and self.profile:
+            # unique string value -> mode object lookup
+            mode_obj = None
+            for m in [
+                self.profile.modes.export,
+                self.profile.modes.zero_export,
+                self.profile.modes.self_consumption,
+                self.profile.modes.charge_from_grid,
+                self.profile.modes.force_discharge,
+                self.profile.modes.idle,
+            ]:
+                if m and m.value == target_mode:
+                    mode_obj = m
+                    break
+
+            if mode_obj and mode_obj.set_entities:
+                logger.debug("Applying composite mode entities for %s", target_mode)
+                for key, val in mode_obj.set_entities.items():
+                    # Look up entity ID from custom_entities config
+                    # Fallback to standard entities checks if needed, but custom_entities is preferred for profile-specifics
+                    entity_id = self.config.inverter.custom_entities.get(key)
+                    if not _is_entity_configured(entity_id):
+                        logger.warning(
+                            "Profile requires setting '%s' to '%s', but entity is not configured",
+                            key,
+                            val,
+                        )
+                        continue
+
+                    logger.info("Composite Mode: Setting %s to %s", entity_id, val)
+                    if isinstance(val, int | float):
+                        self.ha.set_number(entity_id, float(val))
+                    elif isinstance(val, str):
+                        self.ha.set_select_option(entity_id, val)
+                    elif isinstance(val, bool):
+                        self.ha.set_switch(entity_id, val)
+
         # Mode settling delay (Rev IP1 Phase 3)
         if success and self.profile and self.profile.behavior.requires_mode_settling:
             settle_ms = self.profile.behavior.mode_settling_ms

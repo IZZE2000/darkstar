@@ -217,3 +217,27 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 
 
 ---
+
+### [DONE] REV // IP2 — Sungrow Profile & Multi-Entity Support
+
+**Goal:** Implement full support for Sungrow inverters which require setting multiple entities for a single mode change (Composite Modes).
+
+**Context:** Sungrow integration (via Modbus HA) requires setting both an EMS mode and a specific charge/discharge command to achieve standard behaviors. The current profile system only supports 1-to-1 mode mapping.
+
+**Plan:**
+
+#### Phase 1: Executor Core Updates [DONE]
+* [x] Update `InverterConfig` to accept dynamic `custom_entities` (for arbitrary profile keys)
+* [x] Update `WorkMode` in profiles to support `set_entities` (map of entity_key -> value)
+* [x] Refactor `ActionDispatcher` to handle multi-entity updates for a single mode
+* [x] Verify backward compatibility with existing profiles (Deye, Fronius)
+* [x] **COMPLETED 2026-02-05**
+
+#### Phase 2: Sungrow Profile [DONE]
+* [x] Create `profiles/sungrow.yaml`
+* [x] Map "Export", "Zero Export", "Grid Charge" to Sungrow specific entity combinations
+* [x] Set defaults (20ms delay, Watts control) based on beta feedback
+* [x] Validate profile using `validate_profiles.py`
+* [x] **COMPLETED 2026-02-05**
+
+---

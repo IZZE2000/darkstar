@@ -45,6 +45,8 @@ class InverterConfig:
     control_unit: str = "A"
     max_charging_power_entity: str | None = None
     max_discharging_power_entity: str | None = None
+    # Dynamic entities for complex profiles (Rev IP2)
+    custom_entities: dict[str, str | None] = field(default_factory=dict)
 
 
 @dataclass
@@ -201,6 +203,24 @@ def load_executor_config(config_path: str = "config.yaml") -> ExecutorConfig:
         max_discharging_power_entity=_str_or_none(
             inverter_data.get("max_discharging_power_entity")
         ),
+        # Capture all other keys as custom entities (Rev IP2)
+        custom_entities={
+            k: _str_or_none(v)
+            for k, v in inverter_data.items()
+            if k
+            not in {
+                "work_mode_entity",
+                "work_mode_export",
+                "work_mode_zero_export",
+                "grid_charging_entity",
+                "max_charging_current_entity",
+                "max_discharging_current_entity",
+                "grid_max_export_power_entity",
+                "control_unit",
+                "max_charging_power_entity",
+                "max_discharging_power_entity",
+            }
+        },
     )
 
     water_data: dict[str, Any] = (

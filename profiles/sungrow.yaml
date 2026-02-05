@@ -1,0 +1,104 @@
+metadata:
+  name: "sungrow"
+  version: "1.0.0"
+  description: "Sungrow SHx Hybrid Inverters (Modbus)" # Integration: https://github.com/mkaiser/Sungrow-SHx-Inverter-Modbus-Home-Assistant
+  supported_brands: ["Sungrow"]
+  author: "@ergetie"
+
+capabilities:
+  grid_charging_control: true
+  watts_based_control: true
+  service_call_mode: false
+  separate_grid_charging_switch: false
+  supports_export_mode: true
+  supports_zero_export: true
+  supports_self_consumption: true
+  supports_soc_target: false          # Unclear from docs, safe to assume false or managed via input_number helper
+  supports_grid_export_limit: true
+  supports_force_discharge: true
+
+entities:
+  required:
+    work_mode_entity: null               # We use custom entities for mode control
+    max_charging_power_entity: null
+    max_discharging_power_entity: null
+
+  optional:
+    grid_max_export_power_entity: null
+
+modes:
+  # Export mode - Force discharge to grid
+  export:
+    value: "Forced mode"
+    description: "Force discharge battery to grid"
+    requires_grid_charging: false
+    set_entities:
+      ems_mode: "Forced mode"
+      forced_charge_discharge_cmd: "Forced discharge"
+      export_power_limit: 9000    # Ensure export is allowed
+
+  # Zero export mode - Self consumption with explicit 0 limit?
+  # User feedback: "Export limit switch buggy, easier to set limit to 0"
+  zero_export:
+    value: "Self-consumption mode (default)"
+    description: "Self-consumption mode (Stop forced commands)"
+    requires_grid_charging: false
+    set_entities:
+      ems_mode: "Self-consumption mode (default)"
+      forced_charge_discharge_cmd: "Stop (default)"
+      export_power_limit: 0        # Explicitly block export
+
+  # Self-consumption mode - Normal operation
+  self_consumption:
+    value: "Self-consumption mode (default)"
+    description: "Self-consumption mode (Stop forced commands)"
+    requires_grid_charging: false
+    set_entities:
+      ems_mode: "Self-consumption mode (default)"
+      forced_charge_discharge_cmd: "Stop (default)"
+      export_power_limit: 9000    # Ensure export is allowed for excess PV
+
+  # Grid charging mode - Force charge from grid
+  charge_from_grid:
+    value: "Forced mode"
+    description: "Force charge battery from grid"
+    requires_grid_charging: true
+    set_entities:
+      ems_mode: "Forced mode"
+      forced_charge_discharge_cmd: "Forced charge"
+      export_power_limit: 0        # Safety: Block export while forced charging
+
+  # Idle/Standby mode - Stop forced commands
+  idle:
+    value: "Self-consumption mode (default)"
+    description: "Idle (Stop forced commands)"
+    requires_grid_charging: false
+    set_entities:
+      ems_mode: "Self-consumption mode (default)"
+      forced_charge_discharge_cmd: "Stop (default)"
+      export_power_limit: 0        # Safety: Block export while idle
+
+behavior:
+  control_unit: "W"
+  min_charge_w: 100.0
+  round_step_w: 100.0
+  write_threshold_w: 100.0
+  soc_target_is_discharge_floor: true
+  soc_target_is_charge_ceiling: true
+  requires_mode_settling: true        # User reported 20ms requirement
+  mode_settling_ms: 100               # 100ms safe margin
+
+defaults:
+  suggested_entities:
+    work_mode: "input_select.set_sg_ems_mode"  # Fallback/Primary
+    max_charge_power: "input_number.set_sg_battery_max_charge_power"
+    max_discharge_power: "input_number.set_sg_battery_max_discharge_power"
+    grid_max_export_power: "input_number.set_sg_export_power_limit"
+    # Custom Entities
+    ems_mode: "input_select.set_sg_ems_mode"
+    forced_charge_discharge_cmd: "input_select.set_sg_battery_forced_charge_discharge_cmd"
+    export_power_limit: "input_number.set_sg_export_power_limit"
+
+  battery:
+    max_charge_w: 9000
+    max_discharge_w: 9000
