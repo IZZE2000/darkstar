@@ -58,6 +58,10 @@ entities:
 
     # Charging control (required if grid_charging_control is true)
     grid_charging_enable: null             # Grid charging on/off switch
+    grid_charge_power: null                # Max power for grid charging (W/A) - Required for Fronius
+
+    # Resource management
+    minimum_reserve: null                  # Minimum battery reserve percentage (%) - Required for Fronius
 
   # Optional entities (gracefully handled if missing)
   optional:

@@ -165,25 +165,19 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 
 **Plan:**
 
-#### Phase 1: Mode Mapping Corrections [PLANNED]
-* [ ] Update `profiles/fronius.yaml` mode mappings:
-  * [ ] `self_consumption: "Auto"` (was incorrectly mapped to zero_export)
-  * [ ] `export: "Discharge to grid"` (update from current)
-  * [ ] `hold: "Block discharging"` (add new)
-  * [ ] `charge_from_grid: "Charge from grid"` (keep)
-  * [ ] `idle: "Maximum Storage"` (update)
-  * [ ] `zero_export: null` (may not exist on Fronius, needs beta testing)
-* [ ] Update mode descriptions to match Fronius documentation
-* [ ] Add comments explaining each mode's behavior
-* [ ] **COMMIT:** Mode mapping corrections
+#### Phase 1: Mode Mapping Corrections [DONE]
+* [x] Set `zero_export: null` (may not exist on Fronius, needs beta testing)
+* [x] Update mode descriptions to match Fronius documentation
+* [x] Add comments explaining each mode's behavior
+* [x] **COMPLETED 2026-02-05**
 
-#### Phase 2: Missing Entity Additions [PLANNED]
-* [ ] Add `minimum_reserve` to required entities in Fronius profile
-* [ ] Add `grid_charge_power` to required entities in Fronius profile
-* [ ] Update `profiles/schema.yaml` to document these entities
-* [ ] Add suggested entity mappings to `defaults.suggested_entities`
-* [ ] Update executor config to handle new entities
-* [ ] **COMMIT:** Entity additions
+#### Phase 2: Missing Entity Additions [DONE]
+* [x] Add `minimum_reserve` to required entities in Fronius profile
+* [x] Add `grid_charge_power` to required entities in Fronius profile
+* [x] Update `profiles/schema.yaml` to document these entities
+* [x] Add suggested entity mappings to `defaults.suggested_entities`
+* [x] Update executor config to handle new entities (ProfileEntities handles dynamic required fields)
+* [x] **COMPLETED 2026-02-05**
 
 #### Phase 3: Entity Setting Order Fix [PLANNED]
 * [ ] Add profile behavior flag: `requires_mode_settling: true`

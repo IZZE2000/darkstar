@@ -22,29 +22,48 @@ entities:
     work_mode: "select.fronius_battery_mode"
     max_charge_power: "number.fronius_charge_power"
     max_discharge_power: "number.fronius_discharge_power"
+    minimum_reserve: "number.fronius_minimum_reserve"
+    grid_charge_power: "number.fronius_grid_charge_power"
   optional:
     soc_target: "input_number.master_soc_target"
 
 modes:
+  # Export mode - Battery discharges to grid for profit
   export:
     value: "Discharge to grid"
-    description: "Force discharge battery to grid"
+    description: "Force discharge battery to grid (Grid Export)"
+    requires_grid_charging: false
+
+  # Zero export mode - Fronius does not appear to have a dedicated zero-export mode select.
+  # We map it to Auto (Self consumption) which prioritizes local load.
   zero_export:
-    value: "Auto"
-    description: "Normal operation, prioritize local load"
+    value: null
+    description: "Prioritize local load (Note: Fronius handles export via dynamic power limit)"
+    requires_grid_charging: false
+
+  # Self-consumption mode - Normal operation
   self_consumption:
     value: "Auto"
-    description: "Prioritize local consumption"
+    description: "Self-consumption mode (Standard operation)"
+    requires_grid_charging: false
+
+  # Hold mode - Block discharging to preserve battery for high price windows
   hold:
     value: "Block discharging"
-    description: "Keep battery charge for later use"
+    description: "Prevent battery from discharging"
+    requires_grid_charging: false
+
+  # Grid charging mode - Charge battery from grid
   charge_from_grid:
     value: "Charge from grid"
     description: "Force charge battery from AC grid"
     requires_grid_charging: true
+
+  # Idle/Standby mode - Maintain battery level
   idle:
     value: "Maximum Storage"
-    description: "Maintain battery level without active use"
+    description: "Keep battery at maximum SoC level (Standby)"
+    requires_grid_charging: false
 
 behavior:
   control_unit: "W"
@@ -59,6 +78,8 @@ defaults:
     work_mode: "select.fronius_gen24_battery_mode"
     max_charge_power: "number.fronius_gen24_battery_max_charge_power"
     max_discharge_power: "number.fronius_gen24_battery_max_discharge_power"
+    minimum_reserve: "number.fronius_gen24_battery_minimum_reserve"
+    grid_charge_power: "number.fronius_gen24_battery_grid_charge_power"
   executor:
     control_unit: "W"
   battery:
