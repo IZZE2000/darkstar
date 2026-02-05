@@ -291,6 +291,8 @@ async def generate_forward_slots(
                 pv_kw = (rad / 1000.0) * pv_capacity_kw * efficiency
                 pv_kwh = pv_kw * 0.25  # 15-min slot = 0.25 hours
 
+                # Use radiation to estimate PV output
+
                 # Apply uncertainty bands
                 if q == "p10":
                     series[idx] = max(0.0, pv_kwh * 0.7)

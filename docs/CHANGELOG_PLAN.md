@@ -3,6 +3,58 @@
 This document contains the archive of all completed revisions. It serves as the historical record of technical decisions and implemented features.
 
 ---
+### [DONE] REV // ARC14 — Multi-Array PV (MPPT) Support
+
+**Goal:** Enable Darkstar to support multiple solar arrays/MPPT strings with different orientations (azimuth/tilt) by aggregating forecasts while maintaining ML learning accuracy.
+
+**Context:** Currently Darkstar only supports a single solar array configuration. Users with multiple roof orientations (e.g., south + east arrays) or ground-mount + roof combinations need accurate forecasting that accounts for different panel angles. The `open-meteo-solar-forecast` library natively supports multiple arrays via list parameters, but we need to integrate this into Darkstar's architecture properly.
+
+**Key Decisions:**
+- **Aggregate forecasts**: Store only total PV forecast in DB (per-array granularity unnecessary for planning)
+- **ML learning**: Continue learning aggregate bias (system handles shadows/limitations automatically)
+- **Config format**: Array-based config allows 1-6 arrays (residential)
+- **API optimization**: Library makes N calls for N arrays (acceptable within Open-Meteo limits)
+
+**Plan:**
+
+#### Phase 1: Configuration & Validation [DONE]
+* [x] Update `config.default.yaml`: Change `solar_array` (object) → `solar_arrays` (array)
+* [x] Add validation: 1-6 arrays max, 50 kWp per array, 500 kWp total
+* [x] Add migration logic: Auto-convert legacy `solar_array` to single-item `solar_arrays`
+* [x] Add config validation in backend startup
+* [x] **USER VERIFICATION AND COMMIT**
+
+#### Phase 2: Forecast Fallback Integration [DONE]
+* [x] Modify `inputs.py`: Update OpenMeteoSolarForecast call to pass lists
+* [x] Pass array of azimuths, tilts, and kWp values to library
+* [x] Aggregate returned estimates (library already sums them)
+* [x] Add per-array logging for debugging (does any array give error or fail?)
+* [x] Log per-array forecast values at DEBUG level
+* [x] **USER VERIFICATION AND COMMIT**
+
+#### Phase 3: ML & Aurora Integration [DONE]
+* [x] Update `ml/forward.py`: Calculate total PV capacity for radiation fallback
+* [x] Update `backend/learning/engine.py`: Aggregate multiple PV sensors instead of overwriting
+* [x] Verify aggregate learning logic with tests
+* [x] **USER VERIFICATION AND COMMIT**
+
+#### Phase 4: Frontend UI [DONE]
+* [x] Add Solar Arrays editor in Settings (add/remove arrays up to 6)
+* [x] Display total kWp and per-array orientations
+* [x] Integrated with backend via JSON serialization
+* [x] **USER VERIFICATION AND COMMIT**
+
+#### Phase 5: Testing & Documentation [DONE]
+* [x] Configuration Testing: Validated single, dual, max arrays, and invalid scenarios.
+* [x] Forecast Integration: Verified multi-array aggregation and per-array logging.
+* [x] ML & Learning: Confirmed aggregate bias correction and radiation fallback.
+* [x] Frontend UI: Verified SolarArraysEditor integration and validation.
+* [x] Quality Assurance: Reviewed code, types, and error handling.
+* [x] Documentation: Updated README.md and SETUP_GUIDE.md.
+* [x] Final Validation: Verified full Aurora forward pass with multi-array capacity.
+* [x] **USER VERIFICATION AND COMMIT**
+
+---
 
 ### [DONE] REV // DX14 — Config Soft Merge Improvement
 

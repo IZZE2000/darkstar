@@ -84,23 +84,29 @@ Already configured? Learn how to operate the system daily:
 Main configuration for your system:
 
 ```yaml
-# Battery specifications
-battery:
-  capacity_kwh: 10.0
-  min_soc_percent: 15
-  max_soc_percent: 95
-  max_charge_power_kw: 5.0
+# Solar arrays (Up to 6 supported)
+system:
+  solar_arrays:
+    - name: "Roof South"
+      azimuth: 180
+      tilt: 35
+      kwp: 6.5
+    - name: "Garage West"
+      azimuth: 270
+      tilt: 20
+      kwp: 4.0
 
 # Your Home Assistant sensor mappings
 input_sensors:
-  battery_soc: sensor.inverter_battery
-  total_pv_production: sensor.inverter_pv_total
-  total_load_consumption: sensor.inverter_load_total
+  battery_soc: sensor.inverter_battery_soc
+  pv_power: sensor.inverter_pv_power
+  load_power: sensor.inverter_load_power
+  # Darkstar automatically aggregates all production sensors
+  # if you use sensor.pv_total or similar integration.
 
 # Nordpool price area
 nordpool:
   price_area: "SE4"
-  currency: "SEK"
 ```
 
 ### `secrets.yaml`
@@ -133,12 +139,12 @@ executor:
     temp_max: 85       # Max temp for PV surplus dumping
 ```
 
-| Setting | Default | When Used |
-|---------|---------|-----------|
-| `temp_off` | 40°C | Idle mode, no active heating |
-| `temp_normal` | 60°C | Planner schedules heating |
-| `temp_boost` | 70°C | You press "Water Boost" button |
-| `temp_max` | 85°C | Excess PV with full battery |
+| Setting       | Default | When Used                      |
+| ------------- | ------- | ------------------------------ |
+| `temp_off`    | 40°C    | Idle mode, no active heating   |
+| `temp_normal` | 60°C    | Planner schedules heating      |
+| `temp_boost`  | 70°C    | You press "Water Boost" button |
+| `temp_max`    | 85°C    | Excess PV with full battery    |
 
 
 ## Home Assistant Integration

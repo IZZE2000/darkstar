@@ -22,8 +22,10 @@ Enable the hardware you actually have.
 ### 1.2 Location & Solar Array
 Darkstar uses the **Open-Meteo API** to predict your solar production based on weather forecasts.
 - **Latitude / Longitude**: Must be accurate for weather-based forecasting.
-- **Solar Azimuth / Tilt**: 180° Azimuth is South. Tilt is the angle of your panels.
-- **Solar Capacity (kWp)**: The total peak DC power of your panels (e.g., 10.5).
+- **Solar Arrays**: You can configure up to **6 independent solar arrays** (e.g., South Roof, West Garage).
+    - **Azimuth / Tilt**: 180° Azimuth is South. Tilt is the angle of your panels.
+    - **Capacity (kWp)**: The peak DC power for each specific array.
+Darkstar automatically aggregates these arrays into a single site forecast while accounting for their individual orientations.
 
 ### 1.3 Battery Specifications (Hardware Limits)
 - **Battery Capacity (kWh)**: The total energy your battery can hold. Darkstar uses this alongside your SoC limits to determine the "usable window".
