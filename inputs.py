@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import math
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -13,6 +14,8 @@ from open_meteo_solar_forecast import OpenMeteoSolarForecast
 from backend.core.cache import cache_sync
 from ml.api import get_forecast_slots
 from ml.weather import get_weather_volatility
+
+logger = logging.getLogger("darkstar.inputs")
 
 # --- Async Helper ---
 _ha_client: httpx.AsyncClient | None = None
@@ -506,17 +509,37 @@ async def _get_forecast_data_async(
     latitude = float(location.get("latitude", 59.3))
     longitude = float(location.get("longitude", 18.1))
 
-    # Support for Multi-Array (REV ARC14 Phase 1 compatibility)
+    # Support for Multi-Array (REV ARC14 Phase 2)
     solar_arrays = system_config.get("solar_arrays", [])
-    if solar_arrays and isinstance(solar_arrays, list):
-        solar_array = solar_arrays[0]
+    if not solar_arrays or not isinstance(solar_arrays, list):
+        # Fallback to legacy single array or default
+        legacy_cfg = system_config.get("solar_array", {})
+        solar_array = legacy_cfg if isinstance(legacy_cfg, dict) else {}
+        azimuth_list = [float(solar_array.get("azimuth", 180))]
+        tilt_list = [float(solar_array.get("tilt", 30))]
+        kwp_list = [float(solar_array.get("kwp", 5.0))]
+        logger.debug("Falling back to legacy solar_array for forecast")
     else:
-        solar_cfg = system_config.get("solar_array", {})
-        solar_array = solar_cfg if isinstance(solar_cfg, dict) else {}
-
-    kwp = float(solar_array.get("kwp", 5.0))
-    azimuth = float(solar_array.get("azimuth", 180))
-    tilt = float(solar_array.get("tilt", 30))
+        azimuth_list = []
+        tilt_list = []
+        kwp_list = []
+        for i, array in enumerate(solar_arrays):
+            a_idx = i + 1
+            name = array.get("name", f"Array {a_idx}")
+            az = float(array.get("azimuth", 180))
+            ti = float(array.get("tilt", 30))
+            kp = float(array.get("kwp", 0.0))
+            azimuth_list.append(az)
+            tilt_list.append(ti)
+            kwp_list.append(kp)
+            logger.debug(
+                "Solar array %d (%s) configured: %.1fkWp, Azimuth: %.0f, Tilt: %.0f",
+                a_idx,
+                name,
+                kp,
+                az,
+                ti,
+            )
 
     timezone = str(config.get("timezone", "Europe/Stockholm"))
     local_tz = pytz.timezone(timezone)
@@ -533,9 +556,9 @@ async def _get_forecast_data_async(
             async with OpenMeteoSolarForecast(
                 latitude=latitude,
                 longitude=longitude,
-                declination=tilt,
-                azimuth=azimuth,
-                dc_kwp=kwp,
+                declination=tilt_list,
+                azimuth=azimuth_list,
+                dc_kwp=kwp_list,
             ) as forecast:
                 estimate = await forecast.estimate()
                 return estimate.watts
@@ -630,6 +653,8 @@ async def _get_forecast_data_async(
 
     return {
         "slots": forecast_data,
+        "daily_pv_forecast": daily_pv_forecast,
+        "daily_load_forecast": daily_load_forecast,
     }
 
 

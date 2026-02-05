@@ -180,13 +180,13 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] Add config validation in backend startup
 * [x] **USER VERIFICATION AND COMMIT**
 
-#### Phase 2: Forecast Fallback Integration [PLANNED]
-* [ ] Modify `inputs.py`: Update OpenMeteoSolarForecast call to pass lists
-* [ ] Pass array of azimuths, tilts, and kWp values to library
-* [ ] Aggregate returned estimates (library already sums them)
-* [ ] Add per-array logging for debugging (does any array give error or fail?)
-* [ ] Log per-array forecast values at DEBUG level
-* [ ] **USER VERIFICATION AND COMMIT**
+#### Phase 2: Forecast Fallback Integration [DONE]
+* [x] Modify `inputs.py`: Update OpenMeteoSolarForecast call to pass lists
+* [x] Pass array of azimuths, tilts, and kWp values to library
+* [x] Aggregate returned estimates (library already sums them)
+* [x] Add per-array logging for debugging (does any array give error or fail?)
+* [x] Log per-array forecast values at DEBUG level
+* [x] **USER VERIFICATION AND COMMIT**
 
 #### Phase 3: ML & Aurora Integration [PLANNED]
 * [ ] Verify `ml/forward.py` uses aggregate weather (no changes needed)
