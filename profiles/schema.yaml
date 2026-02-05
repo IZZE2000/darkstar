@@ -96,16 +96,10 @@ modes:
 
   # Grid charging mode - Charge battery from grid
   # NOTE: Some inverters need a specific work_mode, others just use grid_charging_entity
-  grid_charge:
+  charge_from_grid:
     value: null                            # If null, uses zero_export + grid_charging_entity=ON
     description: "Charge battery from grid"
     requires_grid_charging: true           # Deye/SunSynk behavior: work_mode can stay the same
-
-  # Force discharge mode - Max discharge (for reactive peak shaving)
-  force_discharge:
-    value: null                            # If null, not supported as a mode
-    description: "Force discharge at maximum power"
-    requires_grid_charging: false
 
   # Idle/Standby mode - No charging or discharging
   idle:

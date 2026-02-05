@@ -90,7 +90,7 @@ class ProfileModes:
     export: WorkMode = field(default_factory=lambda: WorkMode(value="Export First"))
     zero_export: WorkMode = field(default_factory=lambda: WorkMode(value="Zero Export To CT"))
     self_consumption: WorkMode | None = None
-    grid_charge: WorkMode | None = None  # Grid charging mode
+    charge_from_grid: WorkMode | None = None  # Grid charging mode
     force_discharge: WorkMode | None = None  # Force discharge mode
     idle: WorkMode | None = None  # Idle/standby mode
 
@@ -315,7 +315,7 @@ def parse_profile(data: dict[str, Any]) -> InverterProfile:
         export=_parse_work_mode(modes_data.get("export")),
         zero_export=_parse_work_mode(modes_data.get("zero_export")),
         self_consumption=_parse_work_mode(modes_data.get("self_consumption")),
-        grid_charge=_parse_work_mode(modes_data.get("grid_charge")),
+        charge_from_grid=_parse_work_mode(modes_data.get("charge_from_grid")),
         force_discharge=_parse_work_mode(modes_data.get("force_discharge")),
         idle=_parse_work_mode(modes_data.get("idle")),
     )

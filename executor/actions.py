@@ -406,6 +406,22 @@ class ActionDispatcher:
         """Set grid charging switch."""
         start = time.time()
         entity = self.config.inverter.grid_charging_entity
+        target = "on" if enabled else "off"
+
+        # Handle grid charging via profile logic if available (Rev ARC13 Phase 4)
+        if self.profile and not self.profile.capabilities.separate_grid_charging_switch:
+            logger.debug(
+                "Skipping grid_charging switch: profile '%s' uses mode-based charging",
+                self.profile.metadata.name,
+            )
+            return ActionResult(
+                action_type="grid_charging",
+                success=True,
+                message=f"Handled by work_mode ({target})",
+                new_value=target,
+                skipped=True,
+                duration_ms=int((time.time() - start) * 1000),
+            )
 
         if not _is_entity_configured(entity):
             logger.debug("Skipping grid_charging action: entity not configured")
@@ -417,8 +433,8 @@ class ActionDispatcher:
                 duration_ms=int((time.time() - start) * 1000),
             )
 
+        # Get current state
         current = self.ha.get_state_value(entity)
-        target = "on" if enabled else "off"
 
         if current == target:
             return ActionResult(
@@ -446,10 +462,7 @@ class ActionDispatcher:
             )
 
         # Handle grid charging via profile logic if available
-        if self.profile and self.profile.capabilities.separate_grid_charging_switch:
-            success = self.ha.set_switch(entity, enabled)
-        else:
-            success = self.ha.set_switch(entity, enabled)
+        success = self.ha.set_switch(entity, enabled)
 
         # Verification
         verified_value = None

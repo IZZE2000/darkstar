@@ -155,10 +155,10 @@ class Controller:
                 mode_def = self.profile.modes.export
             elif (
                 slot.charge_kw > 0
-                and self.profile.modes.grid_charge
-                and self.profile.modes.grid_charge.value
+                and self.profile.modes.charge_from_grid
+                and self.profile.modes.charge_from_grid.value
             ):
-                mode_def = self.profile.modes.grid_charge
+                mode_def = self.profile.modes.charge_from_grid
             elif (
                 slot.export_kw == 0
                 and slot.charge_kw == 0

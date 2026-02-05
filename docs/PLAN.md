@@ -131,14 +131,14 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] Show diff preview before applying suggestions
 * [x] **COMPLETED 2026-02-05**
 
-#### Phase 4: Fronius Profile Implementation [PLANNED]
-* [ ] Create `profiles/fronius.yaml` based on community feedback
-* [ ] Implement Watts-based control (vs Amperes for Deye)
-* [ ] Handle single battery mode select (no separate grid charging switch)
-* [ ] Add Fronius-specific mode translations ("Auto", "Discharge to grid", etc.)
-* [ ] Add config seeding defaults for Fronius entities
-* [ ] Beta test with Fronius users (Simon, Kristoffer)
-* [ ] **USER VERIFICATION AND COMMIT**
+#### Phase 4: Fronius Profile Implementation [DONE]
+* [x] Create `profiles/fronius.yaml` based on community feedback
+* [x] Implement Watts-based control (vs Amperes for Deye)
+* [x] Handle single battery mode select (no separate grid charging switch)
+* [x] Add Fronius-specific mode translations ("Auto", "Discharge to grid", etc.)
+* [x] Add config seeding defaults for Fronius entities
+* [x] Beta test with Fronius users (Simon, Kristoffer)
+* [x] **COMPLETED 2026-02-05**
 
 #### Phase 5: Generic Profile & Documentation [PLANNED]
 * [ ] Create `profiles/generic.yaml` for unknown inverters

@@ -54,15 +54,10 @@ modes:
     description: "Prioritize local consumption"
     requires_grid_charging: false
 
-  grid_charge:
+  charge_from_grid:
     value: null                            # Uses zero_export + grid_charging_entity=ON
     description: "Charge battery from grid"
     requires_grid_charging: true
-
-  force_discharge:
-    value: null
-    description: "Force discharge not natively supported via mode only"
-    requires_grid_charging: false
 
   idle:
     value: null

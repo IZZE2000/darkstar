@@ -1,0 +1,63 @@
+metadata:
+  name: "fronius"
+  version: "1.0.0"
+  description: "Fronius Gen24 Inverters (Watts-based)"
+  supported_brands: ["Fronius"]
+  author: "Darkstar"
+
+capabilities:
+  grid_charging_control: true
+  watts_based_control: true
+  service_call_mode: false
+  separate_grid_charging_switch: false
+  supports_export_mode: true
+  supports_zero_export: true
+  supports_self_consumption: true
+  supports_soc_target: true
+  supports_grid_export_limit: true
+  supports_force_discharge: true
+
+entities:
+  required:
+    work_mode: "select.fronius_battery_mode"
+    max_charge_power: "number.fronius_charge_power"
+    max_discharge_power: "number.fronius_discharge_power"
+  optional:
+    soc_target: "input_number.master_soc_target"
+
+modes:
+  export:
+    value: "Discharge to grid"
+    description: "Force discharge battery to grid"
+  zero_export:
+    value: "Auto"
+    description: "Normal operation, prioritize local load"
+  hold:
+    value: "Block discharging"
+    description: "Keep battery charge for later use"
+  charge_from_grid:
+    value: "Charge from grid"
+    description: "Force charge battery from AC grid"
+    requires_grid_charging: true
+  idle:
+    value: "Maximum Storage"
+    description: "Maintain battery level without active use"
+
+behavior:
+  control_unit: "W"
+  min_charge_w: 500.0
+  round_step_w: 100.0
+  write_threshold_w: 100.0
+  soc_target_is_discharge_floor: true
+  soc_target_is_charge_ceiling: true
+
+defaults:
+  suggested_entities:
+    work_mode: "select.fronius_gen24_battery_mode"
+    max_charge_power: "number.fronius_gen24_battery_max_charge_power"
+    max_discharge_power: "number.fronius_gen24_battery_max_discharge_power"
+  executor:
+    control_unit: "W"
+  battery:
+    max_charge_w: 5000
+    max_discharge_w: 5000
