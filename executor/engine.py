@@ -82,6 +82,22 @@ class ExecutorEngine:
         # Load main config for input_sensors section
         self._full_config = load_yaml(config_path)
 
+        # Load inverter profile (REV ARC13 Phase 1)
+        from .profiles import get_profile_from_config
+
+        try:
+            self.inverter_profile = get_profile_from_config(self._full_config)
+            logger.info(
+                "Loaded inverter profile: %s v%s (%s)",
+                self.inverter_profile.metadata.name,
+                self.inverter_profile.metadata.version,
+                ", ".join(self.inverter_profile.metadata.supported_brands),
+            )
+        except Exception as e:
+            logger.error("Failed to load inverter profile: %s", e)
+            # Set profile to None - executor will use existing hardcoded behavior
+            self.inverter_profile = None
+
         # Initialize components
         self.history = ExecutionHistory(
             db_path=self._get_db_path(),
@@ -157,6 +173,7 @@ class ExecutorEngine:
             self.ha_client,
             self.config,
             shadow_mode=self.config.shadow_mode,
+            profile=self.inverter_profile,
         )
         self.status.ha_client_initialized = True
         return True
@@ -1090,6 +1107,7 @@ class ExecutorEngine:
                 self.config.controller,
                 self.config.inverter,
                 self.config.water_heater,
+                self.inverter_profile,
             )
 
             self.status.last_action = decision.reason

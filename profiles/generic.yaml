@@ -1,0 +1,106 @@
+# Generic Inverter Profile
+# This profile provides a baseline for unknown inverter brands.
+# Users should configure entity IDs based on their specific inverter.
+
+metadata:
+  name: "generic"
+  version: "1.0.0"
+  description: "Generic inverter profile for unknown brands with manual configuration"
+  supported_brands:
+    - "Generic"
+    - "Unknown"
+  author: "Darkstar Team"
+  created_at: "2026-02-05"
+  updated_at: "2026-02-05"
+
+capabilities:
+  grid_charging_control: true
+  watts_based_control: false
+  service_call_mode: false
+  separate_grid_charging_switch: true
+  supports_export_mode: true
+  supports_zero_export: true
+  supports_self_consumption: true
+  supports_soc_target: true
+  supports_grid_export_limit: true
+  supports_force_discharge: false
+
+entities:
+  required:
+    work_mode: null
+    soc_target: null
+    grid_charging_enable: null
+
+  optional:
+    max_charging_current: null
+    max_discharging_current: null
+    max_charging_power: null
+    max_discharging_power: null
+    grid_max_export_power: null
+
+modes:
+  export:
+    value: "Export First"
+    description: "Battery discharge to grid enabled"
+    requires_grid_charging: false
+
+  zero_export:
+    value: "Zero Export To CT"
+    description: "Zero export to grid (self-consumption only)"
+    requires_grid_charging: false
+
+  self_consumption:
+    value: null
+    description: "Self-consumption mode"
+    requires_grid_charging: false
+
+  grid_charge:
+    value: null
+    description: "Charge battery from grid"
+    requires_grid_charging: true
+
+  force_discharge:
+    value: null
+    description: "Force discharge at maximum power"
+    requires_grid_charging: false
+
+  idle:
+    value: null
+    description: "Idle standby mode"
+    requires_grid_charging: false
+
+behavior:
+  control_unit: "A"
+  min_charge_a: 10.0
+  round_step_a: 5.0
+  write_threshold_a: 5.0
+  min_charge_w: 500.0
+  round_step_w: 100.0
+  write_threshold_w: 100.0
+  soc_target_is_discharge_floor: true
+  soc_target_is_charge_ceiling: true
+  inverter_ac_limit_kw: 8.0
+
+defaults:
+  battery:
+    nominal_voltage_v: 48.0
+    min_voltage_v: 46.0
+    max_charge_a: 185.0
+    max_discharge_a: 185.0
+    max_charge_w: 5000.0
+    max_discharge_w: 5000.0
+
+  executor:
+    controller:
+      inverter_ac_limit_kw: 8.0
+      min_charge_a: 10.0
+      round_step_a: 5.0
+      write_threshold_a: 5.0
+      min_charge_w: 500.0
+      round_step_w: 100.0
+      write_threshold_w: 100.0
+
+    inverter:
+      control_unit: "A"
+      work_mode_export: "Export First"
+      work_mode_zero_export: "Zero Export To CT"

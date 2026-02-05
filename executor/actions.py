@@ -16,6 +16,7 @@ import requests
 
 from .config import ExecutorConfig
 from .controller import ControllerDecision
+from .profiles import InverterProfile
 
 logger = logging.getLogger(__name__)
 
@@ -274,10 +275,12 @@ class ActionDispatcher:
         ha_client: HAClient,
         config: ExecutorConfig,
         shadow_mode: bool = False,
+        profile: InverterProfile | None = None,
     ):
         self.ha = ha_client
         self.config = config
         self.shadow_mode = shadow_mode
+        self.profile = profile
 
     async def execute(self, decision: ControllerDecision) -> list[ActionResult]:
         """
@@ -373,6 +376,7 @@ class ActionDispatcher:
                 duration_ms=int((time.time() - start) * 1000),
             )
 
+        # Apply work mode change
         success = self.ha.set_select_option(entity, target_mode)
 
         # Verification
@@ -441,7 +445,11 @@ class ActionDispatcher:
                 duration_ms=int((time.time() - start) * 1000),
             )
 
-        success = self.ha.set_switch(entity, enabled)
+        # Handle grid charging via profile logic if available
+        if self.profile and self.profile.capabilities.separate_grid_charging_switch:
+            success = self.ha.set_switch(entity, enabled)
+        else:
+            success = self.ha.set_switch(entity, enabled)
 
         # Verification
         verified_value = None

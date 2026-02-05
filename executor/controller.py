@@ -18,6 +18,7 @@ from dataclasses import dataclass
 # from typing import Any, Dict, Optional, Tuple
 from .config import ControllerConfig, InverterConfig, WaterHeaterConfig
 from .override import OverrideResult, SlotPlan, SystemState
+from .profiles import InverterProfile
 
 logger = logging.getLogger(__name__)
 
@@ -59,10 +60,12 @@ class Controller:
         config: ControllerConfig,
         inverter_config: InverterConfig,
         water_heater_config: WaterHeaterConfig | None = None,
+        profile: InverterProfile | None = None,
     ):
         self.config = config
         self.inverter_config = inverter_config
         self.water_heater_config = water_heater_config or WaterHeaterConfig()
+        self.profile = profile
 
     def decide(
         self,
@@ -145,16 +148,45 @@ class Controller:
 
     def _follow_plan(self, slot: SlotPlan, state: SystemState) -> ControllerDecision:
         """Follow the slot plan for normal operation."""
-        # Determine work mode based on planned export
-        work_mode = (
-            self.inverter_config.work_mode_export
-            if slot.export_kw > 0
-            else self.inverter_config.work_mode_zero_export
-        )
+        # Determine work mode and grid charging based on plan and profile
+        if self.profile:
+            # Determine which mode definition to use
+            if slot.export_kw > 0:
+                mode_def = self.profile.modes.export
+            elif (
+                slot.charge_kw > 0
+                and self.profile.modes.grid_charge
+                and self.profile.modes.grid_charge.value
+            ):
+                mode_def = self.profile.modes.grid_charge
+            elif (
+                slot.export_kw == 0
+                and slot.charge_kw == 0
+                and self.profile.modes.idle
+                and self.profile.modes.idle.value
+            ):
+                mode_def = self.profile.modes.idle
+            else:
+                mode_def = self.profile.modes.zero_export
 
-        # Determine grid charging
-        # Grid charging is enabled when we're actively charging from grid
-        grid_charging = slot.charge_kw > 0 and slot.export_kw == 0
+            # Get the mode value (string to write to HA)
+            work_mode = mode_def.value or self.profile.modes.zero_export.value
+
+            # Determine grid charging
+            # 1. If mode requires it, it's True
+            # 2. Otherwise follow standard logic
+            if mode_def.requires_grid_charging:
+                grid_charging = True
+            else:
+                grid_charging = slot.charge_kw > 0 and slot.export_kw == 0
+        else:
+            # Legacy hardcoded logic for Deye
+            work_mode = (
+                self.inverter_config.work_mode_export
+                if slot.export_kw > 0
+                else self.inverter_config.work_mode_zero_export
+            )
+            grid_charging = slot.charge_kw > 0 and slot.export_kw == 0
 
         # Calculate charge/discharge values
         charge_value, write_charge = self._calculate_charge_limit(slot, state)
@@ -201,14 +233,16 @@ class Controller:
             raw_val = slot.charge_kw * 1000.0
 
             # Round to step
-            step = self.config.round_step_w
+            step = self.profile.behavior.round_step_w if self.profile else self.config.round_step_w
             rounded = round(raw_val / step) * step
 
             # Clamp
-            clamped = max(self.config.min_charge_w, min(self.config.max_charge_w, rounded))
+            min_w = self.profile.behavior.min_charge_w if self.profile else self.config.min_charge_w
+            max_w = self.config.max_charge_w
+            clamped = max(min_w, min(max_w, rounded))
 
-            # Write trigger?
-            should_write = clamped >= self.config.min_charge_w
+            # Decide if we should write
+            should_write = clamped >= min_w
 
             return clamped, should_write
 
@@ -218,13 +252,18 @@ class Controller:
             raw_current = (slot.charge_kw * 1000) / self.config.min_voltage_v
 
             # Round to step
-            rounded = round(raw_current / self.config.round_step_a) * self.config.round_step_a
+            round_step_a = (
+                self.profile.behavior.round_step_a if self.profile else self.config.round_step_a
+            )
+            rounded = round(raw_current / round_step_a) * round_step_a
 
             # Clamp to limits
-            clamped = max(self.config.min_charge_a, min(self.config.max_charge_a, rounded))
+            min_a = self.profile.behavior.min_charge_a if self.profile else self.config.min_charge_a
+            max_a = self.config.max_charge_a
+            clamped = max(min_a, min(max_a, rounded))
 
             # Decide if we should write
-            should_write = clamped >= self.config.min_charge_a
+            should_write = clamped >= min_a
 
             return clamped, should_write
 
@@ -274,6 +313,7 @@ def make_decision(
     config: ControllerConfig | None = None,
     inverter_config: InverterConfig | None = None,
     water_heater_config: WaterHeaterConfig | None = None,
+    profile: InverterProfile | None = None,
 ) -> ControllerDecision:
     """
     Convenience function to make a controller decision.
@@ -290,6 +330,9 @@ def make_decision(
         ControllerDecision with all action parameters
     """
     controller = Controller(
-        config or ControllerConfig(), inverter_config or InverterConfig(), water_heater_config
+        config or ControllerConfig(),
+        inverter_config or InverterConfig(),
+        water_heater_config,
+        profile,
     )
     return controller.decide(slot, state, override)

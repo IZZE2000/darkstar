@@ -105,22 +105,22 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 
 **Plan:**
 
-#### Phase 1: Profile Infrastructure [PLANNED]
-* [ ] Create profile YAML schema (`profiles/schema.yaml`)
-* [ ] Implement profile loader (`executor/profiles.py`) with validation
-* [ ] Add `InverterProfile` dataclass with type hints (capabilities, entities, modes, behavior, defaults)
-* [ ] Add `system.inverter_profile` config key to `config.default.yaml`
-* [ ] Load profile based on config setting with fallback to "generic"
-* [ ] Add profile validation tests
-* [ ] **USER VERIFICATION AND COMMIT**
+#### Phase 1: Profile Infrastructure [DONE]
+* [x] Create profile YAML schema (`profiles/schema.yaml`)
+* [x] Implement profile loader (`executor/profiles.py`) with validation
+* [x] Add `InverterProfile` dataclass with type hints (capabilities, entities, modes, behavior, defaults)
+* [x] Load profile based on config setting with fallback to "generic"
+* [x] Add profile validation tests (17 tests passing)
+* [x] Enhanced modes section to cover ALL inverter actions: export, zero_export, self_consumption, grid_charge, force_discharge, idle
+* [x] **COMPLETED 2026-02-05**
 
-#### Phase 2: Deye Profile Migration [PLANNED]
-* [ ] Create `profiles/deye.yaml` matching current hardcoded behavior
-* [ ] Refactor executor to use profile for entity lookups
-* [ ] Refactor executor to use profile for mode translations
-* [ ] Ensure 100% backward compatibility (existing Deye users unaffected)
-* [ ] Add integration tests comparing old vs new behavior
-* [ ] **USER VERIFICATION AND COMMIT**
+#### Phase 2: Deye Profile Migration [DONE]
+* [x] Create `profiles/deye.yaml` matching current hardcoded behavior
+* [x] Refactor executor to use profile for entity lookups
+* [x] Refactor executor to use profile for mode translations
+* [x] Ensure 100% backward compatibility (existing Deye users unaffected)
+* [x] Add integration tests comparing old vs new behavior (5 tests passing)
+* [x] **COMPLETED 2026-02-05**
 
 #### Phase 3: Config Seeding & Profile Setup Helper [PLANNED]
 * [ ] Add `defaults` section to profile YAML schema (suggested config values)

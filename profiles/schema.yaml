@@ -1,0 +1,170 @@
+# Inverter Profile Schema
+# This schema defines the structure for inverter profiles in Darkstar.
+# Profiles enable support for multiple inverter brands without code changes.
+
+# ==============================================================================
+# METADATA - Profile identification and documentation
+# ==============================================================================
+metadata:
+  name: "generic"               # Profile identifier (lowercase, no spaces)
+  version: "1.0.0"              # Profile version (semantic versioning)
+  description: "Generic inverter profile for unknown brands"
+  supported_brands:             # List of inverter brands this profile supports
+    - "Generic"
+  author: "@ergetie"            # Profile author
+  created_at: "2026-02-05"      # Creation date
+  updated_at: "2026-02-05"      # Last update date
+
+# ==============================================================================
+# CAPABILITIES - Feature flags for inverter-specific capabilities
+# ==============================================================================
+capabilities:
+  # Control capabilities
+  grid_charging_control: true          # Can enable/disable grid charging via entity
+  watts_based_control: false           # Uses Watts instead of Amperes for charge/discharge
+  service_call_mode: false             # Uses HA service calls instead of entity writes
+  separate_grid_charging_switch: true  # Has separate grid charging enable/disable entity
+
+  # Work mode capabilities
+  supports_export_mode: true           # Supports export/discharge mode
+  supports_zero_export: true           # Supports zero-export mode
+  supports_self_consumption: true      # Supports self-consumption mode
+
+  # Advanced features
+  supports_soc_target: true            # Supports SoC target entity
+  supports_grid_export_limit: true     # Supports limiting grid export power
+  supports_force_discharge: false      # Supports force discharge mode (reactive)
+
+# ==============================================================================
+# ENTITIES - Home Assistant entity mappings
+# ==============================================================================
+# Entities are organized into required and optional sections.
+# The executor will fail validation if required entities are missing.
+
+entities:
+  # Required entities (must be configured for executor to work)
+  required:
+    # Inverter control entities
+    work_mode: null                        # Inverter work mode selector
+    soc_target: null                       # Battery SoC target (%)
+
+    # Charging control (required if grid_charging_control is true)
+    grid_charging_enable: null             # Grid charging on/off switch
+
+  # Optional entities (gracefully handled if missing)
+  optional:
+    # Charge/discharge control
+    max_charging_current: null             # Max battery charge current (A)
+    max_discharging_current: null          # Max battery discharge current (A)
+    max_charging_power: null               # Max battery charge power (W)
+    max_discharging_power: null            # Max battery discharge power (W)
+
+    # Grid export control
+    grid_max_export_power: null            # Max grid export power limit (W)
+
+# ==============================================================================
+# MODES - Work mode translations
+# ==============================================================================
+# Maps Darkstar's internal mode names to inverter-specific values.
+# The executor uses these translations when setting the work_mode entity.
+#
+# IMPORTANT: Different inverters handle modes differently:
+# - Some use work_mode for everything (including grid charging)
+# - Some use work_mode + separate grid_charging_entity switch
+# - Some use service calls instead of entity writes
+#
+# This section should define ALL possible operating states for the inverter.
+
+modes:
+  # Export mode - Battery discharges to grid for profit
+  export:
+    value: "Export First"                  # The exact string/value to write to HA
+    description: "Battery discharge to grid enabled"
+    requires_grid_charging: false          # Whether this mode requires grid_charging_entity=ON
+
+  # Zero export mode - Battery covers house load, no grid export
+  zero_export:
+    value: "Zero Export To CT"             # The exact string/value to write to HA
+    description: "Zero export to grid (self-consumption only)"
+    requires_grid_charging: false
+
+  # Self-consumption mode (if different from zero export)
+  self_consumption:
+    value: null                            # Optional, falls back to zero_export if null
+    description: "Self-consumption mode"
+    requires_grid_charging: false
+
+  # Grid charging mode - Charge battery from grid
+  # NOTE: Some inverters need a specific work_mode, others just use grid_charging_entity
+  grid_charge:
+    value: null                            # If null, uses zero_export + grid_charging_entity=ON
+    description: "Charge battery from grid"
+    requires_grid_charging: true           # Deye/SunSynk behavior: work_mode can stay the same
+
+  # Force discharge mode - Max discharge (for reactive peak shaving)
+  force_discharge:
+    value: null                            # If null, not supported as a mode
+    description: "Force discharge at maximum power"
+    requires_grid_charging: false
+
+  # Idle/Standby mode - No charging or discharging
+  idle:
+    value: null                            # If null, uses zero_export + minimal settings
+    description: "Idle standby mode"
+    requires_grid_charging: false
+
+# ==============================================================================
+# BEHAVIOR - Inverter-specific behavioral parameters
+# ==============================================================================
+behavior:
+  # Control unit settings
+  control_unit: "A"                        # "A" for Amperes, "W" for Watts
+
+  # Ampere-based control limits
+  min_charge_a: 10.0                       # Minimum charge current (A)
+  round_step_a: 5.0                        # Round charge/discharge to nearest X amps
+  write_threshold_a: 5.0                   # Min change to trigger write (A)
+
+  # Watt-based control limits
+  min_charge_w: 500.0                      # Minimum charge power (W)
+  round_step_w: 100.0                      # Round charge/discharge to nearest X watts
+  write_threshold_w: 100.0                 # Min change to trigger write (W)
+
+  # Mode behavior
+  soc_target_is_discharge_floor: true      # SoC target acts as discharge floor
+  soc_target_is_charge_ceiling: true       # SoC target acts as grid charge ceiling
+
+  # Safety parameters
+  inverter_ac_limit_kw: 8.0                # Max AC output power (kW)
+
+# ==============================================================================
+# DEFAULTS - Suggested configuration values
+# ==============================================================================
+# These are recommended config.yaml values for this profile.
+# The Settings UI can offer to auto-apply these during setup.
+
+defaults:
+  # Battery specifications (example values)
+  battery:
+    nominal_voltage_v: 48.0
+    min_voltage_v: 46.0
+    max_charge_a: 185.0
+    max_discharge_a: 185.0
+    max_charge_w: 5000.0
+    max_discharge_w: 5000.0
+
+  # Executor controller parameters
+  executor:
+    controller:
+      inverter_ac_limit_kw: 8.0
+      min_charge_a: 10.0
+      round_step_a: 5.0
+      write_threshold_a: 5.0
+      min_charge_w: 500.0
+      round_step_w: 100.0
+      write_threshold_w: 100.0
+
+    inverter:
+      control_unit: "A"
+      work_mode_export: "Export First"
+      work_mode_zero_export: "Zero Export To CT"
