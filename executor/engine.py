@@ -93,6 +93,21 @@ class ExecutorEngine:
                 self.inverter_profile.metadata.version,
                 ", ".join(self.inverter_profile.metadata.supported_brands),
             )
+
+            # Check for missing required entities (REV ARC13 Phase 3)
+            missing = self.inverter_profile.get_missing_entities(self._full_config)
+            if missing:
+                logger.warning(
+                    "⚠️ Inverter profile '%s' configuration incomplete. Missing required entities: %s",
+                    self.inverter_profile.metadata.name,
+                    ", ".join(missing),
+                )
+                # Log suggestions if available
+                suggestions = self.inverter_profile.get_suggested_config()
+                for key in missing:
+                    suggestion = suggestions.get(key)
+                    if suggestion:
+                        logger.warning("   💡 Suggestion for %s: %s", key, suggestion)
         except Exception as e:
             logger.error("Failed to load inverter profile: %s", e)
             # Set profile to None - executor will use existing hardcoded behavior

@@ -122,14 +122,14 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] Add integration tests comparing old vs new behavior (5 tests passing)
 * [x] **COMPLETED 2026-02-05**
 
-#### Phase 3: Config Seeding & Profile Setup Helper [PLANNED]
-* [ ] Add `defaults` section to profile YAML schema (suggested config values)
-* [ ] Implement startup warnings when entities are missing (log profile suggestions)
-* [ ] Create Settings UI "Profile Setup Helper" component
-* [ ] Add API endpoint `GET /api/profiles/{name}/suggestions` (returns suggested config keys)
-* [ ] Add "Apply Suggested Values" button in Settings UI (writes to config.yaml)
-* [ ] Show diff preview before applying suggestions
-* [ ] **USER VERIFICATION AND COMMIT**
+#### Phase 3: Config Seeding & Profile Setup Helper [DONE]
+* [x] Add `defaults` section to profile YAML schema (suggested config values)
+* [x] Implement startup warnings when entities are missing (log profile suggestions)
+* [x] Create Settings UI "Profile Setup Helper" component
+* [x] Add API endpoint `GET /api/profiles/{name}/suggestions` (returns suggested config keys)
+* [x] Add "Apply Suggested Values" button in Settings UI (writes to config.yaml)
+* [x] Show diff preview before applying suggestions
+* [x] **COMPLETED 2026-02-05**
 
 #### Phase 4: Fronius Profile Implementation [PLANNED]
 * [ ] Create `profiles/fronius.yaml` based on community feedback

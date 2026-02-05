@@ -126,6 +126,7 @@ class ProfileDefaults:
 
     battery: dict[str, Any] = field(default_factory=dict)
     executor: dict[str, Any] = field(default_factory=dict)
+    suggested_entities: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -179,6 +180,48 @@ class InverterProfile:
             )
 
         return len(errors) == 0, errors
+
+    def get_suggested_config(self) -> dict[str, Any]:
+        """
+        Return suggested configuration based on profile defaults.
+
+        Returns:
+            Dictionary with suggested config keys and values
+        """
+        suggestions = {}
+
+        # Battery defaults
+        for key, value in self.defaults.battery.items():
+            suggestions[f"battery.{key}"] = value
+
+        # Executor defaults
+        for key, value in self.defaults.executor.items():
+            suggestions[f"executor.{key}"] = value
+
+        # Suggested entities
+        for key, value in self.defaults.suggested_entities.items():
+            suggestions[f"executor.inverter.{key}"] = value
+
+        return suggestions
+
+    def get_missing_entities(self, config: dict[str, Any]) -> list[str]:
+        """
+        Check which required entities are missing in the provided config.
+
+        Args:
+            config: Full configuration dictionary
+
+        Returns:
+            List of missing configuration keys (e.g., 'executor.inverter.work_mode')
+        """
+        missing = []
+        executor_config = config.get("executor", {}).get("inverter", {})
+
+        for entity_key in self.entities.required:
+            if not executor_config.get(entity_key):
+                missing.append(f"executor.inverter.{entity_key}")
+
+        return missing
 
 
 def load_profile_yaml(profile_path: Path) -> dict[str, Any]:
@@ -297,6 +340,7 @@ def parse_profile(data: dict[str, Any]) -> InverterProfile:
     defaults = ProfileDefaults(
         battery=defaults_data.get("battery", {}),
         executor=defaults_data.get("executor", {}),
+        suggested_entities=defaults_data.get("suggested_entities", {}),
     )
 
     return InverterProfile(
@@ -343,7 +387,7 @@ def load_profile(profile_name: str, profiles_dir: str | Path = "profiles") -> In
     try:
         profile = parse_profile(data)
     except Exception as e:
-        logger.error("Failed to parse profile data: %s", e)
+        logger.exception("Failed to parse profile data for profile %s", profile_name)
         raise ValueError(f"Failed to parse profile {profile_name}: {e}") from e
 
     # Validate

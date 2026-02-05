@@ -89,3 +89,11 @@ defaults:
       min_charge_a: 10.0
       round_step_a: 5.0
       write_threshold_a: 5.0
+
+  suggested_entities:
+    work_mode_entity: "select.deye_work_mode"
+    soc_target_entity: "number.deye_battery_soc_limit_1"
+    grid_charging_entity: "switch.deye_grid_charging_1"
+    max_charging_current_entity: "number.deye_battery_max_charge_current"
+    max_discharging_current_entity: "number.deye_battery_max_discharge_current"
+    grid_max_export_power_entity: "number.deye_grid_export_limit"

@@ -11,6 +11,7 @@ import { AdditionalAdvancedNotice, GlobalAdvancedLockedNotice } from './componen
 import { UnsavedChangesBanner } from './components/UnsavedChangesBanner'
 import { NavigationBlockerDialog } from './components/NavigationBlockerDialog'
 import { useUnsavedChangesGuard } from './hooks/useUnsavedChangesGuard'
+import { ProfileSetupHelper } from './components/ProfileSetupHelper'
 
 export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }) => {
     const navigate = useNavigate()
@@ -35,12 +36,17 @@ export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }
     const profile = form['system.inverter_profile']
     const unit = form['executor.inverter.control_unit']
 
-    // Rev F17 feedback: Auto-switch to Amps for Deye profile
     useEffect(() => {
         if (profile === 'deye' && unit !== 'A') {
             handleChange('executor.inverter.control_unit', 'A')
         }
     }, [profile, unit, handleChange])
+
+    const handleApplySuggestions = (suggestions: Record<string, unknown>) => {
+        Object.entries(suggestions).forEach(([key, value]) => {
+            handleChange(key, String(value))
+        })
+    }
 
     const handleTestConnection = async () => {
         setHaTestStatus('Testing...')
@@ -75,6 +81,8 @@ export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }
     return (
         <div className="space-y-4">
             <UnsavedChangesBanner visible={isDirty} onSave={() => save()} saving={saving} />
+
+            <ProfileSetupHelper profileName={profile} onApply={handleApplySuggestions} />
 
             {/* HA Add-on Guidance Banner */}
 

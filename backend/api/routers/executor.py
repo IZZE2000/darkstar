@@ -542,3 +542,60 @@ async def get_health(executor: ExecutorDep) -> dict[str, Any]:
         "warnings": warnings,
         "is_healthy": is_alive == should_be_running and executor.status.last_run_status != "error",
     }
+
+
+@router.get(
+    "/api/profiles/{name}/suggestions",
+    summary="Get Profile Suggestions",
+    description="Returns suggested configuration values for a specific inverter profile.",
+)
+async def get_profile_suggestions(name: str) -> dict[str, Any]:
+    """Return suggested configuration for a profile.
+
+    This helps users set up their inverter by providing recommended entities
+    and parameters for their selected profile.
+    """
+    # Deferred imports to avoid circular dependencies
+    from executor.profiles import load_profile
+    from inputs import load_yaml
+
+    try:
+        profile = load_profile(name)
+        suggestions = profile.get_suggested_config()
+
+        # Calculate missing entities against current config
+        config = load_yaml("config.yaml")
+        missing = profile.get_missing_entities(config)
+
+        # Build diff to show what's already set and what's suggested
+        executor_config = config.get("executor", {}).get("inverter", {})
+        diff = []
+        for key, suggested_value in suggestions.items():
+            # suggestions are flat like "executor.inverter.work_mode"
+            # we want to compare with current values
+            short_key = key.split(".")[-1]
+            current_value = executor_config.get(short_key)
+
+            diff.append(
+                {
+                    "key": key,
+                    "short_key": short_key,
+                    "suggested": suggested_value,
+                    "current": current_value,
+                    "is_missing": not current_value,
+                    "is_different": current_value != suggested_value,
+                }
+            )
+
+        return {
+            "profile_name": name,
+            "profile_description": profile.metadata.description,
+            "suggestions": suggestions,
+            "missing_entities": missing,
+            "diff": diff,
+        }
+    except FileNotFoundError:
+        raise HTTPException(404, f"Profile '{name}' not found") from None
+    except Exception as e:
+        logger.exception("Error getting suggestions for profile %s", name)
+        raise HTTPException(500, str(e)) from e
