@@ -118,6 +118,34 @@ def cleanup_obsolete_keys(config: Any) -> tuple[Any, bool]:
     return config, changed
 
 
+def migrate_solar_arrays(config: Any) -> tuple[Any, bool]:
+    """
+    Migration for REV ARC14: Multi-Array PV Support.
+    Converts legacy 'solar_array' object to 'solar_arrays' list.
+    """
+    changed = False
+
+    if "system" not in config or not isinstance(config["system"], dict):
+        return config, False
+
+    system = config["system"]
+
+    if "solar_array" in system:
+        legacy_array = system.pop("solar_array")
+        if isinstance(legacy_array, dict):
+            # Ensure name is present for migrated array
+            if "name" not in legacy_array:
+                legacy_array["name"] = "Main Array"
+
+            system["solar_arrays"] = [legacy_array]
+            logger.info("Migrated system.solar_array -> system.solar_arrays (list)")
+            changed = True
+        else:
+            logger.warning("Found legacy system.solar_array but it was not a dict.")
+
+    return config, changed
+
+
 def template_aware_merge(default_cfg: dict, user_cfg: dict) -> None:
     """
     Uses default_cfg as the BASE (template).
@@ -184,7 +212,7 @@ async def migrate_config(
     pre_merge_changes = False
 
     # List of legacy cleanup steps
-    legacy_steps = [migrate_battery_config, cleanup_obsolete_keys]
+    legacy_steps = [migrate_battery_config, cleanup_obsolete_keys, migrate_solar_arrays]
 
     for step in legacy_steps:
         try:

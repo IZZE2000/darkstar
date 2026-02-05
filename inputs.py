@@ -506,8 +506,13 @@ async def _get_forecast_data_async(
     latitude = float(location.get("latitude", 59.3))
     longitude = float(location.get("longitude", 18.1))
 
-    solar_cfg = system_config.get("solar_array", {})
-    solar_array: dict[str, Any] = solar_cfg if isinstance(solar_cfg, dict) else {}
+    # Support for Multi-Array (REV ARC14 Phase 1 compatibility)
+    solar_arrays = system_config.get("solar_arrays", [])
+    if solar_arrays and isinstance(solar_arrays, list):
+        solar_array = solar_arrays[0]
+    else:
+        solar_cfg = system_config.get("solar_array", {})
+        solar_array = solar_cfg if isinstance(solar_cfg, dict) else {}
 
     kwp = float(solar_array.get("kwp", 5.0))
     azimuth = float(solar_array.get("azimuth", 180))

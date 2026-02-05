@@ -236,20 +236,73 @@ def _validate_config_for_save(config: dict[str, Any]) -> list[dict[str, str]]:
 
     # Solar: WARNING (PV forecasts will be zero)
     if system_cfg.get("has_solar", True):
-        solar_cfg = system_cfg.get("solar_array", {})
-        try:
-            kwp = float(solar_cfg.get("kwp", 0) or 0)
-        except (ValueError, TypeError):
-            kwp = 0.0
-        if kwp <= 0:
+        solar_arrays = system_cfg.get("solar_arrays", [])
+        if not isinstance(solar_arrays, list):
+            issues.append(
+                {
+                    "severity": "error",
+                    "message": "system.solar_arrays must be a list",
+                    "guidance": "Check your config.yaml structure.",
+                }
+            )
+        elif not solar_arrays:
             issues.append(
                 {
                     "severity": "warning",
-                    "message": "Solar enabled but panel size not configured",
-                    "guidance": "Set system.solar_array.kwp to your PV capacity, "
+                    "message": "Solar enabled but no arrays configured",
+                    "guidance": "Add at least one array to system.solar_arrays, "
                     "or set system.has_solar to false.",
                 }
             )
+        elif len(solar_arrays) > 6:
+            issues.append(
+                {
+                    "severity": "error",
+                    "message": "Too many solar arrays (max 6)",
+                    "guidance": "Darkstar supports up to 6 PV arrays.",
+                }
+            )
+        else:
+            total_kwp = 0.0
+            for i, array in enumerate(solar_arrays):
+                kwp = float(array.get("kwp", 0) or 0)
+                total_kwp += kwp
+                if kwp <= 0:
+                    issues.append(
+                        {
+                            "severity": "warning",
+                            "message": f"Solar array {i + 1} ('{array.get('name', i)}') has no capacity",
+                            "guidance": "Set kwp for each PV array.",
+                        }
+                    )
+                if kwp > 50:
+                    issues.append(
+                        {
+                            "severity": "error",
+                            "message": f"Solar array {i + 1} exceeds max capacity (50kWp)",
+                            "guidance": "Individual arrays are capped at 50kWp for forecasting accuracy.",
+                        }
+                    )
+
+                # Azimuth/Tilt range checks
+                tilt = float(array.get("tilt", 0) or 0)
+                if tilt < 0 or tilt > 90:
+                    issues.append(
+                        {
+                            "severity": "error",
+                            "message": f"Array {i + 1} tilt must be 0-90°",
+                            "guidance": "Check solar_arrays configuration.",
+                        }
+                    )
+
+            if total_kwp > 500:
+                issues.append(
+                    {
+                        "severity": "error",
+                        "message": "Total PV capacity exceeds 500kWp",
+                        "guidance": "Darkstar is optimized for residential systems.",
+                    }
+                )
 
     # Executor: Critical entities (ERROR)
     executor_cfg = config.get("executor", {})

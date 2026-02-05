@@ -1,0 +1,6 @@
+system:
+  solar_array:
+    azimuth: 150
+    kwp: 10.0
+    tilt: 45
+version: 2.5.0
