@@ -30,7 +30,7 @@ entities:
 modes:
   # Export mode - Battery discharges to grid for profit
   export:
-    value: "Discharge to grid"
+    value: "Discharge to Grid"
     description: "Force discharge battery to grid (Grid Export)"
     requires_grid_charging: false
 
@@ -49,19 +49,19 @@ modes:
 
   # Hold mode - Block discharging to preserve battery for high price windows
   hold:
-    value: "Block discharging"
+    value: "Block Discharging"
     description: "Prevent battery from discharging"
     requires_grid_charging: false
 
   # Grid charging mode - Charge battery from grid
   charge_from_grid:
-    value: "Charge from grid"
+    value: "Charge from Grid"
     description: "Force charge battery from AC grid"
     requires_grid_charging: true
 
   # Idle/Standby mode - Maintain battery level
   idle:
-    value: "Maximum Storage"
+    value: "Auto"
     description: "Keep battery at maximum SoC level (Standby)"
     requires_grid_charging: false
 

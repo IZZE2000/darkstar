@@ -311,7 +311,40 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] Verify both Dockerfiles have consistent COPY ordering
 * [x] **COMMIT:** fix(docker): add missing profiles directory to both Dockerfiles
 
-#### Phase 2: Verification [PLANNED]
-* [ ] Build test image locally to confirm profiles are included
-* [ ] Verify profile loading works in container context
-* [ ] Test with different inverter profiles (deye, fronius)
+---
+
+### [IN PROGRESS] REV // IP3 — Inverter Profile Hardening & Fronius Fixes
+
+**Goal:** Fix case-sensitivity issues for Fronius, prevent unconditional execution of unsupported actions, and improve visibility of profile loading errors.
+
+**Context:** Beta testing with Fronius users revealed that Work Mode strings are case-sensitive ("Charge from Grid" vs "Charge from grid"). Additionally, the Executor unconditionally attempts actions (like setting charge limits) even if the profile doesn't support them, causing "Failed" entries in history. Finally, fallback to defaults caused configuration confusion ("Zero Export to CT" appearing for Fronius).
+
+**Plan:**
+
+#### Phase 1: Fronius Profile Casing Fixes [DONE]
+* [x] **Profiles:** Update `profiles/fronius.yaml` to use Title Case for Work Modes (`Charge from Grid`, `Discharge to Grid`, `Block Discharging`).
+* [x] **Validation:** Verify against user-provided allowed options list.
+* [x] **COMMIT:** fix(profiles): correct fronius work mode casing
+
+#### Phase 2: Profile Logic Hardening (Remove Defaults) [PLANNED]
+* [ ] **Executor:** Remove default fallback values for `ProfileModes` in `executor/profiles.py` (e.g., "Zero Export to CT").
+* [ ] **Executor:** Raise explicit `ValueError` if required mode strings are missing in the profile.
+* [ ] **Tests:** Update unit tests to expect errors for incomplete profiles instead of defaults.
+* [ ] **COMMIT:** refactor(executor): remove implicit profile defaults to force explicit config
+
+#### Phase 3: Conditional Execution Logic [PLANNED]
+* [ ] **Executor:** Update `ActionDispatcher.execute` in `executor/actions.py` to check `profile.capabilities` before dispatching actions.
+    *   Check `grid_charging_control` before `_set_grid_charging`.
+    *   Check `supports_soc_target` before `_set_soc_target`.
+* [ ] **Executor:** Skip "Charge Limit" / "Discharge Limit" actions if they are not configured or supported (checking `watts_based_control` / `control_unit` is not enough, need explicit capability check or "Skip if None" logic).
+* [ ] **COMMIT:** fix(executor): conditional execution based on profile capabilities
+
+#### Phase 4: UI Error Handling [PLANNED]
+* [ ] **Backend:** Add `profile_name` and `profile_error` to `ExecutorStatus` API response.
+* [ ] **Frontend:** Display a persistent warning in `Executor.tsx` if the loaded profile differs from the requested one (e.g., config requested "fronius" but fallback loaded "generic").
+* [ ] **COMMIT:** feat(ui): show active profile and load errors in executor dashboard
+
+#### Phase 5: Final Verification [PLANNED]
+* [ ] **Tests:** Run all profile validation tests `uv run pytest tests/test_executor_profiles.py`.
+* [ ] **Manual:** Verify no regression for Deye profile (should still work as before).
+* [ ] **Documentation:** Update `docs/INVERTER_PROFILES_VISION.md` if any architectural assumptions changed.
