@@ -1,8 +1,132 @@
 # Inverter Profiles - Vision & Design
 
-**Status**: Vision Document
-**Created**: 2026-01-26
+**Status**: Implemented (REV IP3)
+**Last Updated**: 2026-02-06
 **Purpose**: Define the foundation for multi-inverter support in Darkstar
+
+---
+
+## Problem Statement
+
+Darkstar currently supports Deye/SunSynk, Fronius, Sungrow and Generic inverters. To support these diverse hardware types, we implemented a flexible profile system that:
+
+1. **Maintains planner logic** - The optimization engine stays brand-agnostic
+2. **Adapts executor behavior** - Different inverters use different HA entities and control patterns
+3. **Enables easy expansion** - Adding new brands should not require core code changes
+4. **Preserves backward compatibility** - Existing Deye users continue working without changes
+
+---
+
+## Core Principles
+
+### 1. Separation of Concerns
+
+**Planner (Brand-Agnostic)**
+- Decides WHAT to do: "Charge 3kW from grid at 02:00"
+- Outputs: `schedule.json` with charge/discharge/export plans
+- **Never changes** between inverter brands
+
+**Executor (Brand-Specific)**
+- Decides HOW to achieve it: "Set select.fronius_battery_mode to 'Charge from grid'"
+- Translates Darkstar decisions → Inverter-specific HA entity commands
+- **Adapts** based on inverter profile
+
+### 2. Home Assistant as Abstraction Layer
+
+- Darkstar controls **HA entities only** (select, switch, number)
+- Users configure their inverter integration in HA (Modbus, official integration, etc.)
+- Profiles define which HA entities to use and what values to send
+
+### 3. YAML Configuration + Python Logic
+
+- **YAML profiles**: Define entity mappings, mode values, capabilities
+- **Python strategies**: Implement control logic using profile configuration
+- **Strict Validation**: Profiles must explicitly define all required modes to prevent silent failures
+
+---
+
+## System Architecture
+
+### Profile Structure
+
+**Location**: `profiles/fronius.yaml`, `profiles/deye.yaml`, `profiles/sungrow.yaml`, `profiles/generic.yaml`
+
+**Profile Schema**:
+```yaml
+# Profile metadata
+name: "Fronius Gen24"
+description: "Fronius hybrid inverters with battery management"
+version: "1.0"
+author: "Darkstar Community"
+
+# Hardware capabilities
+capabilities:
+  control_unit: "W"              # "A" (Amperes) or "W" (Watts)
+  has_work_modes: true           # Supports mode switching
+  has_grid_charging: true        # Can charge from grid
+  has_export_control: true       # Can export to grid
+  has_soc_target: true           # Supports SoC target setting
+
+# HA Entity mappings (with defaults)
+entities:
+  work_mode: "select.fronius_battery_mode"
+  charge_power: "number.fronius_charge_power"
+  discharge_power: "number.fronius_discharge_power"
+  grid_charging: null            # Fronius may not have separate switch
+  soc_target: "input_number.master_soc_target"
+
+# Mode value translations
+modes:
+  # Darkstar internal mode → Inverter-specific value
+  export: "Discharge to grid"
+  zero_export: "Auto"
+  idle: "Zero export to CT"    # REQUIRED: Mode for pausing/safe state
+  charge_from_grid: "Charge from grid"
+  force_discharge: "Block discharging"
+
+# Profile-specific behavior flags
+behavior:
+  auto_mode_handles_pv: true     # "Auto" mode manages PV charging automatically
+  requires_power_setpoint: true  # Must set power value when changing modes
+  separate_grid_switch: false    # Grid charging controlled via mode, not separate switch
+```
+
+### Profile Loading & Validation
+
+1.  **Strict Validation**: The executor aggressively validates loaded profiles. Missing required modes (`export`, `zero_export`, `idle`, `self_consumption`) will cause a `ValueError` and prevent the executor from running in an undefined state.
+2.  **No Implicit Defaults**: The Python code does *not* assume any default values for work modes. If a profile is missing a mode, it must be fixed in the YAML.
+3.  **Capability Checks**: The `ActionDispatcher` checks capability flags (e.g., `supports_soc_target`) before attempting to set entities, preventing errors in the log.
+
+---
+
+## Implementation Status
+
+### Completed Phases
+- ✅ **Infrastructure**: Profile schema, loader, and dataclasses (`executor/profiles.py`)
+- ✅ **Deye Profile**: Migrated legacy hardcoded logic to `profiles/deye.yaml`
+- ✅ **Fronius Profile**: Implemented `profiles/fronius.yaml` with correct case-sensitive modes
+- ✅ **Generic Profile**: safe fallback for unknown hardware
+- ✅ **UI Integration**: Frontend displays active profile and any configuration errors
+
+### Inverter Support
+- **Deye / SunSynk**: Full support (Amperes, separate grid switch)
+- **Fronius Gen24**: Full support (Watts, mode-based grid charging) (Verified IP3)
+- **Sungrow**: Basic support (Verified IP2)
+- **Generic**: Limited support (Manual configuration required)
+
+---
+
+## Future Roadmap
+
+### 1. Profile Marketplace
+- Community repository for profiles?
+- Automatic profile updates?
+
+### 2. Auto-Discovery
+- Attempt to auto-detect inverter type based on available HA entities?
+
+### 3. Advanced Multi-Inverter Support
+- Current system supports one active profile. Future versions could support multiple profiles for complex setups (e.g., AC-coupled retrofit + Hybrid).
 
 ---
 
