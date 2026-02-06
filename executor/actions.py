@@ -456,11 +456,24 @@ class ActionDispatcher:
         target = "on" if enabled else "off"
 
         # Handle grid charging via profile logic if available (Rev ARC13 Phase 4)
-        if self.profile and not self.profile.capabilities.separate_grid_charging_switch:
-            logger.debug(
-                "Skipping grid_charging switch: profile '%s' uses mode-based charging",
-                self.profile.metadata.name,
-            )
+        if self.profile:
+            if not self.profile.capabilities.grid_charging_control:
+                logger.debug(
+                    "Skipping grid_charging action: profile '%s' does not support grid charging control",
+                    self.profile.metadata.name,
+                )
+                return ActionResult(
+                    action_type="grid_charging",
+                    success=True,
+                    message="",  # Silent skip
+                    skipped=True,
+                    duration_ms=int((time.time() - start) * 1000),
+                )
+            if not self.profile.capabilities.separate_grid_charging_switch:
+                logger.debug(
+                    "Skipping grid_charging switch: profile '%s' uses mode-based charging",
+                    self.profile.metadata.name,
+                )
             return ActionResult(
                 action_type="grid_charging",
                 success=True,
@@ -707,6 +720,19 @@ class ActionDispatcher:
         start = time.time()
         entity = self.config.inverter.soc_target_entity
 
+        if self.profile and not self.profile.capabilities.supports_soc_target:
+            logger.debug(
+                "Skipping soc_target action: profile '%s' does not support SoC target control",
+                self.profile.metadata.name,
+            )
+            return ActionResult(
+                action_type="soc_target",
+                success=True,
+                message="",  # Silent skip
+                skipped=True,
+                duration_ms=int((time.time() - start) * 1000),
+            )
+
         if not _is_entity_configured(entity):
             # Check if this entity is actually required by the profile
             is_required = True
@@ -886,7 +912,35 @@ class ActionDispatcher:
         start = time.time()
         entity = self.config.inverter.grid_max_export_power_entity
 
+        if self.profile and not self.profile.capabilities.supports_grid_export_limit:
+            logger.debug(
+                "Skipping max_export_power action: profile '%s' does not support grid export limit control",
+                self.profile.metadata.name,
+            )
+            return ActionResult(
+                action_type="max_export_power",
+                success=True,
+                message="",  # Silent skip
+                skipped=True,
+                duration_ms=int((time.time() - start) * 1000),
+            )
+
         if not _is_entity_configured(entity):
+            # Check if this entity is actually required by the profile
+            is_required = True
+            if self.profile:
+                is_required = "grid_max_export_power_entity" in self.profile.entities.required
+
+            if not is_required:
+                # Silent skip - not configured and not required
+                return ActionResult(
+                    action_type="max_export_power",
+                    success=True,
+                    message="",
+                    skipped=True,
+                    duration_ms=int((time.time() - start) * 1000),
+                )
+
             logger.debug("Skipping max_export_power action: entity not configured")
             return ActionResult(
                 action_type="max_export_power",
