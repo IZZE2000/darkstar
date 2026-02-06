@@ -84,6 +84,12 @@ class ExecutorEngine:
         # Load main config for input_sensors section
         self._full_config = load_yaml(config_path)
 
+        # Status tracking - MUST be initialized BEFORE profile loading (REV IP3 Phase 6 fix)
+        self.status = ExecutorStatus(
+            enabled=self.config.enabled,
+            shadow_mode=self.config.shadow_mode,
+        )
+
         # Load inverter profile (REV ARC13 Phase 1)
         from .profiles import get_profile_from_config
 
@@ -128,12 +134,6 @@ class ExecutorEngine:
 
         self.ha_client: HAClient | None = None
         self.dispatcher: ActionDispatcher | None = None
-
-        # Status tracking
-        self.status = ExecutorStatus(
-            enabled=self.config.enabled,
-            shadow_mode=self.config.shadow_mode,
-        )
 
         # Threading
         self._stop_event = threading.Event()

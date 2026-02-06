@@ -350,6 +350,13 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] **Manual:** Verify no regression for Deye profile (should still work as before).
 * [x] **Documentation:** Update `docs/INVERTER_PROFILES_VISION.md` if any architectural assumptions changed.
 
+#### Phase 6: Fix Initialization Order Regression [DONE]
+* [x] **Root Cause:** Phase 4 added `profile_name` assignment in profile loading (line 92), but `self.status` is not initialized until line 133. This causes `'ExecutorEngine' object has no attribute 'status'` error during initialization, breaking the executor entirely (503 errors).
+* [x] **Fix:** Move `ExecutorStatus` initialization to occur BEFORE profile loading in `executor/engine.py`.
+* [x] **Test:** Verify executor initializes successfully with Fronius profile.
+* [x] **Regression Test:** Ensure Deye and Generic profiles still work correctly.
+* [x] **COMMIT:** fix(executor): initialize status before profile loading to prevent AttributeError
+
 ---
 
 ### [DONE] REV // K25 — Smart EV Charging Integration
