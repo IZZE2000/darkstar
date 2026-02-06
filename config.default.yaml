@@ -263,6 +263,8 @@ input_sensors:
   battery_power: ""   # Current battery power (+ discharge, - charge)
   water_power: ""                  # Current water heater power (W or kW)
   ev_power: ""              # Current EV charging power (W or kW)
+  ev_soc: ""                # EV battery state of charge (%) - Required for smart charging
+  ev_plug: ""               # EV plug status (on/off or connected/disconnected) - Required for smart charging
   grid_power: ""         # Current grid power (+ import, - export) (Used if meter_type=net)
   grid_import_power: ""    # Current grid import power (W/kW) (Used if meter_type=dual)
   grid_export_power: ""    # Current grid export power (W/kW) (Used if meter_type=dual)

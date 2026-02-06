@@ -105,6 +105,14 @@ class HAWebSocketClient:
             if "vacation_mode" in sensors:
                 mapping[sensors["vacation_mode"]] = "vacation_mode"
 
+            # Rev K25: EV Charging sensors
+            ev_cfg = cfg.get("ev_charger", {})
+            if ev_cfg.get("enabled", False):
+                if "ev_soc" in sensors:
+                    mapping[sensors["ev_soc"]] = "ev_soc"
+                if "ev_plug" in sensors:
+                    mapping[sensors["ev_plug"]] = "ev_plug"
+
             # Store inversion flags for efficient lookup in _handle_state_change
             self.inversion_flags = {
                 "grid_kw": sensors.get("grid_power_inverted", False),
@@ -237,6 +245,42 @@ class HAWebSocketClient:
                 logger.error(f"Failed to emit vacation_mode change: {e}")
             return
 
+        # Rev K25: Handle EV plug sensor changes
+        if key == "ev_plug":
+            try:
+                state_val = new_state.get("state", "").lower()
+                logger.info(f"EV plug state changed: {entity_id}={state_val}")
+
+                # Trigger immediate re-plan when car plugs in
+                if state_val in ("on", "true", "1", "connected"):
+                    logger.info("EV plugged in - triggering immediate re-plan")
+                    self._trigger_ev_replan()
+
+                # Emit entity change event
+                from backend.events import emit_ha_entity_change
+
+                emit_ha_entity_change(entity_id=entity_id, state=state_val)
+            except Exception as e:
+                logger.error(f"Failed to handle EV plug change: {e}")
+            return
+
+        # Rev K25: Handle EV SoC changes (optional replanning)
+        if key == "ev_soc":
+            try:
+                state_val = new_state.get("state")
+                logger.debug(f"EV SoC updated: {entity_id}={state_val}")
+
+                # Note: We don't trigger replan on every SoC change to avoid noise
+                # Re-planning happens on schedule or when plug state changes
+
+                # Emit entity change event
+                from backend.events import emit_ha_entity_change
+
+                emit_ha_entity_change(entity_id=entity_id, state=state_val)
+            except Exception as e:
+                logger.error(f"Failed to handle EV SoC change: {e}")
+            return
+
         # Handle numeric sensors (existing logic)
         try:
             state_val = new_state.get("state")
@@ -327,6 +371,26 @@ class HAWebSocketClient:
         logger.info("Reloading HA configuration...")
         self._load_config()
         self.monitored_entities = self._get_monitored_entities()
+
+    def _trigger_ev_replan(self):
+        """Trigger immediate re-planning for EV state changes (Rev K25)."""
+        try:
+            # Check if replan_on_plugin is enabled in config
+            cfg = load_yaml("config.yaml")
+            ev_cfg = cfg.get("ev_charger", {})
+            if not ev_cfg.get("replan_on_plugin", True):
+                logger.debug("EV replan on plugin disabled in config")
+                return
+
+            # Import here to avoid circular imports
+            from backend.services.scheduler_service import scheduler_service
+
+            # Trigger immediate re-planning
+            logger.info("Triggering immediate EV re-plan via scheduler_service")
+            # Note: Fire-and-forget is acceptable here; the task runs independently
+            asyncio.create_task(scheduler_service.trigger_now())  # noqa: RUF006
+        except Exception as e:
+            logger.error(f"Failed to trigger EV re-plan: {e}")
 
 
 # Global instance

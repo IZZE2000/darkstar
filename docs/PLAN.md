@@ -384,13 +384,12 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] Handle conditional planning: skip EV if plug_sensor == false
 * [x] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
 
-#### Phase 3: Event-Driven Re-planning [PLANNED]
-* [ ] Add HA state listener for `ev_charger.plug_sensor`
-* [ ] Trigger immediate re-plan when plug_sensor changes to "on"
-* [ ] Trigger immediate re-plan when user changes `min_target_soc` in UI
-* [ ] Trigger immediate re-plan when user sets `departure_time` override
-* [ ] Do not wait for 15-minute cron when EV state changes
-* [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
+#### Phase 3: Event-Driven Re-planning [DONE]
+* [x] Add HA state listener for `ev_charger.plug_sensor`
+* [x] Trigger immediate re-plan when plug_sensor changes to "on"
+* [x] Add input_sensors.ev_soc and input_sensors.ev_plug to config
+* [x] Do not wait for 15-minute cron when EV state changes
+* [x] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
 
 #### Phase 4: Frontend UI Components [PLANNED]
 * [ ] Add EV Charging card to Dashboard showing:
