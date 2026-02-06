@@ -41,13 +41,13 @@ Darkstar isn't magic; it's math. You control the math with **Risk Appetite**.
 ### What is "Risk Appetite"?
 Weather forecasts are never 100% perfect. "Risk Appetite" tells Darkstar how much to trust the forecast.
 
-| Level | Name | Philosophy | Safety Buffer |
-| :--- | :--- | :--- | :--- |
-| **1** | **Safety** | *"I never want to run empty."* | **+35%** added to minimum battery target. |
-| **2** | **Conservative** | *"Better safe than sorry."* | **+20%** added buffer. |
-| **3** | **Neutral** | *"Trust the math."* | **+10%** standard buffer. |
-| **4** | **Aggressive** | *"I want maximum savings."* | **+3%** minimal buffer. |
-| **5** | **Gambler** | *"Live dangerously."* | **-7%**. Intentionally targets *below* minimum, betting on a replan/extra PV/Lower load. |
+| Level | Name             | Philosophy                     | Safety Buffer                                                                            |
+| :---- | :--------------- | :----------------------------- | :--------------------------------------------------------------------------------------- |
+| **1** | **Safety**       | *"I never want to run empty."* | **+35%** added to minimum battery target.                                                |
+| **2** | **Conservative** | *"Better safe than sorry."*    | **+20%** added buffer.                                                                   |
+| **3** | **Neutral**      | *"Trust the math."*            | **+10%** standard buffer.                                                                |
+| **4** | **Aggressive**   | *"I want maximum savings."*    | **+3%** minimal buffer.                                                                  |
+| **5** | **Gambler**      | *"Live dangerously."*          | **-7%**. Intentionally targets *below* minimum, betting on a replan/extra PV/Lower load. |
 
 **Example**:
 If your `Min SoC` is 10%, and you choose **Level 1 (Safety)**, Darkstar will aim to keep your battery at **45%** (10% + 35%) before the sun comes up, just in case the forecast is wrong.
@@ -93,7 +93,25 @@ In **Settings -> Advanced**, you can enable **Shadow Mode**.
 
 ---
 
-## ⚠️ 4. Troubleshooting
+## 🔋 4. Smart EV Charging Strategy
+
+Darkstar treats your Electric Vehicle as a "Deferrable Load." This means it understands the car needs a certain amount of energy but can wait for the most optimal time to get it.
+
+### How it Works
+1.  **Plug-in Detection**: When you plug in your car, Darkstar detects the change and immediately triggers a **Re-plan**. It calculates how much energy you need to reach your `Min Target SoC`.
+2.  **Source Isolation**: Darkstar ensures your house battery is **protected**. It will only charge the car using Solar Surplus or cheap Grid power. It will *not* discharge your house battery into the EV.
+3.  **The Priority System**: Darkstar uses dynamic pricing "penalties" based on your car's SoC:
+    *   🔴 **Emergency (<20%)**: Charges immediately at any price.
+    *   🟡 **High Priority (20-40%)**: Prioritizes charging in the next available cheap windows.
+    *   🟢 **Normal (>40%)**: Only charges when prices are at their absolute lowest.
+
+### Dashboard Indicators
+*   **Gold Bars**: EV charging power is shown on the Dashboard and Horizon chart.
+*   **EV SoC**: Your car's current charge level is displayed in the Charging Status card.
+
+---
+
+## ⚠️ 5. Troubleshooting
 
 ### "Why isn't it charging?"
 1.  **Check Risk Appetite**: If you are on "Level 5 (Gambler)", it might be waiting for an even cheaper price later.

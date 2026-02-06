@@ -46,6 +46,19 @@ Darkstar automatically aggregates these arrays into a single site forecast while
 - **Timezone**: Must be in **IANA format** (e.g., `Europe/Stockholm`, `America/New_York`).
 - **VAT & Fees**: Enter your local tax and grid transfer fees (SEK/kWh) to ensure ROI calculations are correct.
 
+### 1.5 Smart EV Charging (Optional)
+Darkstar can intelligently manage your EV charging to ensure it uses the cheapest power while protecting your house battery.
+- **Enable EV Integration**: Set `ev_charger.enabled: true` in **Settings -> System**.
+- **Input Sensors**:
+    - **EV SoC**: The State of Charge (%) of your vehicle.
+    - **Plug Sensor**: A binary sensor indicating if the car is plugged in.
+- **Control Entity**:
+    - **Switch Entity**: The Home Assistant entity used to start/stop charging (e.g., `switch.my_wallbox`).
+- **Safety Parameters**:
+    - **Min Target SoC**: The minimum level you want your car to reach (e.g., 40%). Darkstar will prioritize reaching this level as quickly as possible during cheap windows.
+    - **Max Power (kW)**: The maximum charging speed of your wallbox.
+    - **Battery Capacity (kWh)**: The total size of your EV's battery.
+
 ---
 
 ## 🔗 Part 2: Home Assistant Integration

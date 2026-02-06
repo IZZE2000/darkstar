@@ -20,8 +20,14 @@ Kepler is the decision-making core. It solves an optimization problem to generat
 ### Objective Function
 The solver minimizes the total cost over the planning horizon (typically 24-48 hours):
 ```
-Minimize: Sum(Import_Cost - Export_Revenue + Wear_Cost) - (End_SoC * Terminal_Value)
+Minimize: Sum(Import_Cost - Export_Revenue + Wear_Cost + EV_Priority_Penalty) - (End_SoC * Terminal_Value)
 ```
+
+### Key Decision Variables
+- `grid_import[t]`, `grid_export[t]`
+- `battery_charge[t]`, `battery_discharge[t]`
+- `water_heat[t]` (Binary)
+- `ev_charge[t]` (Continuous, 0 to `max_power_kw`)
 
 ### Key Concepts
 *   **Hard Constraints**: Physics limits (Battery Capacity, Inverter Power), Energy Balance.
@@ -91,15 +97,30 @@ water_heating:
 
 ---
 
+## 4.2 EV Charging as Deferrable Load (Rev K25)
+
+EV charging is modeled as a power-variable deferrable load with a target energy quota.
+
+### Constraints
+- **Grid + PV Constraint**: `ev_charge[t] <= grid_import[t] + pv_production[t]`. This ensures the EV never draws energy from the home battery.
+- **Quota Constraint**: `Sum(ev_charge[t] * dt) >= kwh_needed`.
+- **Power Limit**: `0 <= ev_charge[t] <= max_power_kw`.
+
+### Priority Penalties
+To handle urgency, the solver applies a penalty to the objective function for *not* charging when SoC is low:
+- `Penalty = f(Current_SoC)`. Higher SoC = Lower Penalty = More price sensitivity.
+
+---
+
 ## 4.1 Vacation Mode (Rev K19)
 
 When vacation mode is enabled, normal comfort-based water heating is disabled and replaced with periodic **anti-legionella cycles** for safety.
 
 ### Behavior
-| Mode | Normal Heating | Anti-Legionella |
-|------|----------------|-----------------|
-| Vacation OFF | ✅ Comfort-based (Kepler) | ❌ |
-| Vacation ON | ❌ Disabled | ✅ 3h block weekly |
+| Mode         | Normal Heating           | Anti-Legionella   |
+| ------------ | ------------------------ | ----------------- |
+| Vacation OFF | ✅ Comfort-based (Kepler) | ❌                 |
+| Vacation ON  | ❌ Disabled               | ✅ 3h block weekly |
 
 ### Anti-Legionella Cycle
 - **Duration**: 3 hours at 3kW = 9 kWh (heats tank to 65°C)
@@ -302,12 +323,23 @@ The executor includes real-time override logic for edge cases:
 
 The executor uses a 4-level temperature system for water heater control:
 
-| Temp | Default | Purpose |
-|------|---------|---------|
-| `temp_off` | 40°C | Idle mode (legionella-safe minimum) |
-| `temp_normal` | 60°C | Scheduled heating by planner |
-| `temp_boost` | 70°C | Manual boost (Dashboard button) |
-| `temp_max` | 85°C | PV dump + safety limit (never exceeded) |
+| Temp          | Default | Purpose                                 |
+| ------------- | ------- | --------------------------------------- |
+| `temp_off`    | 40°C    | Idle mode (legionella-safe minimum)     |
+| `temp_normal` | 60°C    | Scheduled heating by planner            |
+| `temp_boost`  | 70°C    | Manual boost (Dashboard button)         |
+| `temp_max`    | 85°C    | PV dump + safety limit (never exceeded) |
+
+---
+
+### 7.1 EV Charger Controller (Rev K25)
+
+The Executor includes a dedicated controller for EV charging state management.
+
+**Core Responsibilities:**
+- **Source Isolation**: Actively monitors house battery discharge. If discharge is detected while the EV is charging, the executor can throttle or stop the EV session as a safety backup to the planner.
+- **Heartbeat Safety**: If the planner fails to provide a new plan within 30 minutes, the executor auto-stops the EV charger for safety.
+- **Re-plan Trigger**: Hooks into the Home Assistant `plug_sensor` to trigger an immediate `PlannerPipeline` run upon connection.
 
 **Safety Clamp**: All temperature commands are clamped to `temp_max` before sending to Home Assistant.
 
@@ -374,13 +406,13 @@ backend/
 
 ### Error Categories
 
-| Category | Severity | Example |
-|----------|----------|---------|
-| `config` | CRITICAL | Missing secrets.yaml, wrong types |
-| `ha_connection` | CRITICAL | HA unreachable, auth failed |
-| `entity` | CRITICAL | Sensor renamed/deleted in HA |
-| `database` | WARNING | MariaDB connection failed |
-| `planner` | WARNING | Schedule generation failed |
+| Category        | Severity | Example                           |
+| --------------- | -------- | --------------------------------- |
+| `config`        | CRITICAL | Missing secrets.yaml, wrong types |
+| `ha_connection` | CRITICAL | HA unreachable, auth failed       |
+| `entity`        | CRITICAL | Sensor renamed/deleted in HA      |
+| `database`      | WARNING  | MariaDB connection failed         |
+| `planner`       | WARNING  | Schedule generation failed        |
 
 ### API Endpoint
 
@@ -534,11 +566,11 @@ Backend caching prevents redundant expensive computations and external API calls
 ### 10.2 Lazy Loading Strategy
 The frontend prioritizes Critical Data (Execution-blocking) over Deferred Data (Contextual).
 
-| Priority | Data | Loading Strategy |
-|----------|------|------------------|
-| **Critical** | Schedule, SoC, Executor Status | Loaded immediately (parallel) |
-| **Deferred** | Energy Stats, Water Usage, HA Average | Loaded +100ms after critical |
-| **Background** | Aurora Learning, Long-term History | Loaded on demand |
+| Priority       | Data                                  | Loading Strategy              |
+| -------------- | ------------------------------------- | ----------------------------- |
+| **Critical**   | Schedule, SoC, Executor Status        | Loaded immediately (parallel) |
+| **Deferred**   | Energy Stats, Water Usage, HA Average | Loaded +100ms after critical  |
+| **Background** | Aurora Learning, Long-term History    | Loaded on demand              |
 
 *Effect: Dashboard becomes interactive immediately, while heavy stats fill in gracefully.*
 
@@ -579,20 +611,20 @@ flowchart TB
 
 ### Key Components
 
-| Component | Location | Purpose |
-|-----------|----------|---------|
-| `PlannerService` | `backend/services/planner_service.py` | Async wrapper for planner, handles cache + WebSocket |
-| `SchedulerService` | `backend/services/scheduler_service.py` | Background loop for scheduled planner runs |
-| Lifespan Manager | `backend/main.py` | Starts/stops scheduler on server lifecycle |
+| Component          | Location                                | Purpose                                              |
+| ------------------ | --------------------------------------- | ---------------------------------------------------- |
+| `PlannerService`   | `backend/services/planner_service.py`   | Async wrapper for planner, handles cache + WebSocket |
+| `SchedulerService` | `backend/services/scheduler_service.py` | Background loop for scheduled planner runs           |
+| Lifespan Manager   | `backend/main.py`                       | Starts/stops scheduler on server lifecycle           |
 
 ### Benefits over Subprocess Architecture
 
-| Aspect | Old (Subprocess) | New (In-Process) |
-|--------|------------------|------------------|
-| Cache Invalidation | Required sync workarounds | Native async `await cache.invalidate()` |
-| WebSocket Events | Cross-process bridge needed | Direct `await ws_manager.emit()` |
-| Memory | Separate Python process | Shared memory, lower footprint |
-| Debugging | Multi-process complexity | Single process, easy tracing |
+| Aspect             | Old (Subprocess)            | New (In-Process)                        |
+| ------------------ | --------------------------- | --------------------------------------- |
+| Cache Invalidation | Required sync workarounds   | Native async `await cache.invalidate()` |
+| WebSocket Events   | Cross-process bridge needed | Direct `await ws_manager.emit()`        |
+| Memory             | Separate Python process     | Shared memory, lower footprint          |
+| Debugging          | Multi-process complexity    | Single process, easy tracing            |
 
 ### Startup Flow
 
@@ -663,12 +695,12 @@ For the Home Assistant Add-on deployment, Darkstar requires careful management o
 
 ### 14.1 Storage Locations
 
-| Path | Type | Purpose | Mapped To |
-|------|------|---------|-----------|
-| `/app/` | **Ephemeral** | Application code, built at image build time | Container filesystem |
-| `/config/darkstar/` | **Persistent** | User configuration files | HA `/config/` |
-| `/share/darkstar/` | **Persistent** | Runtime data (DB, models, schedules) | HA `/share/` |
-| `/app/data/` | **Symlink** | Points to `/share/darkstar/` | Symlink target |
+| Path                | Type           | Purpose                                     | Mapped To            |
+| ------------------- | -------------- | ------------------------------------------- | -------------------- |
+| `/app/`             | **Ephemeral**  | Application code, built at image build time | Container filesystem |
+| `/config/darkstar/` | **Persistent** | User configuration files                    | HA `/config/`        |
+| `/share/darkstar/`  | **Persistent** | Runtime data (DB, models, schedules)        | HA `/share/`         |
+| `/app/data/`        | **Symlink**    | Points to `/share/darkstar/`                | Symlink target       |
 
 ### 14.2 Persistent Data Hierarchy
 
@@ -716,11 +748,11 @@ exec uvicorn backend.main:app --host 0.0.0.0 --port 5000
 
 All code references use the `data/` relative path, which resolves to persistent storage via the symlink:
 
-| Code Reference | Resolves To | Persistent? |
-|----------------|-------------|-------------|
-| `data/schedule.json` | `/app/data/schedule.json` → `/share/darkstar/schedule.json` | ✅ Yes |
-| `data/ml/models/` | `/app/data/ml/models/` → `/share/darkstar/ml/models/` | ✅ Yes |
-| `data/planner_learning.db` | `/app/data/planner_learning.db` → `/share/darkstar/planner_learning.db` | ✅ Yes |
+| Code Reference             | Resolves To                                                             | Persistent? |
+| -------------------------- | ----------------------------------------------------------------------- | ----------- |
+| `data/schedule.json`       | `/app/data/schedule.json` → `/share/darkstar/schedule.json`             | ✅ Yes       |
+| `data/ml/models/`          | `/app/data/ml/models/` → `/share/darkstar/ml/models/`                   | ✅ Yes       |
+| `data/planner_learning.db` | `/app/data/planner_learning.db` → `/share/darkstar/planner_learning.db` | ✅ Yes       |
 
 ### 14.5 Database Schema Management
 
@@ -760,9 +792,9 @@ The **Learning Database** (`planner_learning.db`) contains multiple critical tab
 
 ### 14.7 Local Development vs. Production
 
-| Environment | Code Location | Data Location | Config Location |
-|-------------|---------------|---------------|-----------------|
-| **Local Dev** | Working directory | `./data/` | `./config.yaml` |
+| Environment   | Code Location       | Data Location      | Config Location     |
+| ------------- | ------------------- | ------------------ | ------------------- |
+| **Local Dev** | Working directory   | `./data/`          | `./config.yaml`     |
 | **HA Add-on** | `/app/` (read-only) | `/share/darkstar/` | `/config/darkstar/` |
 
 The symlink strategy ensures the same relative path (`data/`) works correctly in both environments.
