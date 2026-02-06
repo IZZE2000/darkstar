@@ -352,7 +352,7 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 
 ---
 
-### [PLANNED] REV // K25 — Smart EV Charging Integration
+### [IN PROGRESS] REV // K25 — Smart EV Charging Integration
 
 **Goal:** Integrate EV charging into Darkstar's optimization system as a smart deferrable load that protects the house battery while charging at the cheapest possible times based on battery urgency.
 
@@ -360,29 +360,29 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 
 **Plan:**
 
-#### Phase 1: Configuration & Entities [PLANNED]
-* [ ] Add `ev_charger.enabled` (default: false) to `config.default.yaml`
-* [ ] Add `ev_charger.switch_entity` (required when enabled)
-* [ ] Add `ev_charger.soc_sensor` (required when enabled)
-* [ ] Add `ev_charger.plug_sensor` (required when enabled)
-* [ ] Add `ev_charger.max_power_kw` (default: 7.4)
-* [ ] Add `ev_charger.battery_capacity_kwh` (user-configured)
-* [ ] Add `ev_charger.min_target_soc` (default: 40, user-adjustable in UI)
-* [ ] Add `ev_charger.penalty_levels` (configurable thresholds based on SoC)
-* [ ] Add `ev_charger.departure_time` (optional, for specific day override)
-* [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
+#### Phase 1: Configuration & Entities [DONE]
+* [x] Add `ev_charger.enabled` (default: false) to `config.default.yaml`
+* [x] Add `ev_charger.switch_entity` (required when enabled)
+* [x] Add `ev_charger.soc_sensor` (required when enabled)
+* [x] Add `ev_charger.plug_sensor` (required when enabled)
+* [x] Add `ev_charger.max_power_kw` (default: 7.4)
+* [x] Add `ev_charger.battery_capacity_kwh` (user-configured)
+* [x] Add `ev_charger.min_target_soc` (default: 40, user-adjustable in UI)
+* [x] Add `ev_charger.penalty_levels` (configurable thresholds based on SoC)
+* [x] Add `ev_charger.replan_on_plugin` (default: true)
+* [x] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
 
-#### Phase 2: MILP Integration (Kepler Solver) [PLANNED]
-* [ ] Add EV as deferrable load to Kepler MILP formulation
-* [ ] Implement grid-only constraint (ev_charge[t] cannot draw from battery discharge)
-* [ ] Calculate kwh_needed = (min_target_soc - current_soc) / 100 × capacity
-* [ ] Implement dynamic penalty based on current SoC:
+#### Phase 2: MILP Integration (Kepler Solver) [DONE]
+* [x] Add EV as deferrable load to Kepler MILP formulation
+* [x] Implement grid-only constraint (ev_charge[t] cannot draw from battery discharge)
+* [x] Calculate kwh_needed = (min_target_soc - current_soc) / 100 × capacity
+* [x] Implement dynamic penalty based on current SoC:
     * < 20%: 10.0 SEK/kWh (emergency charging)
     * 20-40%: 2.0 SEK/kWh (high priority)
     * 40-70%: 0.5 SEK/kWh (normal priority)
     * > 70%: 0.1 SEK/kWh (opportunistic)
-* [ ] Handle conditional planning: skip EV if plug_sensor == false
-* [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
+* [x] Handle conditional planning: skip EV if plug_sensor == false
+* [x] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
 
 #### Phase 3: Event-Driven Re-planning [PLANNED]
 * [ ] Add HA state listener for `ev_charger.plug_sensor`
