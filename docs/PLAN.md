@@ -290,3 +290,26 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] **Frontend:** Update `types.ts`, `Executor.tsx`, and `config-help.json` to reflect new path.
 * [x] **Validation:** Fix `profiles/schema.yaml` naming (`soc_target` -> `soc_target_entity`).
 * [x] **COMMIT:** fix(config): standardize soc_target_entity location and add migration
+
+---
+
+### [DONE] REV // F46 — Fix Missing Profiles Directory in Docker Images
+
+**Goal:** Fix the critical bug where inverter profile YAML files are not included in Docker containers, causing "Profile file not found" errors.
+
+**Context:** Both `darkstar/Dockerfile` and `darkstar-dev/Dockerfile` are missing the `COPY profiles/ ./profiles/` instruction. When the add-on runs in Home Assistant, the executor cannot load inverter profiles (deye, fronius, generic, sungrow) because the `profiles/` directory was never copied into the container. The code looks for `profiles/deye.yaml` relative to `/app` working directory, but the directory doesn't exist.
+
+**Root Cause:** The `profiles/` directory exists in the repo root with all inverter YAML files, but neither Dockerfile includes it in the COPY instructions.
+
+**Plan:**
+
+#### Phase 1: Fix Dockerfiles [DONE]
+* [x] Add `COPY profiles/ ./profiles/` to `darkstar/Dockerfile` after line 38 (where other app directories are copied)
+* [x] Add `COPY profiles/ ./profiles/` to `darkstar-dev/Dockerfile` after line 38
+* [x] Verify both Dockerfiles have consistent COPY ordering
+* [x] **COMMIT:** fix(docker): add missing profiles directory to both Dockerfiles
+
+#### Phase 2: Verification [PLANNED]
+* [ ] Build test image locally to confirm profiles are included
+* [ ] Verify profile loading works in container context
+* [ ] Test with different inverter profiles (deye, fronius)

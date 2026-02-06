@@ -37,6 +37,7 @@ COPY backend/ ./backend/
 COPY planner/ ./planner/
 COPY executor/ ./executor/
 COPY bin/ ./bin/
+COPY profiles/ ./profiles/
 COPY ml/*.py ./ml/
 # Models are generated at runtime (Clean Slate strategy)
 RUN mkdir -p ml/models
