@@ -225,6 +225,7 @@ type ChartValues = {
     discharge?: (number | null)[]
     export?: (number | null)[]
     water?: (number | null)[]
+    evCharging?: (number | null)[]
     socTarget?: (number | null)[]
     socProjected?: (number | null)[]
     socActual?: (number | null)[]
@@ -399,6 +400,23 @@ const createChartData = (
                 data: values.water ?? values.labels.map(() => null),
                 backgroundColor: 'rgba(78, 168, 222, 0.25)', // DS.water at 25%
                 borderColor: DS.water,
+                glow: true,
+                borderWidth: 0,
+                borderRadius: 2,
+                hidden: true,
+                yAxisID: 'y1',
+                barPercentage: 0.85,
+                categoryPercentage: 0.9,
+                grouped: false,
+                order: 0,
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            } as any,
+            {
+                type: 'bar',
+                label: 'EV Charging (kW)',
+                data: values.evCharging ?? values.labels.map(() => null),
+                backgroundColor: 'rgba(236, 72, 153, 0.25)', // DS.peak (pink) at 25%
+                borderColor: DS.peak,
                 glow: true,
                 borderWidth: 0,
                 borderRadius: 2,
@@ -1296,6 +1314,7 @@ function buildLiveData(
     const discharge: (number | null)[] = []
     const exp: (number | null)[] = []
     const water: (number | null)[] = []
+    const evCharging: (number | null)[] = []
     const socTarget: (number | null)[] = []
     const socProjected: (number | null)[] = []
     const socActual: (number | null)[] = []
@@ -1351,6 +1370,7 @@ function buildLiveData(
             }
 
             water.push(slot.water_heating_kw ?? null)
+            evCharging.push(slot.ev_charging_kw ?? null)
             socTarget.push(slot.soc_target_percent ?? null)
             socProjected.push(slot.projected_soc_percent ?? null)
             socActual.push(slot.actual_soc != null ? slot.actual_soc : null)
@@ -1370,6 +1390,7 @@ function buildLiveData(
             charge.push(null)
             discharge.push(null)
             exp.push(null)
+            evCharging.push(null)
             water.push(null)
             socTarget.push(null)
             socProjected.push(null)
@@ -1407,6 +1428,7 @@ function buildLiveData(
                 discharge,
                 export: exp,
                 water,
+                evCharging,
                 socTarget,
                 socProjected,
                 socActual,

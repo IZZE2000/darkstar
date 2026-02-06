@@ -9,6 +9,7 @@ export type ScheduleSlot = {
     charge_kw?: number
     discharge_kw?: number // legacy
     water_heating_kw?: number
+    ev_charging_kw?: number // EV charging power for this slot
     export_kwh?: number
     projected_soc_percent?: number
     soc_target_percent?: number

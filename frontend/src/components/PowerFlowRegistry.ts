@@ -98,7 +98,7 @@ export const NODE_REGISTRY: FlowNodeConfig[] = [
     },
     {
         id: 'ev',
-        configKey: 'system.has_ev', // Disabled by default
+        configKey: 'system.has_ev_charger', // Match settings key
         lucideIcon: Car,
         color: 'rgb(var(--color-peak))',
         label: 'EV',

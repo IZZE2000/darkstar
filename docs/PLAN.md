@@ -393,19 +393,20 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] Do not wait for 15-minute cron when EV state changes
 * [x] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
 
-#### Phase 4: Frontend UI Components [PLANNED]
-* [ ] Add EV Charging card to Dashboard showing:
-    * Current SoC from sensor
-    * Plug status (connected/disconnected)
-    * Charging state (active/inactive)
-    * Next scheduled charge window
-* [ ] Add EV Charging configuration section to Settings:
-    * Min target SoC slider (0-100%)
-    * Penalty level configuration (4 thresholds)
-    * Departure time override picker
-    * Entity ID configuration (switch, SoC, plug sensors)
-* [ ] Add EV charging schedule visualization to main chart
-* [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
+#### Phase 4: Frontend UI Components [DONE]
+* [x] Add EV charger toggle to System Profile settings (`system.has_ev_charger`)
+* [x] Add EV charger input sensors configuration (SoC, Plug, Power)
+* [x] Add EV charger control entities configuration (`switch_entity`)
+* [x] Add EV charger parameters section to Parameters tab:
+    * Max charging power (kW)
+    * EV battery capacity (kWh)
+    * Min target SoC (%)
+    * Re-plan on plug-in toggle
+    * Penalty levels configuration (emergency/high/normal/opportunistic)
+* [x] Update PowerFlowData types and PowerFlowRegistry for EV visualization
+* [x] Update Dashboard to receive and display EV power via WebSocket
+* [x] Update ChartCard to display EV charging schedule (`ev_charging_kw`)
+* [x] **COMPLETED 2026-02-06**
 
 #### Phase 5: Executor Integration & Safety [PLANNED]
 * [ ] Add EV charging state to executor config

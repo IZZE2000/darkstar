@@ -87,6 +87,7 @@ export default function Dashboard() {
         battery_kw?: number
         grid_kw?: number
         water_kw?: number
+        ev_kw?: number
     }>({})
 
     // REV LCL01: Health status for config validation banners
@@ -110,6 +111,7 @@ export default function Dashboard() {
             battery_kw: data.battery_kw ?? prev.battery_kw,
             grid_kw: data.grid_kw ?? prev.grid_kw,
             water_kw: data.water_kw ?? prev.water_kw,
+            ev_kw: data.ev_kw ?? prev.ev_kw,
         }))
     })
 
@@ -768,6 +770,9 @@ export default function Dashboard() {
                                 },
                                 water: {
                                     kw: livePower.water_kw ?? 0,
+                                },
+                                ev: {
+                                    kw: livePower.ev_kw ?? 0,
                                 },
                             }}
                         />
