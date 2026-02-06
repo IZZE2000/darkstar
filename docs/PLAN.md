@@ -354,6 +354,8 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 
 ### [IN PROGRESS] REV // K25 — Smart EV Charging Integration
 
+**Status:** Phases 1-3 Complete ✓ | Phase 4-5 Pending
+
 **Goal:** Integrate EV charging into Darkstar's optimization system as a smart deferrable load that protects the house battery while charging at the cheapest possible times based on battery urgency.
 
 **Context:** Beta testers have EVs with simple HA integrations (on/off switch, SoC sensor, plug status). Darkstar should intelligently decide when to charge based on: (1) how empty the car is, (2) how urgent charging is, (3) electricity prices. Unlike water heating, EV charging must NEVER use house battery energy - the car drives away with that energy!
