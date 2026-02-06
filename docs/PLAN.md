@@ -326,14 +326,14 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] **Validation:** Verify against user-provided allowed options list.
 * [x] **COMMIT:** fix(profiles): correct fronius work mode casing
 
-#### Phase 2: Profile Logic Hardening (Remove Defaults) [PLANNED]
-* [ ] **Executor:** Remove default fallback values for `ProfileModes` in `executor/profiles.py` (e.g., "Zero Export to CT").
-* [ ] **Executor:** Raise explicit `ValueError` if required mode strings are missing in the profile.
-* [ ] **Tests:** Update unit tests to expect errors for incomplete profiles instead of defaults.
-* [ ] **COMMIT:** refactor(executor): remove implicit profile defaults to force explicit config
+#### Phase 2: Profile Logic Hardening (Remove Defaults) [DONE]
+* [x] **Executor:** Remove default fallback values for `ProfileModes` in `executor/profiles.py` (e.g., "Zero Export to CT").
+* [x] **Executor:** Raise explicit `ValueError` if required mode strings are missing in the profile.
+* [x] **Tests:** Update unit tests to expect errors for incomplete profiles instead of defaults.
+* [x] **COMMIT:** refactor(executor): remove implicit profile defaults to force explicit config
 
-#### Phase 3: Conditional Execution Logic [PLANNED]
-* [ ] **Executor:** Update `ActionDispatcher.execute` in `executor/actions.py` to check `profile.capabilities` before dispatching actions.
+#### Phase 3: Conditional Execution Logic [IN PROGRESS]
+* [/] **Executor:** Update `ActionDispatcher.execute` in `executor/actions.py` to check `profile.capabilities` before dispatching actions.
     *   Check `grid_charging_control` before `_set_grid_charging`.
     *   Check `supports_soc_target` before `_set_soc_target`.
 * [ ] **Executor:** Skip "Charge Limit" / "Discharge Limit" actions if they are not configured or supported (checking `watts_based_control` / `control_unit` is not enough, need explicit capability check or "Skip if None" logic).
