@@ -61,6 +61,14 @@ class WaterHeaterConfig:
     temp_max: int = 85
 
 
+DEFAULT_PENALTY_LEVELS = {
+    "emergency": 10.0,
+    "high": 2.0,
+    "normal": 0.5,
+    "opportunistic": 0.1,
+}
+
+
 @dataclass
 class EVChargerConfig:
     """EV charger control configuration."""
@@ -70,14 +78,7 @@ class EVChargerConfig:
     battery_capacity_kwh: float | None = None
     min_target_soc: int = 40
     replan_on_plugin: bool = True
-    penalty_levels: dict[str, float] = field(
-        default_factory=lambda: {
-            "emergency": 10.0,
-            "high": 2.0,
-            "normal": 0.5,
-            "opportunistic": 0.1,
-        }
-    )
+    penalty_levels: dict[str, float] = field(default_factory=lambda: DEFAULT_PENALTY_LEVELS.copy())
 
 
 @dataclass
@@ -272,7 +273,7 @@ def load_executor_config(config_path: str = "config.yaml") -> ExecutorConfig:
         battery_capacity_kwh=ev_data.get("battery_capacity_kwh"),
         min_target_soc=int(ev_data.get("min_target_soc", EVChargerConfig.min_target_soc)),
         replan_on_plugin=bool(ev_data.get("replan_on_plugin", EVChargerConfig.replan_on_plugin)),
-        penalty_levels=ev_data.get("penalty_levels", EVChargerConfig.penalty_levels),
+        penalty_levels=ev_data.get("penalty_levels", DEFAULT_PENALTY_LEVELS.copy()),
     )
 
     notif_data: dict[str, Any] = (
