@@ -91,8 +91,8 @@ class WorkMode:
 class ProfileModes:
     """Work mode translations for the inverter."""
 
-    export: WorkMode = field(default_factory=lambda: WorkMode(value="Export First"))
-    zero_export: WorkMode = field(default_factory=lambda: WorkMode(value="Zero Export To CT"))
+    export: WorkMode | None = None
+    zero_export: WorkMode | None = None
     self_consumption: WorkMode | None = None
     charge_from_grid: WorkMode | None = None  # Grid charging mode
     force_discharge: WorkMode | None = None  # Force discharge mode
@@ -175,10 +175,20 @@ class InverterProfile:
             errors.append(f"Invalid control_unit: {self.behavior.control_unit}. Must be 'A' or 'W'")
 
         # Validate mode values
-        if not self.modes.export.value:
+        if not self.modes.export or not self.modes.export.value:
             errors.append("modes.export.value is required")
-        if not self.modes.zero_export.value:
+        if not self.modes.zero_export or not self.modes.zero_export.value:
             errors.append("modes.zero_export.value is required")
+        if not self.modes.self_consumption or not self.modes.self_consumption.value:
+            errors.append("modes.self_consumption.value is required")
+        if not self.modes.idle or not self.modes.idle.value:
+            errors.append("modes.idle.value is required")
+
+        # Optional modes can be null, but if they exist, they must have a value
+        if self.modes.charge_from_grid and not self.modes.charge_from_grid.value:
+            errors.append("modes.charge_from_grid.value is required")
+        if self.modes.force_discharge and not self.modes.force_discharge.value:
+            errors.append("modes.force_discharge.value is required")
 
         # Validate required entities (only log warnings, don't fail validation)
         # This is because entities are configured by the user in config.yaml
@@ -261,10 +271,10 @@ def load_profile_yaml(profile_path: Path) -> dict[str, Any]:
     return data
 
 
-def _parse_work_mode(mode_data: dict[str, Any] | None) -> WorkMode:
+def _parse_work_mode(mode_data: dict[str, Any] | None) -> WorkMode | None:
     """Parse work mode from YAML data."""
     if not mode_data:
-        return WorkMode(value=None)
+        return None
 
     return WorkMode(
         value=mode_data.get("value"),

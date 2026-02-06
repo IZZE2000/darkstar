@@ -50,22 +50,22 @@ modes:
     requires_grid_charging: false
 
   self_consumption:
-    value: null
+    value: "Self Consumption"
     description: "Self-consumption mode"
     requires_grid_charging: false
 
   charge_from_grid:
-    value: null
+    value: "Grid Charge"
     description: "Charge battery from grid"
     requires_grid_charging: true
 
   force_discharge:
-    value: null
+    value: "Force Discharge"
     description: "Force discharge at maximum power"
     requires_grid_charging: false
 
   idle:
-    value: null
+    value: "Idle"
     description: "Idle standby mode"
     requires_grid_charging: false
 

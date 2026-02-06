@@ -34,6 +34,8 @@ class TestProfileYAMLLoading:
             "modes": {
                 "export": {"value": "Export", "description": "Export mode"},
                 "zero_export": {"value": "Zero", "description": "Zero export"},
+                "self_consumption": {"value": "Auto"},
+                "idle": {"value": "Standby"},
             },
             "behavior": {},
             "defaults": {},
@@ -99,6 +101,8 @@ class TestProfileParsing:
             "modes": {
                 "export": {"value": "Export First", "description": "Export mode"},
                 "zero_export": {"value": "Zero Export", "description": "Zero export mode"},
+                "self_consumption": {"value": "Auto", "description": "Standard"},
+                "idle": {"value": "Standby", "description": "Idle"},
             },
             "behavior": {
                 "control_unit": "A",
@@ -130,6 +134,8 @@ class TestProfileParsing:
             "modes": {
                 "export": {"value": "Export"},
                 "zero_export": {"value": "Zero"},
+                "self_consumption": {"value": "Auto"},
+                "idle": {"value": "Standby"},
             },
         }
 
@@ -153,6 +159,8 @@ class TestProfileValidation:
             modes=ProfileModes(
                 export=WorkMode(value="Export"),
                 zero_export=WorkMode(value="Zero"),
+                self_consumption=WorkMode(value="Auto"),
+                idle=WorkMode(value="Standby"),
             ),
             behavior=ProfileBehavior(control_unit="A"),
         )
@@ -170,6 +178,8 @@ class TestProfileValidation:
             modes=ProfileModes(
                 export=WorkMode(value="Export"),
                 zero_export=WorkMode(value="Zero"),
+                self_consumption=WorkMode(value="Auto"),
+                idle=WorkMode(value="Standby"),
             ),
             behavior=ProfileBehavior(),
         )
@@ -187,6 +197,8 @@ class TestProfileValidation:
             modes=ProfileModes(
                 export=WorkMode(value="Export"),
                 zero_export=WorkMode(value="Zero"),
+                self_consumption=WorkMode(value="Auto"),
+                idle=WorkMode(value="Standby"),
             ),
             behavior=ProfileBehavior(control_unit="X"),  # Invalid
         )
@@ -204,6 +216,8 @@ class TestProfileValidation:
             modes=ProfileModes(
                 export=WorkMode(value=None),  # Missing
                 zero_export=WorkMode(value="Zero"),
+                self_consumption=WorkMode(value="Auto"),
+                idle=WorkMode(value="Standby"),
             ),
             behavior=ProfileBehavior(),
         )
@@ -271,6 +285,8 @@ class TestProfileLoading:
             "modes": {
                 "export": {"value": "Export"},
                 "zero_export": {"value": "Zero"},
+                "self_consumption": {"value": "Auto"},
+                "idle": {"value": "Standby"},
             },
             "behavior": {},
         }
@@ -299,6 +315,8 @@ class TestProfileLoading:
             "modes": {
                 "export": {"value": "Export"},
                 "zero_export": {"value": "Zero"},
+                "self_consumption": {"value": "Auto"},
+                "idle": {"value": "Standby"},
             },
             "behavior": {},
         }
@@ -324,6 +342,8 @@ class TestProfileLoading:
             "modes": {
                 "export": {"value": "Export"},
                 "zero_export": {"value": "Zero"},
+                "self_consumption": {"value": "Auto"},
+                "idle": {"value": "Standby"},
             },
             "behavior": {},
         }

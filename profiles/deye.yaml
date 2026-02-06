@@ -55,12 +55,12 @@ modes:
     requires_grid_charging: false
 
   charge_from_grid:
-    value: null                            # Uses zero_export + grid_charging_entity=ON
+    value: "Zero Export To CT"         # Uses zero_export + grid_charging_entity=ON
     description: "Charge battery from grid"
     requires_grid_charging: true
 
   idle:
-    value: null
+    value: "Zero Export To CT"
     description: "Idle via zero export and minimal settings"
     requires_grid_charging: false
 
