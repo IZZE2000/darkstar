@@ -62,6 +62,25 @@ class WaterHeaterConfig:
 
 
 @dataclass
+class EVChargerConfig:
+    """EV charger control configuration."""
+
+    switch_entity: str | None = None
+    max_power_kw: float = 7.4
+    battery_capacity_kwh: float | None = None
+    min_target_soc: int = 40
+    replan_on_plugin: bool = True
+    penalty_levels: dict[str, float] = field(
+        default_factory=lambda: {
+            "emergency": 10.0,
+            "high": 2.0,
+            "normal": 0.5,
+            "opportunistic": 0.1,
+        }
+    )
+
+
+@dataclass
 class NotificationConfig:
     """Notification settings per action type."""
 
@@ -112,6 +131,7 @@ class ExecutorConfig:
 
     inverter: InverterConfig = field(default_factory=InverterConfig)
     water_heater: WaterHeaterConfig = field(default_factory=WaterHeaterConfig)
+    ev_charger: EVChargerConfig = field(default_factory=EVChargerConfig)
     notifications: NotificationConfig = field(default_factory=NotificationConfig)
     controller: ControllerConfig = field(default_factory=ControllerConfig)
 
@@ -240,6 +260,21 @@ def load_executor_config(config_path: str = "config.yaml") -> ExecutorConfig:
         temp_max=int(water_data.get("temp_max", WaterHeaterConfig.temp_max)),
     )
 
+    # EV Charger config (REV K25 Phase 5)
+    ev_data: dict[str, Any] = (
+        executor_data.get("ev_charger", {})
+        if isinstance(executor_data.get("ev_charger"), dict)
+        else {}
+    )
+    ev_charger = EVChargerConfig(
+        switch_entity=_str_or_none(ev_data.get("switch_entity")),
+        max_power_kw=float(ev_data.get("max_power_kw", EVChargerConfig.max_power_kw)),
+        battery_capacity_kwh=ev_data.get("battery_capacity_kwh"),
+        min_target_soc=int(ev_data.get("min_target_soc", EVChargerConfig.min_target_soc)),
+        replan_on_plugin=bool(ev_data.get("replan_on_plugin", EVChargerConfig.replan_on_plugin)),
+        penalty_levels=ev_data.get("penalty_levels", EVChargerConfig.penalty_levels),
+    )
+
     notif_data: dict[str, Any] = (
         executor_data.get("notifications", {})
         if isinstance(executor_data.get("notifications"), dict)
@@ -348,6 +383,7 @@ def load_executor_config(config_path: str = "config.yaml") -> ExecutorConfig:
         manual_override_entity=_str_or_none(executor_data.get("manual_override_entity")),
         inverter=inverter,
         water_heater=water_heater,
+        ev_charger=ev_charger,
         notifications=notifications,
         controller=controller,
         history_retention_days=int(executor_data.get("history_retention_days", 30)),

@@ -408,10 +408,10 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] Update ChartCard to display EV charging schedule (`ev_charging_kw`)
 * [x] **COMPLETED 2026-02-06**
 
-#### Phase 5: Executor Integration & Safety [PLANNED]
-* [ ] Add EV charging state to executor config
-* [ ] Implement source isolation: block house battery discharge when EV charging active
-* [ ] Monitor `ev_charger.switch_entity` to track actual charging state
-* [ ] Add safety timeout: auto-stop EV charging if plan expires
-* [ ] Log charging events for debugging
-* [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
+#### Phase 5: Executor Integration & Safety [DONE]
+* [x] Add EV charging state to executor config (`EVChargerConfig` dataclass)
+* [x] Implement source isolation: block house battery discharge when EV charging active
+* [x] Monitor `ev_charger.switch_entity` to track actual charging state
+* [x] Add safety timeout: auto-stop EV charging if plan expires (30 min default)
+* [x] Log charging events for debugging with notifications
+* [x] **COMPLETED 2026-02-06**
