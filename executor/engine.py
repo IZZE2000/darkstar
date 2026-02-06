@@ -61,6 +61,8 @@ class ExecutorStatus:
     last_action: str | None = None
     override_active: bool = False
     override_type: str | None = None
+    profile_name: str | None = None
+    profile_error: str | None = None
 
 
 class ExecutorEngine:
@@ -87,6 +89,7 @@ class ExecutorEngine:
 
         try:
             self.inverter_profile = get_profile_from_config(self._full_config)
+            self.status.profile_name = self.inverter_profile.metadata.name
             logger.info(
                 "Loaded inverter profile: %s v%s (%s)",
                 self.inverter_profile.metadata.name,
@@ -97,6 +100,8 @@ class ExecutorEngine:
             # Check for missing required entities (REV ARC13 Phase 3)
             missing = self.inverter_profile.get_missing_entities(self._full_config)
             if missing:
+                error_msg = f"Profile incomplete. Missing sensors: {', '.join(missing)}"
+                self.status.profile_error = error_msg
                 logger.warning(
                     "⚠️ Inverter profile '%s' configuration incomplete. Missing required entities: %s",
                     self.inverter_profile.metadata.name,
@@ -110,6 +115,8 @@ class ExecutorEngine:
                         logger.warning("   💡 Suggestion for %s: %s", key, suggestion)
         except Exception as e:
             logger.error("Failed to load inverter profile: %s", e)
+            self.status.profile_error = str(e)
+            self.status.profile_name = "generic"  # Fallback
             # Set profile to None - executor will use existing hardcoded behavior
             self.inverter_profile = None
 
@@ -244,6 +251,8 @@ class ExecutorEngine:
                 "last_action": self.status.last_action,
                 "override_active": self.status.override_active,
                 "override_type": self.status.override_type,
+                "profile_name": self.status.profile_name,
+                "profile_error": self.status.profile_error,
                 "quick_action": quick_action_status,
                 "paused": pause_status,
                 "water_boost": water_boost_status,

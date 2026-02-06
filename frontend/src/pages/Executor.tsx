@@ -62,6 +62,8 @@ type ExecutorStatus = {
         remaining_minutes: number
         reason: string
     }
+    profile_name?: string
+    profile_error?: string
     version?: string
 }
 
@@ -564,6 +566,15 @@ export default function Executor() {
                             <div className="text-sm font-mono text-text">{formatTime(status?.next_run_at)}</div>
                         </div>
                         <div>
+                            <div className="text-[10px] text-muted/70 uppercase">Profile</div>
+                            <div
+                                className="text-sm font-mono text-text truncate max-w-[80px]"
+                                title={status?.profile_name}
+                            >
+                                {status?.profile_name || '—'}
+                            </div>
+                        </div>
+                        <div>
                             <div className="text-[10px] text-muted/70 uppercase">Version</div>
                             <div className="text-sm font-mono text-text">{status?.version || '—'}</div>
                         </div>
@@ -575,6 +586,26 @@ export default function Executor() {
                                 <AlertTriangle className="h-3.5 w-3.5" />
                                 <span className="font-medium">Override Active:</span>
                                 <span>{status.override_type}</span>
+                            </div>
+                        </div>
+                    )}
+
+                    {status?.profile_error && (
+                        <div className="mt-3 p-2 rounded-lg bg-bad/20 border border-bad/30">
+                            <div className="flex items-center gap-2 text-[11px] text-bad">
+                                <AlertTriangle className="h-3.5 w-3.5" />
+                                <span className="font-medium">Profile Error:</span>
+                                <span>{status.profile_error}</span>
+                            </div>
+                        </div>
+                    )}
+
+                    {status?.profile_name === 'generic' && !status?.profile_error && (
+                        <div className="mt-3 p-2 rounded-lg bg-warn/10 border border-warn/20">
+                            <div className="flex items-center gap-2 text-[11px] text-warn/80">
+                                <AlertTriangle className="h-3.5 w-3.5" />
+                                <span className="font-medium">Using Generic Profile</span>
+                                <span className="text-[10px] opacity-70">(Legacy compatibility mode)</span>
                             </div>
                         </div>
                     )}
