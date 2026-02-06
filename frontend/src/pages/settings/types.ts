@@ -514,18 +514,6 @@ export const systemSections: SettingsSection[] = [
                 },
             },
             {
-                key: 'executor.inverter.soc_target_entity',
-                label: 'Target SoC Output',
-                helper: "Target maintenance level. Acts as a discharge floor (won't discharge below this %) AND a grid charge target (won't charge above this % from grid). Required for inverters like Deye (behavior for other inverters unknown).",
-                path: ['executor', 'inverter', 'soc_target_entity'],
-                type: 'entity',
-                showIf: {
-                    configKey: 'system.inverter_profile',
-                    value: 'deye',
-                    disabledText: "Select 'Deye / SunSynk' profile to configure",
-                },
-            },
-            {
                 key: 'executor.water_heater.target_entity',
                 label: 'Water Heater Setpoint',
                 path: ['executor', 'water_heater', 'target_entity'],

@@ -214,6 +214,8 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] **Phase 6.1 (UI):** Add `soc_target_entity` to settings (Required for Deye/Generic)
 * [x] **Phase 6.2 (Logic):** Make `soc_target` silent-skip for profiles that don't require it (Fronius)
 * [x] **COMMIT:** fix(executor): conditional soc_target ui and silent skip
+* [x] **Phase 6.3 (Cleanup):** Remove duplicate SoC target fields in `types.ts`
+* [x] **COMMIT:** refactor(ui): remove duplicate soc_target settings field
 
 
 ---
