@@ -349,3 +349,67 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] **Tests:** Run all profile validation tests `uv run pytest tests/test_executor_profiles.py`.
 * [x] **Manual:** Verify no regression for Deye profile (should still work as before).
 * [x] **Documentation:** Update `docs/INVERTER_PROFILES_VISION.md` if any architectural assumptions changed.
+
+---
+
+### [PLANNED] REV // K25 — Smart EV Charging Integration
+
+**Goal:** Integrate EV charging into Darkstar's optimization system as a smart deferrable load that protects the house battery while charging at the cheapest possible times based on battery urgency.
+
+**Context:** Beta testers have EVs with simple HA integrations (on/off switch, SoC sensor, plug status). Darkstar should intelligently decide when to charge based on: (1) how empty the car is, (2) how urgent charging is, (3) electricity prices. Unlike water heating, EV charging must NEVER use house battery energy - the car drives away with that energy!
+
+**Plan:**
+
+#### Phase 1: Configuration & Entities [PLANNED]
+* [ ] Add `ev_charger.enabled` (default: false) to `config.default.yaml`
+* [ ] Add `ev_charger.switch_entity` (required when enabled)
+* [ ] Add `ev_charger.soc_sensor` (required when enabled)
+* [ ] Add `ev_charger.plug_sensor` (required when enabled)
+* [ ] Add `ev_charger.max_power_kw` (default: 7.4)
+* [ ] Add `ev_charger.battery_capacity_kwh` (user-configured)
+* [ ] Add `ev_charger.min_target_soc` (default: 40, user-adjustable in UI)
+* [ ] Add `ev_charger.penalty_levels` (configurable thresholds based on SoC)
+* [ ] Add `ev_charger.departure_time` (optional, for specific day override)
+* [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
+
+#### Phase 2: MILP Integration (Kepler Solver) [PLANNED]
+* [ ] Add EV as deferrable load to Kepler MILP formulation
+* [ ] Implement grid-only constraint (ev_charge[t] cannot draw from battery discharge)
+* [ ] Calculate kwh_needed = (min_target_soc - current_soc) / 100 × capacity
+* [ ] Implement dynamic penalty based on current SoC:
+    * < 20%: 10.0 SEK/kWh (emergency charging)
+    * 20-40%: 2.0 SEK/kWh (high priority)
+    * 40-70%: 0.5 SEK/kWh (normal priority)
+    * > 70%: 0.1 SEK/kWh (opportunistic)
+* [ ] Handle conditional planning: skip EV if plug_sensor == false
+* [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
+
+#### Phase 3: Event-Driven Re-planning [PLANNED]
+* [ ] Add HA state listener for `ev_charger.plug_sensor`
+* [ ] Trigger immediate re-plan when plug_sensor changes to "on"
+* [ ] Trigger immediate re-plan when user changes `min_target_soc` in UI
+* [ ] Trigger immediate re-plan when user sets `departure_time` override
+* [ ] Do not wait for 15-minute cron when EV state changes
+* [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
+
+#### Phase 4: Frontend UI Components [PLANNED]
+* [ ] Add EV Charging card to Dashboard showing:
+    * Current SoC from sensor
+    * Plug status (connected/disconnected)
+    * Charging state (active/inactive)
+    * Next scheduled charge window
+* [ ] Add EV Charging configuration section to Settings:
+    * Min target SoC slider (0-100%)
+    * Penalty level configuration (4 thresholds)
+    * Departure time override picker
+    * Entity ID configuration (switch, SoC, plug sensors)
+* [ ] Add EV charging schedule visualization to main chart
+* [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
+
+#### Phase 5: Executor Integration & Safety [PLANNED]
+* [ ] Add EV charging state to executor config
+* [ ] Implement source isolation: block house battery discharge when EV charging active
+* [ ] Monitor `ev_charger.switch_entity` to track actual charging state
+* [ ] Add safety timeout: auto-stop EV charging if plan expires
+* [ ] Log charging events for debugging
+* [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
