@@ -25,6 +25,7 @@ system:
   has_solar: true         # Enable PV forecasting & solar-related features
   has_battery: true       # Enable battery control & grid arbitrage
   has_water_heater: true  # Enable water heating optimization
+  has_ev_charger: false   # Enable EV charging optimization
   grid_meter_type: net    # Meter type: net (single +/- sensor) | dual (separate import/export)
 
   grid:
@@ -56,6 +57,49 @@ battery:
 
 battery_economics:
   battery_cycle_cost_kwh: 0.2      # Degradation cost applied per kWh cycled through the battery
+
+
+# EV Charging (Smart Grid-Only Charging)
+# Treats EV as a deferrable load with SoC-based urgency. Unlike the house battery,
+# EV charging is grid-only (never drains house battery into car).
+ev_charger:
+  enabled: false                   # Master switch for EV charging optimization
+
+  # Home Assistant Entities (REQUIRED when enabled)
+  switch_entity: ""                # HA entity to enable/disable smart charging
+  soc_sensor: ""                   # HA entity for EV battery SoC (%)
+  plug_sensor: ""                  # HA entity for plug status (on=plugged in)
+
+  # Physical Parameters
+  max_power_kw: 7.4                # Max charging power (kW) - typical 1-phase 32A = 7.4kW
+  battery_capacity_kwh: 77.0       # EV battery capacity (kWh) - adjust for your car
+  min_target_soc: 40               # Default target SoC % to ensure by next morning
+
+  # Dynamic Penalty System (SoC-based urgency)
+  # Controls how "expensive" cheap electricity feels to the optimizer.
+  # Higher penalty = more urgent to charge, even at higher prices.
+  penalty_levels:
+    - name: "emergency"
+      min_soc: 0                   # Apply below this SoC (or always if negative)
+      max_soc: 20                  # Apply up to this SoC
+      penalty_sek: 10.0            # Charge NOW regardless of price (emergency)
+    - name: "high"
+      min_soc: 20
+      max_soc: 40
+      penalty_sek: 2.0             # High priority - charge even at moderate prices
+    - name: "normal"
+      min_soc: 40
+      max_soc: 70
+      penalty_sek: 0.5             # Normal - prefer cheap hours
+    - name: "opportunistic"
+      min_soc: 70
+      max_soc: 100
+      penalty_sek: 0.1             # Low priority - only at very cheap prices
+
+  # Replanning Events (trigger new optimization immediately)
+  replan_on_plugin: true           # Trigger when car plugs in
+  replan_on_unplug: false          # Trigger when car unplugs
+  replan_on_soc_change: false      # Trigger when SoC updates (can be noisy)
 
 
 # Water Heating
@@ -218,6 +262,7 @@ input_sensors:
   load_power: ""         # Current load consumption (W or kW)
   battery_power: ""   # Current battery power (+ discharge, - charge)
   water_power: ""                  # Current water heater power (W or kW)
+  ev_power: ""              # Current EV charging power (W or kW)
   grid_power: ""         # Current grid power (+ import, - export) (Used if meter_type=net)
   grid_import_power: ""    # Current grid import power (W/kW) (Used if meter_type=dual)
   grid_export_power: ""    # Current grid export power (W/kW) (Used if meter_type=dual)
@@ -289,6 +334,14 @@ executor:
     temp_boost: 70     # Manual boost button (Dashboard/Executor)
     temp_max: 85       # PV dump target + safety limit (never exceeded)
 
+  # EV Charger Control
+  # The executor controls EV charging by setting charge current or enabling/disabling.
+  ev_charger:
+    control_entity: ""       # HA entity for charge current (A) or power (W) or on/off
+    control_mode: "current"  # "current" (A), "power" (W), or "switch" (on/off)
+    max_current_a: 32.0      # Max charge current when control_mode=current
+    enabled_entity: ""       # HA entity to enable/disable smart charging (read-only state)
+
   # Notifications (via Home Assistant notify service)
   notifications:
     service: ""  # HA notify service to use
@@ -298,6 +351,8 @@ executor:
     on_export_stop: true               # Notify when export/discharge stops
     on_water_heat_start: true          # Notify when water heating starts
     on_water_heat_stop: false          # Notify when water heating stops
+    on_ev_charge_start: true           # Notify when EV charging starts
+    on_ev_charge_stop: false           # Notify when EV charging stops
     on_soc_target_change: false        # Notify when SoC target changes
     on_override_activated: true        # Notify when manual override triggers
     on_error: true                     # Notify on executor errors
