@@ -191,6 +191,10 @@ def config_to_kepler_config(
 
     wh_cfg = planner_config.get("water_heating", {})
 
+    # Rev K25: EV Charging Configuration
+    ev_cfg = planner_config.get("ev_charger", {})
+    ev_enabled = system.get("has_ev_charger", False) and ev_cfg.get("enabled", False)
+
     capacity = float(battery.get("capacity_kwh", 13.5))
     charge_eff = float(battery.get("charge_efficiency", 0.95))
     discharge_eff = float(battery.get("discharge_efficiency", 0.95))
@@ -295,6 +299,30 @@ def config_to_kepler_config(
         defer_up_to_hours=float(wh_cfg.get("defer_up_to_hours", 0.0)),
         # Rev E4: Export Toggle
         enable_export=bool(planner_config.get("export", {}).get("enable_export", True)),
+        # Rev K25: EV Charging Configuration
+        ev_charging_enabled=ev_enabled,
+        ev_max_power_kw=float(ev_cfg.get("max_power_kw", 0.0)),
+        ev_battery_capacity_kwh=float(ev_cfg.get("battery_capacity_kwh", 0.0)),
+        ev_target_soc_percent=float(ev_cfg.get("min_target_soc", 40.0)),
+        ev_current_soc_percent=0.0,  # Set by pipeline from HA sensor
+        ev_plugged_in=False,  # Set by pipeline from HA sensor
+        # Penalty levels from config
+        ev_penalty_emergency=float(ev_cfg.get("penalty_levels", [{}])[0].get("penalty_sek", 10.0))
+        if ev_cfg.get("penalty_levels")
+        else 10.0,
+        ev_penalty_high=float(ev_cfg.get("penalty_levels", [{}, {}])[1].get("penalty_sek", 2.0))
+        if ev_cfg.get("penalty_levels") and len(ev_cfg.get("penalty_levels")) > 1
+        else 2.0,
+        ev_penalty_normal=float(
+            ev_cfg.get("penalty_levels", [{}, {}, {}])[2].get("penalty_sek", 0.5)
+        )
+        if ev_cfg.get("penalty_levels") and len(ev_cfg.get("penalty_levels")) > 2
+        else 0.5,
+        ev_penalty_opportunistic=float(
+            ev_cfg.get("penalty_levels", [{}, {}, {}, {}])[3].get("penalty_sek", 0.1)
+        )
+        if ev_cfg.get("penalty_levels") and len(ev_cfg.get("penalty_levels")) > 3
+        else 0.1,
     )
 
     return kepler_cfg
@@ -358,6 +386,7 @@ def kepler_result_to_dataframe(
                 "water_from_grid_kwh": 0.0,
                 "water_from_pv_kwh": 0.0,
                 "water_from_battery_kwh": 0.0,
+                "ev_charging_kw": s.ev_charge_kw,  # From Kepler MILP (Rev K25)
                 "projected_battery_cost": 0.0,
             }
         )

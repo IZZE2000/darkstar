@@ -64,6 +64,16 @@ class KeplerSolver:
             water_start = None
             needs_water_start = False
 
+        # EV Charging as deferrable load (Rev K25)
+        ev_enabled = config.ev_charging_enabled and config.ev_plugged_in
+        if ev_enabled:
+            ev_charge = pulp.LpVariable.dicts("ev_charge", range(T), cat="Binary")
+            # EV energy tracking variable (kWh charged in each slot)
+            ev_energy = pulp.LpVariable.dicts("ev_energy_kwh", range(T), lowBound=0.0)
+        else:
+            ev_charge = dict.fromkeys(range(T), 0)
+            ev_energy = dict.fromkeys(range(T), 0.0)
+
         # SoC state variables (T+1 states for T slots)
 
         # SoC state variables (T+1 states for T slots)
@@ -89,6 +99,19 @@ class KeplerSolver:
         # Discomfort variable removed.
         # "Block Overshoot" variable (soft penalty for massive blocks)
         block_overshoot = pulp.LpVariable.dicts("block_overshoot", range(T), lowBound=0.0)
+
+        # Rev K25: Calculate dynamic EV penalty based on current SoC
+        ev_penalty_sek = 0.0
+        if ev_enabled:
+            soc = config.ev_current_soc_percent
+            if soc < 20:
+                ev_penalty_sek = config.ev_penalty_emergency
+            elif soc < 40:
+                ev_penalty_sek = config.ev_penalty_high
+            elif soc < 70:
+                ev_penalty_sek = config.ev_penalty_normal
+            else:
+                ev_penalty_sek = config.ev_penalty_opportunistic
 
         # Slack variables for soft constraints (Phase 2)
         # We index min_kwh_violation by day index (max 365 days, sufficient size)
@@ -120,11 +143,32 @@ class KeplerSolver:
                 water_heat[t] * config.water_heating_power_kw * h if water_enabled else 0
             )
 
-            # Energy Balance Constraint (water load added to demand side)
+            # EV charging load for this slot (kWh) - Rev K25
+            if ev_enabled:
+                # EV charging power = binary * max_power * slot_hours
+                prob += ev_energy[t] == ev_charge[t] * config.ev_max_power_kw * h
+            else:
+                ev_energy[t] = 0.0
+
+            # Energy Balance Constraint (water and EV loads added to demand side)
             prob += (
-                s.load_kwh + water_load_kwh + charge[t] + grid_export[t] + curtailment[t]
+                s.load_kwh
+                + water_load_kwh
+                + ev_energy[t]
+                + charge[t]
+                + grid_export[t]
+                + curtailment[t]
                 == s.pv_kwh + discharge[t] + grid_import[t] + load_shedding[t]
             )
+
+            # Rev K25: Grid-only constraint - EV charging cannot use battery discharge
+            # EV energy must be less than or equal to grid import (plus some margin for numerical stability)
+            if ev_enabled:
+                # EV can only charge from grid (not from battery discharge or PV)
+                # This ensures energy doesn't leave the house to the car
+                prob += (
+                    ev_energy[t] <= grid_import[t] + 0.001
+                )  # Small epsilon for numerical stability
 
             # Phase 4 Pivot: Re-introduced water_start binary for guidance
             if water_enabled and needs_water_start:
@@ -192,6 +236,10 @@ class KeplerSolver:
             # credit on charge. The terminal_value and wear_cost are sufficient
             # for arbitrage decisions.
 
+            # Rev K25: EV charging cost with dynamic urgency penalty
+            # This makes "cheap" electricity feel more expensive when EV SoC is low
+            slot_ev_cost = ev_energy[t] * ev_penalty_sek if ev_enabled else 0.0
+
             total_cost.append(
                 slot_import_cost
                 - slot_export_revenue
@@ -200,6 +248,7 @@ class KeplerSolver:
                 + slot_curtailment_cost
                 + slot_shedding_cost
                 + slot_import_breach_cost
+                + slot_ev_cost
             )
 
             # Soft Min/Max SoC Constraints
@@ -232,6 +281,26 @@ class KeplerSolver:
         else:
             # If no target, we don't care where we end up (within min_soc limits)
             pass
+
+        # Rev K25: EV Target SoC Constraint
+        # Ensure EV reaches target SoC by end of optimization horizon
+        if ev_enabled and config.ev_target_soc_percent > 0:
+            # Calculate target kWh to add
+            ev_target_kwh = (
+                config.ev_battery_capacity_kwh
+                * (config.ev_target_soc_percent - config.ev_current_soc_percent)
+                / 100.0
+            )
+            if ev_target_kwh > 0:
+                # Soft constraint: sum of all EV charging >= target_kwh - violation
+                ev_target_violation = pulp.LpVariable("ev_target_violation_kwh", lowBound=0.0)
+                prob += (
+                    pulp.lpSum(ev_energy[t] for t in range(T))
+                    >= ev_target_kwh - ev_target_violation
+                )
+                # Penalty for not reaching target (high priority)
+                EV_TARGET_PENALTY = 5000.0
+                total_cost.append(EV_TARGET_PENALTY * ev_target_violation)
 
         # Water Heating Constraints (Rev K17/K18/K21)
         gap_violation_penalty = 0.0
@@ -409,6 +478,13 @@ class KeplerSolver:
                 else:
                     w_kw = 0.0
 
+                # EV charging power (kW) from binary decision - Rev K25
+                if ev_enabled:
+                    ev_val = pulp.value(ev_charge[t])
+                    ev_kw = config.ev_max_power_kw if ev_val and ev_val > 0.5 else 0.0
+                else:
+                    ev_kw = 0.0
+
                 wear = (c_val + d_val) * config.wear_cost_sek_per_kwh * 0.5
                 cost = (i_val * s.import_price_sek_kwh) - (e_val * s.export_price_sek_kwh) + wear
                 final_total_cost += cost
@@ -426,6 +502,7 @@ class KeplerSolver:
                         import_price_sek_kwh=s.import_price_sek_kwh,
                         export_price_sek_kwh=s.export_price_sek_kwh,
                         water_heat_kw=w_kw,
+                        ev_charge_kw=ev_kw,
                         is_optimal=True,
                     )
                 )

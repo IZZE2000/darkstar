@@ -59,6 +59,19 @@ class KeplerConfig:
     # Rev E4: Export Toggle
     enable_export: bool = True  # If False, enforce 0 export
 
+    # EV Charging as deferrable load (Rev K25)
+    ev_charging_enabled: bool = False  # Master switch for EV optimization
+    ev_max_power_kw: float = 0.0  # Max EV charging power (kW)
+    ev_battery_capacity_kwh: float = 0.0  # EV battery capacity
+    ev_target_soc_percent: float = 40.0  # Target SoC to reach by next morning
+    ev_current_soc_percent: float = 0.0  # Current EV SoC (for dynamic penalty)
+    ev_plugged_in: bool = False  # Whether car is currently plugged in
+    # Dynamic penalty levels based on SoC urgency
+    ev_penalty_emergency: float = 10.0  # SoC < 20%: charge NOW
+    ev_penalty_high: float = 2.0  # SoC 20-40%: high priority
+    ev_penalty_normal: float = 0.5  # SoC 40-70%: normal priority
+    ev_penalty_opportunistic: float = 0.1  # SoC > 70%: opportunistic
+
     def __post_init__(self):
         """Validate configuration after initialization."""
         # Rev F39: Validate battery configuration
@@ -116,6 +129,7 @@ class KeplerResultSlot:
     import_price_sek_kwh: float = 0.0
     export_price_sek_kwh: float = 0.0
     water_heat_kw: float = 0.0  # Rev K17: Water heating power in this slot
+    ev_charge_kw: float = 0.0  # Rev K25: EV charging power in this slot
     is_optimal: bool = True
 
 
