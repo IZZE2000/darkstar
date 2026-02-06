@@ -313,7 +313,8 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 
 ---
 
-### [IN PROGRESS] REV // IP3 — Inverter Profile Hardening & Fronius Fixes
+### [DONE] REV // IP3 — Inverter Profile Hardening & Fronius Fixes
+**Status:** DONE (2026-02-06)
 
 **Goal:** Fix case-sensitivity issues for Fronius, prevent unconditional execution of unsupported actions, and improve visibility of profile loading errors.
 
@@ -332,19 +333,19 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] **Tests:** Update unit tests to expect errors for incomplete profiles instead of defaults.
 * [x] **COMMIT:** refactor(executor): remove implicit profile defaults to force explicit config
 
-#### Phase 3: Conditional Execution Logic [IN PROGRESS]
-* [/] **Executor:** Update `ActionDispatcher.execute` in `executor/actions.py` to check `profile.capabilities` before dispatching actions.
-    *   Check `grid_charging_control` before `_set_grid_charging`.
-    *   Check `supports_soc_target` before `_set_soc_target`.
-* [ ] **Executor:** Skip "Charge Limit" / "Discharge Limit" actions if they are not configured or supported (checking `watts_based_control` / `control_unit` is not enough, need explicit capability check or "Skip if None" logic).
-* [ ] **COMMIT:** fix(executor): conditional execution based on profile capabilities
+#### Phase 3: Conditional Execution Logic [DONE]
+* [x] **Executor:** Update `ActionDispatcher.execute` in `executor/actions.py` to check `profile.capabilities` before dispatching actions.
+    *   [x] Check `grid_charging_control` before `_set_grid_charging`.
+    *   [x] Check `supports_soc_target` before `_set_soc_target`.
+* [x] **Executor:** Skip "Charge Limit" / "Discharge Limit" actions if they are not configured or supported (checking `watts_based_control` / `control_unit` is not enough, need explicit capability check or "Skip if None" logic).
+* [x] **COMMIT:** feat(executor): implement capability-based conditional action execution
 
-#### Phase 4: UI Error Handling [PLANNED]
-* [ ] **Backend:** Add `profile_name` and `profile_error` to `ExecutorStatus` API response.
-* [ ] **Frontend:** Display a persistent warning in `Executor.tsx` if the loaded profile differs from the requested one (e.g., config requested "fronius" but fallback loaded "generic").
-* [ ] **COMMIT:** feat(ui): show active profile and load errors in executor dashboard
+#### Phase 4: UI Error Handling [DONE]
+* [x] **Backend:** Add `profile_name` and `profile_error` to `ExecutorStatus` API response.
+* [x] **Frontend:** Display a persistent warning in `Executor.tsx` if the loaded profile differs from the requested one (e.g., config requested "fronius" but fallback loaded "generic").
+* [x] **COMMIT:** feat(api/ui): expose profile status and errors to frontend
 
-#### Phase 5: Final Verification [PLANNED]
-* [ ] **Tests:** Run all profile validation tests `uv run pytest tests/test_executor_profiles.py`.
-* [ ] **Manual:** Verify no regression for Deye profile (should still work as before).
-* [ ] **Documentation:** Update `docs/INVERTER_PROFILES_VISION.md` if any architectural assumptions changed.
+#### Phase 5: Final Verification [DONE]
+* [x] **Tests:** Run all profile validation tests `uv run pytest tests/test_executor_profiles.py`.
+* [x] **Manual:** Verify no regression for Deye profile (should still work as before).
+* [x] **Documentation:** Update `docs/INVERTER_PROFILES_VISION.md` if any architectural assumptions changed.
