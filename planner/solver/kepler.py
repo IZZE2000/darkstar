@@ -103,12 +103,12 @@ class KeplerSolver:
         # Rev K25: Calculate dynamic EV penalty based on current SoC
         ev_penalty_sek = 0.0
         if ev_enabled:
-            soc = config.ev_current_soc_percent
-            if soc < 20:
+            current_ev_soc = config.ev_current_soc_percent
+            if current_ev_soc < 20:
                 ev_penalty_sek = config.ev_penalty_emergency
-            elif soc < 40:
+            elif current_ev_soc < 40:
                 ev_penalty_sek = config.ev_penalty_high
-            elif soc < 70:
+            elif current_ev_soc < 70:
                 ev_penalty_sek = config.ev_penalty_normal
             else:
                 ev_penalty_sek = config.ev_penalty_opportunistic
@@ -164,10 +164,10 @@ class KeplerSolver:
             # Rev K25: Grid-only constraint - EV charging cannot use battery discharge
             # EV energy must be less than or equal to grid import (plus some margin for numerical stability)
             if ev_enabled:
-                # EV can only charge from grid (not from battery discharge or PV)
-                # This ensures energy doesn't leave the house to the car
+                # EV can only charge from grid or solar (not from battery discharge)
+                # This ensures energy doesn't leave the house battery to the car
                 prob += (
-                    ev_energy[t] <= grid_import[t] + 0.001
+                    ev_energy[t] <= grid_import[t] + s.pv_kwh + 0.001
                 )  # Small epsilon for numerical stability
 
             # Phase 4 Pivot: Re-introduced water_start binary for guidance

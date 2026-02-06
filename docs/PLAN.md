@@ -359,7 +359,7 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 
 ---
 
-### [DONE] REV // K25 — Smart EV Charging Integration
+### [IN PROGRESS] REV // K25 — Smart EV Charging Integration
 
 **Status:** All Phases Complete ✓
 
@@ -424,3 +424,20 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] Add safety timeout: auto-stop EV charging if plan expires (30 min default)
 * [x] Log charging events for debugging with notifications
 * [x] **COMPLETED 2026-02-06**
+
+#### Phase 6: Solar EV Charging Optimization [DONE]
+* [x] **Logic:** Relax grid-only constraint to `ev_energy <= grid_import + pv_production`
+* [x] **Objective:** Allow EV to charge from excess solar while preventing house battery drainage
+* [x] **Verification:** Added regression test cases in `tests/test_kepler_solver.py`
+    *   [x] High PV + High Prices (Self-consumption)
+    *   [x] Low PV + High EV Demand (Mix of PV + Grid)
+    *   [x] Zero PV + High Prices (Defer to cheap window)
+* [x] **Bugfix:** Fixed critical `soc` variable shadowing in `kepler.py`
+* [x] **COMPLETED 2026-02-06**
+
+#### Phase 7: Documentation [PLANNED]
+* [ ] Update `README.md`
+* [ ] Update `docs/SETUP_GUIDE.md`
+* [ ] Update `docs/USER_MANUAL.md`
+* [ ] Update `docs/ARCHITECTURE.md`
+* [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
