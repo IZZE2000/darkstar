@@ -27,16 +27,17 @@ capabilities:
   supports_force_discharge: false
 
 entities:
-  # These are defaults, users usually override them in config.yaml
+  # Required entities
   required:
-    work_mode_entity: "select.deye_work_mode"
-    soc_target_entity: "number.deye_battery_soc_limit_1"
-    grid_charging_entity: "switch.deye_grid_charging_1"
+    work_mode: "select.inverter_work_mode"
+    soc_target: "input_number.master_soc_target"
+    grid_charging_enable: "switch.deye_grid_charging_1"
 
+  # Optional entities
   optional:
-    max_charging_current_entity: "number.deye_battery_max_charge_current"
-    max_discharging_current_entity: "number.deye_battery_max_discharge_current"
-    grid_max_export_power_entity: "number.deye_grid_export_limit"
+    max_charge_current: "number.deye_battery_max_charge_current"
+    max_discharge_current: "number.deye_battery_max_discharge_current"
+    grid_max_export_power: "number.deye_grid_export_limit"
 
 modes:
   export:
@@ -73,6 +74,7 @@ behavior:
   soc_target_is_charge_ceiling: true
   inverter_ac_limit_kw: 8.8
 
+# Defaults for non-entity settings
 defaults:
   battery:
     nominal_voltage_v: 48.0
@@ -84,11 +86,3 @@ defaults:
       min_charge_a: 10.0
       round_step_a: 5.0
       write_threshold_a: 5.0
-
-  suggested_entities:
-    work_mode_entity: "select.deye_work_mode"
-    soc_target_entity: "number.deye_battery_soc_limit_1"
-    grid_charging_entity: "switch.deye_grid_charging_1"
-    max_charging_current_entity: "number.deye_battery_max_charge_current"
-    max_discharging_current_entity: "number.deye_battery_max_discharge_current"
-    grid_max_export_power_entity: "number.deye_grid_export_limit"

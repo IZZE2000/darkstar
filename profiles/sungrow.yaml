@@ -19,13 +19,17 @@ capabilities:
 
 entities:
   required:
-    work_mode_entity: null               # We use custom entities for mode control
-    max_charging_power_entity: null
-    max_discharging_power_entity: null
+    work_mode: "input_select.set_sg_ems_mode"
+    max_charge_power: "input_number.set_sg_battery_max_charge_power"
+    max_discharge_power: "input_number.set_sg_battery_max_discharge_power"
 
   optional:
-    grid_max_export_power_entity: null
-    forced_power_entity: "forced_power_limit"  # Map to custom key for config lookup
+    grid_max_export_power: "input_number.set_sg_export_power_limit"
+    forced_power: "input_number.set_sg_forced_charge_discharge_power"
+    # Custom Entities
+    ems_mode: "input_select.set_sg_ems_mode"
+    forced_charge_discharge_cmd: "input_select.set_sg_battery_forced_charge_discharge_cmd"
+    export_power_limit: "input_number.set_sg_export_power_limit"
 
 modes:
   # Export mode - Force discharge to grid
@@ -90,17 +94,6 @@ behavior:
   mode_settling_ms: 100               # 100ms safe margin
 
 defaults:
-  suggested_entities:
-    work_mode: "input_select.set_sg_ems_mode"  # Fallback/Primary
-    max_charge_power: "input_number.set_sg_battery_max_charge_power"
-    max_discharge_power: "input_number.set_sg_battery_max_discharge_power"
-    grid_max_export_power: "input_number.set_sg_export_power_limit"
-    # Custom Entities
-    ems_mode: "input_select.set_sg_ems_mode"
-    forced_charge_discharge_cmd: "input_select.set_sg_battery_forced_charge_discharge_cmd"
-    export_power_limit: "input_number.set_sg_export_power_limit"
-    forced_power_limit: "input_number.set_sg_forced_charge_discharge_power"
-
   battery:
     max_charge_w: 9000
     max_discharge_w: 9000

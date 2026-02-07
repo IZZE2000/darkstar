@@ -568,13 +568,20 @@ async def get_profile_suggestions(name: str) -> dict[str, Any]:
         missing = profile.get_missing_entities(config)
 
         # Build diff to show what's already set and what's suggested
-        executor_config = config.get("executor", {}).get("inverter", {})
         diff = []
         for key, suggested_value in suggestions.items():
-            # suggestions are flat like "executor.inverter.work_mode"
+            # suggestions are flat like "executor.inverter.work_mode" or "battery.nominal_voltage_v"
             # we want to compare with current values
-            short_key = key.split(".")[-1]
-            current_value = executor_config.get(short_key)
+            parts = key.split(".")
+            section = config
+            for part in parts:
+                if isinstance(section, dict):
+                    section = section.get(part)
+                else:
+                    section = None
+                    break
+            current_value = section
+            short_key = parts[-1]
 
             diff.append(
                 {
@@ -582,7 +589,7 @@ async def get_profile_suggestions(name: str) -> dict[str, Any]:
                     "short_key": short_key,
                     "suggested": suggested_value,
                     "current": current_value,
-                    "is_missing": not current_value,
+                    "is_missing": current_value is None or current_value == "",
                     "is_different": current_value != suggested_value,
                 }
             )
@@ -599,3 +606,19 @@ async def get_profile_suggestions(name: str) -> dict[str, Any]:
     except Exception as e:
         logger.exception("Error getting suggestions for profile %s", name)
         raise HTTPException(500, str(e)) from e
+
+
+@router.get(
+    "/api/profiles",
+    summary="List Inverter Profiles",
+    description="Returns a list of all available inverter profiles discovered on disk.",
+)
+async def get_profiles() -> list[dict[str, Any]]:
+    """Return a list of all available inverter profiles."""
+    from executor.profiles import list_profiles
+
+    try:
+        return list_profiles()
+    except Exception as e:
+        logger.exception("Error listing profiles")
+        raise HTTPException(500, f"Error listing profiles: {e}") from e

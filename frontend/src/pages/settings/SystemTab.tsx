@@ -15,10 +15,11 @@ import { ProfileSetupHelper } from './components/ProfileSetupHelper'
 
 export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }) => {
     const navigate = useNavigate()
+    const [profiles, setProfiles] = useState<{ name: string; description: string }[]>([])
     const {
         form,
         fieldErrors,
-        loading,
+        loading: settingsLoading,
         saving,
         statusMessage,
         haEntities,
@@ -28,6 +29,36 @@ export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }
         reloadEntities,
         isDirty,
     } = useSettingsForm(systemFieldList)
+
+    const loading = settingsLoading || profiles.length === 0
+
+    useEffect(() => {
+        Api.listProfiles()
+            .then((data) => setProfiles(data))
+            .catch((err) => console.error('Failed to load profiles:', err))
+    }, [])
+
+    // Update systemSections dynamic options
+    const dynamicSections = systemSections.map((section) => {
+        if (section.title === 'System Profile') {
+            return {
+                ...section,
+                fields: section.fields.map((field) => {
+                    if (field.key === 'system.inverter_profile') {
+                        return {
+                            ...field,
+                            options: profiles.map((p) => ({
+                                label: p.name.charAt(0).toUpperCase() + p.name.slice(1),
+                                value: p.name,
+                            })),
+                        }
+                    }
+                    return field
+                }),
+            }
+        }
+        return section
+    })
 
     const blocker = useUnsavedChangesGuard(isDirty)
 
@@ -86,8 +117,8 @@ export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }
 
             {/* HA Add-on Guidance Banner */}
 
-            {systemSections.map((section, idx) => {
-                const prevSection = idx > 0 ? systemSections[idx - 1] : null
+            {dynamicSections.map((section, idx) => {
+                const prevSection = idx > 0 ? dynamicSections[idx - 1] : null
                 const showDivider = section.isHA && prevSection && !prevSection.isHA
 
                 // Group fields by subsection
@@ -207,7 +238,7 @@ export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }
                                                                                                     field={field}
                                                                                                     value={
                                                                                                         form[
-                                                                                                            field.key
+                                                                                                        field.key
                                                                                                         ] ?? ''
                                                                                                     }
                                                                                                     onChange={
@@ -215,7 +246,7 @@ export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }
                                                                                                     }
                                                                                                     error={
                                                                                                         fieldErrors[
-                                                                                                            field.key
+                                                                                                        field.key
                                                                                                         ]
                                                                                                     }
                                                                                                     haEntities={
@@ -280,7 +311,7 @@ export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }
                                                                                                 onChange={handleChange}
                                                                                                 error={
                                                                                                     fieldErrors[
-                                                                                                        field.key
+                                                                                                    field.key
                                                                                                     ]
                                                                                                 }
                                                                                                 haEntities={haEntities}
@@ -357,13 +388,12 @@ export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }
                 </button>
                 {statusMessage && (
                     <div
-                        className={`rounded-lg p-3 text-sm ${
-                            statusMessage.startsWith('Please fix') ||
+                        className={`rounded-lg p-3 text-sm ${statusMessage.startsWith('Please fix') ||
                             statusMessage.startsWith('Save failed') ||
                             statusMessage.startsWith('Failed to load')
-                                ? 'bg-bad/10 border border-bad/30 text-bad'
-                                : 'bg-good/10 border border-good/30 text-good'
-                        }`}
+                            ? 'bg-bad/10 border border-bad/30 text-bad'
+                            : 'bg-good/10 border border-good/30 text-good'
+                            }`}
                     >
                         {statusMessage}
                     </div>

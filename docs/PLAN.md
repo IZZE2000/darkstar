@@ -97,10 +97,10 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
 
 
-### [DONE] REV // IP4 — Profile Logic Refactor & Fronius Fixes
+### [IN PROGRESS] REV // IP4 — Profile Logic Refactor & Profile Polish
 
-**Goal:** Standardize inverter profile logic to support split charging entities and clean up mode behaviors.
-**Context:** Fronius beta testing revealed a need for separate "Grid Charge Power" control and correct "Block Discharge" mapping.
+**Goal:** Standardize inverter profile logic, fix battery config detection, and automate UI profile selection.
+**Context:** Deye profile had naming inconsistencies and redundant sections. Also, a backend bug prevents correct battery config detection in the suggestion helper, and the UI dropdown is hardcoded.
 
 **Plan:**
 
@@ -110,5 +110,20 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] Update `profiles/fronius.yaml` with correct mappings.
 * [x] Verify with `tests/test_rev_ip4.py`.
 * [x] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves update the plan with the progress and commit the changes.
+
+#### Phase 2: Profile Standardization & UI Automation [DONE]
+* [x] **Backend Bugfix**: Fix `get_profile_suggestions` in `backend/api/routers/executor.py` to check the root `battery` config section instead of legacy `executor.inverter`.
+* [x] **Standardization**: Refactor `profiles/deye.yaml` and `profiles/fronius.yaml` to align with `profiles/schema.yaml` naming (remove redundant `_entity` suffixes).
+* [x] **Cleanup**: Merge or clearly separate `entities.required` and `defaults.suggested_entities` in the parser.
+* [x] **Dynamic Profiles**:
+    * [x] Implement `GET /api/profiles` to list available YAML files in `profiles/`.
+    * [x] Update `frontend/src/pages/settings/types.ts` to fetch options from the API instead of hardcoding.
+* [x] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves update the plan with the progress and commit the changes.
+
+#### Phase 3: Fix Override Defaults [PLANNED]
+* [ ] Reproduce Deye fallback in `_apply_override`.
+* [ ] Fix `Controller` to use profile modes for overrides.
+* [ ] Verify with Fronius test case.
+* [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves update the plan with the progress and commit the changes.
 
 ---

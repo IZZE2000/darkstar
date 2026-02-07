@@ -43,8 +43,8 @@ def validate_profile(file_path):
     # 3. Entities Check
     entities = data.get("entities", {})
     required_entities = entities.get("required", {})
-    if "work_mode_entity" not in required_entities:
-        errors.append("Missing entities.required.work_mode_entity")
+    if "work_mode" not in required_entities:
+        errors.append("Missing entities.required.work_mode")
 
     # 4. Mode Completeness
     modes = data.get("modes", {})
@@ -57,7 +57,7 @@ def validate_profile(file_path):
         for key, val in entity_dict.items():
             # Rev IP2 Phase 3: Allow profile internal keys (no dots) for custom lookup
             # We only enforce domain.name format if it's a "suggested" entity or a default HA entity
-            if val and "." not in val and key not in ["forced_power_entity"]:
+            if val and "." not in val and key not in ["forced_power"]:
                 errors.append(
                     f"Invalid HA entity ID format for '{key}': '{val}' (must be 'domain.name')"
                 )

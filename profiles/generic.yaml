@@ -27,16 +27,16 @@ capabilities:
 
 entities:
   required:
-    work_mode_entity: null
-    soc_target_entity: null
-    grid_charging_entity: null
+    work_mode: null
+    soc_target: null
+    grid_charging_enable: null
 
   optional:
-    max_charging_current_entity: null
-    max_discharging_current_entity: null
-    max_charging_power_entity: null
-    max_discharging_power_entity: null
-    grid_max_export_power_entity: null
+    max_charge_current: null
+    max_discharge_current: null
+    max_charge_power: null
+    max_discharge_power: null
+    grid_max_export_power: null
 
 modes:
   export:

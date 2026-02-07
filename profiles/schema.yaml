@@ -54,31 +54,19 @@ entities:
   required:
     # Inverter control entities
     work_mode: null                        # Inverter work mode selector
-    soc_target_entity: null                # Battery SoC target (%)
-
-    # Charging control (required if grid_charging_control is true)
+    soc_target: null                       # Battery SoC target (%)
     grid_charging_enable: null             # Grid charging on/off switch
     grid_charge_power: null                # Max power for grid charging (W/A) - Required for Fronius
-
-    # Resource management
     minimum_reserve: null                  # Minimum battery reserve percentage (%) - Required for Fronius
-    # Custom / Inverter-Specific Entities (Rev IP2)
-    # You can define any key here (e.g., ems_mode, charge_cmd) and reference it in 'set_entities'.
-    # The executor will look these up in config.yaml under 'executor.inverter'.
-    # ems_mode: null
-    # forced_charge_cmd: null
 
   # Optional entities (gracefully handled if missing)
   optional:
-    grid_charging_entity: null             # Entity to enable/disable grid charging (switch/select)
-    grid_charge_power_entity: null         # Entity to set grid charging power (number/input_number)
-    forced_power_entity: null              # Entity for power limits in Forced modes (Rev IP2 Phase 3)
-    grid_max_export_power_entity: null     # Entity to set export limit (number/input_number)
-    max_charging_power: null               # Max battery charge power (W)
-    max_discharging_power: null            # Max battery discharge power (W)
-
-    # Grid export control
-    grid_max_export_power: null            # Max grid export power limit (W)
+    grid_max_export_power: null            # Entity to set export limit (number/input_number)
+    max_charge_current: null               # Max battery charge current (A)
+    max_discharge_current: null            # Max battery discharge current (A)
+    max_charge_power: null                 # Max battery charge power (W)
+    max_discharge_power: null              # Max battery discharge power (W)
+    forced_power: null                     # Entity for power limits in Forced modes (Rev IP2 Phase 3)
 
 # ==============================================================================
 # MODES - Work mode translations
@@ -176,6 +164,19 @@ defaults:
     max_discharge_w: 5000.0
 
   # Executor controller parameters
+  executor:
+    controller:
+      inverter_ac_limit_kw: 8.0
+      min_charge_a: 10.0
+      round_step_a: 5.0
+      write_threshold_a: 5.0
+      min_charge_w: 500.0
+      round_step_w: 100.0
+      write_threshold_w: 100.0
+
+  # Suggested configuration values
+  # Suggestions can also be defined directly in the entities block as default values.
+  # This block is for non-entity defaults.
   executor:
     controller:
       inverter_ac_limit_kw: 8.0

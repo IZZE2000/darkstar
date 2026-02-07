@@ -35,19 +35,90 @@ def _str_or_none(value: Any) -> str | None:
 class InverterConfig:
     """Inverter control entity configuration."""
 
-    work_mode_entity: str | None = None
+    # Standardized names (Rev IP4)
+    work_mode: str | None = None
+    soc_target: str | None = None
+    grid_charging_enable: str | None = None
+    grid_charge_power: str | None = None
+    minimum_reserve: str | None = None
+    grid_max_export_power: str | None = None
+    max_charge_current: str | None = None
+    max_discharge_current: str | None = None
+    max_charge_power: str | None = None
+    max_discharge_power: str | None = None
+
+    # Constants / Behavior
     work_mode_export: str = "Export First"
     work_mode_zero_export: str = "Zero Export To CT"
-    grid_charging_entity: str | None = None
-    max_charging_current_entity: str | None = None
-    max_discharging_current_entity: str | None = None
-    grid_max_export_power_entity: str | None = None
     control_unit: str = "A"
-    max_charging_power_entity: str | None = None
-    max_discharging_power_entity: str | None = None
-    soc_target_entity: str | None = None
+
     # Dynamic entities for complex profiles (Rev IP2)
     custom_entities: dict[str, str | None] = field(default_factory=dict)
+
+    # Legacy property aliases for backward compatibility (Rev IP4)
+    @property
+    def work_mode_entity(self) -> str | None:
+        return self.work_mode
+
+    @work_mode_entity.setter
+    def work_mode_entity(self, value: str | None) -> None:
+        self.work_mode = value
+
+    @property
+    def soc_target_entity(self) -> str | None:
+        return self.soc_target
+
+    @soc_target_entity.setter
+    def soc_target_entity(self, value: str | None) -> None:
+        self.soc_target = value
+
+    @property
+    def grid_charging_entity(self) -> str | None:
+        return self.grid_charging_enable
+
+    @grid_charging_entity.setter
+    def grid_charging_entity(self, value: str | None) -> None:
+        self.grid_charging_enable = value
+
+    @property
+    def max_charging_current_entity(self) -> str | None:
+        return self.max_charge_current
+
+    @max_charging_current_entity.setter
+    def max_charging_current_entity(self, value: str | None) -> None:
+        self.max_charge_current = value
+
+    @property
+    def max_discharging_current_entity(self) -> str | None:
+        return self.max_discharge_current
+
+    @max_discharging_current_entity.setter
+    def max_discharging_current_entity(self, value: str | None) -> None:
+        self.max_discharge_current = value
+
+    @property
+    def max_charging_power_entity(self) -> str | None:
+        return self.max_charge_power
+
+    @max_charging_power_entity.setter
+    def max_charging_power_entity(self, value: str | None) -> None:
+        self.max_charge_power = value
+
+    @property
+    def max_discharging_power_entity(self) -> str | None:
+        return self.max_discharge_power
+
+    @max_discharging_power_entity.setter
+    def max_discharging_power_entity(self, value: str | None) -> None:
+        self.max_discharge_power = value
+
+    @property
+    def grid_max_export_power_entity(self) -> str | None:
+        return self.grid_max_export_power
+
+    @grid_max_export_power_entity.setter
+    def grid_max_export_power_entity(self, value: str | None) -> None:
+        self.grid_max_export_power = value
 
 
 @dataclass
@@ -147,6 +218,15 @@ class ExecutorConfig:
     has_water_heater: bool = True
     inverter_profile: str = "generic"
 
+    # Legacy property proxy for backward compatibility (Rev IP4)
+    @property
+    def soc_target_entity(self) -> str | None:
+        return self.inverter.soc_target
+
+    @soc_target_entity.setter
+    def soc_target_entity(self, value: str | None) -> None:
+        self.inverter.soc_target = value
+
 
 def load_yaml(path: str) -> dict[str, Any]:
     """Load YAML file with strict typing."""
@@ -203,47 +283,62 @@ def load_executor_config(config_path: str = "config.yaml") -> ExecutorConfig:
     inverter_data: dict[str, Any] = (
         executor_data.get("inverter", {}) if isinstance(executor_data.get("inverter"), dict) else {}
     )
+
+    # Helper for fallback loading
+    def get_ent(key: str, old_key: str) -> str | None:
+        return _str_or_none(inverter_data.get(key) or inverter_data.get(old_key))
+
     inverter = InverterConfig(
-        work_mode_entity=_str_or_none(inverter_data.get("work_mode_entity")),
+        work_mode=get_ent("work_mode", "work_mode_entity"),
+        soc_target=_str_or_none(
+            inverter_data.get("soc_target")
+            or inverter_data.get("soc_target_entity")
+            or executor_data.get("soc_target_entity")  # Fallback to legacy root location
+        ),
+        grid_charging_enable=get_ent("grid_charging_enable", "grid_charging_entity"),
+        grid_charge_power=get_ent("grid_charge_power", "grid_charge_power_entity"),
+        minimum_reserve=get_ent("minimum_reserve", "minimum_reserve_entity"),
+        grid_max_export_power=get_ent("grid_max_export_power", "grid_max_export_power_entity"),
+        max_charge_current=get_ent("max_charge_current", "max_charging_current_entity"),
+        max_discharge_current=get_ent("max_discharge_current", "max_discharging_current_entity"),
+        max_charge_power=get_ent("max_charge_power", "max_charging_power_entity"),
+        max_discharge_power=get_ent("max_discharge_power", "max_discharging_power_entity"),
         work_mode_export=str(
             inverter_data.get("work_mode_export", InverterConfig.work_mode_export)
         ),
         work_mode_zero_export=str(
             inverter_data.get("work_mode_zero_export", InverterConfig.work_mode_zero_export)
         ),
-        grid_charging_entity=_str_or_none(inverter_data.get("grid_charging_entity")),
-        max_charging_current_entity=_str_or_none(inverter_data.get("max_charging_current_entity")),
-        max_discharging_current_entity=_str_or_none(
-            inverter_data.get("max_discharging_current_entity")
-        ),
-        grid_max_export_power_entity=_str_or_none(
-            inverter_data.get("grid_max_export_power_entity")
-        ),
         control_unit=str(inverter_data.get("control_unit", "A")),
-        max_charging_power_entity=_str_or_none(inverter_data.get("max_charging_power_entity")),
-        max_discharging_power_entity=_str_or_none(
-            inverter_data.get("max_discharging_power_entity")
-        ),
-        soc_target_entity=_str_or_none(
-            inverter_data.get("soc_target_entity")
-            or executor_data.get("soc_target_entity")  # Fallback to legacy location
-        ),
         # Capture all other keys as custom entities (Rev IP2)
         custom_entities={
             k: _str_or_none(v)
             for k, v in inverter_data.items()
             if k
             not in {
+                "work_mode",
                 "work_mode_entity",
+                "soc_target",
+                "soc_target_entity",
+                "grid_charging_enable",
+                "grid_charging_entity",
+                "grid_charge_power",
+                "grid_charge_power_entity",
+                "minimum_reserve",
+                "minimum_reserve_entity",
+                "grid_max_export_power",
+                "grid_max_export_power_entity",
+                "max_charge_current",
+                "max_charging_current_entity",
+                "max_discharge_current",
+                "max_discharging_current_entity",
+                "max_charge_power",
+                "max_charging_power_entity",
+                "max_discharge_power",
+                "max_discharging_power_entity",
                 "work_mode_export",
                 "work_mode_zero_export",
-                "grid_charging_entity",
-                "max_charging_current_entity",
-                "max_discharging_current_entity",
-                "grid_max_export_power_entity",
                 "control_unit",
-                "max_charging_power_entity",
-                "max_discharging_power_entity",
             }
         },
     )

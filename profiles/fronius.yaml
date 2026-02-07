@@ -19,13 +19,13 @@ capabilities:
 
 entities:
   required:
-    work_mode_entity: "select.fronius_battery_mode"
-    max_charging_power_entity: "number.fronius_charge_power"
-    max_discharging_power_entity: "number.fronius_discharge_power"
-    minimum_reserve_entity: "number.fronius_minimum_reserve"
-    grid_charge_power_entity: "number.fronius_grid_charge_power"
+    work_mode: "select.fronius_gen24_battery_mode"
+    max_charge_power: "number.fronius_gen24_battery_max_charge_power"
+    max_discharge_power: "number.fronius_gen24_battery_max_discharge_power"
+    minimum_reserve: "number.fronius_gen24_battery_minimum_reserve"
+    grid_charge_power: "number.fronius_gen24_battery_grid_charge_power"
   optional:
-    soc_target_entity: "input_number.master_soc_target"
+    soc_target: "input_number.master_soc_target"
 
 modes:
   # Export mode - Battery discharges to grid for profit
@@ -81,13 +81,7 @@ behavior:
   # Beta feedback (Kristoffer) suggests 10W increments for stability.
   grid_charge_round_step_w: 10.0      # Granular 10W rounding for grid charging
 
-defaults:
-  suggested_entities:
-    work_mode: "select.fronius_gen24_battery_mode"
-    max_charge_power: "number.fronius_gen24_battery_max_charge_power"
-    max_discharge_power: "number.fronius_gen24_battery_max_discharge_power"
-    minimum_reserve: "number.fronius_gen24_battery_minimum_reserve"
-    grid_charge_power: "number.fronius_gen24_battery_grid_charge_power"
+  # Suggested non-entity config values
   executor:
     control_unit: "W"
   battery:

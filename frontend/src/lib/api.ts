@@ -623,6 +623,11 @@ export const Api = {
     clearLogs: () => getJSON<{ status: string }>('/api/system/logs', 'DELETE'),
     // Load Disaggregation Debug (Rev ARC12)
     loadsDebug: () => getJSON<LoadsDebugResponse>('/api/loads/debug'),
+    // Profile Management (Rev IP4)
+    listProfiles: () =>
+        getJSON<{ name: string; description: string; supported_brands: string[]; version: string }[]>(
+            '/api/profiles',
+        ),
 }
 
 export const Sel = {

@@ -137,6 +137,8 @@ class ProfileDefaults:
 
     battery: dict[str, Any] = field(default_factory=dict)
     executor: dict[str, Any] = field(default_factory=dict)
+    # Note: suggested_entities is deprecated in favor of defining suggestions
+    # directly as values in the entities block.
     suggested_entities: dict[str, str] = field(default_factory=dict)
 
 
@@ -211,17 +213,29 @@ class InverterProfile:
         """
         suggestions = {}
 
-        # Battery defaults
+        # 1. Internal entities block suggestions (Rev IP4)
+        for key, value in self.entities.required.items():
+            if value:
+                suggestions[f"executor.inverter.{key}"] = value
+        for key, value in self.entities.optional.items():
+            if value:
+                suggestions[f"executor.inverter.{key}"] = value
+
+        # 2. Legacy suggested_entities block (for compatibility)
+        for key, value in self.defaults.suggested_entities.items():
+            suggestions[f"executor.inverter.{key}"] = value
+
+        # 3. Battery defaults
         for key, value in self.defaults.battery.items():
             suggestions[f"battery.{key}"] = value
 
-        # Executor defaults
+        # 4. Executor defaults
         for key, value in self.defaults.executor.items():
-            suggestions[f"executor.{key}"] = value
-
-        # Suggested entities
-        for key, value in self.defaults.suggested_entities.items():
-            suggestions[f"executor.inverter.{key}"] = value
+            if isinstance(value, dict):
+                for subkey, subval in value.items():
+                    suggestions[f"executor.{key}.{subkey}"] = subval
+            else:
+                suggestions[f"executor.{key}"] = value
 
         return suggestions
 
@@ -236,10 +250,16 @@ class InverterProfile:
             List of missing configuration keys (e.g., 'executor.inverter.work_mode')
         """
         missing = []
-        executor_config = config.get("executor", {}).get("inverter", {})
+        inverter_config = config.get("executor", {}).get("inverter", {})
 
         for entity_key in self.entities.required:
-            if not executor_config.get(entity_key):
+            # Check both clean key and legacy key (with _entity suffix)
+            val = inverter_config.get(entity_key)
+            if not val:
+                legacy_key = f"{entity_key}_entity"
+                val = inverter_config.get(legacy_key)
+
+            if not val:
                 missing.append(f"executor.inverter.{entity_key}")
 
         return missing
@@ -462,3 +482,40 @@ def get_profile_from_config(
         logger.error("Failed to load profile '%s': %s. Falling back to 'generic'", profile_name, e)
         # Fallback to generic profile
         return load_profile("generic", profiles_dir)
+
+
+def list_profiles(profiles_dir: str | Path = "profiles") -> list[dict[str, Any]]:
+    """
+    List all available profiles in the profiles directory.
+
+    Returns:
+        List of profile metadata dictionaries (name, description, supported_brands)
+    """
+    profiles_path = Path(profiles_dir)
+    profiles = []
+
+    if not profiles_path.exists():
+        logger.warning("Profiles directory not found: %s", profiles_path)
+        return []
+
+    for yaml_file in profiles_path.glob("*.yaml"):
+        if yaml_file.name == "schema.yaml":
+            continue
+
+        try:
+            # We only need metadata for the list, but loading the whole profile
+            # ensures only valid profiles are shown in the UI.
+            profile = load_profile(yaml_file.stem, profiles_dir)
+            profiles.append(
+                {
+                    "name": profile.metadata.name,
+                    "description": profile.metadata.description,
+                    "supported_brands": profile.metadata.supported_brands,
+                    "version": profile.metadata.version,
+                }
+            )
+        except Exception as e:
+            logger.error("Skipping invalid profile %s: %s", yaml_file.name, e)
+
+    # Sort by name
+    return sorted(profiles, key=lambda x: x["name"])
