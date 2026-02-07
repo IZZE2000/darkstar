@@ -100,11 +100,40 @@ class Controller:
         """Apply override actions instead of plan."""
         actions = override.actions or {}
 
+        # Default fallback mode from profile if available, otherwise legacy config
+        if self.profile:
+            default_mode = self.profile.modes.zero_export.value
+        else:
+            default_mode = self.inverter_config.work_mode_zero_export
+
         # Use override values, falling back to safe defaults
-        work_mode = actions.get("work_mode", self.inverter_config.work_mode_zero_export)
+        work_mode = actions.get("work_mode", default_mode)
         grid_charging = bool(actions.get("grid_charging", False))
         soc_target = int(actions.get("soc_target", 10))
         water_temp = int(actions.get("water_temp", 40))
+
+        # Handle profile-specific mode mapping for overrides
+        if self.profile:
+            # If grid charging is requested, check if we should switch to charge_from_grid mode
+            if (
+                grid_charging
+                and self.profile.modes.charge_from_grid
+                and (
+                    work_mode == default_mode
+                    or override.override_type.value
+                    in (
+                        "force_charge",
+                        "emergency_charge",
+                    )
+                )
+            ):
+                work_mode = self.profile.modes.charge_from_grid.value
+                logger.debug("Override: Using profile charge_from_grid mode: %s", work_mode)
+
+            # If force export is requested, check for export mode
+            if override.override_type.value == "force_export" and self.profile.modes.export:
+                work_mode = self.profile.modes.export.value
+                logger.debug("Override: Using profile export mode: %s", work_mode)
 
         # For overrides, we typically don't actively charge/discharge
         # unless specifically requested
@@ -114,7 +143,10 @@ class Controller:
         write_discharge = False
 
         # Handle quick action charging
-        if grid_charging and override.override_type.value in ("force_charge", "emergency_charge"):
+        if grid_charging and override.override_type.value in (
+            "force_charge",
+            "emergency_charge",
+        ):
             # Force charge - use max charging value
             if self.inverter_config.control_unit == "W":
                 charge_value = self.config.max_charge_w

@@ -12,7 +12,7 @@ metadata:
     - "Turbo Energy" #Not verified
   author: "@ergetie"
   created_at: "2026-02-05"
-  updated_at: "2026-02-05"
+  updated_at: "2026-02-07"
 
 capabilities:
   grid_charging_control: true
@@ -31,13 +31,13 @@ entities:
   required:
     work_mode: "select.inverter_work_mode"
     soc_target: "input_number.master_soc_target"
-    grid_charging_enable: "switch.deye_grid_charging_1"
+    grid_charging_enable: "switch.inverter_battery_grid_charging"
 
   # Optional entities
   optional:
-    max_charge_current: "number.deye_battery_max_charge_current"
-    max_discharge_current: "number.deye_battery_max_discharge_current"
-    grid_max_export_power: "number.deye_grid_export_limit"
+    max_charge_current: "number.inverter_battery_max_charge_current"
+    max_discharge_current: "number.inverter_battery_max_discharge_current"
+    grid_max_export_power: "number.inverter_grid_export_limit"
 
 modes:
   export:
