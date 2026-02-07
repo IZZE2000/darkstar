@@ -163,4 +163,18 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] Securely use `DISCORD_WEBHOOK_URL` secret.
 * [x] **USER VERIFICATION AND COMMIT:** Verified by inspection.
 
+
 ---
+
+### [DONE] REV // F7 — Fronius Discharge Fix
+
+**Goal:** Fix Fronius "Block Discharge" during self-consumption.
+**Context:** Controller was forcing "Idle" (Block Discharge) when no active charge/export was planned.
+
+**Plan:**
+
+#### Phase 1: Investigation & Fix [DONE]
+* [x] Reproduce bug with `tests/repro_issue_fronius_idle.py`.
+* [x] Remove aggressive Idle selection in `executor/controller.py`.
+* [x] Standardize legacy Fronius tests (REV IP4 leftovers).
+* [x] **USER VERIFICATION AND COMMIT:** Verified with tests and walkthrough.md.

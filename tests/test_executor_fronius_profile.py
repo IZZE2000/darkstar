@@ -24,9 +24,9 @@ def mock_ha():
 @pytest.fixture
 def executor_config():
     inverter = InverterConfig(
-        work_mode_entity="select.fronius_battery_mode",
-        max_charging_power_entity="number.fronius_charge_power",
-        max_discharging_power_entity="number.fronius_discharge_power",
+        work_mode="select.fronius_battery_mode",
+        max_charge_power="number.fronius_charge_power",
+        max_discharge_power="number.fronius_discharge_power",
         control_unit="W",
     )
     return ExecutorConfig(enabled=True, inverter_profile="fronius", inverter=inverter)
@@ -38,7 +38,7 @@ def test_fronius_profile_parsing(fronius_profile):
     assert fronius_profile.capabilities.watts_based_control is True
     assert fronius_profile.capabilities.separate_grid_charging_switch is False
     assert fronius_profile.behavior.control_unit == "W"
-    assert fronius_profile.modes.export.value == "Discharge to grid"
+    assert fronius_profile.modes.export.value == "Discharge to Grid"
     assert fronius_profile.modes.charge_from_grid.requires_grid_charging is True
 
 
@@ -70,7 +70,7 @@ def test_fronius_controller_decisions(executor_config, fronius_profile):
     state = SystemState(current_soc_percent=50.0)
     decision = controller.decide(slot, state)
 
-    assert decision.work_mode == "Charge from grid"
+    assert decision.work_mode == "Charge from Grid"
     assert decision.grid_charging is True  # Because requires_grid_charging is True in profile
     assert decision.charge_value == 3000.0
     assert decision.control_unit == "W"
@@ -79,7 +79,7 @@ def test_fronius_controller_decisions(executor_config, fronius_profile):
     slot = SlotPlan(charge_kw=0.0, export_kw=5.0, soc_target=10)
     decision = controller.decide(slot, state)
 
-    assert decision.work_mode == "Discharge to grid"
+    assert decision.work_mode == "Discharge to Grid"
     assert decision.discharge_value == executor_config.controller.max_discharge_w
 
 

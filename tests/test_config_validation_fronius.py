@@ -7,12 +7,12 @@ def test_validate_config_fronius_success():
         "executor": {
             "enabled": True,
             "inverter": {
-                "work_mode_entity": "select.mode",
-                "max_charging_power_entity": "number.max_charge",
-                "max_discharging_power_entity": "number.max_discharge",
-                "minimum_reserve_entity": "number.reserve",
-                "grid_charge_power_entity": "number.charge_power",
-                "soc_target_entity": "input_number.target",
+                "work_mode": "select.mode",
+                "max_charge_power": "number.max_charge",
+                "max_discharge_power": "number.max_discharge",
+                "minimum_reserve": "number.reserve",
+                "grid_charge_power": "number.charge_power",
+                "soc_target": "input_number.target",
             },
         },
         "system": {"has_battery": True, "inverter_profile": "fronius"},
