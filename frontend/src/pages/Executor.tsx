@@ -17,6 +17,7 @@ import {
     Upload,
     Droplets,
     ChevronDown,
+    Download,
 } from 'lucide-react'
 import Card from '../components/Card'
 
@@ -146,10 +147,33 @@ const executorApi = {
         if (!r.ok) throw new Error(`Run failed: ${r.status}`)
         return r.json()
     },
-    history: async (limit = 20): Promise<{ records: ExecutionRecord[]; count: number }> => {
-        const r = await fetch(`api/executor/history?limit=${limit}`)
+    history: async (
+        params: {
+            limit?: number
+            offset?: number
+            start_date?: string
+            end_date?: string
+            success_only?: boolean
+        } = {},
+    ): Promise<{ records: ExecutionRecord[]; count: number }> => {
+        const query = new URLSearchParams()
+        if (params.limit) query.append('limit', params.limit.toString())
+        if (params.offset) query.append('offset', params.offset.toString())
+        if (params.start_date) query.append('start_date', params.start_date)
+        if (params.end_date) query.append('end_date', params.end_date)
+        if (params.success_only !== undefined) query.append('success_only', params.success_only.toString())
+
+        const r = await fetch(`api/executor/history?${query.toString()}`)
         if (!r.ok) throw new Error(`History failed: ${r.status}`)
         return r.json()
+    },
+    downloadHistory: (params: { start_date?: string; end_date?: string; success_only?: boolean } = {}) => {
+        const query = new URLSearchParams()
+        if (params.start_date) query.append('start_date', params.start_date)
+        if (params.end_date) query.append('end_date', params.end_date)
+        if (params.success_only !== undefined) query.append('success_only', params.success_only.toString())
+
+        window.open(`api/executor/history/download?${query.toString()}`, '_blank')
     },
     stats: async (days = 7): Promise<ExecutorStats> => {
         const r = await fetch(`api/executor/stats?days=${days}`)
@@ -271,9 +295,8 @@ function Toggle({
             aria-checked={enabled}
             disabled={disabled}
             onClick={() => onChange(!enabled)}
-            className={`relative inline-flex items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 focus:ring-offset-surface ${sizeClasses} ${
-                enabled ? 'bg-accent' : 'bg-surface2'
-            } ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+            className={`relative inline-flex items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 focus:ring-offset-surface ${sizeClasses} ${enabled ? 'bg-accent' : 'bg-surface2'
+                } ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
         >
             <span
                 className={`inline-block transform rounded-full bg-white transition-transform ${knobClasses} ${translateClasses}`}
@@ -323,6 +346,13 @@ export default function Executor() {
     const [error, setError] = useState<string | null>(null)
     const [showNotifications, setShowNotifications] = useState(false)
     const [notifications, setNotifications] = useState<NotificationSettings | null>(null)
+
+    // History Filters
+    const [dateRange, setDateRange] = useState<'24h' | '7d' | '30d' | 'custom'>('24h')
+    const [startDate, setStartDate] = useState<string>('')
+    const [endDate, setEndDate] = useState<string>('')
+    const [successOnlyFilter, setSuccessOnlyFilter] = useState<boolean | undefined>(undefined)
+
     const [savingNotification, setSavingNotification] = useState(false)
     const [testingNotification, setTestingNotification] = useState(false)
     const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null)
@@ -330,10 +360,26 @@ export default function Executor() {
 
     const fetchAll = useCallback(async () => {
         try {
+            const filters: any = { limit: 50 }
+            if (dateRange === '24h') {
+                filters.start_date = new Date(Date.now() - 24 * 3600 * 1000).toISOString()
+            } else if (dateRange === '7d') {
+                filters.start_date = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString()
+            } else if (dateRange === '30d') {
+                filters.start_date = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
+            } else if (dateRange === 'custom') {
+                if (startDate) filters.start_date = new Date(startDate).toISOString()
+                if (endDate) filters.end_date = new Date(endDate).toISOString()
+            }
+
+            if (successOnlyFilter !== undefined) {
+                filters.success_only = successOnlyFilter
+            }
+
             const [statusRes, statsRes, historyRes] = await Promise.all([
                 executorApi.status(),
                 executorApi.stats(7),
-                executorApi.history(20),
+                executorApi.history(filters),
             ])
             setStatus(statusRes)
             setStats(statsRes)
@@ -344,7 +390,7 @@ export default function Executor() {
         } finally {
             setLoading(false)
         }
-    }, [])
+    }, [dateRange, startDate, endDate, successOnlyFilter])
 
     // --- WebSocket Event Handlers (Rev E1) ---
 
@@ -482,20 +528,19 @@ export default function Executor() {
     }
 
     return (
-        <div className="px-4 pt-16 pb-4 lg:px-8 lg:pt-8 h-[calc(100vh-64px)] flex flex-col gap-6 overflow-hidden">
+        <div className="px-4 pt-16 pb-4 lg:px-8 lg:pt-8 min-h-screen lg:h-[calc(100vh-20px)] flex flex-col gap-6 overflow-y-auto lg:overflow-hidden bg-surface">
             {/* Header */}
             <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
                 <div>
                     <h1 className="text-lg font-medium text-text flex items-center gap-2">
                         Executor Control Center
                         <span
-                            className={`px-2 py-0.5 rounded-full border text-[10px] uppercase tracking-wider ${
-                                status?.enabled
+                            className={`px-2 py-0.5 rounded-full border text-[10px] uppercase tracking-wider ${status?.enabled
                                     ? status?.shadow_mode
                                         ? 'bg-warn/20 border-warn/50 text-warn'
                                         : 'bg-good/20 border-good/50 text-good'
                                     : 'bg-neutral/20 border-neutral/50 text-neutral'
-                            }`}
+                                }`}
                         >
                             {status?.enabled ? (status?.shadow_mode ? 'Shadow' : 'Active') : 'Disabled'}
                         </span>
@@ -538,19 +583,18 @@ export default function Executor() {
                             </div>
                             <div className="text-[11px] text-muted flex items-center gap-2 mt-1">
                                 <span
-                                    className={`h-1.5 w-1.5 rounded-full ${
-                                        status?.last_run_status === 'success'
+                                    className={`h-1.5 w-1.5 rounded-full ${status?.last_run_status === 'success'
                                             ? 'bg-good'
                                             : status?.last_run_status === 'error'
-                                              ? 'bg-bad'
-                                              : 'bg-neutral'
-                                    }`}
+                                                ? 'bg-bad'
+                                                : 'bg-neutral'
+                                        }`}
                                 />
                                 {status?.last_run_status === 'success'
                                     ? 'Last run successful'
                                     : status?.last_run_status === 'error'
-                                      ? 'Last run failed'
-                                      : 'No runs yet'}
+                                        ? 'Last run failed'
+                                        : 'No runs yet'}
                             </div>
                         </div>
                     </div>
@@ -672,11 +716,10 @@ export default function Executor() {
                         <button
                             onClick={handleManualRun}
                             disabled={running}
-                            className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-surface hover:bg-surface2 border border-line/50 text-[11px] font-medium transition-all ${
-                                running
+                            className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-surface hover:bg-surface2 border border-line/50 text-[11px] font-medium transition-all ${running
                                     ? 'opacity-70 cursor-not-allowed text-muted'
                                     : 'text-text hover:border-accent/50'
-                            }`}
+                                }`}
                         >
                             {running ? (
                                 <>
@@ -832,18 +875,91 @@ export default function Executor() {
             {/* Execution History */}
             <Card className="p-4 md:p-5 flex-1 min-h-0 flex flex-col">
                 <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                        <History className="h-4 w-4 text-accent" />
-                        <span className="text-xs font-medium text-text">Execution History</span>
-                        <span className="text-[10px] text-muted">({history?.length ?? 0} records)</span>
+                    <div className="flex flex-col md:flex-row md:items-center gap-4">
+                        <div className="flex items-center gap-2">
+                            <History className="h-4 w-4 text-accent" />
+                            <span className="text-xs font-medium text-text">Execution History</span>
+                            <span className="text-[10px] text-muted">({history?.length ?? 0} records)</span>
+                        </div>
+
+                        {/* Filters */}
+                        <div className="flex flex-wrap items-center gap-2">
+                            <div className="flex bg-surface2/50 rounded-lg p-0.5 border border-line/30">
+                                {(['24h', '7d', 'custom'] as const).map((r) => (
+                                    <button
+                                        key={r}
+                                        onClick={() => setDateRange(r)}
+                                        className={`px-2 py-1 text-[9px] rounded-md transition-all ${dateRange === r
+                                                ? 'bg-accent text-white shadow-sm'
+                                                : 'text-muted hover:text-text'
+                                            }`}
+                                    >
+                                        {r === '24h' ? 'Last 24h' : r === '7d' ? 'Last 7d' : 'Custom'}
+                                    </button>
+                                ))}
+                            </div>
+
+                            {dateRange === 'custom' && (
+                                <div className="flex items-center gap-1">
+                                    <input
+                                        type="date"
+                                        value={startDate}
+                                        onChange={(e) => setStartDate(e.target.value)}
+                                        className="bg-surface2/50 border border-line/30 rounded-lg px-2 py-1 text-[9px] text-text focus:outline-none focus:ring-1 focus:ring-accent"
+                                    />
+                                    <span className="text-muted text-[9px]">to</span>
+                                    <input
+                                        type="date"
+                                        value={endDate}
+                                        onChange={(e) => setEndDate(e.target.value)}
+                                        className="bg-surface2/50 border border-line/30 rounded-lg px-2 py-1 text-[9px] text-text focus:outline-none focus:ring-1 focus:ring-accent"
+                                    />
+                                </div>
+                            )}
+
+                            <select
+                                value={successOnlyFilter === undefined ? 'all' : successOnlyFilter.toString()}
+                                onChange={(e) => {
+                                    const val = e.target.value
+                                    setSuccessOnlyFilter(val === 'all' ? undefined : val === 'true')
+                                }}
+                                className="bg-surface2/50 border border-line/30 rounded-lg px-2 py-1 text-[9px] text-text focus:outline-none focus:ring-1 focus:ring-accent appearance-none cursor-pointer"
+                            >
+                                <option value="all">All Status</option>
+                                <option value="true">Success Only</option>
+                                <option value="false">Errors Only</option>
+                            </select>
+                        </div>
                     </div>
-                    <button
-                        onClick={fetchAll}
-                        className="flex items-center gap-1.5 text-[10px] text-muted hover:text-accent transition px-2 py-1 rounded-lg hover:bg-surface2"
-                    >
-                        <RefreshCw className="h-3 w-3" />
-                        Refresh
-                    </button>
+
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => {
+                                const filters: any = {}
+                                if (dateRange === '24h') {
+                                    filters.start_date = new Date(Date.now() - 24 * 3600 * 1000).toISOString()
+                                } else if (dateRange === '7d') {
+                                    filters.start_date = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString()
+                                }
+                                if (startDate) filters.start_date = new Date(startDate).toISOString()
+                                if (endDate) filters.end_date = new Date(endDate).toISOString()
+                                if (successOnlyFilter !== undefined) filters.success_only = successOnlyFilter
+
+                                executorApi.downloadHistory(filters)
+                            }}
+                            className="flex items-center gap-1.5 text-[10px] text-muted hover:text-accent transition px-2 py-1 rounded-lg hover:bg-surface2"
+                        >
+                            <Download className="h-3 w-3" />
+                            Export CSV
+                        </button>
+                        <button
+                            onClick={fetchAll}
+                            className="flex items-center gap-1.5 text-[10px] text-muted hover:text-accent transition px-2 py-1 rounded-lg hover:bg-surface2"
+                        >
+                            <RefreshCw className="h-3 w-3" />
+                            Refresh
+                        </button>
+                    </div>
                 </div>
 
                 {(history?.length ?? 0) === 0 ? (
@@ -908,11 +1024,10 @@ export default function Executor() {
                             return (
                                 <div
                                     key={record.id}
-                                    className={`rounded-xl border transition-all ${
-                                        record.success
+                                    className={`rounded-xl border transition-all ${record.success
                                             ? 'bg-surface2/30 border-line/40 hover:border-line/60'
                                             : 'bg-bad/10 border-bad/30 hover:border-bad/50'
-                                    }`}
+                                        }`}
                                 >
                                     {/* Header Row - Always visible, clickable */}
                                     <div
@@ -1141,7 +1256,7 @@ export default function Executor() {
                                                             <span
                                                                 className={
                                                                     record.commanded_water_temp &&
-                                                                    record.commanded_water_temp > 50
+                                                                        record.commanded_water_temp > 50
                                                                         ? 'text-warn'
                                                                         : 'text-muted/40'
                                                                 }
@@ -1311,11 +1426,10 @@ export default function Executor() {
                             <button
                                 onClick={handleTestNotification}
                                 disabled={testingNotification}
-                                className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border text-[11px] font-medium transition-all ${
-                                    testingNotification
+                                className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border text-[11px] font-medium transition-all ${testingNotification
                                         ? 'bg-surface2/50 border-line/30 text-muted cursor-not-allowed'
                                         : 'bg-accent/10 border-accent/30 text-accent hover:bg-accent/20'
-                                }`}
+                                    }`}
                             >
                                 {testingNotification ? (
                                     <>

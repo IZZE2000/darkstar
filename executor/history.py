@@ -161,6 +161,8 @@ class ExecutionHistory:
         offset: int = 0,
         slot_start: str | None = None,
         success_only: bool | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
     ) -> list[dict[str, Any]]:
         """
         Query execution history with optional filters using SQLAlchemy.
@@ -173,6 +175,12 @@ class ExecutionHistory:
 
             if success_only is not None:
                 stmt = stmt.where(ExecutionLog.success == (1 if success_only else 0))
+
+            if start_date:
+                stmt = stmt.where(ExecutionLog.executed_at >= start_date)
+
+            if end_date:
+                stmt = stmt.where(ExecutionLog.executed_at <= end_date)
 
             stmt = stmt.order_by(desc(ExecutionLog.executed_at)).limit(limit).offset(offset)
 
@@ -199,6 +207,43 @@ class ExecutionHistory:
     def get_recent(self, limit: int = 10) -> list[dict[str, Any]]:
         """Get the N most recent execution records."""
         return self.get_history(limit=limit)
+
+    def get_history_csv(
+        self,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        success_only: bool | None = None,
+    ) -> str:
+        """
+        Generate a CSV string of execution history.
+        """
+        import csv
+        import io
+
+        # Get records without pagination (internal limit 1000 for safety)
+        records = self.get_history(
+            limit=1000,
+            start_date=start_date,
+            end_date=end_date,
+            success_only=success_only,
+        )
+
+        if not records:
+            return ""
+
+        output = io.StringIO()
+        fieldnames = list(records[0].keys())
+        writer = csv.DictWriter(output, fieldnames=fieldnames)
+        writer.writeheader()
+
+        for r in records:
+            row = r.copy()
+            # Stringify action_results list
+            if isinstance(row.get("action_results"), list):
+                row["action_results"] = json.dumps(row["action_results"])
+            writer.writerow(row)
+
+        return output.getvalue()
 
     def cleanup_old_records(self, retention_days: int = 30) -> int:
         """

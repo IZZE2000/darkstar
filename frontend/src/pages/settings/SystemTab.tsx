@@ -238,7 +238,7 @@ export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }
                                                                                                     field={field}
                                                                                                     value={
                                                                                                         form[
-                                                                                                        field.key
+                                                                                                            field.key
                                                                                                         ] ?? ''
                                                                                                     }
                                                                                                     onChange={
@@ -246,7 +246,7 @@ export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }
                                                                                                     }
                                                                                                     error={
                                                                                                         fieldErrors[
-                                                                                                        field.key
+                                                                                                            field.key
                                                                                                         ]
                                                                                                     }
                                                                                                     haEntities={
@@ -311,7 +311,7 @@ export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }
                                                                                                 onChange={handleChange}
                                                                                                 error={
                                                                                                     fieldErrors[
-                                                                                                    field.key
+                                                                                                        field.key
                                                                                                     ]
                                                                                                 }
                                                                                                 haEntities={haEntities}
@@ -388,12 +388,13 @@ export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }
                 </button>
                 {statusMessage && (
                     <div
-                        className={`rounded-lg p-3 text-sm ${statusMessage.startsWith('Please fix') ||
+                        className={`rounded-lg p-3 text-sm ${
+                            statusMessage.startsWith('Please fix') ||
                             statusMessage.startsWith('Save failed') ||
                             statusMessage.startsWith('Failed to load')
-                            ? 'bg-bad/10 border border-bad/30 text-bad'
-                            : 'bg-good/10 border border-good/30 text-good'
-                            }`}
+                                ? 'bg-bad/10 border border-bad/30 text-bad'
+                                : 'bg-good/10 border border-good/30 text-good'
+                        }`}
                     >
                         {statusMessage}
                     </div>

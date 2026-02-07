@@ -126,22 +126,22 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] Verify with Fronius test case.
 * [x] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves update the plan with the progress and commit the changes.
 
-### [PLANNED] REV // UI17 — Execution History Improvements
+### [DONE] REV // UI17 — Execution History Improvements
 
 **Goal:** Fix mobile UI issues and enhance execution history with 7-day view, filtering, and export.
 **Context:** User reported Execution History table is too short on mobile. Also requested 7-day history, date filters, and CSV download.
 
 **Plan:**
 
-#### Phase 1: Backend Enhancements [PLANNED]
-* [ ] Update `executor/history.py` to support date range filtering.
-* [ ] Update `backend/api/routers/executor.py` to expose filters and add `download` endpoint.
-* [ ] **USER VERIFICATION AND COMMIT:** Verify API with `curl`.
+#### Phase 1: Backend Enhancements [DONE]
+* [x] Update `executor/history.py` to support date range filtering.
+* [x] Update `backend/api/routers/executor.py` to expose filters and add `download` endpoint.
+* [x] **USER VERIFICATION AND COMMIT:** Verify API with `curl`.
 
-#### Phase 2: Frontend Implementation [PLANNED]
-* [ ] Fix mobile height/layout in `Executor.tsx`.
-* [ ] Add date filter controls and logic.
-* [ ] Add download button and integration.
-* [ ] **USER VERIFICATION AND COMMIT:** Verify UI functionality.
+#### Phase 2: Frontend Implementation [DONE]
+* [x] Fix mobile height/layout in `Executor.tsx`.
+* [x] Add date filter controls and logic.
+* [x] Add download button and integration.
+* [x] **USER VERIFICATION AND COMMIT:** Verify UI functionality.
 
 ---

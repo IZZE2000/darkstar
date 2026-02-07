@@ -233,6 +233,8 @@ async def get_history(
     offset: int = 0,
     slot_start: str | None = None,
     success_only: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
 ) -> dict[str, Any]:
     executor = get_executor_instance()
     if not executor or not executor.history:
@@ -248,11 +250,54 @@ async def get_history(
             offset=offset,
             slot_start=slot_start,
             success_only=success,
+            start_date=start_date,
+            end_date=end_date,
         )
         return {"records": records, "count": len(records)}
     except Exception as e:
         logger.exception("Error getting executor history")
         return {"records": [], "count": 0, "error": str(e)}
+
+
+@router.get(
+    "/api/executor/history/download",
+    summary="Download Execution History",
+    description="Returns historical execution logs as a CSV file.",
+)
+async def download_history(
+    start_date: str | None = None,
+    end_date: str | None = None,
+    success_only: str | None = None,
+):
+    from fastapi.responses import Response
+
+    executor = get_executor_instance()
+    if not executor or not executor.history:
+        raise HTTPException(500, "Executor history not available")
+
+    try:
+        success = None
+        if success_only is not None:
+            success = success_only.lower() in ("true", "1", "yes")
+
+        csv_data = executor.history.get_history_csv(
+            start_date=start_date,
+            end_date=end_date,
+            success_only=success,
+        )
+
+        filename = "execution_history.csv"
+        if start_date:
+            filename = f"execution_history_{start_date}.csv"
+
+        return Response(
+            content=csv_data,
+            media_type="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    except Exception as e:
+        logger.exception("Error downloading history")
+        raise HTTPException(500, f"Error generating CSV: {e}") from e
 
 
 @router.get(

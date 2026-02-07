@@ -625,9 +625,7 @@ export const Api = {
     loadsDebug: () => getJSON<LoadsDebugResponse>('/api/loads/debug'),
     // Profile Management (Rev IP4)
     listProfiles: () =>
-        getJSON<{ name: string; description: string; supported_brands: string[]; version: string }[]>(
-            '/api/profiles',
-        ),
+        getJSON<{ name: string; description: string; supported_brands: string[]; version: string }[]>('/api/profiles'),
 }
 
 export const Sel = {
