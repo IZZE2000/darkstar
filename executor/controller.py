@@ -192,7 +192,19 @@ class Controller:
             ):
                 mode_def = self.profile.modes.charge_from_grid
             else:
+                # Default to Zero Export / Self Consumption
                 mode_def = self.profile.modes.zero_export
+
+                # CHECK: If we are at or below SoC target, and we have an 'idle' mode,
+                # we should use it to "Block Discharge" (Hold).
+                # This fixes the Fronius issue where "Auto" allows discharge even below target.
+                # For others (Deye), idle usually maps to Zero Export anyway, so no harm.
+                if (
+                    self.profile.modes.idle
+                    and self.profile.modes.idle.value
+                    and state.current_soc_percent <= slot.soc_target
+                ):
+                    mode_def = self.profile.modes.idle
 
             # Get the mode value (string to write to HA)
             work_mode = mode_def.value or self.profile.modes.zero_export.value

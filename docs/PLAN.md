@@ -98,6 +98,26 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 
 ---
 
+### [DONE] REV // F47 — Fronius Discharge Fix
+
+**Goal:** Fix Fronius "Block Discharge" during self-consumption.
+**Context:** Controller was forcing "Idle" (Block Discharge) when no active charge/export was planned.
+
+**Plan:**
+
+#### Phase 1: Investigation & Fix [DONE]
+* [x] Reproduce bug with `tests/repro_issue_fronius_idle.py`.
+* [x] Remove aggressive Idle selection in `executor/controller.py`.
+* [x] Standardize legacy Fronius tests (REV IP4 leftovers).
+* [x] **USER VERIFICATION AND COMMIT:** Verified with tests and walkthrough.md.
+
+#### Phase 2: Refine Idle Logic [DONE]
+* [x] **Logic:** Use `idle` mode (Block Discharge) if `current_soc <= soc_target`.
+* [x] **Verify:** Ensure `auto` (Self-consumption) is still used if `current_soc > soc_target`.
+* [x] **Test:** `tests/repro_issue_fronius_hold.py`.
+
+---
+
 ### [DRAFT] REV // K26 — Inverter Clipping Support
 
 **Goal:** Correctly model DC vs AC inverter limits in the Kepler solver to prevent over-optimistic planning on high-PV systems.
