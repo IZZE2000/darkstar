@@ -251,8 +251,12 @@ class HAWebSocketClient:
                 state_val = new_state.get("state", "").lower()
                 logger.info(f"EV plug state changed: {entity_id}={state_val}")
 
+                # Track state for live_metrics
+                is_plugged = state_val in ("on", "true", "1", "connected")
+                self.latest_values["ev_plugged_in"] = is_plugged
+
                 # Trigger immediate re-plan when car plugs in
-                if state_val in ("on", "true", "1", "connected"):
+                if is_plugged:
                     logger.info("EV plugged in - triggering immediate re-plan")
                     self._trigger_ev_replan()
 
@@ -260,6 +264,11 @@ class HAWebSocketClient:
                 from backend.events import emit_ha_entity_change
 
                 emit_ha_entity_change(entity_id=entity_id, state=state_val)
+
+                # Also emit via live_metrics for instant UI response in PowerFlowCard
+                from backend.events import emit_live_metrics
+
+                emit_live_metrics({"ev_plugged_in": is_plugged})
             except Exception as e:
                 logger.error(f"Failed to handle EV plug change: {e}")
             return
@@ -326,6 +335,11 @@ class HAWebSocketClient:
 
             # DIAG: Log every emission for now to prove data flow
             logger.debug(f"DIAG: Emitting live_metrics for {key} raw={state_val} val={value}")
+
+            # Include EV plug state if we know it (Rev UI18)
+            if "ev_plugged_in" in self.latest_values:
+                payload["ev_plugged_in"] = self.latest_values["ev_plugged_in"]
+
             emit_live_metrics(payload)
 
             # Update Runtime Stats

@@ -208,20 +208,26 @@ export default function PowerFlowCard({ data, systemConfig, compact = false }: P
         }
 
         return NODE_REGISTRY.filter((node) => {
-            // House and Grid are always visible
-            if (!node.configKey) return true
-
-            // Check if toggle exists in config
-            const toggleValue = configMap[node.configKey]
-
-            if (toggleValue !== undefined) {
-                return toggleValue === true
+            // 1. Config Toggle Check
+            // House and Grid are always visible (no configKey)
+            if (node.configKey) {
+                const toggleValue = configMap[node.configKey]
+                if (toggleValue !== undefined) {
+                    if (toggleValue === false) return false
+                } else {
+                    // Fallback: show standard hardware if toggle not found
+                    if (!['solar', 'battery', 'water'].includes(node.id)) return false
+                }
             }
 
-            // Fallback: show standard hardware if toggle not found
-            return ['solar', 'battery', 'water'].includes(node.id)
+            // 2. Dynamic Visibility Check (Rev UI18)
+            if (node.shouldRender) {
+                return node.shouldRender(data, configMap)
+            }
+
+            return true
         })
-    }, [configMap])
+    }, [configMap, data])
 
     // 3. Dynamic positioning logic
     const { nodes } = useMemo(() => {

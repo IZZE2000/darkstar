@@ -14,7 +14,8 @@ export interface PowerFlowData {
     grid: { kw: number; importKwh?: number; exportKwh?: number } // +import, -export
     house: { kw: number; todayKwh?: number }
     water: { kw: number }
-    ev?: { kw: number } // Added for future expansion
+    ev?: { kw: number }
+    evPluggedIn?: boolean // Rev UI18: Streamed from backend
 }
 
 export interface FlowNodeConfig {
@@ -28,6 +29,7 @@ export interface FlowNodeConfig {
     subValueAccessor?: (data: PowerFlowData) => string | undefined
     glowIntensityAccessor: (data: PowerFlowData) => number
     isChargingAccessor?: (data: PowerFlowData) => boolean
+    shouldRender?: (data: PowerFlowData, configMap: Record<string, unknown> | null) => boolean // Rev UI18
 }
 
 // =============================================================================
@@ -104,5 +106,6 @@ export const NODE_REGISTRY: FlowNodeConfig[] = [
         label: 'EV',
         valueAccessor: (data) => (data.ev ? fmtKw(data.ev.kw) : '0.0 kW'),
         glowIntensityAccessor: (data) => (data.ev ? Math.min(data.ev.kw / 11, 1) : 0),
+        shouldRender: (data) => !!data.evPluggedIn, // Rev UI18: Hide if unplugged
     },
 ]

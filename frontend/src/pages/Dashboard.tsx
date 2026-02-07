@@ -88,6 +88,7 @@ export default function Dashboard() {
         grid_kw?: number
         water_kw?: number
         ev_kw?: number
+        ev_plugged_in?: boolean // Rev UI18
     }>({})
 
     // REV LCL01: Health status for config validation banners
@@ -112,6 +113,7 @@ export default function Dashboard() {
             grid_kw: data.grid_kw ?? prev.grid_kw,
             water_kw: data.water_kw ?? prev.water_kw,
             ev_kw: data.ev_kw ?? prev.ev_kw,
+            ev_plugged_in: data.ev_plugged_in !== undefined ? data.ev_plugged_in : prev.ev_plugged_in,
         }))
     })
 
@@ -774,6 +776,7 @@ export default function Dashboard() {
                                 ev: {
                                     kw: livePower.ev_kw ?? 0,
                                 },
+                                evPluggedIn: livePower.ev_plugged_in, // Rev UI18
                             }}
                         />
                     </div>

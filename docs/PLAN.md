@@ -96,85 +96,29 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [ ] **Frontend:** Add controls to `Settings > Grid`.
 * [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
 
-
-### [DONE] REV // IP4 — Profile Logic Refactor & Profile Polish
-
-**Goal:** Standardize inverter profile logic, fix battery config detection, and automate UI profile selection.
-**Context:** Deye profile had naming inconsistencies and redundant sections. Also, a backend bug prevents correct battery config detection in the suggestion helper, and the UI dropdown is hardcoded.
-
-**Plan:**
-
-#### Phase 1: Logic Standardization [DONE]
-* [x] Refactor `executor/actions.py` to transparently support `grid_charge_power_entity`.
-* [x] Optimize `execute` loop to skip irrelevant actions in `Charge` and `Idle` modes.
-* [x] Update `profiles/fronius.yaml` with correct mappings.
-* [x] Verify with `tests/test_rev_ip4.py`.
-* [x] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves update the plan with the progress and commit the changes.
-
-#### Phase 2: Profile Standardization & UI Automation [DONE]
-* [x] **Backend Bugfix**: Fix `get_profile_suggestions` in `backend/api/routers/executor.py` to check the root `battery` config section instead of legacy `executor.inverter`.
-* [x] **Standardization**: Refactor `profiles/deye.yaml` and `profiles/fronius.yaml` to align with `profiles/schema.yaml` naming (remove redundant `_entity` suffixes).
-* [x] **Cleanup**: Merge or clearly separate `entities.required` and `defaults.suggested_entities` in the parser.
-* [x] **Dynamic Profiles**:
-    * [x] Implement `GET /api/profiles` to list available YAML files in `profiles/`.
-    * [x] Update `frontend/src/pages/settings/types.ts` to fetch options from the API instead of hardcoding.
-* [x] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves update the plan with the progress and commit the changes.
-
-#### Phase 3: Fix Override Defaults [DONE]
-* [x] Reproduce Deye fallback in `_apply_override`.
-* [x] Fix `Controller` to use profile modes for overrides.
-* [x] Verify with Fronius test case.
-* [x] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves update the plan with the progress and commit the changes.
-
-#### Phase 4: Standardize Settings State & Data Binding [DONE]
-* [x] **Backend:** Update `get_executor_config` and `update_executor_config` to use standard keys (e.g., `work_mode`).
-* [x] **Frontend:** Update `types.ts` to use standardized keys for data binding.
-* [x] **Verification:** Profile Setup Helper correctly populates UI fields.
-
-### [DONE] REV // UI17 — Execution History Improvements
-
-**Goal:** Fix mobile UI issues and enhance execution history with 7-day view, filtering, and export.
-**Context:** User reported Execution History table is too short on mobile. Also requested 7-day history, date filters, and CSV download.
-
-**Plan:**
-
-#### Phase 1: Backend Enhancements [DONE]
-* [x] Update `executor/history.py` to support date range filtering.
-* [x] Update `backend/api/routers/executor.py` to expose filters and add `download` endpoint.
-* [x] **USER VERIFICATION AND COMMIT:** Verify API with `curl`.
-
-#### Phase 2: Frontend Implementation [DONE]
-* [x] Fix mobile height/layout in `Executor.tsx`.
-* [x] Add date filter controls and logic.
-* [x] Add download button and integration.
-* [x] **USER VERIFICATION AND COMMIT:** Verify UI functionality.
-
 ---
 
-### [DONE] REV // DX2 — Discord Notifications
+### [DRAFT] REV // K26 — Inverter Clipping Support
 
-**Goal:** Notify the team on Discord when a new `darkstar-dev` build is successfully deployed.
-**Context:** User requested notifications for dev builds to keep track of deployments.
+**Goal:** Correctly model DC vs AC inverter limits in the Kepler solver to prevent over-optimistic planning on high-PV systems.
+**Context:** User has a 15kWp array but a 10kW (AC) / 12kW (DC-Input) inverter. Current model assumes all PV is available at the AC bus.
 
 **Plan:**
 
-#### Phase 1: Implementation [DONE]
-* [x] Add `Notify Discord` step to `build-addon.yml`.
-* [x] Securely use `DISCORD_WEBHOOK_URL` secret.
-* [x] **USER VERIFICATION AND COMMIT:** Verified by inspection.
+#### Phase 1: Configuration & Schema [DRAFT]
+* [ ] Add `inverter.max_pv_input_kw` (DC limit) and `inverter.max_ac_output_kw` (AC limit) to `config.default.yaml`.
+* [ ] Deprecate/Migration: Map old `system.inverter.max_power_kw` to `max_ac_output_kw`.
+* [ ] **USER VERIFICATION:** Confirm schema covers all hardware limits (Access Power vs Input Power).
 
+#### Phase 2: Solver Logic (DC Bus) [DRAFT]
+* [ ] **Kepler Model:** Introduce `pv_to_ac[t]` and `discharge_to_ac[t]` variables.
+* [ ] **Constraint:** `pv_actual[t] + discharge_dc[t] == charge_dc[t] + ac_produced[t]`.
+* [ ] **Constraint:** `ac_produced[t] <= inverter_ac_limit`.
+* [ ] **Constraint:** `pv_actual[t] <= inverter_pv_dc_limit`.
+* [ ] Verify with test case (15kW PV, 10kW AC, 12kW DC battery charge).
+
+#### Phase 3: Input Pipeline [DRAFT]
+* [ ] **Inputs:** Update `inputs.py` to optionally clip forecasts early (for heuristic simplicity) or pass through raw data.
+* [ ] **UI:** Show "Clipped Solar" in the dashboard forecast chart.
 
 ---
-
-### [DONE] REV // F7 — Fronius Discharge Fix
-
-**Goal:** Fix Fronius "Block Discharge" during self-consumption.
-**Context:** Controller was forcing "Idle" (Block Discharge) when no active charge/export was planned.
-
-**Plan:**
-
-#### Phase 1: Investigation & Fix [DONE]
-* [x] Reproduce bug with `tests/repro_issue_fronius_idle.py`.
-* [x] Remove aggressive Idle selection in `executor/controller.py`.
-* [x] Standardize legacy Fronius tests (REV IP4 leftovers).
-* [x] **USER VERIFICATION AND COMMIT:** Verified with tests and walkthrough.md.

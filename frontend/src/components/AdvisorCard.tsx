@@ -40,6 +40,7 @@ export default function AdvisorCard({ powerFlowData, systemConfig, isLoading }: 
         grid: { kw: 0, importKwh: 0, exportKwh: 0 },
         house: { kw: 0, todayKwh: 0 },
         water: { kw: 0 },
+        evPluggedIn: false, // Rev UI18
     }
 
     const data = powerFlowData ?? defaultData
