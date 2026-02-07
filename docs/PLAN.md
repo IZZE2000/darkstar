@@ -150,3 +150,17 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] **USER VERIFICATION AND COMMIT:** Verify UI functionality.
 
 ---
+
+### [DONE] REV // DX2 — Discord Notifications
+
+**Goal:** Notify the team on Discord when a new `darkstar-dev` build is successfully deployed.
+**Context:** User requested notifications for dev builds to keep track of deployments.
+
+**Plan:**
+
+#### Phase 1: Implementation [DONE]
+* [x] Add `Notify Discord` step to `build-addon.yml`.
+* [x] Securely use `DISCORD_WEBHOOK_URL` secret.
+* [x] **USER VERIFICATION AND COMMIT:** Verified by inspection.
+
+---

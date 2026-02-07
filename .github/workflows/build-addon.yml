@@ -121,6 +121,31 @@ jobs:
           git commit -m "chore(dev): bump version to ${{ steps.setup.outputs.version }} [skip ci]"
           git push origin ${{ github.ref_name }}
 
+      - name: Notify Discord
+        if: steps.setup.outputs.is_dev == 'true' && matrix.arch == 'aarch64' && success()
+        continue-on-error: true
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          if [ -z "$DISCORD_WEBHOOK_URL" ]; then
+            echo "DISCORD_WEBHOOK_URL not set, skipping notification."
+            exit 0
+          fi
+          curl -H "Content-Type: application/json" \
+          -d '{
+            "embeds": [{
+              "title": "Darkstar Dev Build Deployed 🚀",
+              "color": 5763719,
+              "fields": [
+                {"name": "Version", "value": "${{ steps.setup.outputs.version }}", "inline": true},
+                {"name": "Branch", "value": "${{ github.ref_name }}", "inline": true},
+                {"name": "Commit", "value": "[View Commit](https://github.com/${{ github.repository }}/commit/${{ github.sha }})" }
+              ],
+              "footer": {"text": "Built by GitHub Actions"}
+            }]
+          }' \
+          $DISCORD_WEBHOOK_URL
+
   release:
     needs: build
     if: startsWith(github.ref, 'refs/tags/v')
