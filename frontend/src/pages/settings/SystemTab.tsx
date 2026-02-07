@@ -113,7 +113,7 @@ export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }
         <div className="space-y-4">
             <UnsavedChangesBanner visible={isDirty} onSave={() => save()} saving={saving} />
 
-            <ProfileSetupHelper profileName={profile} onApply={handleApplySuggestions} />
+            <ProfileSetupHelper profileName={profile} currentForm={form} onApply={handleApplySuggestions} />
 
             {/* HA Add-on Guidance Banner */}
 

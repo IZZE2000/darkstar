@@ -300,19 +300,19 @@ executor:
   manual_override_entity: ""    # Manual override active flag
   # Inverter Control Entities (executor WRITES to these)
   inverter:
-    work_mode_entity: ""                     # Inverter mode selector
-    soc_target_entity: ""                 # Target maintenance level. Acts as a discharge floor (won't discharge below this %) AND a grid charge target (won't charge above this % from grid). Required for inverters like Deye (behavior for other inverters unknown).
+    work_mode: ""                     # Inverter mode selector
+    soc_target: ""                 # Target maintenance level. Acts as a discharge floor (won't discharge below this %) AND a grid charge target (won't charge above this % from grid). Required for inverters like Deye (behavior for other inverters unknown).
     work_mode_export: "Export First"                                # Value for export mode
     work_mode_zero_export: "Zero Export To CT"                      # Value for zero-export mode
-    grid_charging_entity: ""     # Enable/disable grid charging
-    max_charging_current_entity: ""     # Max charge current (A)
-    max_discharging_current_entity: ""  # Max discharge current (A)
-    grid_max_export_power_entity: ""           # Max grid export power (Watts)
+    grid_charging_enable: ""     # Enable/disable grid charging
+    max_charge_current: ""     # Max charge current (A)
+    max_discharge_current: ""  # Max discharge current (A)
+    grid_max_export_power: ""           # Max grid export power (Watts)
 
     # Control Unit Configuration (REV E3)
     control_unit: "A"                                                 # "A" (Amperes) or "W" (Watts)
-    max_charging_power_entity: ""                                       # Entity for max charge power (W)
-    max_discharging_power_entity: ""                                    # Entity for max discharge power (W)
+    max_charge_power: ""                                       # Entity for max charge power (W)
+    max_discharge_power: ""                                    # Entity for max discharge power (W)
 
   # Controller Parameters (electrical conversion constants)
   controller:

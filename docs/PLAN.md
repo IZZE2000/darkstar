@@ -126,6 +126,11 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] Verify with Fronius test case.
 * [x] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves update the plan with the progress and commit the changes.
 
+#### Phase 4: Standardize Settings State & Data Binding [DONE]
+* [x] **Backend:** Update `get_executor_config` and `update_executor_config` to use standard keys (e.g., `work_mode`).
+* [x] **Frontend:** Update `types.ts` to use standardized keys for data binding.
+* [x] **Verification:** Profile Setup Helper correctly populates UI fields.
+
 ### [DONE] REV // UI17 — Execution History Improvements
 
 **Goal:** Fix mobile UI issues and enhance execution history with 7-day view, filtering, and export.

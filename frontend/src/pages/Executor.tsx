@@ -256,11 +256,11 @@ type QuickAction = {
 
 type EntityConfig = {
     inverter: {
-        soc_target_entity: string
-        work_mode_entity: string
-        grid_charging_entity: string
-        max_charging_current_entity: string
-        max_discharging_current_entity: string
+        soc_target: string
+        work_mode: string
+        grid_charging_enable: string
+        max_charge_current: string
+        max_discharge_current: string
     }
     water_heater: {
         target_entity: string

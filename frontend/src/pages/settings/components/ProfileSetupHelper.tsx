@@ -22,10 +22,11 @@ interface ProfileSuggestionsResponse {
 
 interface ProfileSetupHelperProps {
     profileName: string
+    currentForm: Record<string, string>
     onApply: (suggestions: Record<string, unknown>) => void
 }
 
-export const ProfileSetupHelper: React.FC<ProfileSetupHelperProps> = ({ profileName, onApply }) => {
+export const ProfileSetupHelper: React.FC<ProfileSetupHelperProps> = ({ profileName, currentForm, onApply }) => {
     const [loading, setLoading] = useState(false)
     const [suggestions, setSuggestions] = useState<ProfileSuggestionsResponse | null>(null)
     const [errorMsg, setErrorMsg] = useState<string | null>(null)
@@ -62,12 +63,23 @@ export const ProfileSetupHelper: React.FC<ProfileSetupHelperProps> = ({ profileN
         fetchSuggestions()
     }, [profileName])
 
-    if (!suggestions || (!suggestions.missing_entities.length && !suggestions.diff.some((d) => d.is_different))) {
+    // Calculate diffs using local form state (if available)
+    const diffItems = suggestions
+        ? suggestions.diff.filter((d) => {
+              // Check if locally applied
+              const localValue = currentForm ? currentForm[d.key] : undefined
+              if (localValue !== undefined) {
+                  // Compare as strings to handle different types
+                  return String(localValue) !== String(d.suggested)
+              }
+              return d.is_different || d.is_missing
+          })
+        : []
+
+    if (!suggestions || (!suggestions.missing_entities.length && !diffItems.length)) {
         if (loading) return <div className="text-xs text-muted animate-pulse">Checking profile compatibility...</div>
         return null
     }
-
-    const diffItems = suggestions.diff.filter((d) => d.is_different || d.is_missing)
 
     return (
         <Card className="mb-6 overflow-hidden border-accent/20 bg-accent/5">

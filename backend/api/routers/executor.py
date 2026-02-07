@@ -331,15 +331,13 @@ async def get_executor_config() -> dict[str, Any]:
         "automation_toggle_entity": getattr(cfg, "automation_toggle_entity", None),
         "manual_override_entity": getattr(cfg, "manual_override_entity", None),
         "inverter": {
-            "work_mode_entity": cfg.inverter.work_mode_entity,
-            "soc_target_entity": getattr(cfg.inverter, "soc_target_entity", None),
-            "grid_charging_entity": cfg.inverter.grid_charging_entity,
-            "max_charging_current_entity": getattr(
-                cfg.inverter, "max_charging_current_entity", None
-            ),
-            "max_discharging_current_entity": getattr(
-                cfg.inverter, "max_discharging_current_entity", None
-            ),
+            "work_mode": cfg.inverter.work_mode,
+            "soc_target": cfg.inverter.soc_target,
+            "grid_charging_enable": cfg.inverter.grid_charging_enable,
+            "grid_charge_power": cfg.inverter.grid_charge_power,
+            "minimum_reserve": cfg.inverter.minimum_reserve,
+            "max_charge_current": cfg.inverter.max_charge_current,
+            "max_discharge_current": cfg.inverter.max_discharge_current,
         },
         "water_heater": {
             "target_entity": cfg.water_heater.target_entity,
@@ -391,7 +389,16 @@ async def update_executor_config(request: Request) -> dict[str, str]:
             if "inverter" not in executor_cfg:
                 executor_cfg["inverter"] = {}
             for key, value in payload["inverter"].items():
-                executor_cfg["inverter"][key] = value
+                # Map legacy keys if they still come from frontend (backward compat during migration)
+                mapping = {
+                    "work_mode_entity": "work_mode",
+                    "soc_target_entity": "soc_target",
+                    "grid_charging_entity": "grid_charging_enable",
+                    "max_charging_current_entity": "max_charge_current",
+                    "max_discharging_current_entity": "max_discharge_current",
+                }
+                standard_key = mapping.get(key, key)
+                executor_cfg["inverter"][standard_key] = value
 
         # Update nested water_heater config
         if "water_heater" in payload:

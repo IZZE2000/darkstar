@@ -181,6 +181,49 @@ def migrate_solar_arrays(config: Any) -> tuple[Any, bool]:
     return config, changed
 
 
+def migrate_inverter_profile_keys(config: Any) -> tuple[Any, bool]:
+    """
+    Migration for REV IP4: Standardize Inverter Profile Keys.
+    Removes `_entity` suffixes to match new profile schema.
+    """
+    changed = False
+
+    if "executor" not in config:
+        return config, False
+
+    executor = config["executor"]
+    if "inverter" not in executor:
+        return config, False
+
+    inverter = executor["inverter"]
+
+    mapping = {
+        "work_mode_entity": "work_mode",
+        "soc_target_entity": "soc_target",
+        "grid_charging_entity": "grid_charging_enable",
+        "max_charging_current_entity": "max_charge_current",
+        "max_discharging_current_entity": "max_discharge_current",
+        "max_charging_power_entity": "max_charge_power",
+        "max_discharging_power_entity": "max_discharge_power",
+        "grid_max_export_power_entity": "grid_max_export_power",
+        "grid_charge_power_entity": "grid_charge_power",
+        "minimum_reserve_entity": "minimum_reserve",
+    }
+
+    for legacy, new in mapping.items():
+        if legacy in inverter:
+            val = inverter.pop(legacy)
+            if new not in inverter:
+                inverter[new] = val
+                logger.info(f"Migrated executor.inverter.{legacy} -> {new}")
+                changed = True
+            else:
+                logger.info(f"Removed legacy executor.inverter.{legacy} (already exists as {new})")
+                changed = True
+
+    return config, changed
+
+
 def template_aware_merge(default_cfg: dict, user_cfg: dict) -> None:
     """
     Uses default_cfg as the BASE (template).
@@ -252,6 +295,7 @@ async def migrate_config(
         cleanup_obsolete_keys,
         migrate_solar_arrays,
         migrate_soc_target_entity,
+        migrate_inverter_profile_keys,
     ]
 
     for step in legacy_steps:

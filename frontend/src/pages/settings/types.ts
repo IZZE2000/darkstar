@@ -445,9 +445,9 @@ export const systemSections: SettingsSection[] = [
         description: 'Entities Darkstar writes to for control.',
         fields: [
             {
-                key: 'executor.inverter.work_mode_entity',
+                key: 'executor.inverter.work_mode',
                 label: 'Work Mode Selector',
-                path: ['executor', 'inverter', 'work_mode_entity'],
+                path: ['executor', 'inverter', 'work_mode'],
                 type: 'entity',
                 helper: 'Darkstar sets inverter mode (Export/Zero-Export).',
                 showIf: {
@@ -457,9 +457,9 @@ export const systemSections: SettingsSection[] = [
                 },
             },
             {
-                key: 'executor.inverter.soc_target_entity',
+                key: 'executor.inverter.soc_target',
                 label: 'SoC Target Entity',
-                path: ['executor', 'inverter', 'soc_target_entity'],
+                path: ['executor', 'inverter', 'soc_target'],
                 type: 'entity',
                 helper: 'Sets the target Battery SoC (0-100%). Required for Deye/Generic, optional for others.',
                 showIf: {
@@ -469,9 +469,9 @@ export const systemSections: SettingsSection[] = [
                 },
             },
             {
-                key: 'executor.inverter.minimum_reserve_entity',
+                key: 'executor.inverter.minimum_reserve',
                 label: 'Minimum Reserve',
-                path: ['executor', 'inverter', 'minimum_reserve_entity'],
+                path: ['executor', 'inverter', 'minimum_reserve'],
                 type: 'entity',
                 helper: 'Hard limit for battery discharge.',
                 showIf: {
@@ -481,9 +481,9 @@ export const systemSections: SettingsSection[] = [
                 },
             },
             {
-                key: 'executor.inverter.grid_charge_power_entity',
+                key: 'executor.inverter.grid_charge_power',
                 label: 'Grid Charge Power',
-                path: ['executor', 'inverter', 'grid_charge_power_entity'],
+                path: ['executor', 'inverter', 'grid_charge_power'],
                 type: 'entity',
                 helper: 'Target power level when charging from grid.',
                 showIf: {
@@ -493,9 +493,9 @@ export const systemSections: SettingsSection[] = [
                 },
             },
             {
-                key: 'executor.inverter.grid_charging_entity',
+                key: 'executor.inverter.grid_charging_enable',
                 label: 'Grid Charging Switch',
-                path: ['executor', 'inverter', 'grid_charging_entity'],
+                path: ['executor', 'inverter', 'grid_charging_enable'],
                 type: 'entity',
                 helper: 'Darkstar enables/disables grid→battery charging.',
                 showIf: {
@@ -505,9 +505,9 @@ export const systemSections: SettingsSection[] = [
                 },
             },
             {
-                key: 'executor.inverter.max_charging_current_entity',
+                key: 'executor.inverter.max_charge_current',
                 label: 'Max Charge Current',
-                path: ['executor', 'inverter', 'max_charging_current_entity'],
+                path: ['executor', 'inverter', 'max_charge_current'],
                 type: 'entity',
                 helper: 'Darkstar sets charge rate in Amps.',
                 showIf: {
@@ -516,9 +516,9 @@ export const systemSections: SettingsSection[] = [
                 },
             },
             {
-                key: 'executor.inverter.max_charging_power_entity',
+                key: 'executor.inverter.max_charge_power',
                 label: 'Max Charge Power',
-                path: ['executor', 'inverter', 'max_charging_power_entity'],
+                path: ['executor', 'inverter', 'max_charge_power'],
                 type: 'entity',
                 helper: 'Darkstar sets charge rate in Watts.',
                 showIf: {
@@ -527,9 +527,9 @@ export const systemSections: SettingsSection[] = [
                 },
             },
             {
-                key: 'executor.inverter.max_discharging_current_entity',
+                key: 'executor.inverter.max_discharge_current',
                 label: 'Max Discharge Current',
-                path: ['executor', 'inverter', 'max_discharging_current_entity'],
+                path: ['executor', 'inverter', 'max_discharge_current'],
                 type: 'entity',
                 helper: 'Darkstar sets discharge rate in Amps.',
                 showIf: {
@@ -538,9 +538,9 @@ export const systemSections: SettingsSection[] = [
                 },
             },
             {
-                key: 'executor.inverter.max_discharging_power_entity',
+                key: 'executor.inverter.max_discharge_power',
                 label: 'Max Discharge Power',
-                path: ['executor', 'inverter', 'max_discharging_power_entity'],
+                path: ['executor', 'inverter', 'max_discharge_power'],
                 type: 'entity',
                 helper: 'Darkstar sets discharge rate in Watts.',
                 showIf: {
@@ -549,10 +549,10 @@ export const systemSections: SettingsSection[] = [
                 },
             },
             {
-                key: 'executor.inverter.grid_max_export_power_entity',
+                key: 'executor.inverter.grid_max_export_power',
                 label: 'Max Grid Export (W)',
                 helper: 'HA Number entity to control grid export limit in Watts.',
-                path: ['executor', 'inverter', 'grid_max_export_power_entity'],
+                path: ['executor', 'inverter', 'grid_max_export_power'],
                 type: 'entity',
                 showIf: {
                     configKey: 'export.enable_export',
