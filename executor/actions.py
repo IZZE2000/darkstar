@@ -293,11 +293,25 @@ class ActionDispatcher:
             List of ActionResult for each action attempted
         """
         results: list[ActionResult] = []
+        target_mode = decision.work_mode
 
         # 1. Set work mode (Rev O1)
         if self.config.has_battery:
-            result = await self._set_work_mode(decision.work_mode)
+            result = await self._set_work_mode(target_mode)
             results.append(result)
+
+        # Optimization: Identify if we should skip power limits based on mode (REV IP4)
+        # We skip discharge/export limits in Charge and Hold/Idle modes to prevent conflict.
+        is_charging = False
+        is_idle = False
+        if self.profile:
+            if (
+                self.profile.modes.charge_from_grid
+                and target_mode == self.profile.modes.charge_from_grid.value
+            ):
+                is_charging = True
+            if self.profile.modes.idle and target_mode == self.profile.modes.idle.value:
+                is_idle = True
 
         # 2. Set grid charging (Rev O1)
         if self.config.has_battery:
@@ -310,11 +324,15 @@ class ActionDispatcher:
             results.append(result)
 
         # 4. Set discharge limit (Rev O1 + E3)
+        # Skip if in Charge or Idle mode (Generic optimization REV IP4)
         if self.config.has_battery and decision.write_discharge_current:
-            result = await self._set_discharge_limit(
-                decision.discharge_value, decision.control_unit
-            )
-            results.append(result)
+            if is_charging or is_idle:
+                logger.debug("Skipping discharge_limit action: mode is %s", target_mode)
+            else:
+                result = await self._set_discharge_limit(
+                    decision.discharge_value, decision.control_unit
+                )
+                results.append(result)
 
         # 5. Set SoC target (Rev O1)
         if self.config.has_battery:
@@ -327,9 +345,13 @@ class ActionDispatcher:
             results.append(result)
 
         # 7. Set max export power (Bug fix #1)
+        # Skip if in Charge or Idle mode (Generic optimization REV IP4)
         if self.config.has_battery:
-            result = await self._set_max_export_power(decision.export_power_w)
-            results.append(result)
+            if is_charging or is_idle:
+                logger.debug("Skipping max_export_power action: mode is %s", target_mode)
+            else:
+                result = await self._set_max_export_power(decision.export_power_w)
+                results.append(result)
 
         return results
 
@@ -552,12 +574,31 @@ class ActionDispatcher:
         """Set max charging limit (Amps or Watts)."""
         start = time.time()
 
-        if unit == "W":
-            entity = self.config.inverter.max_charging_power_entity
-            unit_label = "W"
-        else:
-            entity = self.config.inverter.max_charging_current_entity
-            unit_label = "A"
+        # Generic Split Charging Support (REV IP4)
+        # If we are in 'charge_from_grid' mode and a specific grid entity is defined, use it.
+        entity = None
+        current_mode = self.ha.get_state_value(self.config.inverter.work_mode_entity)
+        is_grid_mode = (
+            self.profile
+            and self.profile.modes.charge_from_grid
+            and current_mode == self.profile.modes.charge_from_grid.value
+        )
+
+        if is_grid_mode:
+            # Check for grid_charge_power_entity in custom entities (REV IP4)
+            entity = self.config.inverter.custom_entities.get("grid_charge_power_entity")
+            if _is_entity_configured(entity):
+                logger.debug("Using dedicated grid_charge_power_entity: %s", entity)
+            else:
+                entity = None  # Fall back to standard logic
+
+        if not entity:
+            if unit == "W":
+                entity = self.config.inverter.max_charging_power_entity
+            else:
+                entity = self.config.inverter.max_charging_current_entity
+
+        unit_label = unit
 
         if not _is_entity_configured(entity):
             logger.debug("Skipping charge_limit action: entity not configured for unit %s", unit)

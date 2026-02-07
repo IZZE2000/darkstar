@@ -96,4 +96,19 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [ ] **Frontend:** Add controls to `Settings > Grid`.
 * [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
 
+
+### [DONE] REV // IP4 — Profile Logic Refactor & Fronius Fixes
+
+**Goal:** Standardize inverter profile logic to support split charging entities and clean up mode behaviors.
+**Context:** Fronius beta testing revealed a need for separate "Grid Charge Power" control and correct "Block Discharge" mapping.
+
+**Plan:**
+
+#### Phase 1: Logic Standardization [DONE]
+* [x] Refactor `executor/actions.py` to transparently support `grid_charge_power_entity`.
+* [x] Optimize `execute` loop to skip irrelevant actions in `Charge` and `Idle` modes.
+* [x] Update `profiles/fronius.yaml` with correct mappings.
+* [x] Verify with `tests/test_rev_ip4.py`.
+* [x] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves update the plan with the progress and commit the changes.
+
 ---

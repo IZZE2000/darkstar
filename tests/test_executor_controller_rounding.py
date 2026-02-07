@@ -34,12 +34,12 @@ def test_charge_limit_rounding_grid_specific():
     # Test 126W -> should round to 130W (due to 10W step)
     slot = SlotPlan(charge_kw=0.126)  # 126W
     state = SystemState()
-    val, write = controller._calculate_charge_limit(slot, state)
+    val, _ = controller._calculate_charge_limit(slot, state)
     assert val == 130.0
 
     # Test 124W -> should round to 120W
     slot = SlotPlan(charge_kw=0.124)  # 124W
-    val, write = controller._calculate_charge_limit(slot, state)
+    val, _ = controller._calculate_charge_limit(slot, state)
     assert val == 120.0
 
 
@@ -63,10 +63,10 @@ def test_charge_limit_rounding_standard():
     # Test 125W -> should round to 100W (due to 100W step)
     slot = SlotPlan(charge_kw=0.125)  # 125W
     state = SystemState()
-    val, write = controller._calculate_charge_limit(slot, state)
+    val, _ = controller._calculate_charge_limit(slot, state)
     assert val == 100.0
 
     # Test 175W -> should round to 200W
     slot = SlotPlan(charge_kw=0.175)  # 175W
-    val, write = controller._calculate_charge_limit(slot, state)
+    val, _ = controller._calculate_charge_limit(slot, state)
     assert val == 200.0

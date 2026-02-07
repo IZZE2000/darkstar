@@ -56,13 +56,13 @@ modes:
   # Grid charging mode - Charge battery from grid
   charge_from_grid:
     value: "Charge from Grid"
-    description: "Force charge battery from AC grid"
+    description: "Force charge battery from AC grid (Uses Grid Charge Power)"
     requires_grid_charging: true
 
   # Idle/Standby mode - Maintain battery level
   idle:
-    value: "Auto"
-    description: "Keep battery at maximum SoC level (Standby)"
+    value: "Block Discharging"
+    description: "Block battery discharge to preserve level (Idle)"
     requires_grid_charging: false
 
 behavior:
