@@ -32,6 +32,11 @@ This document contains the archive of all completed revisions. It serves as the 
 * [x] Standardize legacy Fronius tests (REV IP4 leftovers).
 * [x] **USER VERIFICATION AND COMMIT:** Verified with tests and walkthrough.md.
 
+#### Phase 2: Refine Idle Logic [DONE]
+* [x] **Logic:** Use `idle` mode (Block Discharge) if `current_soc <= soc_target`.
+* [x] **Verify:** Ensure `auto` (Self-consumption) is still used if `current_soc > soc_target`.
+* [x] **Test:** `tests/repro_issue_fronius_hold.py`.
+
 ---
 
 ### [DONE] REV // DX5 — Discord Notifications
