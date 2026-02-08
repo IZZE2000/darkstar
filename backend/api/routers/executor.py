@@ -338,6 +338,7 @@ async def get_executor_config() -> dict[str, Any]:
             "minimum_reserve": cfg.inverter.minimum_reserve,
             "max_charge_current": cfg.inverter.max_charge_current,
             "max_discharge_current": cfg.inverter.max_discharge_current,
+            "grid_max_export_power_switch": cfg.inverter.grid_max_export_power_switch,
         },
         "water_heater": {
             "target_entity": cfg.water_heater.target_entity,
@@ -396,6 +397,7 @@ async def update_executor_config(request: Request) -> dict[str, str]:
                     "grid_charging_entity": "grid_charging_enable",
                     "max_charging_current_entity": "max_charge_current",
                     "max_discharging_current_entity": "max_discharge_current",
+                    "grid_max_export_power_switch_entity": "grid_max_export_power_switch",
                 }
                 standard_key = mapping.get(key, key)
                 executor_cfg["inverter"][standard_key] = value

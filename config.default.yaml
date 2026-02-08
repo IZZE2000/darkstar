@@ -308,6 +308,7 @@ executor:
     max_charge_current: ""     # Max charge current (A)
     max_discharge_current: ""  # Max discharge current (A)
     grid_max_export_power: ""           # Max grid export power (Watts)
+    grid_max_export_power_switch: ""    # Switch entity to enable/disable grid export limit
 
     # Control Unit Configuration (REV E3)
     control_unit: "A"                                                 # "A" (Amperes) or "W" (Watts)

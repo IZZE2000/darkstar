@@ -474,3 +474,21 @@ class TestActionDispatcherExecute:
         assert (
             "max_export_power" in action_types
         )  # Still called as it doesn't have a write flag yet
+
+    @pytest.mark.asyncio
+    async def test_set_max_export_power_toggles_switch(self, mock_ha_client, executor_config):
+        """_set_max_export_power toggles the switch entity if configured."""
+        executor_config.inverter.grid_max_export_power_switch = "switch.export_limit"
+        mock_ha_client.get_state_value.return_value = "1000"  # Current power
+        mock_ha_client.set_number.return_value = True
+        mock_ha_client.set_switch.return_value = True
+
+        dispatcher = ActionDispatcher(mock_ha_client, executor_config)
+        await dispatcher._set_max_export_power(5000.0)
+
+        # Verify power was set
+        mock_ha_client.set_number.assert_called_with(
+            "number.inverter_grid_max_export_power", 5000.0
+        )
+        # Verify switch was turned ON
+        mock_ha_client.set_switch.assert_called_with("switch.export_limit", True)

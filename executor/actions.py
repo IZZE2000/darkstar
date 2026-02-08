@@ -1068,6 +1068,14 @@ class ActionDispatcher:
         if success:
             verified_value, verification_success = await self._verify_action(entity, watts)
 
+        # 5. Handle Export Switch (F49)
+        # If a switch is configured, turn it ON when setting a limit.
+        # This ensures the inverter actually enforces the numeric value.
+        switch_entity = self.config.inverter.grid_max_export_power_switch
+        if success and _is_entity_configured(switch_entity):
+            logger.info("Enabling export power limit switch: %s", switch_entity)
+            self.ha.set_switch(switch_entity, True)
+
         duration = int((time.time() - start) * 1000)
 
         logger.info("Set max_export_power: %.0f W on %s (success=%s)", watts, entity, success)

@@ -27,6 +27,7 @@ entities:
 
   optional:
     grid_max_export_power: "number.export_power_limit"
+    grid_max_export_power_switch: "switch.export_power_limit"
     forced_power: "number.battery_forced_charge_discharge_power"
     # Custom Entities
     ems_mode: "select.ems_mode"

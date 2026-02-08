@@ -204,3 +204,24 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] Refactor `areEqual` in `utils.ts` for strict change detection.
 * [x] Add debug logging to `buildPatch` and `useSettingsForm.ts`.
 * [x] Verify linting and formatting pass.
+
+---
+
+### [DONE] REV // F49 — Settings UI Polish & Export Limit Switch
+
+**Goal:** Fix missing export limit switch, redundant shadow mode toggle, and improve visibility of advanced inverter logic strings.
+**Context:** Beta testers reported missing "Export Power Limit" switch (required for Sungrow). Shadow mode is redundant in settings. Inverter logic strings should be profile-aware.
+
+**Plan:**
+
+#### Phase 1: Backend Logic & Configuration [DONE]
+* [x] **[config.py](file:///home/s/sync/documents/projects/darkstar/executor/config.py):** Add `grid_max_export_power_switch` to `InverterConfig`.
+* [x] **[actions.py](file:///home/s/sync/documents/projects/darkstar/executor/actions.py):** Update `_set_max_export_power` to control the switch entity.
+* [x] **[executor.py](file:///home/s/sync/documents/projects/darkstar/backend/api/routers/executor.py):** Expose new field in API config endpoints.
+* [x] **Unit Tests:** Add tests for new switch logic in `test_executor_actions.py`.
+
+#### Phase 2: Frontend & Profiles [DONE]
+* [x] **[types.ts](file:///home/s/sync/documents/projects/darkstar/frontend/src/pages/settings/types.ts):** Add Export Switch entity field.
+* [x] **[types.ts](file:///home/s/sync/documents/projects/darkstar/frontend/src/pages/settings/types.ts):** Fix visibility of Mode Strings and remove Shadow Mode.
+* [x] **[sungrow.yaml](file:///home/s/sync/documents/projects/darkstar/profiles/sungrow.yaml):** Add `grid_max_export_power_switch` to entity mapping.
+* [x] **Manual Verification:** Verify UI behavior and log output.

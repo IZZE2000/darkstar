@@ -582,6 +582,17 @@ export const systemSections: SettingsSection[] = [
                 },
             },
             {
+                key: 'executor.inverter.grid_max_export_power_switch',
+                label: 'Max Grid Export Switch',
+                helper: 'HA Switch entity to enable/disable grid export limit.',
+                path: ['executor', 'inverter', 'grid_max_export_power_switch'],
+                type: 'entity',
+                showIf: {
+                    configKey: 'export.enable_export',
+                    disabledText: 'Enable "Grid Export" in System Profile to configure',
+                },
+            },
+            {
                 key: 'executor.water_heater.target_entity',
                 label: 'Water Heater Setpoint',
                 path: ['executor', 'water_heater', 'target_entity'],
@@ -1508,6 +1519,10 @@ export const advancedSections: SettingsSection[] = [
                 helper: 'The exact value your inverter select entity expects for Export mode.',
                 path: ['executor', 'inverter', 'work_mode_export'],
                 type: 'text',
+                showIf: {
+                    configKey: 'system.inverter_profile',
+                    value: 'generic',
+                },
             },
             {
                 key: 'executor.inverter.work_mode_zero_export',
@@ -1515,13 +1530,10 @@ export const advancedSections: SettingsSection[] = [
                 helper: 'The exact value your inverter select entity expects for Zero-Export mode.',
                 path: ['executor', 'inverter', 'work_mode_zero_export'],
                 type: 'text',
-            },
-            {
-                key: 'executor.shadow_mode',
-                label: 'Shadow Mode',
-                helper: 'When ON, Darkstar will log planned actions but NOT change any inverter settings. Safe for initial testing.',
-                path: ['executor', 'shadow_mode'],
-                type: 'boolean',
+                showIf: {
+                    configKey: 'system.inverter_profile',
+                    value: 'generic',
+                },
             },
         ],
     },

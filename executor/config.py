@@ -44,6 +44,7 @@ class InverterConfig:
     grid_max_export_power: str | None = None
     max_charge_current: str | None = None
     max_discharge_current: str | None = None
+    grid_max_export_power_switch: str | None = None
     max_charge_power: str | None = None
     max_discharge_power: str | None = None
 
@@ -111,6 +112,14 @@ class InverterConfig:
     @max_discharging_power_entity.setter
     def max_discharging_power_entity(self, value: str | None) -> None:
         self.max_discharge_power = value
+
+    @property
+    def grid_max_export_power_switch_entity(self) -> str | None:
+        return self.grid_max_export_power_switch
+
+    @grid_max_export_power_switch_entity.setter
+    def grid_max_export_power_switch_entity(self, value: str | None) -> None:
+        self.grid_max_export_power_switch = value
 
     @property
     def grid_max_export_power_entity(self) -> str | None:
@@ -299,6 +308,9 @@ def load_executor_config(config_path: str = "config.yaml") -> ExecutorConfig:
         grid_charge_power=get_ent("grid_charge_power", "grid_charge_power_entity"),
         minimum_reserve=get_ent("minimum_reserve", "minimum_reserve_entity"),
         grid_max_export_power=get_ent("grid_max_export_power", "grid_max_export_power_entity"),
+        grid_max_export_power_switch=get_ent(
+            "grid_max_export_power_switch", "grid_max_export_power_switch_entity"
+        ),
         max_charge_current=get_ent("max_charge_current", "max_charging_current_entity"),
         max_discharge_current=get_ent("max_discharge_current", "max_discharging_current_entity"),
         max_charge_power=get_ent("max_charge_power", "max_charging_power_entity"),
@@ -328,6 +340,8 @@ def load_executor_config(config_path: str = "config.yaml") -> ExecutorConfig:
                 "minimum_reserve_entity",
                 "grid_max_export_power",
                 "grid_max_export_power_entity",
+                "grid_max_export_power_switch",
+                "grid_max_export_power_switch_entity",
                 "max_charge_current",
                 "max_charging_current_entity",
                 "max_discharge_current",
