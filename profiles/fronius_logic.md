@@ -5,7 +5,7 @@
 ## New Entities (BYD / Gen24)
 *   `select.byd_battery_box_premium_hv_storage_control_mode` (Storage Control Mode selector)
 *   `number.byd_battery_box_premium_hv_grid_charge_power` (Grid Charge Power / Limit)
-*   `sensor.byd_battery_box_premium_hv_maximum_discharge_rate` (Discharge Limit Indicator)
+*   `number.byd_battery_box_premium_hv_discharge_limit` (Discharge Limit Indicator)
 *   `number.byd_battery_box_premium_hv_minimum_reserve` (Minimum Reserve/SoC Target)
 *   `number.fronius_symo_gen24_10_0_export_limit_rate` (Export Limit Rate in Watts)
 *   `switch.fronius_symo_gen24_10_0_export_limit_enable` (Export Limit Enable)

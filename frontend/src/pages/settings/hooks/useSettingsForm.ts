@@ -174,6 +174,8 @@ export function useSettingsForm(fields: BaseField[]): UseSettingsFormReturn {
             }
 
             const patch = { ...buildPatch(config as unknown as Record<string, unknown>, form, fields), ...extraPatch }
+            console.warn('[CONFIG_SAVE] Generated patch:', patch)
+
             if (Object.keys(patch).length === 0) {
                 setStatusMessage('No changes detected.')
                 return false

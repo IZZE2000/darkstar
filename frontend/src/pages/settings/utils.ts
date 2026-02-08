@@ -112,6 +112,38 @@ export function buildFormState(config: Record<string, unknown> | null, fields: B
 }
 
 /**
+ * Checks if two values are equal for the purposes of configuration patching.
+ */
+export function areEqual(a: unknown, b: unknown, type: string): boolean {
+    // Null/Undefined equivalence (covers missing keys vs explicitly null/empty)
+    if ((a === null || a === undefined) && (b === null || b === undefined)) return true
+
+    // Normalize empty strings vs null for text/entity/select fields
+    if (type !== 'boolean' && type !== 'number' && type !== 'array' && type !== 'solar_arrays') {
+        const strA = a !== null && a !== undefined ? String(a).trim() : ''
+        const strB = b !== null && b !== undefined ? String(b).trim() : ''
+        return strA === strB
+    }
+
+    // Treat false as equal to null/undefined for boolean fields (assuming default is false)
+    if (type === 'boolean' && a === false && (b === null || b === undefined)) return true
+
+    if (type === 'array') {
+        const arrA = Array.isArray(a) ? (a as unknown[]) : []
+        const arrB = Array.isArray(b) ? (b as unknown[]) : []
+        if (arrA.length !== arrB.length) return false
+        return arrA.every((val, i) => val === arrB[i])
+    }
+
+    if (type === 'solar_arrays') {
+        return JSON.stringify(a) === JSON.stringify(b)
+    }
+
+    // Strict equality for others (handles numbers correctly)
+    return a === b
+}
+
+/**
  * Builds a patch object for the API by comparing form state with original config.
  */
 export function buildPatch(
@@ -120,6 +152,7 @@ export function buildPatch(
     fields: BaseField[],
 ): Record<string, unknown> {
     let patch: Record<string, unknown> = {}
+    const debug = true
 
     fields.forEach((field) => {
         if (field.companionKey) {
@@ -140,37 +173,25 @@ export function buildPatch(
 
         const parsed = parseFieldInput(field, raw)
         if (parsed === undefined) return
-        if (field.type === 'number' && parsed === null) return
+
+        // Specialized number/null handling
+        if (field.type === 'number' && parsed === null) {
+            const current = getDeepValue<unknown>(original, field.path)
+            if (current === null || current === undefined) return
+        }
 
         const currentValue = getDeepValue<unknown>(original, field.path)
 
-        const areEqual = (a: unknown, b: unknown, type: string): boolean => {
-            // Null/Undefined equivalence (covers missing keys vs explicitly null/empty)
-            if ((a === null || a === undefined) && (b === null || b === undefined)) return true
-
-            // Treat false as equal to null/undefined for boolean fields (assuming default is false)
-            if (type === 'boolean' && a === false && (b === null || b === undefined)) return true
-
-            if (type === 'array') {
-                const arrA = Array.isArray(a) ? (a as unknown[]) : []
-                const arrB = Array.isArray(b) ? (b as unknown[]) : []
-                if (arrA.length !== arrB.length) return false
-                return arrA.every((val, i) => val === arrB[i])
-            }
-
-            if (type === 'solar_arrays') {
-                return JSON.stringify(a) === JSON.stringify(b)
-            }
-            // Treat empty string as equal to null/undefined for text fields
-            if (a === '' && (b === null || b === undefined)) return true
-
-            // Allow loose equality for primitives (handles number vs string-in-select)
-            if (a == b) return true
-
-            return a === b
-        }
-
         if (areEqual(parsed, currentValue, field.type)) return
+
+        if (debug) {
+            console.warn(`[CONFIG_PATCH] Field '${field.key}' changed:`, {
+                path: field.path,
+                old: currentValue,
+                new: parsed,
+                type: field.type,
+            })
+        }
 
         patch = setDeepValueCorrect(patch, field.path, parsed)
     })

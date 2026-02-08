@@ -185,4 +185,22 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * `test_executor_profiles.py`: 13 tests passing
 * **Total: 74/74 tests passing**
 
-**Conclusion:** Phase 1-3 implementation complete and verified. Ready for beta testing.
+---
+
+### [DONE] REV // F48 — Fronius Skip Logic & UI Saving Fixes
+
+**Goal:** Resolve redundant discharge limit writes for Fronius and fix UI configuration saving bugs.
+**Context:** Fronius inverters in "Auto" mode handle their own discharge limits, making external writes redundant. Additionally, the settings UI failed to detect certain changes (like entity IDs) due to loose equality checks in the patch logic.
+
+**Plan:**
+
+#### Phase 1: Executor & Profile Logic [DONE]
+* [x] Add `skip_discharge_limit` flag to `WorkMode` dataclass.
+* [x] Update `fronius.yaml` to enable `skip_discharge_limit` for Auto modes.
+* [x] Implement skip logic in `ActionDispatcher._set_discharge_limit`.
+* [x] Verify via `test_executor_fronius_profile.py`.
+
+#### Phase 2: UI Saving Fixes [DONE]
+* [x] Refactor `areEqual` in `utils.ts` for strict change detection.
+* [x] Add debug logging to `buildPatch` and `useSettingsForm.ts`.
+* [x] Verify linting and formatting pass.

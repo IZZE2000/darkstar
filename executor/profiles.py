@@ -82,6 +82,7 @@ class WorkMode:
     value: str | None
     description: str = ""
     requires_grid_charging: bool = False  # Whether this mode needs grid_charging_entity=ON
+    skip_discharge_limit: bool = False  # Explicitly skip writing discharge limit in this mode
     # Composite mode settings (Rev IP2)
     # Maps profile entity key -> value to set
     set_entities: dict[str, Any] = field(default_factory=dict)
@@ -303,6 +304,7 @@ def _parse_work_mode(mode_data: dict[str, Any] | None) -> WorkMode | None:
         value=mode_data.get("value"),
         description=mode_data.get("description", ""),
         requires_grid_charging=mode_data.get("requires_grid_charging", False),
+        skip_discharge_limit=mode_data.get("skip_discharge_limit", False),
         set_entities=mode_data.get("set_entities", {}),
     )
 

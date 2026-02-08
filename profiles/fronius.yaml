@@ -21,7 +21,7 @@ entities:
   required:
     work_mode: "select.byd_battery_box_premium_hv_storage_control_mode"
     max_charge_power: "number.byd_battery_box_premium_hv_grid_charge_power"
-    max_discharge_power: "number.byd_battery_box_premium_hv_maximum_discharge_rate"
+    max_discharge_power: "number.byd_battery_box_premium_hv_discharge_limit"
     minimum_reserve: "number.byd_battery_box_premium_hv_minimum_reserve"
     grid_charge_power: "number.byd_battery_box_premium_hv_grid_charge_power"
   optional:
@@ -40,12 +40,14 @@ modes:
     value: "Auto"
     description: "Prioritize local load (Note: Fronius handles export via dynamic power limit)"
     requires_grid_charging: false
+    skip_discharge_limit: true
 
   # Self-consumption mode - Normal operation
   self_consumption:
     value: "Auto"
     description: "Self-consumption mode (Standard operation)"
     requires_grid_charging: false
+    skip_discharge_limit: true
 
   # Hold mode - Block discharging to preserve battery for high price windows
   hold:
@@ -89,7 +91,7 @@ defaults:
       work_mode: "select.byd_battery_box_premium_hv_storage_control_mode"
       grid_charge_power: "number.byd_battery_box_premium_hv_grid_charge_power"
       max_charge_power: "number.byd_battery_box_premium_hv_grid_charge_power"
-      max_discharge_power: "number.byd_battery_box_premium_hv_maximum_discharge_rate"
+      max_discharge_power: "number.byd_battery_box_premium_hv_discharge_limit"
       minimum_reserve: "number.byd_battery_box_premium_hv_minimum_reserve"
       grid_max_export_power: "number.fronius_symo_gen24_10_0_export_limit_rate"
   battery:

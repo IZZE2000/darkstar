@@ -665,6 +665,39 @@ class ActionDispatcher:
         """Set max discharging limit (Amps or Watts)."""
         start = time.time()
 
+        # 1. Profile-aware Skip Logic (Rev IP11)
+        # If the current mode handles discharge limits internally, we skip the write.
+        if self.profile:
+            current_mode = self.ha.get_state_value(self.config.inverter.work_mode_entity)
+            # Find the mode definition matching current HA state
+            mode_def = None
+            for attr in [
+                "export",
+                "zero_export",
+                "self_consumption",
+                "force_discharge",
+                "charge_from_grid",
+                "idle",
+            ]:
+                m = getattr(self.profile.modes, attr, None)
+                if m and m.value == current_mode:
+                    mode_def = m
+                    break
+
+            if mode_def and mode_def.skip_discharge_limit:
+                logger.info(
+                    "Skipping discharge limit write: mode '%s' manages limits internally (Profile: %s)",
+                    current_mode,
+                    self.profile.metadata.name,
+                )
+                return ActionResult(
+                    action_type="discharge_limit",
+                    success=True,
+                    message=f"Skipped per mode setting: {current_mode}",
+                    skipped=True,
+                    duration_ms=int((time.time() - start) * 1000),
+                )
+
         if unit == "W":
             entity = self.config.inverter.max_discharging_power_entity
             unit_label = "W"
