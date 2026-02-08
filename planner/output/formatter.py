@@ -39,7 +39,7 @@ def dataframe_to_json_response(
         # Check if the index values look like timestamps
         try:
             test_val = df_copy["index"].iloc[0] if len(df_copy) > 0 else None
-            if test_val is not None and isinstance(test_val, (pd.Timestamp, datetime)):
+            if test_val is not None and isinstance(test_val, pd.Timestamp | datetime):
                 df_copy = df_copy.rename(columns={"index": "start_time"})
         except Exception:
             pass

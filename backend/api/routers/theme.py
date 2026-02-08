@@ -61,7 +61,7 @@ def _normalise_theme(name: str, raw_data: dict[str, Any]) -> dict[str, Any]:
     #    raise ValueError("Theme data must be a mapping")
     palette = raw_data.get("palette")
     palette_list = cast("list[Any]", palette)
-    if not isinstance(palette, (list, tuple)) or len(palette_list) != 16:
+    if not isinstance(palette, list | tuple) or len(palette_list) != 16:
         raise ValueError("Palette must contain exactly 16 colours")
 
     proper_palette = palette_list
