@@ -122,3 +122,28 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [ ] **UI:** Show "Clipped Solar" in the dashboard forecast chart.
 
 ---
+
+
+### [IN PROGRESS] REV // IP5 — Sungrow & Fronius Logic Fixes
+
+**Goal:** Fix override logic to respect profile modes and update Sungrow profile with correct entities and behaviors.
+**Context:** "Zero Export To CT" is hardcoded in `override.py`, causing Sungrow inverters to fail during low SoC events. Sungrow integration has also updated entity names.
+
+**Plan:**
+
+#### Phase 1: Backend Logic & Profile Update [PLANNED]
+* [ ] **Backend (`override.py`):** Remove hardcoded `work_mode` from `actions` dict (Emergency/Low SoC/Fallback).
+* [ ] **Backend (`controller.py`):** Verify `defaults` fall back to `profile.modes.zero_export`.
+* [ ] **Backend (`controller.py`):** Force "W" units for Sungrow in `_calculate_charge_limit`.
+* [ ] **Profile (`sungrow.yaml`):** Update entities to new integration names (`select.battery_forced_charge_discharge`, etc.).
+* [ ] **Profile (`sungrow.yaml`):** implement "Idle" mode using `Forced mode` + `Stop`.
+* [ ] **Frontend (`SystemTab.tsx`):** Force `control_unit` to "W" when Sungrow profile is selected.
+* [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify.
+
+#### Phase 2: Fronius Entity Routing & Defaults [DONE]
+* [x] **Backend (`actions.py`):** Fix `_set_charge_limit` to use `inverter.grid_charge_power` directly (stop looking in `custom_entities`).
+* [x] **Backend (`config.py`):** Verify `grid_charge_power_entity` is correctly aliased during config loading.
+* [x] **Profile (`fronius.yaml`):** Add BYD battery entities as defaults/suggestions (extracted from user production config).
+* [x] **Validation:** Add unit test for Fronius grid-charge routing to prevent regression with `pv_charge_limit`.
+* [x] **Verification:** Confirm fix in shadow mode logs.
+* [x] **USER VERIFICATION AND COMMIT:** Stop and let the user verify.

@@ -585,10 +585,10 @@ class ActionDispatcher:
         )
 
         if is_grid_mode:
-            # Check for grid_charge_power_entity in custom entities (REV IP4)
-            entity = self.config.inverter.custom_entities.get("grid_charge_power_entity")
+            # Use standardized grid_charge_power (Rev IP4)
+            entity = self.config.inverter.grid_charge_power
             if _is_entity_configured(entity):
-                logger.debug("Using dedicated grid_charge_power_entity: %s", entity)
+                logger.debug("Using dedicated grid_charge_power: %s", entity)
             else:
                 entity = None  # Fall back to standard logic
 

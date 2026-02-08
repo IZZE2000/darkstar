@@ -20,7 +20,7 @@ def base_config():
     config.inverter.work_mode_entity = "select.work_mode"
     config.inverter.max_charging_power_entity = "number.pv_charge_limit"
     config.inverter.grid_charging_entity = "switch.grid_charge"
-    config.inverter.custom_entities = {"grid_charge_power_entity": "number.grid_charge_limit"}
+    config.inverter.grid_charge_power = "number.grid_charge_limit"
     return config
 
 
