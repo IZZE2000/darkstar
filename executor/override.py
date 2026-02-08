@@ -149,7 +149,6 @@ class OverrideEvaluator:
                 reason=f"EMERGENCY: SoC at floor ({state.current_soc_percent}%). "
                 f"Enabling grid charge, stopping all export.",
                 actions={
-                    "work_mode": "Zero Export To CT",
                     "grid_charging": True,
                     "soc_target": int(self.min_soc_floor + 5),  # min_soc + 5%
                     "water_temp": self.water_temp_off,
@@ -166,7 +165,6 @@ class OverrideEvaluator:
                 reason=f"Plan wants to export ({slot.export_kw:.1f} kW), but SoC is at "
                 f"floor ({state.current_soc_percent}%). Preventing export.",
                 actions={
-                    "work_mode": "Zero Export To CT",
                     "grid_charging": False,
                     "soc_target": int(self.min_soc_floor),
                 },
@@ -181,7 +179,6 @@ class OverrideEvaluator:
                 priority=8.0,
                 reason="No valid slot plan found - preserving current battery state",
                 actions={
-                    "work_mode": "Zero Export To CT",
                     "grid_charging": False,
                     "soc_target": int(state.current_soc_percent),  # Keep current SoC
                     "water_temp": self.water_temp_off,

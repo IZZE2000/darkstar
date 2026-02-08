@@ -19,16 +19,16 @@ capabilities:
 
 entities:
   required:
-    work_mode: "input_select.set_sg_ems_mode"
+    work_mode: "select.sg_ems_mode"
     max_charge_power: "input_number.set_sg_battery_max_charge_power"
     max_discharge_power: "input_number.set_sg_battery_max_discharge_power"
 
   optional:
     grid_max_export_power: "input_number.set_sg_export_power_limit"
-    forced_power: "input_number.set_sg_forced_charge_discharge_power"
+    forced_power: "number.battery_forced_charge_discharge_power"
     # Custom Entities
-    ems_mode: "input_select.set_sg_ems_mode"
-    forced_charge_discharge_cmd: "input_select.set_sg_battery_forced_charge_discharge_cmd"
+    ems_mode: "select.sg_ems_mode"
+    forced_charge_discharge_cmd: "select.battery_forced_charge_discharge"
     export_power_limit: "input_number.set_sg_export_power_limit"
 
 modes:
@@ -82,10 +82,11 @@ modes:
       ems_mode: "Self-consumption mode (default)"
       forced_charge_discharge_cmd: "Stop (default)"
       export_power_limit: 0        # Safety: Block export while idle
+      max_discharge_power: 10      # Idle fix: set low discharge power
 
 behavior:
   control_unit: "W"
-  min_charge_w: 100.0
+  min_charge_w: 10.0
   round_step_w: 100.0
   write_threshold_w: 100.0
   soc_target_is_discharge_floor: true

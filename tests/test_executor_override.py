@@ -148,7 +148,7 @@ class TestOverrideEvaluatorLowSocExportPrevention:
         assert result.override_needed is True
         assert result.override_type == OverrideType.LOW_SOC_EXPORT_PREVENTION
         assert result.priority == 8.5
-        assert result.actions["work_mode"] == "Zero Export To CT"
+        assert result.actions["grid_charging"] is False
 
     def test_export_planned_soc_ok_no_trigger(self):
         """Plan wants to export and SoC is healthy - allow."""
@@ -184,7 +184,7 @@ class TestOverrideEvaluatorSlotFailure:
         assert result.override_needed is True
         assert result.override_type == OverrideType.SLOT_FAILURE_FALLBACK
         assert result.priority == 8.0
-        assert result.actions["work_mode"] == "Zero Export To CT"
+        assert result.actions["grid_charging"] is False
         assert result.actions["grid_charging"] is False
 
     def test_slot_invalid_triggers_fallback(self):

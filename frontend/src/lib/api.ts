@@ -624,8 +624,7 @@ export const Api = {
     // Load Disaggregation Debug (Rev ARC12)
     loadsDebug: () => getJSON<LoadsDebugResponse>('/api/loads/debug'),
     // Profile Management (Rev IP4)
-    listProfiles: () =>
-        getJSON<{ name: string; description: string; supported_brands: string[]; version: string }[]>('/api/profiles'),
+    listProfiles: () => getJSON<import('../pages/settings/types').InverterProfile[]>('/api/profiles'),
 }
 
 export const Sel = {

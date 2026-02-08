@@ -43,6 +43,28 @@ export interface BaseField {
     subsection?: string
 }
 
+export interface InverterProfile {
+    name: string
+    description: string
+    supported_brands: string[]
+    version: string
+    capabilities: {
+        grid_charging_control: boolean
+        watts_based_control: boolean
+        service_call_mode: boolean
+        separate_grid_charging_switch: boolean
+        supports_export_mode: boolean
+        supports_zero_export: boolean
+        supports_self_consumption: boolean
+        supports_soc_target: boolean
+        supports_grid_export_limit: boolean
+        supports_force_discharge: boolean
+    }
+    behavior: {
+        control_unit: 'A' | 'W'
+    }
+}
+
 export interface SettingsSection<T extends BaseField = BaseField> {
     title: string
     description: string

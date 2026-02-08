@@ -173,7 +173,9 @@ class Controller:
             water_temp=water_temp,
             write_charge_current=write_charge,
             write_discharge_current=write_discharge,
-            control_unit=self.inverter_config.control_unit,
+            control_unit=self.profile.behavior.control_unit or self.inverter_config.control_unit
+            if self.profile
+            else self.inverter_config.control_unit,
             source="override",
             reason=override.reason,
         )
@@ -250,7 +252,9 @@ class Controller:
             water_temp=water_temp,
             write_charge_current=write_charge,
             write_discharge_current=write_discharge,
-            control_unit=self.inverter_config.control_unit,
+            control_unit=self.profile.behavior.control_unit or self.inverter_config.control_unit
+            if self.profile
+            else self.inverter_config.control_unit,
             source="plan",
             reason=reason,
         )
@@ -260,6 +264,8 @@ class Controller:
         Calculate the charge limit to command (Amps or Watts).
         """
         unit = self.inverter_config.control_unit
+        if self.profile and self.profile.behavior.control_unit:
+            unit = self.profile.behavior.control_unit
 
         if slot.charge_kw <= 0:
             logger.debug("No charge planned, returning 0")

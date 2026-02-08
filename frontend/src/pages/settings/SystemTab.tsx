@@ -4,7 +4,7 @@ import { Api } from '../../lib/api'
 import Card from '../../components/Card'
 import { useSettingsForm } from './hooks/useSettingsForm'
 import { SettingsField } from './components/SettingsField'
-import { systemFieldList, systemSections } from './types'
+import { systemFieldList, systemSections, InverterProfile } from './types'
 import { shouldRenderField } from './logic'
 import { motion, AnimatePresence } from 'framer-motion'
 import { AdditionalAdvancedNotice, GlobalAdvancedLockedNotice } from './components/AdvancedLockedNotice'
@@ -15,7 +15,7 @@ import { ProfileSetupHelper } from './components/ProfileSetupHelper'
 
 export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }) => {
     const navigate = useNavigate()
-    const [profiles, setProfiles] = useState<{ name: string; description: string }[]>([])
+    const [profiles, setProfiles] = useState<InverterProfile[]>([])
     const {
         form,
         fieldErrors,
@@ -38,7 +38,7 @@ export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }
             .catch((err) => console.error('Failed to load profiles:', err))
     }, [])
 
-    // Update systemSections dynamic options
+    // Update systemSections dynamic options and conditional visibility
     const dynamicSections = systemSections.map((section) => {
         if (section.title === 'System Profile') {
             return {
@@ -53,6 +53,17 @@ export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }
                             })),
                         }
                     }
+                    if (field.key === 'executor.inverter.control_unit') {
+                        const selectedProfileName = form['system.inverter_profile']
+                        const selectedProfile = profiles.find((p) => p.name === selectedProfileName)
+
+                        // Hide control_unit if profile behavior defines it strongly
+                        // Or if it's Generic (Generic should allowed to be toggled)
+                        // Sungrow/Fronius/Deye profiles define it in 'behavior'
+                        if (selectedProfile && selectedProfile.name !== 'generic') {
+                            return { ...field, disabled: true }
+                        }
+                    }
                     return field
                 }),
             }
@@ -64,14 +75,18 @@ export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }
 
     const [haTestStatus, setHaTestStatus] = useState<string | null>(null)
 
-    const profile = form['system.inverter_profile']
+    const profileName = form['system.inverter_profile']
     const unit = form['executor.inverter.control_unit']
 
+    // Sync unit based on profile behavior
     useEffect(() => {
-        if (profile === 'deye' && unit !== 'A') {
-            handleChange('executor.inverter.control_unit', 'A')
+        const selectedProfile = profiles.find((p) => p.name === profileName)
+        if (selectedProfile && selectedProfile.behavior?.control_unit) {
+            if (unit !== selectedProfile.behavior.control_unit) {
+                handleChange('executor.inverter.control_unit', selectedProfile.behavior.control_unit)
+            }
         }
-    }, [profile, unit, handleChange])
+    }, [profileName, unit, handleChange, profiles])
 
     const handleApplySuggestions = (suggestions: Record<string, unknown>) => {
         Object.entries(suggestions).forEach(([key, value]) => {
@@ -113,7 +128,7 @@ export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }
         <div className="space-y-4">
             <UnsavedChangesBanner visible={isDirty} onSave={() => save()} saving={saving} />
 
-            <ProfileSetupHelper profileName={profile} currentForm={form} onApply={handleApplySuggestions} />
+            <ProfileSetupHelper profileName={profileName} currentForm={form} onApply={handleApplySuggestions} />
 
             {/* HA Add-on Guidance Banner */}
 

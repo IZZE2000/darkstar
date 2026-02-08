@@ -70,7 +70,7 @@ modes:
     requires_grid_charging: false
 
 behavior:
-  control_unit: "A"
+  control_unit: null
   min_charge_a: 10.0
   round_step_a: 5.0
   write_threshold_a: 5.0

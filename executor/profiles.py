@@ -104,7 +104,7 @@ class ProfileBehavior:
     """Inverter-specific behavioral parameters."""
 
     # Control unit settings
-    control_unit: str = "A"  # "A" or "W"
+    control_unit: str | None = "A"  # "A" or "W"
 
     # Ampere-based control limits
     min_charge_a: float = 10.0
@@ -173,7 +173,10 @@ class InverterProfile:
             errors.append("Profile metadata.version is required")
 
         # Validate control unit
-        if self.behavior.control_unit not in ["A", "W"]:
+        if self.behavior.control_unit is not None and self.behavior.control_unit not in [
+            "A",
+            "W",
+        ]:
             errors.append(f"Invalid control_unit: {self.behavior.control_unit}. Must be 'A' or 'W'")
 
         # Validate mode values
@@ -512,6 +515,21 @@ def list_profiles(profiles_dir: str | Path = "profiles") -> list[dict[str, Any]]
                     "description": profile.metadata.description,
                     "supported_brands": profile.metadata.supported_brands,
                     "version": profile.metadata.version,
+                    "capabilities": {
+                        "grid_charging_control": profile.capabilities.grid_charging_control,
+                        "watts_based_control": profile.capabilities.watts_based_control,
+                        "service_call_mode": profile.capabilities.service_call_mode,
+                        "separate_grid_charging_switch": profile.capabilities.separate_grid_charging_switch,
+                        "supports_export_mode": profile.capabilities.supports_export_mode,
+                        "supports_zero_export": profile.capabilities.supports_zero_export,
+                        "supports_self_consumption": profile.capabilities.supports_self_consumption,
+                        "supports_soc_target": profile.capabilities.supports_soc_target,
+                        "supports_grid_export_limit": profile.capabilities.supports_grid_export_limit,
+                        "supports_force_discharge": profile.capabilities.supports_force_discharge,
+                    },
+                    "behavior": {
+                        "control_unit": profile.behavior.control_unit,
+                    },
                 }
             )
         except Exception as e:

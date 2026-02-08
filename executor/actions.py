@@ -632,17 +632,20 @@ class ActionDispatcher:
         if success:
             verified_value, verification_success = await self._verify_action(entity, value)
 
-        # Sync to forced power entity if applicable (Rev IP2 Phase 3)
-        if success and self.profile and "forced_power_entity" in self.profile.entities.optional:
-            forced_entity_id = self.config.inverter.custom_entities.get("forced_power_entity")
-            if _is_entity_configured(forced_entity_id):
-                current_mode_val = self.ha.get_state_value(self.config.inverter.work_mode_entity)
-                if (
-                    self.profile.modes.charge_from_grid
-                    and current_mode_val == self.profile.modes.charge_from_grid.value
-                ):
-                    logger.info("Syncing charge limit to forced power entity: %s", forced_entity_id)
-                    self.ha.set_number(forced_entity_id, value)
+        # Sync to forced power entity if applicable (Rev IP2 Phase 3 + IP5)
+        # Check for 'forced_power' (new) or 'forced_power_entity' (legacy)
+        forced_entity_id = self.config.inverter.custom_entities.get(
+            "forced_power"
+        ) or self.config.inverter.custom_entities.get("forced_power_entity")
+
+        if success and self.profile and _is_entity_configured(forced_entity_id):
+            current_mode_val = self.ha.get_state_value(self.config.inverter.work_mode_entity)
+            if (
+                self.profile.modes.charge_from_grid
+                and current_mode_val == self.profile.modes.charge_from_grid.value
+            ):
+                logger.info("Syncing charge limit to forced power entity: %s", forced_entity_id)
+                self.ha.set_number(forced_entity_id, value)
 
         duration = int((time.time() - start) * 1000)
         logger.info("Set charge_limit result: success=%s, duration=%dms", success, duration)
@@ -721,26 +724,26 @@ class ActionDispatcher:
         if success:
             verified_value, verification_success = await self._verify_action(entity, value)
 
-        # Sync to forced power entity if applicable (Rev IP2 Phase 3)
-        if success and self.profile and "forced_power_entity" in self.profile.entities.optional:
-            forced_entity_id = self.config.inverter.custom_entities.get("forced_power_entity")
-            if _is_entity_configured(forced_entity_id):
-                current_mode_val = self.ha.get_state_value(self.config.inverter.work_mode_entity)
-                is_forced = False
-                if (
-                    self.profile.modes.export
-                    and current_mode_val == self.profile.modes.export.value
-                ) or (
-                    self.profile.modes.force_discharge
-                    and current_mode_val == self.profile.modes.force_discharge.value
-                ):
-                    is_forced = True
+        # Sync to forced power entity if applicable (Rev IP2 Phase 3 + IP5)
+        # Check for 'forced_power' (new) or 'forced_power_entity' (legacy)
+        forced_entity_id = self.config.inverter.custom_entities.get(
+            "forced_power"
+        ) or self.config.inverter.custom_entities.get("forced_power_entity")
 
-                if is_forced:
-                    logger.info(
-                        "Syncing discharge limit to forced power entity: %s", forced_entity_id
-                    )
-                    self.ha.set_number(forced_entity_id, value)
+        if success and self.profile and _is_entity_configured(forced_entity_id):
+            current_mode_val = self.ha.get_state_value(self.config.inverter.work_mode_entity)
+            is_forced = False
+            if (
+                self.profile.modes.export and current_mode_val == self.profile.modes.export.value
+            ) or (
+                self.profile.modes.force_discharge
+                and current_mode_val == self.profile.modes.force_discharge.value
+            ):
+                is_forced = True
+
+            if is_forced:
+                logger.info("Syncing discharge limit to forced power entity: %s", forced_entity_id)
+                self.ha.set_number(forced_entity_id, value)
 
         duration = int((time.time() - start) * 1000)
         logger.info("Set discharge_limit result: success=%s, duration=%dms", success, duration)

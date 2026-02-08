@@ -12,13 +12,18 @@
 
 ## Logic Mapping
 
-| Darkstar Action | EMS Mode (`select.ems_mode`) | Forced Cmd (`select.battery_forced_charge_discharge`) | Power Limit | Export Limit Switch | Export Limit Value |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **Self-Consumption** (Default) | `Self-consumption mode (default)` | `Stop (default)` | - | `off` | - |
-| **Grid Charge** (Force Charge) | `Forced mode` | `Forced charge` | `number.battery_forced_charge_discharge_power` | `off` | - |
-| **Grid Export** (Force Discharge) | `Forced mode` | `Forced discharge` | `number.battery_forced_charge_discharge_power` | `off` | - |
-| **Idle / Hold** (PV charge OK, no discharge) | `Self-consumption mode (default)` | `Stop (default)` | `number.battery_max_discharge_power` = 0 | `off` | - |
-| **Zero Export** (Emergency stop) | `Self-consumption mode (default)` | `Stop (default)` | `number.battery_max_discharge_power` = 0 | `on` | `0` |
+| Darkstar Action | EMS Mode (`select.ems_mode`) | Forced Cmd (`select.battery_forced_charge_discharge`) | Forced Power | Max Charge | Max Discharge | Export Limit Switch | Export Limit Value |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Self-Consumption** (Default) | `Self-consumption mode (default)` | `Stop (default)` | - | - | - | `off` | - |
+| **Grid Charge** (Force Charge) | `Forced mode` | `Forced charge` | `number.battery_forced_charge_discharge_power` | `number.battery_max_charge_power` | - | `off` | - |
+| **Grid Export** (Force Discharge) | `Forced mode` | `Forced discharge` | `number.battery_forced_charge_discharge_power` | - | `number.battery_max_discharge_power` | `off` | - |
+| **Idle / Hold** (PV charge OK, no discharge) | `Self-consumption mode (default)` | `Stop (default)` | - | - | `number.battery_max_discharge_power` = 10 | `off` | - |
+| **Zero Export** (Emergency stop) | `Self-consumption mode (default)` | `Stop (default)` | - | - | `number.battery_max_discharge_power` = 10 | `on` | `0` |
+
+**Notes:**
+- In forced modes, always set the corresponding `max_*_power` to ensure it doesn't cap the forced power
+- Minimum power value is **10W** (inverter enforces this as lowest valid setting)
+- Idle mode uses max_discharge=10W (minimum) instead of 0W to prevent discharge while allowing PV charging
 
 ## Verification Questions
 

@@ -131,14 +131,21 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 
 **Plan:**
 
-#### Phase 1: Backend Logic & Profile Update [PLANNED]
-* [ ] **Backend (`override.py`):** Remove hardcoded `work_mode` from `actions` dict (Emergency/Low SoC/Fallback).
-* [ ] **Backend (`controller.py`):** Verify `defaults` fall back to `profile.modes.zero_export`.
-* [ ] **Backend (`controller.py`):** Force "W" units for Sungrow in `_calculate_charge_limit`.
-* [ ] **Profile (`sungrow.yaml`):** Update entities to new integration names (`select.battery_forced_charge_discharge`, etc.).
-* [ ] **Profile (`sungrow.yaml`):** implement "Idle" mode using `Forced mode` + `Stop`.
-* [ ] **Frontend (`SystemTab.tsx`):** Force `control_unit` to "W" when Sungrow profile is selected.
-* [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify.
+#### Phase 1: Backend Logic & Profile Update [DONE]
+* [x] **Profile (`sungrow.yaml`):** Update entities to new integration names (`select.battery_forced_charge_discharge`, etc.).
+* [x] **Profile (`sungrow.yaml`):** Update `forced_power` entity name to `number.battery_forced_charge_discharge_power`.
+* [x] **Profile (`sungrow.yaml`):** Fix Idle mode: use `Stop (default)` with `max_discharge_power=10` (not 0).
+* [x] **Backend (`actions.py`):** Fix `_set_charge_limit` to set BOTH `forced_power` AND `max_charge_power` in forced charge mode.
+* [x] **Backend (`actions.py`):** Fix `_set_discharge_limit` to set BOTH `forced_power` AND `max_discharge_power` in forced discharge mode.
+* [x] **Backend (`actions.py`):** Standardize `forced_power_entity` search to check for both `forced_power` and legacy `forced_power_entity` in `custom_entities`.
+* [x] **Backend (`override.py`):** Remove hardcoded `work_mode` from `actions` dict (Emergency/Low SoC/Fallback).
+* [x] **Backend (`controller.py`):** Verify `defaults` fall back to `profile.modes.zero_export`.
+* [x] **Backend (`controller.py`):** Force "W" units for Sungrow in `_calculate_charge_limit`.
+* [x] **Profile (`sungrow.yaml`):** Update `behavior.min_charge_w` from 100 to 10.
+* [x] **Frontend (`SystemTab.tsx`):** Hide `control_unit` selector when `profile.behavior.control_unit` is set (A or W), auto-use profile value.
+* [x] **Frontend (`SystemTab.tsx`):** Only show `control_unit` selector for `generic` profile (when `control_unit: null`).
+* [x] **Verification:** Full suite passing (102 tests).
+* [x] **USER VERIFICATION AND COMMIT:** Stop and let the user verify.
 
 #### Phase 2: Fronius Entity Routing & Defaults [DONE]
 * [x] **Backend (`actions.py`):** Fix `_set_charge_limit` to use `inverter.grid_charge_power` directly (stop looking in `custom_entities`).
@@ -147,3 +154,19 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] **Validation:** Add unit test for Fronius grid-charge routing to prevent regression with `pv_charge_limit`.
 * [x] **Verification:** Confirm fix in shadow mode logs.
 * [x] **USER VERIFICATION AND COMMIT:** Stop and let the user verify.
+
+#### Phase 3: Profile & Logic Verification [PLANNED]
+* [ ] **Verification Scope:** Audit all inverter profiles against their `_logic.md` files:
+  * `sungrow.yaml` vs `sungrow_logic.md`
+  * `fronius.yaml` vs `fronius_logic.md`
+* [ ] **Backend Audit:** Verify `actions.py`, `override.py`, `controller.py` correctly implement profile-specific behaviors:
+  * Correct entity mapping lookups
+  * Proper composite mode entity setting
+  * Correct power limit handling per profile
+  * Mode settling delays where required
+* [ ] **Frontend Audit:** Verify UI components respect profile capabilities:
+  * `control_unit` enforcement per profile
+  * Entity validation matches profile requirements
+  * Mode selection matches available profile modes
+* [ ] **Test Plan:** Document test scenarios for each verified profile.
+* [ ] **Findings Report:** Document any discrepancies found during verification for Phase 4 planning.
