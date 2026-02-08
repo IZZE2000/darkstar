@@ -1,9 +1,11 @@
 metadata:
   name: "sungrow"
   version: "1.0.0"
-  description: "Sungrow SHx Hybrid Inverters (Modbus)" # Integration: https://github.com/mkaiser/Sungrow-SHx-Inverter-Modbus-Home-Assistant
+  description: "Sungrow SHx Hybrid Inverters (Modbus) - mkaiser v2 Integration"
   supported_brands: ["Sungrow"]
   author: "@ergetie"
+  # NOTE: This profile uses entity names from the mkaiser/Sungrow-SHx-Inverter-Modbus-Home-Assistant v2 integration
+  # Integration: https://github.com/mkaiser/Sungrow-SHx-Inverter-Modbus-Home-Assistant
 
 capabilities:
   grid_charging_control: true
@@ -19,17 +21,17 @@ capabilities:
 
 entities:
   required:
-    work_mode: "select.sg_ems_mode"
-    max_charge_power: "input_number.set_sg_battery_max_charge_power"
-    max_discharge_power: "input_number.set_sg_battery_max_discharge_power"
+    work_mode: "select.ems_mode"
+    max_charge_power: "number.battery_max_charge_power"
+    max_discharge_power: "number.battery_max_discharge_power"
 
   optional:
-    grid_max_export_power: "input_number.set_sg_export_power_limit"
+    grid_max_export_power: "number.export_power_limit"
     forced_power: "number.battery_forced_charge_discharge_power"
     # Custom Entities
-    ems_mode: "select.sg_ems_mode"
+    ems_mode: "select.ems_mode"
     forced_charge_discharge_cmd: "select.battery_forced_charge_discharge"
-    export_power_limit: "input_number.set_sg_export_power_limit"
+    export_power_limit: "number.export_power_limit"
 
 modes:
   # Export mode - Force discharge to grid
