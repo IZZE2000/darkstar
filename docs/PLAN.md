@@ -369,25 +369,17 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
     *   Pass `decision.grid_charging` from `execute()` to `_set_work_mode()`.
     *   Verify that "Forced Charge" command is correctly applied in Sungrow profile.
 
-#### Phase 5: Fix Error Visibility - Display HA API Error Messages [PLANNED]
-* [ ] **[executor/actions.py](file:///home/s/sync/documents/projects/darkstar/executor/actions.py:40-53):** Add `error_details: str | None = None` field to `ActionResult` dataclass.
-    *   This field will store the actual HA API error message when `success=False`
-* [ ] **[executor/actions.py](file:///home/s/sync/documents/projects/darkstar/executor/actions.py:111-154):** Modify `call_service()` to return `(success: bool, error_message: str | None)` tuple instead of just `bool`.
-    *   Capture exception message in `error_message` when `RequestException` occurs
-    *   Return `(False, str(e))` on failure
-    *   Return `(True, None)` on success
-* [ ] **[executor/actions.py](file:///home/s/sync/documents/projects/darkstar/executor/actions.py:197-222):** Update all service call methods (`set_number`, `set_select_option`, `set_switch`) to capture and store error details.
-    *   Change return type from `bool` to `(bool, str | None)` tuple
-    *   Store `error_message` in a local variable
-    *   Pass error to caller
-* [ ] **[executor/actions.py](file:///home/s/sync/documents/projects/darkstar/executor/actions.py:1008-1118):** Update `_set_max_export_power()` to capture and display error messages.
-    *   Store error_details from `self.ha.set_number()` call
-    *   Populate `ActionResult.error_details` when `success=False`
-    *   Update message to include actual error: `f"Failed: {error_details}"` instead of generic "Failed to set export power"
-* [ ] **[executor/actions.py](file:///home/s/sync/documents/projects/darkstar/executor/actions.py:358-497):** Update all action methods (`_set_grid_charging`, `_set_soc_target`, `_set_work_mode`, etc.) to capture and pass error_details.
-    *   Store error from HA service call
-    *   Populate `ActionResult.error_details` on failure
-* [ ] **[executor/engine.py](file:///home/s/sync/documents/projects/darkstar/executor/engine.py:1434-1495):** Update `_create_execution_record()` to populate `error_message` field from failed action results.
+#### Phase 5: Fix Error Visibility - Display HA API Error Messages [DONE]
+* [x] **[executor/actions.py](file:///home/s/sync/documents/projects/darkstar/executor/actions.py:40-53):** Add `error_details: str | None = None` field to `ActionResult` dataclass.
+     *   This field stores the actual HA API error message when `success=False`
+* [x] **[executor/actions.py](executor/actions.py):** Create `HACallError` exception class with HTTP status, response body, exception type
+* [x] **[executor/actions.py](executor/actions.py):** Modify `call_service()` to raise `HACallError` on error
+* [x] **[executor/actions.py](executor/actions.py):** Update HA wrapper methods to raise `HACallError` on validation failure
+* [x] **[executor/actions.py](executor/actions.py):** Update all action methods to catch `HACallError` and populate `error_details`
+* [x] **[executor/engine.py](executor/engine.py):** Update action_results dict conversion to include `error_details`
+* [x] **[executor/engine.py](executor/engine.py):** Update result["actions"] dict conversion to include `error_details`
+* [x] **[executor/engine.py](executor/engine.py):** Update error tracking (`recent_errors`) to include `error_details`
+* **Commit:** `0305ed6`
     *   Find first action with `success=False` and non-empty `error_details`
     *   Set `error_message` to `result.error_details` or `result.message`
     *   This ensures execution record has error message for UI display
