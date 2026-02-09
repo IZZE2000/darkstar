@@ -106,8 +106,7 @@ class HAWebSocketClient:
                 mapping[sensors["vacation_mode"]] = "vacation_mode"
 
             # Rev K25: EV Charging sensors
-            ev_cfg = cfg.get("ev_charger", {})
-            if ev_cfg.get("enabled", False):
+            if system.get("has_ev_charger", False):
                 if "ev_soc" in sensors:
                     mapping[sensors["ev_soc"]] = "ev_soc"
                 if "ev_plug" in sensors:

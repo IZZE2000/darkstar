@@ -225,3 +225,50 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] **[types.ts](file:///home/s/sync/documents/projects/darkstar/frontend/src/pages/settings/types.ts):** Fix visibility of Mode Strings and remove Shadow Mode.
 * [x] **[sungrow.yaml](file:///home/s/sync/documents/projects/darkstar/profiles/sungrow.yaml):** Add `grid_max_export_power_switch` to entity mapping.
 * [x] **Manual Verification:** Verify UI behavior and log output.
+
+---
+
+### [PLANNED] REV // F50 — EV Charging Configuration Unification & UI Fixes
+
+**Goal:** Fix critical configuration mismatch causing EV features to fail, and add missing UI indicators.
+**Context:** Beta tester reported no re-planning when plugging in EV. Investigation revealed TWO separate configuration keys (`system.has_ev_charger` vs `ev_charger.enabled`) causing the backend to ignore EV sensors even when UI shows "EV charger installed" as enabled. Additionally, UI lacks visual feedback for plug status and EV charging visibility in charts.
+
+**Critical Issues Found:**
+1. **Backend checks `ev_charger.enabled`** but **UI sets `system.has_ev_charger`** - entities never monitored!
+2. **PowerFlow node** only shows when plugged in (no indication when unplugged)
+3. **ChartCard** has EV data but **no toggle** to show it (dataset always hidden)
+
+**Plan:**
+
+#### Phase 1: Configuration Unification [DONE]
+* [x] **[backend/ha_socket.py](file:///home/s/sync/documents/projects/darkstar/backend/ha_socket.py:110):** Change `ev_cfg.get("enabled", False)` to check `system.has_ev_charger` instead
+* [x] **[config.default.yaml](file:///home/s/sync/documents/projects/darkstar/config.default.yaml:66):** Remove `enabled: false` field from `ev_charger:` section (keep only `system.has_ev_charger`)
+* [x] **[config.yaml](file:///home/s/sync/documents/projects/darkstar/config.yaml:69):** Remove `enabled: false` field from `ev_charger:` section
+* [x] **[executor/config.py](file:///home/s/sync/documents/projects/darkstar/executor/config.py):** Remove `enabled` field from `EVChargerConfig` dataclass (if exists)
+* [x] **Documentation:** Update comments in config files to clarify single source of truth
+* [x] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
+
+#### Phase 2: PowerFlow Visual Indicator [PLANNED]
+* [ ] **[PowerFlowRegistry.ts](file:///home/s/sync/documents/projects/darkstar/frontend/src/components/PowerFlowRegistry.ts:101):** Modify EV node to always render (remove `shouldRender` condition)
+* [ ] **[PowerFlowRegistry.ts](file:///home/s/sync/documents/projects/darkstar/frontend/src/components/PowerFlowRegistry.ts:105):** Add greyed color state when `!data.evPluggedIn` (use `--color-text-muted` or similar)
+* [ ] **[PowerFlowRegistry.ts](file:///home/s/sync/documents/projects/darkstar/frontend/src/components/PowerFlowRegistry.ts:109):** Add plug icon indicator when `data.evPluggedIn` is true (use `lucide-react` Plug icon)
+* [ ] **[PowerFlowCard.tsx](file:///home/s/sync/documents/projects/darkstar/frontend/src/components/PowerFlowCard.tsx):** Update node rendering to support conditional icon and color based on plugged-in state
+* [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
+
+#### Phase 3: ChartCard EV Toggle [PLANNED]
+* [ ] **[ChartCard.tsx](file:///home/s/sync/documents/projects/darkstar/frontend/src/components/ChartCard.tsx:787):** Add `ev: false` to initial overlays state in localStorage migration (increment STORAGE_VERSION to 3)
+* [ ] **[ChartCard.tsx](file:///home/s/sync/documents/projects/darkstar/frontend/src/components/ChartCard.tsx:802):** Add `ev: false` to newDefaults object
+* [ ] **[ChartCard.tsx](file:///home/s/sync/documents/projects/darkstar/frontend/src/components/ChartCard.tsx:820):** Add `ev: parsed.ev ?? false` to return object
+* [ ] **[ChartCard.tsx](file:///home/s/sync/documents/projects/darkstar/frontend/src/components/ChartCard.tsx:838):** Add `ev: false` to fallback defaults
+* [ ] **[ChartCard.tsx](file:///home/s/sync/documents/projects/darkstar/frontend/src/components/ChartCard.tsx:1155):** Add `['EV', 'ev', 'bg-peak/20 border-peak']` to toggle buttons array
+* [ ] **[ChartCard.tsx](file:///home/s/sync/documents/projects/darkstar/frontend/src/components/ChartCard.tsx:423):** Remove `hidden: true` from EV Charging dataset (now controlled by toggle)
+* [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
+
+#### Phase 4: Testing & Validation [PLANNED]
+* [ ] **Backend:** Verify EV entities are monitored when `system.has_ev_charger: true`
+* [ ] **Backend:** Verify re-planning triggers when plug sensor changes to "on"
+* [ ] **Frontend:** Verify PowerFlow shows greyed EV node when unplugged
+* [ ] **Frontend:** Verify PowerFlow shows colored EV node with plug icon when plugged in
+* [ ] **Frontend:** Verify ChartCard toggle shows/hides EV charging overlay
+* [ ] **Integration Test:** Full end-to-end test with simulated plug events
+* [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes

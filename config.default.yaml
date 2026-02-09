@@ -63,8 +63,6 @@ battery_economics:
 # Treats EV as a deferrable load with SoC-based urgency. Unlike the house battery,
 # EV charging is grid-only (never drains house battery into car).
 ev_charger:
-  enabled: false                   # Master switch for EV charging optimization
-
   # Home Assistant Entities (REQUIRED when enabled)
   switch_entity: ""                # HA entity to enable/disable smart charging
   soc_sensor: ""                   # HA entity for EV battery SoC (%)

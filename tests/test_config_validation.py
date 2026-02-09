@@ -11,8 +11,8 @@ def test_validate_config_executor_entities_required_when_enabled():
 
     # Should have errors for missing critical entities
     error_messages = [i["message"] for i in issues if i["severity"] == "error"]
-    assert any("executor.inverter.work_mode_entity" in m for m in error_messages)
-    assert any("executor.inverter.grid_charging_entity" in m for m in error_messages)
+    assert any("executor.inverter.work_mode" in m for m in error_messages)
+    assert any("executor.inverter.grid_charging_enable" in m for m in error_messages)
     assert any("input_sensors.battery_soc" in m for m in error_messages)
 
 
@@ -27,8 +27,8 @@ def test_validate_config_executor_entities_not_required_when_disabled():
     # Should NOT have errors for missing executor entities if disabled
     # (But might still have battery capacity error if has_battery is True)
     error_messages = [i["message"] for i in issues if i["severity"] == "error"]
-    assert not any("executor.inverter.work_mode_entity" in m for m in error_messages)
-    assert not any("executor.inverter.grid_charging_entity" in m for m in error_messages)
+    assert not any("executor.inverter.work_mode" in m for m in error_messages)
+    assert not any("executor.inverter.grid_charging_enable" in m for m in error_messages)
     # input_sensors.battery_soc might still be considered critical for other things?
     # Current implementation in _validate_config_for_save only checks them if executor is enabled.
     assert not any("input_sensors.battery_soc" in m for m in error_messages)
@@ -53,9 +53,9 @@ def test_validate_config_valid_config_no_issues():
         "executor": {
             "enabled": True,
             "inverter": {
-                "work_mode_entity": "select.inverter_work_mode",
-                "grid_charging_entity": "switch.inverter_grid_charging",
-                "soc_target_entity": "number.soc_target",
+                "work_mode": "select.inverter_work_mode",
+                "grid_charging_enable": "switch.inverter_grid_charging",
+                "soc_target": "number.soc_target",
             },
         },
         "system": {"has_battery": True},
@@ -79,6 +79,6 @@ def test_validate_config_battery_entities_not_required_if_no_battery():
 
     # Should NOT have errors for missing battery entities
     error_messages = [i["message"] for i in issues if i["severity"] == "error"]
-    assert not any("executor.inverter.work_mode_entity" in m for m in error_messages)
-    assert not any("executor.inverter.grid_charging_entity" in m for m in error_messages)
+    assert not any("executor.inverter.work_mode" in m for m in error_messages)
+    assert not any("executor.inverter.grid_charging_enable" in m for m in error_messages)
     assert not any("input_sensors.battery_soc" in m for m in error_messages)
