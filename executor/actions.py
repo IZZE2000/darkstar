@@ -21,6 +21,32 @@ from .profiles import InverterProfile
 logger = logging.getLogger(__name__)
 
 
+class HACallError(Exception):
+    """Home Assistant API call error with detailed context."""
+
+    def __init__(
+        self,
+        message: str,
+        status_code: int | None = None,
+        response_body: str | None = None,
+        exception_type: str | None = None,
+    ):
+        self.message = message
+        self.status_code = status_code
+        self.response_body = response_body
+        self.exception_type = exception_type
+
+        error_parts = [message]
+        if status_code is not None:
+            error_parts.append(f"HTTP {status_code}")
+        if response_body:
+            error_parts.append(f"Response: {response_body}")
+        if exception_type:
+            error_parts.append(f"({exception_type})")
+
+        super().__init__(" | ".join(error_parts))
+
+
 def _is_entity_configured(entity: str | None) -> bool:
     """Check if an entity ID is properly configured.
 
@@ -50,6 +76,7 @@ class ActionResult:
     verification_success: bool | None = None  # NEW: Whether verification matched expected value
     skipped: bool = False  # True if action was skipped (already at target)
     duration_ms: int = 0
+    error_details: str | None = None  # REV F52 Phase 5: HA API error details (status, body, etc.)
 
 
 class HAClient:
@@ -125,7 +152,10 @@ class HAClient:
             data: Additional service data (optional)
 
         Returns:
-            True if successful, False otherwise
+            True if successful
+
+        Raises:
+            HACallError: If the API call fails
         """
         payload = data or {}
         if entity_id:
@@ -143,15 +173,20 @@ class HAClient:
             )
             response.raise_for_status()
             return True
+        except requests.HTTPError as e:
+            status_code = e.response.status_code if e.response is not None else None
+            response_body = e.response.text if e.response is not None else None
+            raise HACallError(
+                message=f"Failed to call service {domain}.{service} on {entity_id}",
+                status_code=status_code,
+                response_body=response_body,
+                exception_type=type(e).__name__,
+            ) from e
         except requests.RequestException as e:
-            logger.error(
-                "Failed to call service %s.%s on %s: %s",
-                domain,
-                service,
-                entity_id,
-                e,
-            )
-            return False
+            raise HACallError(
+                message=f"Failed to call service {domain}.{service} on {entity_id}",
+                exception_type=type(e).__name__,
+            ) from e
 
     def _get_safe_domain(self, entity_id: str, allowed_domains: set[str]) -> str | None:
         """
@@ -198,14 +233,20 @@ class HAClient:
         """Set a select entity to a specific option."""
         domain = self._get_safe_domain(entity_id, {"select", "input_select"})
         if not domain:
-            return False
+            raise HACallError(
+                message=f"Invalid domain for select entity {entity_id}",
+                exception_type="DomainValidationError",
+            )
         return self.call_service(domain, "select_option", entity_id, {"option": option})
 
     def set_switch(self, entity_id: str, state: bool) -> bool:
         """Turn a switch on or off."""
         domain = self._get_safe_domain(entity_id, {"switch", "input_boolean"})
         if not domain:
-            return False
+            raise HACallError(
+                message=f"Invalid domain for switch entity {entity_id}",
+                exception_type="DomainValidationError",
+            )
         service = "turn_on" if state else "turn_off"
         return self.call_service(domain, service, entity_id)
 
@@ -213,7 +254,10 @@ class HAClient:
         """Set a number entity to a specific value."""
         domain = self._get_safe_domain(entity_id, {"number", "input_number"})
         if not domain:
-            return False
+            raise HACallError(
+                message=f"Invalid domain for number entity {entity_id}",
+                exception_type="DomainValidationError",
+            )
         return self.call_service(domain, "set_value", entity_id, {"value": value})
 
     def set_input_number(self, entity_id: str, value: float) -> bool:
@@ -374,6 +418,7 @@ class ActionDispatcher:
                     message="Work mode entity not configured. Configure in Settings → System → HA Entities",
                     skipped=True,
                     duration_ms=int((time.time() - start) * 1000),
+                    error_details=None,
                 )
             )
             return results
@@ -392,6 +437,7 @@ class ActionDispatcher:
                     entity_id=entity,
                     skipped=True,
                     duration_ms=int((time.time() - start) * 1000),
+                    error_details=None,
                 )
             )
             return results
@@ -400,9 +446,16 @@ class ActionDispatcher:
             logger.info("[SHADOW] Would set work_mode to %s (current: %s)", target_mode, current)
             # We don't return here anymore, but continue to process composite entities in shadow mode
             success = True
+            error_details = None
         else:
             # Apply work mode change
-            success = self.ha.set_select_option(entity, target_mode)
+            try:
+                success = self.ha.set_select_option(entity, target_mode)
+                error_details = None
+            except HACallError as e:
+                success = False
+                error_details = str(e)
+                logger.error("Failed to set work mode: %s", error_details)
 
         # Handle composite mode entities (Rev IP2)
         # Some inverters (e.g. Sungrow) require setting multiple entities for a single mode change
@@ -480,6 +533,7 @@ class ActionDispatcher:
                                 entity_id=entity_id,
                                 skipped=True,
                                 duration_ms=int((time.time() - aux_start) * 1000),
+                                error_details=None,
                             )
                         )
                         continue
@@ -501,18 +555,27 @@ class ActionDispatcher:
                                 entity_id=entity_id,
                                 skipped=True,
                                 duration_ms=int((time.time() - aux_start) * 1000),
+                                error_details=None,
                             )
                         )
                         continue
 
                     logger.info("Composite Mode: Setting %s to %s", entity_id, val)
                     aux_success = False
-                    if isinstance(val, int | float):
-                        aux_success = self.ha.set_number(entity_id, float(val))
-                    elif isinstance(val, str):
-                        aux_success = self.ha.set_select_option(entity_id, val)
-                    elif isinstance(val, bool):
-                        aux_success = self.ha.set_switch(entity_id, val)
+                    aux_error_details = None
+                    try:
+                        if isinstance(val, int | float):
+                            aux_success = self.ha.set_number(entity_id, float(val))
+                        elif isinstance(val, str):
+                            aux_success = self.ha.set_select_option(entity_id, val)
+                        elif isinstance(val, bool):
+                            aux_success = self.ha.set_switch(entity_id, val)
+                    except HACallError as e:
+                        aux_success = False
+                        aux_error_details = str(e)
+                        logger.error(
+                            "Composite mode entity %s failed: %s", entity_id, aux_error_details
+                        )
 
                     # Verification
                     aux_verified_value = None
@@ -528,6 +591,8 @@ class ActionDispatcher:
                             success=aux_success,
                             message=f"Changed {aux_previous} → {val}"
                             if aux_success
+                            else f"Failed: {aux_error_details}"
+                            if aux_error_details
                             else f"Failed to set {key}",
                             previous_value=aux_previous,
                             new_value=val,
@@ -535,6 +600,7 @@ class ActionDispatcher:
                             verified_value=aux_verified_value,
                             verification_success=aux_verification_success,
                             duration_ms=int((time.time() - aux_start) * 1000),
+                            error_details=aux_error_details,
                         )
                     )
 
@@ -566,7 +632,7 @@ class ActionDispatcher:
             else:
                 primary_msg = f"Changed {current} → {target_mode}"
         else:
-            primary_msg = "Failed to set work mode"
+            primary_msg = f"Failed: {error_details}" if error_details else "Failed to set work mode"
 
         results.insert(
             0,
@@ -581,6 +647,7 @@ class ActionDispatcher:
                 verification_success=verification_success,
                 skipped=self.shadow_mode,  # Shadow actions are technically skipped
                 duration_ms=duration,
+                error_details=error_details,
             ),
         )
 
@@ -605,6 +672,7 @@ class ActionDispatcher:
                     message="",  # Silent skip
                     skipped=True,
                     duration_ms=int((time.time() - start) * 1000),
+                    error_details=None,
                 )
             if not self.profile.capabilities.separate_grid_charging_switch:
                 logger.debug(
@@ -618,6 +686,7 @@ class ActionDispatcher:
                 new_value=target,
                 skipped=True,
                 duration_ms=int((time.time() - start) * 1000),
+                error_details=None,
             )
 
         if not _is_entity_configured(entity):
@@ -628,6 +697,7 @@ class ActionDispatcher:
                 message="Grid charging entity not configured. Configure in Settings → System → HA Entities",
                 skipped=True,
                 duration_ms=int((time.time() - start) * 1000),
+                error_details=None,
             )
 
         # Get current state
@@ -643,6 +713,7 @@ class ActionDispatcher:
                 entity_id=entity,
                 skipped=True,
                 duration_ms=int((time.time() - start) * 1000),
+                error_details=None,
             )
 
         if self.shadow_mode:
@@ -656,10 +727,17 @@ class ActionDispatcher:
                 entity_id=entity,
                 skipped=True,
                 duration_ms=int((time.time() - start) * 1000),
+                error_details=None,
             )
 
         # Handle grid charging via profile logic if available
-        success = self.ha.set_switch(entity, enabled)
+        error_details = None
+        try:
+            success = self.ha.set_switch(entity, enabled)
+        except HACallError as e:
+            success = False
+            error_details = str(e)
+            logger.error("Failed to set grid charging: %s", error_details)
 
         # Verification
         verified_value = None
@@ -676,13 +754,18 @@ class ActionDispatcher:
         return ActionResult(
             action_type="grid_charging",
             success=success,
-            message=f"Changed {current} → {target}" if success else "Failed to set grid charging",
+            message=f"Changed {current} → {target}"
+            if success
+            else f"Failed: {error_details}"
+            if error_details
+            else "Failed to set grid charging",
             previous_value=current,
             new_value=target,
             entity_id=entity,
             verified_value=verified_value,
             verification_success=verification_success,
             duration_ms=duration,
+            error_details=error_details,
         )
 
     async def _set_charge_limit(self, value: float, unit: str) -> ActionResult:
@@ -723,6 +806,7 @@ class ActionDispatcher:
                 message=f"Max charge {unit_label} entity not configured. Configure in Settings.",
                 skipped=True,
                 duration_ms=int((time.time() - start) * 1000),
+                error_details=None,
             )
 
         logger.info("Setting charge_limit: %.1f %s on entity: %s", value, unit_label, entity)
@@ -737,9 +821,16 @@ class ActionDispatcher:
                 entity_id=entity,
                 skipped=True,
                 duration_ms=int((time.time() - start) * 1000),
+                error_details=None,
             )
 
-        success = self.ha.set_number(entity, value)
+        error_details = None
+        try:
+            success = self.ha.set_number(entity, value)
+        except HACallError as e:
+            success = False
+            error_details = str(e)
+            logger.error("Failed to set charge limit: %s", error_details)
 
         # Verification
         verified_value = None
@@ -768,12 +859,17 @@ class ActionDispatcher:
         return ActionResult(
             action_type="charge_limit",
             success=success,
-            message=f"Set to {value} {unit_label}" if success else "Failed to set charge limit",
+            message=f"Set to {value} {unit_label}"
+            if success
+            else f"Failed: {error_details}"
+            if error_details
+            else "Failed to set charge limit",
             new_value=value,
             entity_id=entity,
             verified_value=verified_value,
             verification_success=verification_success,
             duration_ms=duration,
+            error_details=error_details,
         )
 
     async def _set_discharge_limit(self, value: float, unit: str) -> ActionResult:
@@ -811,6 +907,7 @@ class ActionDispatcher:
                     message=f"Skipped per mode setting: {current_mode}",
                     skipped=True,
                     duration_ms=int((time.time() - start) * 1000),
+                    error_details=None,
                 )
 
         if unit == "W":
@@ -828,6 +925,7 @@ class ActionDispatcher:
                 message=f"Max discharge {unit_label} entity not configured. Configure in Settings.",
                 skipped=True,
                 duration_ms=int((time.time() - start) * 1000),
+                error_details=None,
             )
 
         result_label = f"{value} {unit_label}"
@@ -848,6 +946,7 @@ class ActionDispatcher:
                 entity_id=entity,
                 skipped=True,
                 duration_ms=int((time.time() - start) * 1000),
+                error_details=None,
             )
 
         # Safety Guard: Prevent extremely high Amps (Rev E3 Bug Fix)
@@ -862,9 +961,16 @@ class ActionDispatcher:
                 entity_id=entity,
                 skipped=False,
                 duration_ms=int((time.time() - start) * 1000),
+                error_details=f"Safety guard: {value}A exceeds 500A limit",
             )
 
-        success = self.ha.set_number(entity, value)
+        error_details = None
+        try:
+            success = self.ha.set_number(entity, value)
+        except HACallError as e:
+            success = False
+            error_details = str(e)
+            logger.error("Failed to set discharge limit: %s", error_details)
 
         # Verification
         verified_value = None
@@ -899,12 +1005,17 @@ class ActionDispatcher:
         return ActionResult(
             action_type="discharge_limit",
             success=success,
-            message=f"Set to {value} {unit_label}" if success else "Failed to set discharge limit",
+            message=f"Set to {value} {unit_label}"
+            if success
+            else f"Failed: {error_details}"
+            if error_details
+            else "Failed to set discharge limit",
             new_value=value,
             entity_id=entity,
             verified_value=verified_value,
             verification_success=verification_success,
             duration_ms=duration,
+            error_details=error_details,
         )
 
     async def _set_soc_target(self, target: int) -> ActionResult:
@@ -923,6 +1034,7 @@ class ActionDispatcher:
                 message="",  # Silent skip
                 skipped=True,
                 duration_ms=int((time.time() - start) * 1000),
+                error_details=None,
             )
 
         if not _is_entity_configured(entity):
@@ -940,6 +1052,7 @@ class ActionDispatcher:
                     message="",  # Empty message = no log
                     skipped=True,
                     duration_ms=int((time.time() - start) * 1000),
+                    error_details=None,
                 )
 
             logger.debug("Skipping soc_target action: entity not configured")
@@ -949,6 +1062,7 @@ class ActionDispatcher:
                 message="SoC target entity not configured. Configure in Settings → System → HA Entities",
                 skipped=True,
                 duration_ms=int((time.time() - start) * 1000),
+                error_details=None,
             )
 
         current = self.ha.get_state_value(entity)
@@ -967,6 +1081,7 @@ class ActionDispatcher:
                 entity_id=entity,
                 skipped=True,
                 duration_ms=int((time.time() - start) * 1000),
+                error_details=None,
             )
 
         if self.shadow_mode:
@@ -982,9 +1097,16 @@ class ActionDispatcher:
                 entity_id=entity,
                 skipped=True,
                 duration_ms=int((time.time() - start) * 1000),
+                error_details=None,
             )
 
-        success = self.ha.set_input_number(entity, float(target))
+        error_details = None
+        try:
+            success = self.ha.set_input_number(entity, float(target))
+        except HACallError as e:
+            success = False
+            error_details = str(e)
+            logger.error("Failed to set soc_target: %s", error_details)
 
         # Verification
         verified_value = None
@@ -1006,7 +1128,11 @@ class ActionDispatcher:
             action_type="soc_target",
             success=success,
             message=(
-                f"Changed {current_val}% → {target}%" if success else "Failed to set SoC target"
+                f"Changed {current_val}% → {target}%"
+                if success
+                else f"Failed: {error_details}"
+                if error_details
+                else "Failed to set SoC target"
             ),
             previous_value=current_val,
             new_value=target,
@@ -1014,6 +1140,7 @@ class ActionDispatcher:
             verified_value=verified_value,
             verification_success=verification_success,
             duration_ms=duration,
+            error_details=error_details,
         )
 
     async def set_water_temp(self, target: int) -> ActionResult:
@@ -1029,6 +1156,7 @@ class ActionDispatcher:
                 message="Water heater target entity not configured. Configure in Settings → System → HA Entities",
                 skipped=True,
                 duration_ms=int((time.time() - start) * 1000),
+                error_details=None,
             )
 
         current = self.ha.get_state_value(entity)
@@ -1047,6 +1175,7 @@ class ActionDispatcher:
                 entity_id=entity,
                 skipped=True,
                 duration_ms=int((time.time() - start) * 1000),
+                error_details=None,
             )
 
         if self.shadow_mode:
@@ -1062,9 +1191,16 @@ class ActionDispatcher:
                 entity_id=entity,
                 skipped=True,
                 duration_ms=int((time.time() - start) * 1000),
+                error_details=None,
             )
 
-        success = self.ha.set_input_number(entity, float(target))
+        error_details = None
+        try:
+            success = self.ha.set_input_number(entity, float(target))
+        except HACallError as e:
+            success = False
+            error_details = str(e)
+            logger.error("Failed to set water_temp: %s", error_details)
 
         # Verification
         verified_value = None
@@ -1089,7 +1225,11 @@ class ActionDispatcher:
             action_type="water_temp",
             success=success,
             message=(
-                f"Changed {current_val}°C → {target}°C" if success else "Failed to set water temp"
+                f"Changed {current_val}°C → {target}°C"
+                if success
+                else f"Failed: {error_details}"
+                if error_details
+                else "Failed to set water temp"
             ),
             previous_value=current_val,
             new_value=target,
@@ -1097,6 +1237,7 @@ class ActionDispatcher:
             verified_value=verified_value,
             verification_success=verification_success,
             duration_ms=duration,
+            error_details=error_details,
         )
 
     async def _set_max_export_power(self, watts: float) -> ActionResult:
@@ -1115,6 +1256,7 @@ class ActionDispatcher:
                 message="",  # Silent skip
                 skipped=True,
                 duration_ms=int((time.time() - start) * 1000),
+                error_details=None,
             )
 
         if not _is_entity_configured(entity):
@@ -1131,6 +1273,7 @@ class ActionDispatcher:
                     message="",
                     skipped=True,
                     duration_ms=int((time.time() - start) * 1000),
+                    error_details=None,
                 )
 
             logger.debug("Skipping max_export_power action: entity not configured")
@@ -1140,6 +1283,7 @@ class ActionDispatcher:
                 message="Export power entity not configured. Configure in Settings → System → HA Entities",
                 skipped=True,
                 duration_ms=int((time.time() - start) * 1000),
+                error_details=None,
             )
 
         # Check current value and apply write threshold to prevent EEPROM wear
@@ -1161,6 +1305,7 @@ class ActionDispatcher:
                     entity_id=entity,
                     skipped=True,
                     duration_ms=int((time.time() - start) * 1000),
+                    error_details=None,
                 )
 
         if self.shadow_mode:
@@ -1173,9 +1318,16 @@ class ActionDispatcher:
                 entity_id=entity,
                 skipped=True,
                 duration_ms=int((time.time() - start) * 1000),
+                error_details=None,
             )
 
-        success = self.ha.set_number(entity, watts)
+        error_details = None
+        try:
+            success = self.ha.set_number(entity, watts)
+        except HACallError as e:
+            success = False
+            error_details = str(e)
+            logger.error("Failed to set max_export_power: %s", error_details)
 
         # Verification
         verified_value = None
@@ -1198,13 +1350,18 @@ class ActionDispatcher:
         return ActionResult(
             action_type="max_export_power",
             success=success,
-            message=f"Set to {watts} W" if success else "Failed to set export power",
+            message=f"Set to {watts} W"
+            if success
+            else f"Failed: {error_details}"
+            if error_details
+            else "Failed to set export power",
             previous_value=current_val,
             new_value=watts,
             entity_id=entity,
             verified_value=verified_value,
             verification_success=verification_success,
             duration_ms=duration,
+            error_details=error_details,
         )
 
     async def _verify_action(

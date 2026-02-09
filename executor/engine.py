@@ -1192,6 +1192,7 @@ class ExecutorEngine:
                                 "timestamp": now_iso,
                                 "type": r.action_type,
                                 "message": r.message,
+                                "error_details": r.error_details,  # REV F52 Phase 5: HA API error details
                             }
                         )
 
@@ -1201,6 +1202,7 @@ class ExecutorEngine:
                         "success": r.success,
                         "message": r.message,
                         "skipped": r.skipped,
+                        "error_details": r.error_details,  # REV F52 Phase 5: HA API error details
                     }
                     for r in action_results
                 ]
@@ -1265,7 +1267,12 @@ class ExecutorEngine:
 
             # Phase 3: Capture critical tick failure
             self.recent_errors.append(
-                {"timestamp": now_iso, "type": "engine_tick", "message": str(e)}
+                {
+                    "timestamp": now_iso,
+                    "type": "engine_tick",
+                    "message": str(e),
+                    "error_details": None,
+                }
             )
 
         return result
@@ -1484,6 +1491,7 @@ class ExecutorEngine:
                     "verified_value": r.verified_value,
                     "verification_success": r.verification_success,
                     "skipped": r.skipped,
+                    "error_details": r.error_details,  # REV F52 Phase 5: HA API error details
                 }
                 for r in action_results
             ],
