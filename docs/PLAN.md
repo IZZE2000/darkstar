@@ -332,7 +332,7 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 
 ---
 
-### [PLANNED] REV // F52 — Composite Mode Entities Sungrow & Auto mode Fronius fixes
+### [IN PROGRESS] REV // F52 — Composite Mode Entities Sungrow & Auto mode Fronius fixes
 
 **Goal:** Ensure composite mode entity changes (e.g., Sungrow `forced_charge_discharge_cmd`, `export_power_limit`) are properly logged to executor history and visible to users.
 **Context:** Beta tester reported Sungrow "Battery Forced Charge/Discharge Command" not being set. Investigation revealed that while the code DOES call HA to set composite mode entities, these changes are NOT logged to executor history. This makes debugging impossible - users cannot verify what entities are being changed via the executor API. The root cause is in `executor/actions.py:421-441` where composite mode changes make direct HA calls without creating `ActionResult` objects.
@@ -349,11 +349,11 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] **Verification:** Test idempotent behavior.
 * [x] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
 
-#### Phase 2: Frontend History Display (TBD)
-* [ ] **Frontend:** Update executor history UI to display composite mode entity changes.
-    *   Ensure `action_results` from API includes all composite mode actions
-    *   Display entity ID and value changes in history table or detail view
-    *   Differentiate composite mode actions from primary mode changes visually
+#### Phase 2: Frontend History Display [DONE]
+* [x] **Frontend:** Update executor history UI to display composite mode entity changes.
+    *   [x] Ensure `action_results` from API includes all composite mode actions
+    *   [x] Display entity ID and value changes in history table or detail view
+    *   [x] Differentiate composite mode actions from primary mode changes visually (grouped/indented)
 
 #### Phase 3: Documentation & User Guide (TBD)
 * [ ] **[docs/](file:///home/s/sync/documents/projects/darkstar/docs/):** Document composite mode behavior in inverter profile documentation.
@@ -420,3 +420,38 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
     *   Verify executor sets work_mode to "Discharge to Grid"
     *   Verify executor DOES set `grid_max_export_power` entity if configured
     *   Check history log shows successful action
+
+#### Phase 7: Fix Sungrow max_discharge_power - Set to Inverter Max for All Modes Except Idle [PLANNED]
+* [ ] **[profiles/sungrow.yaml](file:///home/s/sync/documents/projects/darkstar/profiles/sungrow.yaml:59-68):** Add `max_discharge_power` to all mode definitions except `idle`.
+    *   **Export mode:** Add `max_discharge_power: 9000` (inverter max from defaults)
+    *   **Zero Export mode:** Add `max_discharge_power: 9000`
+    *   **Self-Consumption mode:** Add `max_discharge_power: 9000`
+    *   **Charge from Grid mode:** Add `max_discharge_power: 9000`
+    *   **Idle mode:** Keep `max_discharge_power: 10` (only mode that limits discharge)
+    *   Note: Use value from `defaults.battery.max_discharge_w` (9000W) instead of hardcoding
+* [ ] **[profiles/sungrow_logic.md](file:///home/s/sync/documents/projects/darkstar/profiles/sungrow_logic.md:13-21):** Update logic mapping table to reflect max_discharge_power requirements.
+    *   Update "Self-Consumption" row: Set Max Discharge to inverter max (e.g., 9000W)
+    *   Update "Grid Export" row: Set Max Discharge to inverter max
+    *   Update "Grid Charge" row: Set Max Discharge to inverter max
+    *   Update "Zero Export" row: Set Max Discharge to inverter max
+    *   Keep "Idle / Hold" row at Max Discharge = 10W
+    *   Add note: "max_discharge_power is a GLOBAL limit affecting ALL discharge, including forced modes. Always set to inverter max except when intentionally limiting (Idle mode)"
+* [ ] **[executor/actions.py](file:///home/s/sync/documents/projects/darkstar/executor/actions.py:271-320):** Ensure `_set_discharge_current()` logic handles `max_discharge_power` from composite mode entities.
+    *   Composite mode `set_entities` already sets `max_discharge_power` during work_mode change
+    *   Verify that `_set_discharge_current()` does NOT override this with its own value
+    *   If needed, add logic to respect `max_discharge_power` value from work_mode's `set_entities`
+* [ ] **[executor/actions.py](file:///home/s/sync/documents/projects/darkstar/executor/actions.py:446-466):** Verify composite mode entity loop sets `max_discharge_power` correctly.
+    *   When setting `max_discharge_power` entity, use value from profile mode's `set_entities`
+    *   Log the entity and value being set: "Composite Mode: Setting max_discharge_power to 9000W"
+    *   Ensure `ActionResult` is created for this change (Phase 1 implementation)
+* [ ] **Verification:** Test mode transitions on Sungrow inverter.
+    *   Start in Idle mode, verify `max_discharge_power` = 10W
+    *   Transition to Export mode, verify `max_discharge_power` = 9000W
+    *   Verify forced discharge works at full power (not capped at 10W)
+    *   Transition back to Idle mode, verify `max_discharge_power` = 10W
+    *   Check executor history for each transition shows correct values
+* [ ] **Verification:** Test Grid Charge mode on Sungrow.
+    *   Trigger charge from grid mode
+    *   Verify executor sets `max_discharge_power` to 9000W (via composite mode entities)
+    *   Verify charging is not artificially limited by low discharge limit
+    *   Check history log shows `max_discharge_power` set to inverter max

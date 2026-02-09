@@ -18,6 +18,7 @@ import {
     Droplets,
     ChevronDown,
     Download,
+    Layers,
 } from 'lucide-react'
 import Card from '../components/Card'
 
@@ -1153,56 +1154,154 @@ export default function Executor() {
                                                     <div className="text-[9px] text-muted uppercase tracking-wide mb-1.5">
                                                         Commanded (What We Set)
                                                     </div>
-                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
-                                                        {record.action_results.map((res, i) => (
-                                                            <div
-                                                                key={i}
-                                                                className="flex items-center justify-between p-2 rounded-lg bg-surface2/40 border border-line/20"
-                                                            >
-                                                                <div className="flex flex-col min-w-0">
-                                                                    <div className="flex items-center gap-2">
-                                                                        <span className="text-[10px] text-text font-medium capitalize">
-                                                                            {res.type.replace(/_/g, ' ')}
-                                                                        </span>
-                                                                        <ActionStatusIndicator result={res} />
-                                                                    </div>
-                                                                    {res.entity_id && (
-                                                                        <span className="text-[8px] text-muted truncate font-mono">
-                                                                            {res.entity_id}
-                                                                        </span>
-                                                                    )}
-                                                                    {res.message && !res.success && (
-                                                                        <span className="text-[9px] text-bad bg-bad/5 rounded px-1.5 py-0.5 mt-1 border border-bad/20 inline-block w-fit">
-                                                                            {res.message}
-                                                                        </span>
-                                                                    )}
-                                                                </div>
-                                                                <div className="text-right ml-4">
-                                                                    <div className="text-[10px] text-text font-medium">
-                                                                        {res.new_value ?? '—'}
-                                                                        {res.type.includes('temp') ? '°C' : ''}
-                                                                    </div>
-                                                                    {res.verified_value !== undefined &&
-                                                                        res.verified_value !== null && (
-                                                                            <div className="text-[8px] text-muted italic">
-                                                                                Read back:{' '}
-                                                                                <span
-                                                                                    className={
-                                                                                        res.verification_success
-                                                                                            ? 'text-emerald-400'
-                                                                                            : 'text-red-400'
-                                                                                    }
-                                                                                >
-                                                                                    {res.verified_value}
-                                                                                    {res.type.includes('temp')
-                                                                                        ? '°C'
-                                                                                        : ''}
+                                                    <div className="space-y-2">
+                                                        {(() => {
+                                                            const groups: any[] = []
+                                                            let currentGroup: any = null
+
+                                                            record.action_results.forEach((res) => {
+                                                                if (res.type === 'work_mode') {
+                                                                    currentGroup = { parent: res, children: [] }
+                                                                    groups.push(currentGroup)
+                                                                } else if (
+                                                                    res.type === 'composite_mode' &&
+                                                                    currentGroup
+                                                                ) {
+                                                                    currentGroup.children.push(res)
+                                                                } else {
+                                                                    groups.push({ parent: res, children: [] })
+                                                                    currentGroup = null
+                                                                }
+                                                            })
+
+                                                            return groups.map((group, groupIdx) => (
+                                                                <div key={groupIdx} className="space-y-1">
+                                                                    {/* Parent Action */}
+                                                                    <div className="flex items-center justify-between p-2 rounded-lg bg-surface2/40 border border-line/20">
+                                                                        <div className="flex flex-col min-w-0">
+                                                                            <div className="flex items-center gap-2">
+                                                                                <span className="text-[10px] text-text font-medium capitalize">
+                                                                                    {group.parent.type.replace(
+                                                                                        /_/g,
+                                                                                        ' ',
+                                                                                    )}
                                                                                 </span>
+                                                                                <ActionStatusIndicator
+                                                                                    result={group.parent}
+                                                                                />
                                                                             </div>
-                                                                        )}
+                                                                            {group.parent.entity_id && (
+                                                                                <span className="text-[8px] text-muted truncate font-mono">
+                                                                                    {group.parent.entity_id}
+                                                                                </span>
+                                                                            )}
+                                                                            {group.parent.message &&
+                                                                                !group.parent.success && (
+                                                                                    <span className="text-[9px] text-bad bg-bad/5 rounded px-1.5 py-0.5 mt-1 border border-bad/20 inline-block w-fit">
+                                                                                        {group.parent.message}
+                                                                                    </span>
+                                                                                )}
+                                                                        </div>
+                                                                        <div className="text-right ml-4">
+                                                                            <div className="text-[10px] text-text font-medium">
+                                                                                {group.parent.new_value ?? '—'}
+                                                                                {group.parent.type.includes('temp')
+                                                                                    ? '°C'
+                                                                                    : ''}
+                                                                            </div>
+                                                                            {group.parent.verified_value !==
+                                                                                undefined &&
+                                                                                group.parent.verified_value !==
+                                                                                    null && (
+                                                                                    <div className="text-[8px] text-muted italic">
+                                                                                        Read back:{' '}
+                                                                                        <span
+                                                                                            className={
+                                                                                                group.parent
+                                                                                                    .verification_success
+                                                                                                    ? 'text-emerald-400'
+                                                                                                    : 'text-red-400'
+                                                                                            }
+                                                                                        >
+                                                                                            {
+                                                                                                group.parent
+                                                                                                    .verified_value
+                                                                                            }
+                                                                                            {group.parent.type.includes(
+                                                                                                'temp',
+                                                                                            )
+                                                                                                ? '°C'
+                                                                                                : ''}
+                                                                                        </span>
+                                                                                    </div>
+                                                                                )}
+                                                                        </div>
+                                                                    </div>
+
+                                                                    {/* Composite Children */}
+                                                                    {group.children.map(
+                                                                        (child: any, childIdx: number) => (
+                                                                            <div
+                                                                                key={childIdx}
+                                                                                className="ml-4 flex items-center justify-between p-2 rounded-lg bg-surface2/20 border border-line/10 border-l-2 border-l-accent/30"
+                                                                            >
+                                                                                <div className="flex flex-col min-w-0">
+                                                                                    <div className="flex items-center gap-2">
+                                                                                        <Layers className="h-2.5 w-2.5 text-accent/50" />
+                                                                                        <span className="text-[9px] text-muted font-medium">
+                                                                                            {child.message &&
+                                                                                            child.message.includes('→')
+                                                                                                ? child.entity_id
+                                                                                                      ?.split('.')
+                                                                                                      .pop()
+                                                                                                      ?.replace(
+                                                                                                          /_/g,
+                                                                                                          ' ',
+                                                                                                      )
+                                                                                                : child.type.replace(
+                                                                                                      /_/g,
+                                                                                                      ' ',
+                                                                                                  )}
+                                                                                        </span>
+                                                                                        <ActionStatusIndicator
+                                                                                            result={child}
+                                                                                        />
+                                                                                    </div>
+                                                                                    {child.entity_id && (
+                                                                                        <span className="text-[8px] text-muted/50 truncate font-mono">
+                                                                                            {child.entity_id}
+                                                                                        </span>
+                                                                                    )}
+                                                                                </div>
+                                                                                <div className="text-right ml-4">
+                                                                                    <div className="text-[9px] text-muted font-medium">
+                                                                                        {child.new_value ?? '—'}
+                                                                                    </div>
+                                                                                    {child.verified_value !==
+                                                                                        undefined &&
+                                                                                        child.verified_value !==
+                                                                                            null && (
+                                                                                            <div className="text-[8px] text-muted/60 italic">
+                                                                                                <span
+                                                                                                    className={
+                                                                                                        child.verification_success
+                                                                                                            ? 'text-emerald-400/80'
+                                                                                                            : 'text-red-400/80'
+                                                                                                    }
+                                                                                                >
+                                                                                                    {
+                                                                                                        child.verified_value
+                                                                                                    }
+                                                                                                </span>
+                                                                                            </div>
+                                                                                        )}
+                                                                                </div>
+                                                                            </div>
+                                                                        ),
+                                                                    )}
                                                                 </div>
-                                                            </div>
-                                                        ))}
+                                                            ))
+                                                        })()}
                                                     </div>
                                                 </div>
                                             ) : (
