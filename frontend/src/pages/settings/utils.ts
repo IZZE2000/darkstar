@@ -72,7 +72,7 @@ export function parseFieldInput(field: BaseField, raw: string): unknown {
                 return Number.isNaN(num) ? value : num
             })
     }
-    if (field.type === 'solar_arrays') {
+    if (field.type === 'solar_arrays' || field.type === 'penalty_levels') {
         try {
             return JSON.parse(raw)
         } catch {
@@ -119,7 +119,13 @@ export function areEqual(a: unknown, b: unknown, type: string): boolean {
     if ((a === null || a === undefined) && (b === null || b === undefined)) return true
 
     // Normalize empty strings vs null for text/entity/select fields
-    if (type !== 'boolean' && type !== 'number' && type !== 'array' && type !== 'solar_arrays') {
+    if (
+        type !== 'boolean' &&
+        type !== 'number' &&
+        type !== 'array' &&
+        type !== 'solar_arrays' &&
+        type !== 'penalty_levels'
+    ) {
         const strA = a !== null && a !== undefined ? String(a).trim() : ''
         const strB = b !== null && b !== undefined ? String(b).trim() : ''
         return strA === strB
@@ -135,7 +141,7 @@ export function areEqual(a: unknown, b: unknown, type: string): boolean {
         return arrA.every((val, i) => val === arrB[i])
     }
 
-    if (type === 'solar_arrays') {
+    if (type === 'solar_arrays' || type === 'penalty_levels') {
         return JSON.stringify(a) === JSON.stringify(b)
     }
 

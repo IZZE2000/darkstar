@@ -103,7 +103,7 @@ export const NODE_REGISTRY: FlowNodeConfig[] = [
         id: 'ev',
         configKey: 'system.has_ev_charger', // Match settings key
         lucideIcon: (data: PowerFlowData) => (data.evPluggedIn ? Plug : Car),
-        color: (data: PowerFlowData) => (data.evPluggedIn ? 'rgb(var(--color-peak))' : 'rgb(var(--color-muted))'),
+        color: (data: PowerFlowData) => (data.evPluggedIn ? 'rgb(var(--color-ai))' : 'rgb(var(--color-muted))'),
         label: 'EV',
         valueAccessor: (data) => (data.ev ? fmtKw(data.ev.kw) : '0.0 kW'),
         subValueAccessor: (data) =>

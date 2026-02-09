@@ -9,6 +9,7 @@ export type FieldType =
     | 'azimuth'
     | 'tilt'
     | 'solar_arrays'
+    | 'penalty_levels'
 
 export interface HaEntity {
     entity_id: string
@@ -1264,53 +1265,11 @@ export const parameterSections: SettingsSection[] = [
                     disabledText: "Enable 'EV charger installed' in System Profile to configure",
                 },
             },
-            // Penalty Level Settings
             {
-                key: 'ev_charger.penalty_levels.emergency',
-                label: 'Emergency Penalty (SEK/kWh)',
-                path: ['ev_charger', 'penalty_levels', 'emergency'],
-                type: 'number',
-                helper: 'Penalty when SoC < 20%. High value forces charging even at expensive times.',
-                isAdvanced: true,
-                showIf: {
-                    configKey: 'system.has_ev_charger',
-                    value: true,
-                    disabledText: "Enable 'EV charger installed' in System Profile to configure",
-                },
-            },
-            {
-                key: 'ev_charger.penalty_levels.high',
-                label: 'High Penalty (SEK/kWh)',
-                path: ['ev_charger', 'penalty_levels', 'high'],
-                type: 'number',
-                helper: 'Penalty when SoC is 20-40%. Still prefers charging but less urgent.',
-                isAdvanced: true,
-                showIf: {
-                    configKey: 'system.has_ev_charger',
-                    value: true,
-                    disabledText: "Enable 'EV charger installed' in System Profile to configure",
-                },
-            },
-            {
-                key: 'ev_charger.penalty_levels.normal',
-                label: 'Normal Penalty (SEK/kWh)',
-                path: ['ev_charger', 'penalty_levels', 'normal'],
-                type: 'number',
-                helper: 'Penalty when SoC is 40-70%. Standard charging behavior.',
-                isAdvanced: true,
-                showIf: {
-                    configKey: 'system.has_ev_charger',
-                    value: true,
-                    disabledText: "Enable 'EV charger installed' in System Profile to configure",
-                },
-            },
-            {
-                key: 'ev_charger.penalty_levels.opportunistic',
-                label: 'Opportunistic Penalty (SEK/kWh)',
-                path: ['ev_charger', 'penalty_levels', 'opportunistic'],
-                type: 'number',
-                helper: 'Penalty when SoC > 70%. Only charge at cheap times.',
-                isAdvanced: true,
+                key: 'ev_charger.penalty_levels',
+                label: 'Penalty Levels (Urgency)',
+                path: ['ev_charger', 'penalty_levels'],
+                type: 'penalty_levels',
                 showIf: {
                     configKey: 'system.has_ev_charger',
                     value: true,

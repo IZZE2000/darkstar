@@ -394,8 +394,7 @@ class PlannerPipeline:
 
         # Rev K25: Pass EV state from Home Assistant sensors
         has_ev_charger = system_cfg.get("has_ev_charger", False)
-        ev_cfg = active_config.get("ev_charger", {})
-        if has_ev_charger and ev_cfg.get("enabled", False):
+        if has_ev_charger:
             ev_soc = float(initial_state.get("ev_soc_percent", 0.0))
             ev_plugged = bool(initial_state.get("ev_plugged_in", False))
             kepler_config.ev_current_soc_percent = ev_soc

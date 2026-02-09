@@ -50,7 +50,7 @@ const chartOptions: ChartConfiguration['options'] = {
             caretPadding: 8,
             callbacks: {
                 labelPointStyle: function (context) {
-                    const dataset = context.dataset as ChartDataset
+                    const dataset = context.dataset as any
                     // Dashed lines get filled circle markers
                     if (dataset.borderDash && dataset.borderDash.length > 0) {
                         return { pointStyle: 'circle', rotation: 0 }
@@ -278,6 +278,7 @@ const createChartData = (
         good: '#1FB256', // --color-good: Export
         bad: '#F15132', // --color-bad: Charge (costs money)
         peak: '#EC4899', // --color-peak: Discharge (pink)
+        ai: '#8B5CF6', // --color-ai: Violet
         water: '#4EA8DE', // --color-water: Water heating
         night: '#06B6D4', // --color-night: SoC lines
     }
@@ -415,8 +416,8 @@ const createChartData = (
                 type: 'bar',
                 label: 'EV Charging (kW)',
                 data: values.evCharging ?? values.labels.map(() => null),
-                backgroundColor: 'rgba(236, 72, 153, 0.25)', // DS.peak (pink) at 25%
-                borderColor: DS.peak,
+                backgroundColor: 'rgba(139, 92, 246, 0.25)', // DS.ai (violet) at 25%
+                borderColor: DS.ai,
                 glow: true,
                 borderWidth: 0,
                 borderRadius: 2,
@@ -541,6 +542,19 @@ const createChartData = (
                 label: 'Actual Discharge (kW)',
                 data: values.actualDischarge ?? values.labels.map(() => null),
                 borderColor: DS.peak,
+                borderDash: [2, 4],
+                pointRadius: 0,
+                borderWidth: 2,
+                yAxisID: 'y1',
+                stepped: 'after',
+                hidden: true,
+                order: 1,
+            } as ChartDataset,
+            {
+                type: 'line',
+                label: 'Actual EV (kW)',
+                data: values.evCharging ?? values.labels.map(() => null), // Map evCharging to actual EV
+                borderColor: DS.ai,
                 borderDash: [2, 4],
                 pointRadius: 0,
                 borderWidth: 2,
@@ -786,7 +800,7 @@ export default function ChartCard({
     const [overlays, setOverlays] = useState(() => {
         // Load from localStorage if available, otherwise use defaults
         const STORAGE_KEY = 'darkstar-chart-overlays'
-        const STORAGE_VERSION = 3 // Increment to force migration
+        const STORAGE_VERSION = 4 // Increment to force migration
 
         try {
             const saved = localStorage.getItem(STORAGE_KEY)
@@ -1162,7 +1176,7 @@ export default function ChartCard({
                                 ['Load', 'load', 'bg-house/20 border-house'],
                                 ['Charge', 'charge', 'bg-bad/20 border-bad'],
                                 ['Discharge', 'discharge', 'bg-peak/20 border-peak'],
-                                ['EV', 'ev', 'bg-peak/20 border-peak'],
+                                ['EV', 'ev', 'bg-ai/20 border-ai'],
                                 ['Export', 'export', 'bg-good/20 border-good'],
                                 ['Water', 'water', 'bg-water/20 border-water'],
                                 ['SoC Target', 'socTarget', 'bg-night/20 border-night'],

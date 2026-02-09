@@ -193,7 +193,7 @@ def config_to_kepler_config(
 
     # Rev K25: EV Charging Configuration
     ev_cfg = planner_config.get("ev_charger", {})
-    ev_enabled = system.get("has_ev_charger", False) and ev_cfg.get("enabled", False)
+    ev_enabled = system.get("has_ev_charger", False)
 
     capacity = float(battery.get("capacity_kwh", 13.5))
     charge_eff = float(battery.get("charge_efficiency", 0.95))

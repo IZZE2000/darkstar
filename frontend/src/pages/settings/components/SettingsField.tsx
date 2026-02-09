@@ -11,6 +11,7 @@ import Switch from '../../../components/ui/Switch'
 import { Badge } from '../../../components/ui/Badge'
 import configHelp from '../../../config-help.json'
 import { SolarArraysEditor } from './SolarArraysEditor'
+import { PenaltyLevelsEditor } from './PenaltyLevelsEditor'
 
 interface SettingsFieldProps {
     field: BaseField
@@ -151,6 +152,14 @@ export const SettingsField: React.FC<SettingsFieldProps> = ({
                     <SolarArraysEditor
                         arrays={JSON.parse(value || '[]')}
                         onChange={(arrays) => onChange(field.key, JSON.stringify(arrays))}
+                        disabled={isDisabled}
+                    />
+                )
+            case 'penalty_levels':
+                return (
+                    <PenaltyLevelsEditor
+                        value={value}
+                        onChange={(levels) => onChange(field.key, JSON.stringify(levels))}
                         disabled={isDisabled}
                     />
                 )
