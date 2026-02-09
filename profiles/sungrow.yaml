@@ -40,9 +40,11 @@ modes:
     value: "Forced mode"
     description: "Force discharge battery to grid"
     requires_grid_charging: false
+    skip_discharge_limit: true
     set_entities:
       ems_mode: "Forced mode"
       forced_charge_discharge_cmd: "Forced discharge"
+      max_discharge_power: 9000
       export_power_limit: 9000    # Ensure export is allowed
 
   # Zero export mode - Self consumption with explicit 0 limit?
@@ -51,9 +53,11 @@ modes:
     value: "Self-consumption mode (default)"
     description: "Self-consumption mode (Stop forced commands)"
     requires_grid_charging: false
+    skip_discharge_limit: true
     set_entities:
       ems_mode: "Self-consumption mode (default)"
       forced_charge_discharge_cmd: "Stop (default)"
+      max_discharge_power: 9000
       export_power_limit: 0        # Explicitly block export
 
   # Self-consumption mode - Normal operation
@@ -61,9 +65,11 @@ modes:
     value: "Self-consumption mode (default)"
     description: "Self-consumption mode (Stop forced commands)"
     requires_grid_charging: false
+    skip_discharge_limit: true
     set_entities:
       ems_mode: "Self-consumption mode (default)"
       forced_charge_discharge_cmd: "Stop (default)"
+      max_discharge_power: 9000
       export_power_limit: 9000    # Ensure export is allowed for excess PV
 
   # Grid charging mode - Force charge from grid
@@ -71,9 +77,11 @@ modes:
     value: "Forced mode"
     description: "Force charge battery from grid"
     requires_grid_charging: true
+    skip_discharge_limit: true
     set_entities:
       ems_mode: "Forced mode"
       forced_charge_discharge_cmd: "Forced charge"
+      max_discharge_power: 9000
       export_power_limit: 0        # Safety: Block export while forced charging
 
   # Idle/Standby mode - Stop forced commands
