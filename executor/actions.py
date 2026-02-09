@@ -297,7 +297,7 @@ class ActionDispatcher:
 
         # 1. Set work mode (Rev O1)
         if self.config.has_battery:
-            result = await self._set_work_mode(target_mode)
+            result = await self._set_work_mode(target_mode, is_charging=decision.grid_charging)
             results.append(result)
 
         # Optimization: Identify if we should skip power limits based on mode (REV IP4)
@@ -355,7 +355,7 @@ class ActionDispatcher:
 
         return results
 
-    async def _set_work_mode(self, target_mode: str) -> ActionResult:
+    async def _set_work_mode(self, target_mode: str, is_charging: bool = False) -> ActionResult:
         """Set inverter work mode if different from current."""
         start = time.time()
         entity = self.config.inverter.work_mode_entity
@@ -406,20 +406,49 @@ class ActionDispatcher:
         if success and self.profile:
             # unique string value -> mode object lookup
             mode_obj = None
-            for m in [
-                self.profile.modes.export,
-                self.profile.modes.zero_export,
-                self.profile.modes.self_consumption,
-                self.profile.modes.charge_from_grid,
-                self.profile.modes.force_discharge,
-                self.profile.modes.idle,
-            ]:
-                if m and m.value == target_mode:
-                    mode_obj = m
-                    break
+
+            # Rev F52 Phase 4: Ambiguous Mode Resolution
+            # Determine which mode object matches the target string AND intent
+            # Priority:
+            # 1. If is_charging=True, check charge_from_grid first
+            # 2. Check all other modes
+
+            # Helper to find matching mode in a list
+            def find_mode(mode_list):
+                for m in mode_list:
+                    if m and m.value == target_mode:
+                        return m
+                return None
+
+            if is_charging:
+                mode_obj = find_mode([self.profile.modes.charge_from_grid])
+
+            if not mode_obj:
+                # Standard lookup order (Export/Zero/Self/ForceDischarge/Idle)
+                # Note: We exclude charge_from_grid here if is_charging is False to avoid accidental match
+                # if it shares a value with another mode (e.g. Sungrow Forced Mode)
+                candidates = [
+                    self.profile.modes.export,
+                    self.profile.modes.zero_export,
+                    self.profile.modes.self_consumption,
+                    self.profile.modes.force_discharge,
+                    self.profile.modes.idle,
+                ]
+                # Only include charge_from_grid as fallback if we haven't checked it yet (unlikely path)
+                if not is_charging:
+                    # If we are NOT charging, we explicitly prefer Export/ForceDischarge over GridCharge
+                    pass
+                else:
+                    candidates.append(self.profile.modes.charge_from_grid)
+
+                mode_obj = find_mode(candidates)
 
             if mode_obj and mode_obj.set_entities:
-                logger.debug("Applying composite mode entities for %s", target_mode)
+                logger.debug(
+                    "Applying composite mode entities for %s (Intent: Charging=%s)",
+                    target_mode,
+                    is_charging,
+                )
                 for key, val in mode_obj.set_entities.items():
                     # Look up entity ID from custom_entities config
                     # Fallback to standard entities checks if needed, but custom_entities is preferred for profile-specifics
