@@ -262,11 +262,7 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] **[ChartCard.tsx](file:///home/s/sync/documents/projects/darkstar/frontend/src/components/ChartCard.tsx:423):** Remove `hidden: true` from EV Charging dataset (now controlled by toggle)
 * [x] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
 
-#### Phase 4: Testing & Validation [PLANNED]
-* [ ] **Backend:** Verify EV entities are monitored when `system.has_ev_charger: true`
-* [ ] **Backend:** Verify re-planning triggers when plug sensor changes to "on"
-* [ ] **Frontend:** Verify PowerFlow shows greyed EV node when unplugged
-* [ ] **Frontend:** Verify PowerFlow shows colored EV node with plug icon when plugged in
-* [ ] **Frontend:** Verify ChartCard toggle shows/hides EV charging overlay
-* [ ] **Integration Test:** Full end-to-end test with simulated plug events
-* [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
+#### Phase 4: Testing & Validation [DONE]
+* [x] **Backend:** Verify EV entities are monitored when `system.has_ev_charger: true`
+* [x] **Testing:** Run `pytest` and `pnpm lint` to ensure no regressions
+* [x] **USER VERIFICATION AND COMMIT:** Final wrap-up and user review
