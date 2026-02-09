@@ -27,7 +27,7 @@ async def test_composite_mode_execution():
     # 2. Setup Config
     config = ExecutorConfig(
         inverter=InverterConfig(
-            work_mode_entity="select.master_mode",
+            work_mode="select.master_mode",
             custom_entities={"ems_mode": "select.ems_mode", "charge_cmd": "select.charge_cmd"},
         )
     )
@@ -50,12 +50,16 @@ async def test_composite_mode_execution():
     dispatcher = ActionDispatcher(ha_client, config, profile=profile)
 
     # 5. Execute Action
-    # We call _set_work_mode directly or via execute. Let's verify _set_work_mode.
-    # Note: controller.decision.work_mode would be "InternalMode" (the value)
-    result = await dispatcher._set_work_mode("InternalMode")
+    results = await dispatcher._set_work_mode("InternalMode", is_charging=True)
 
     # 6. Verify
-    assert result.success is True
+    assert any(r.action_type == "work_mode" and r.success for r in results)
+    assert any(
+        r.action_type == "composite_mode" and r.entity_id == "select.ems_mode" for r in results
+    )
+    assert any(
+        r.action_type == "composite_mode" and r.entity_id == "select.charge_cmd" for r in results
+    )
 
     # Verify primary mode execution
     ha_client.set_select_option.assert_any_call("select.master_mode", "InternalMode")
@@ -78,8 +82,8 @@ async def test_forced_power_sync():
     # 2. Setup Config
     config = ExecutorConfig(
         inverter=InverterConfig(
-            work_mode_entity="select.master_mode",
-            max_charging_power_entity="number.max_charge_power",
+            work_mode="select.master_mode",
+            max_charge_power="number.max_charge_power",
             custom_entities={"forced_power_entity": "number.forced_power_limit"},
         )
     )

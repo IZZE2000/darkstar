@@ -339,36 +339,15 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 
 **Plan:**
 
-#### Phase 1: Fix Composite Mode Action Logging [PLANNED]
-* [ ] **[executor/actions.py](file:///home/s/sync/documents/projects/darkstar/executor/actions.py:421-441):** Refactor composite mode entity loop to create `ActionResult` objects for each entity change.
-    *   Replace direct `self.ha.set_number()` / `self.ha.set_select_option()` / `self.ha.set_switch()` calls with logic that:
-        1.  Captures `entity_id`, `previous_value`, `new_value`, `success`, `skipped` state
-        2.  Creates an `ActionResult(action_type="composite_mode", ...)` object
-        3.  Appends to a local results list
-    *   Use `self.ha.get_state_value()` to capture previous state before setting (similar to other actions)
-    *   Handle idempotent skipping (if already at target value)
-    *   Apply shadow mode check (if shadow_mode is enabled, skip HA calls and mark as skipped)
-* [ ] **[executor/actions.py](file:///home/s/sync/documents/projects/darkstar/executor/actions.py:421-441):** Return composite mode `ActionResult` list from `_set_work_mode()` method.
-    *   Extend method signature or append to existing results list passed by reference
-    *   Merge composite mode results with the primary work_mode result before returning
-* [ ] **[executor/actions.py](file:///home/s/sync/documents/projects/darkstar/executor/actions.py:285-356):** Update `execute()` method to collect and include composite mode results in final `action_results` list.
-    *   Composite mode results should appear in the same order they are executed (after primary work_mode, before charge/discharge limits)
-    *   Ensure `action_results` passed to `ActionDispatcher.execute()` contains all `ActionResult` objects including composite ones
-* [ ] **[executor/actions.py](file:///home/s/sync/documents/projects/darkstar/executor/actions.py:435-441):** Add verification for composite mode entity changes.
-    *   After setting entity, call `self._verify_action()` to confirm the state change
-    *   Store `verified_value` and `verification_success` in `ActionResult`
-    *   Use same timeout (2.0s) and tolerance logic as other actions
-* [ ] **Logging:** Update log messages to include `ActionResult` details (entity, previous, new, success).
-    *   Replace `logger.info("Composite Mode: Setting %s to %s", entity_id, val)` with `ActionResult.message` content
-    *   Ensure errors are captured with proper `success=False` state
-* [ ] **Verification:** Test with Sungrow profile:
-    *   Trigger a charge_from_grid mode change
-    *   Verify executor history shows `forced_charge_discharge_cmd` set to "Forced charge"
-    *   Verify executor history shows `export_power_limit` set to 0
-    *   Verify `action_type` is properly identified as "composite_mode" or similar
-* [ ] **Verification:** Test idempotent behavior:
-    *   If `forced_charge_discharge_cmd` is already "Forced charge", executor should skip and log `skipped=True`
-    *   Verify history entry shows `skipped=True` with appropriate message
+#### Phase 1: Fix Composite Mode Action Logging [DONE]
+* [x] **[executor/actions.py](file:///home/s/sync/documents/projects/darkstar/executor/actions.py:421-441):** Refactor composite mode entity loop to create `ActionResult` objects for each entity change.
+* [x] **[executor/actions.py](file:///home/s/sync/documents/projects/darkstar/executor/actions.py:421-441):** Return composite mode `ActionResult` list from `_set_work_mode()` method.
+* [x] **[executor/actions.py](file:///home/s/sync/documents/projects/darkstar/executor/actions.py:285-356):** Update `execute()` method to collect and include composite mode results in final `action_results` list.
+* [x] **[executor/actions.py](file:///home/s/sync/documents/projects/darkstar/executor/actions.py:435-441):** Add verification for composite mode entity changes.
+* [x] **Logging:** Update log messages to include `ActionResult` details.
+* [x] **Verification:** Test with Sungrow profile.
+* [x] **Verification:** Test idempotent behavior.
+* [x] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
 
 #### Phase 2: Frontend History Display (TBD)
 * [ ] **Frontend:** Update executor history UI to display composite mode entity changes.

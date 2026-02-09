@@ -278,10 +278,10 @@ class TestActionDispatcherIdempotency:
         mock_ha_client.get_state_value.return_value = "Export First"
 
         dispatcher = ActionDispatcher(mock_ha_client, executor_config)
-        result = await dispatcher._set_work_mode("Export First")
+        results = await dispatcher._set_work_mode("Export First")
 
-        assert result.skipped is True
-        assert "Already at" in result.message
+        assert results[0].skipped is True
+        assert "Already at" in results[0].message
         mock_ha_client.set_select_option.assert_not_called()
 
     @pytest.mark.asyncio
@@ -291,10 +291,10 @@ class TestActionDispatcherIdempotency:
         mock_ha_client.set_select_option.return_value = True
 
         dispatcher = ActionDispatcher(mock_ha_client, executor_config)
-        result = await dispatcher._set_work_mode("Export First")
+        results = await dispatcher._set_work_mode("Export First")
 
-        assert result.skipped is False
-        assert result.success is True
+        assert results[0].skipped is False
+        assert results[0].success is True
         mock_ha_client.set_select_option.assert_called_once()
 
     @pytest.mark.asyncio
@@ -351,11 +351,11 @@ class TestActionDispatcherShadowMode:
     async def test_shadow_mode_logs_but_doesnt_execute(self, mock_ha_client, executor_config):
         """Shadow mode logs intended actions but doesn't execute."""
         dispatcher = ActionDispatcher(mock_ha_client, executor_config, shadow_mode=True)
-        result = await dispatcher._set_work_mode("Export First")
+        results = await dispatcher._set_work_mode("Export First")
 
-        assert result.success is True
-        assert result.skipped is True
-        assert "[SHADOW]" in result.message
+        assert results[0].success is True
+        assert results[0].skipped is True
+        assert "[SHADOW]" in results[0].message
         mock_ha_client.set_select_option.assert_not_called()
 
     @pytest.mark.asyncio
