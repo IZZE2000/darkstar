@@ -1243,6 +1243,41 @@ class ActionDispatcher:
     async def _set_max_export_power(self, watts: float) -> ActionResult:
         """Set max grid export power (Bug Fix #1)."""
         start = time.time()
+
+        # Profile-aware Skip Logic (Rev F52 Phase 6)
+        # If the current mode handles export limits internally, we skip the write.
+        if self.profile:
+            current_mode = self.ha.get_state_value(self.config.inverter.work_mode_entity)
+            # Find the mode definition matching current HA state
+            mode_def = None
+            for attr in [
+                "export",
+                "zero_export",
+                "self_consumption",
+                "force_discharge",
+                "charge_from_grid",
+                "idle",
+            ]:
+                m = getattr(self.profile.modes, attr, None)
+                if m and m.value == current_mode:
+                    mode_def = m
+                    break
+
+            if mode_def and mode_def.skip_export_power:
+                logger.info(
+                    "Skipping export power write: mode '%s' manages limits internally (Profile: %s)",
+                    current_mode,
+                    self.profile.metadata.name,
+                )
+                return ActionResult(
+                    action_type="max_export_power",
+                    success=True,
+                    message=f"Skipped per mode setting: {current_mode}",
+                    skipped=True,
+                    duration_ms=int((time.time() - start) * 1000),
+                    error_details=None,
+                )
+
         entity = self.config.inverter.grid_max_export_power_entity
 
         if self.profile and not self.profile.capabilities.supports_grid_export_limit:

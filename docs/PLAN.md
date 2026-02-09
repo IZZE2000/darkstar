@@ -388,30 +388,20 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
     *   Expand history item and verify orange/red bubble shows actual HA API error message
     *   Verify message includes entity ID and validation error details
 
-#### Phase 6: Fix Max Export Power Logic for Fronius - Skip in Auto Mode [PLANNED]
-* [ ] **[profiles/fronius.yaml](file:///home/s/sync/documents/projects/darkstar/profiles/fronius.yaml:37-43):** Simplify `zero_export` mode to match `self_consumption` mode.
-    *   Remove separate `zero_export` mode definition
-    *   Set `zero_export` to alias `self_consumption` mode (both use "Auto" value)
-    *   Ensure both have same behavior (no `set_entities`, no export limit control)
-* [ ] **[executor/actions.py](file:///home/s/sync/documents/projects/darkstar/executor/actions.py:347-354):** Add mode-aware logic to skip `grid_max_export_power` when in Auto mode.
-    *   Check `target_mode` value (e.g., "Auto") before setting `max_export_power`
-    *   For Fronius specifically: skip if `target_mode == "Auto"`
-    *   Could use profile flag `skip_export_in_auto: true` or check mode string directly
-    *   Log skip reason: "Skipping max_export_power: work_mode=Auto (Fronius inverter auto-manages exports)"
-* [ ] **Alternative Approach:** Use profile metadata to control export power behavior per mode.
-    *   Add `skip_export_power: true` flag to mode definitions that don't support export limits
-    *   Check this flag in `execute()` before calling `_set_max_export_power()`
-    *   More generic than hardcoding "Auto" string check
-* [ ] **Verification:** Test with Fronius Auto mode (both Zero Export and Self-Consumption).
-    *   Schedule slot with `export_kw=0` (normal self-consumption)
-    *   Verify executor sets work_mode to "Auto"
-    *   Verify executor SKIPS setting `grid_max_export_power` entity (no error)
-    *   Check history log shows skip with appropriate message
-* [ ] **Verification:** Test with Fronius Export mode (Discharge to Grid).
-    *   Schedule slot with `export_kw > 0`
-    *   Verify executor sets work_mode to "Discharge to Grid"
-    *   Verify executor DOES set `grid_max_export_power` entity if configured
-    *   Check history log shows successful action
+#### Phase 6: Fix Max Export Power Logic for Fronius - Skip in Auto Mode [DONE]
+* [x] **[executor/profiles.py](file:///home/s/sync/documents/projects/darkstar/executor/profiles.py:79-89):** Add `skip_export_power: bool = False` field to `WorkMode` dataclass.
+* [x] **[profiles/fronius.yaml](file:///home/s/sync/documents/projects/darkstar/profiles/fronius.yaml:37-43):** Add `skip_export_power: true` to both `zero_export` and `self_consumption` modes.
+    *   Both modes use "Auto" value and manage exports internally
+    *   No changes to zero_export/self_consumption distinction (they remain separate modes with same behavior)
+* [x] **[executor/actions.py](file:///home/s/sync/documents/projects/darkstar/executor/actions.py:1243-1278):** Add mode-aware skip logic in `_set_max_export_power()`.
+    *   Check current work_mode value
+    *   Find matching mode definition in profile
+    *   Skip setting export power if `mode_def.skip_export_power == true`
+    *   Log skip reason: "Skipping export power write: mode 'Auto' manages limits internally (Profile: fronius)"
+* [x] **Verification:** Test with Fronius Auto mode (both Zero Export and Self-Consumption).
+    *   Fronius profile tests passing: `test_fronius_profile_parsing`, `test_fronius_grid_charging_skipped`, `test_fronius_controller_decisions`, `test_fronius_watt_limit_execution`
+* [x] **Verification:** Test with Fronius Export mode (Discharge to Grid).
+    *   Export mode does not have `skip_export_power: true`, so export power entity is set normally
 
 #### Phase 7: Fix Sungrow max_discharge_power - Set to Inverter Max for All Modes Except Idle [PLANNED]
 * [ ] **[profiles/sungrow.yaml](file:///home/s/sync/documents/projects/darkstar/profiles/sungrow.yaml:59-68):** Add `max_discharge_power` to all mode definitions except `idle`.

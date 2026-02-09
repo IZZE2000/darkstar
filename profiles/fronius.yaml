@@ -41,6 +41,7 @@ modes:
     description: "Prioritize local load (Note: Fronius handles export via dynamic power limit)"
     requires_grid_charging: false
     skip_discharge_limit: true
+    skip_export_power: true
 
   # Self-consumption mode - Normal operation
   self_consumption:
@@ -48,6 +49,7 @@ modes:
     description: "Self-consumption mode (Standard operation)"
     requires_grid_charging: false
     skip_discharge_limit: true
+    skip_export_power: true
 
   # Hold mode - Block discharging to preserve battery for high price windows
   hold:
