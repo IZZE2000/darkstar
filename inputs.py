@@ -705,11 +705,29 @@ async def get_initial_state(config_path: str = "config.yaml") -> dict[str, Any]:
             if ha_water is not None:
                 water_heated_today_kwh = ha_water
 
+    # Rev K25: EV state (SoC and plug status)
+    has_ev_charger = system_config.get("has_ev_charger", False)
+    ev_soc_percent = 0.0
+    ev_plugged_in = False
+
+    if has_ev_charger:
+        ev_soc_entity = input_sensors.get("ev_soc")
+        if ev_soc_entity:
+            ha_ev_soc = await get_ha_sensor_float(ev_soc_entity)
+            if ha_ev_soc is not None:
+                ev_soc_percent = ha_ev_soc
+
+        ev_plug_entity = input_sensors.get("ev_plug")
+        if ev_plug_entity:
+            ev_plugged_in = await get_ha_bool(ev_plug_entity)
+
     return {
         "battery_soc_percent": battery_soc_percent,
         "battery_kwh": battery_kwh,
         "battery_cost_sek_per_kwh": battery_cost_sek_per_kwh,
         "water_heated_today_kwh": water_heated_today_kwh,
+        "ev_soc_percent": ev_soc_percent,
+        "ev_plugged_in": ev_plugged_in,
     }
 
 

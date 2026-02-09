@@ -279,9 +279,9 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] **Testing:** Verify node shows grey when unplugged, peak color + SoC when plugged in
 * [x] **USER VERIFICATION AND COMMIT:** Final verification and commit
 
-#### Phase 6: Color Unification & Penalty Editor [PLANNED]
-* [ ] **[ChartCard.tsx](file:///home/s/sync/documents/projects/darkstar/frontend/src/components/ChartCard.tsx:414-429):** Change EV overlay color from `DS.peak` (pink) to `DS.ai` (violet #8B5CF6)
-* [ ] **[ChartCard.tsx](file:///home/s/sync/documents/projects/darkstar/frontend/src/components/ChartCard.tsx:1158-1171):** Update EV toggle button styling to use `bg-ai/20 border-ai` instead of `bg-peak/20 border-peak`
+#### Phase 6: Color Unification & Penalty Editor [DONE]
+* [x] **[ChartCard.tsx](file:///home/s/sync/documents/projects/darkstar/frontend/src/components/ChartCard.tsx:414-429):** Change EV overlay color from `DS.peak` (pink) to `DS.ai` (violet #8B5CF6)
+* [x] **[ChartCard.tsx](file:///home/s/sync/documents/projects/darkstar/frontend/src/components/ChartCard.tsx:1158-1171):** Update EV toggle button styling to use `bg-ai/20 border-ai` instead of `bg-peak/20 border-peak`
 * [x] **[PowerFlowRegistry.ts](file:///home/s/sync/documents/projects/darkstar/frontend/src/components/PowerFlowRegistry.ts:104-105):** Change EV node peak color to violet when plugged in (match ChartCard)
 * [x] **[index.css](file:///home/s/sync/documents/projects/darkstar/frontend/src/index.css):** Ensure `--color-ai` is properly defined (violet #8B5CF6)
 * [x] **[pipeline.py](file:///home/s/sync/documents/projects/darkstar/planner/pipeline.py:398):** Remove redundant `and ev_cfg.get("enabled", False)` - use only `has_ev_charger`
@@ -292,4 +292,5 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] **[PenaltyLevelsEditor.tsx](file:///home/s/sync/documents/projects/darkstar/frontend/src/pages/settings/components/PenaltyLevelsEditor.tsx):** Create new component for editing array-based penalty levels (emergency/high/normal/opportunistic)
 * [x] **[SettingsField.tsx](file:///home/s/sync/documents/projects/darkstar/frontend/src/pages/settings/components/SettingsField.tsx):** Add case for `'penalty_levels'` type rendering PenaltyLevelsEditor
 * [x] **[utils.ts](file:///home/s/sync/documents/projects/darkstar/frontend/src/pages/settings/utils.ts):** Handle `'penalty_levels'` type in `parseFieldInput` and `buildFormState`
-* [x] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
+* [x] **[inputs.py](file:///home/s/sync/documents/projects/darkstar/inputs.py:708-722):** Add EV state fetching to `get_initial_state()` - fetch `ev_soc_percent` from `input_sensors.ev_soc` and `ev_plugged_in` from `input_sensors.ev_plug`
+* [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
