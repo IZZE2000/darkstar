@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from executor.actions import ActionDispatcher, ActionResult, HAClient
+from executor.actions import ActionDispatcher, ActionResult, HACallError, HAClient
 from executor.config import (
     ControllerConfig,
     ExecutorConfig,
@@ -102,7 +102,7 @@ class TestHAClientCallService:
             mock_session.post.assert_called_once()
 
     def test_call_service_failure(self):
-        """call_service returns False on error."""
+        """call_service raises HACallError on request exception (REV F52 Phase 5)."""
         import requests
 
         with patch("executor.actions.requests.Session") as MockSession:
@@ -110,9 +110,11 @@ class TestHAClientCallService:
             mock_session.post.side_effect = requests.RequestException("Failed")
 
             client = HAClient("http://ha:8123", "token123")
-            result = client.call_service("switch", "turn_on", "switch.test")
 
-            assert result is False
+            with pytest.raises(
+                HACallError, match=r"Failed to call service switch.turn_on on switch.test"
+            ):
+                client.call_service("switch", "turn_on", "switch.test")
 
     def test_set_select_option(self):
         """set_select_option calls select.select_option."""
@@ -204,19 +206,27 @@ class TestHAClientCallService:
             assert "input_number/set_value" in call_args[0][0]
 
     def test_safety_guard_sensor(self):
-        """Safety guard prevents controlling sensor entities."""
+        """Safety guard prevents controlling sensor entities (raises HACallError REV F52 Phase 5)."""
         client = HAClient("http://ha:8123", "token123")
 
-        assert client.set_select_option("sensor.mode", "test") is False
-        assert client.set_switch("binary_sensor.status", True) is False
-        assert client.set_number("sensor.value", 10) is False
+        with pytest.raises(HACallError, match=r"Invalid domain for select entity sensor.mode"):
+            client.set_select_option("sensor.mode", "test")
+
+        with pytest.raises(
+            HACallError, match=r"Invalid domain for switch entity binary_sensor.status"
+        ):
+            client.set_switch("binary_sensor.status", True)
+
+        with pytest.raises(HACallError, match=r"Invalid domain for number entity sensor.value"):
+            client.set_number("sensor.value", 10)
 
     def test_invalid_domain_rejected(self):
-        """Rejects domains not in allowed list for specific action."""
+        """Rejects domains not in allowed list for specific action (raises HACallError REV F52 Phase 5)."""
         client = HAClient("http://ha:8123", "token123")
 
         # 'switch' domain is not allowed for set_select_option
-        assert client.set_select_option("switch.mode", "test") is False
+        with pytest.raises(HACallError, match=r"Invalid domain for select entity switch.mode"):
+            client.set_select_option("switch.mode", "test")
 
 
 class TestHAClientSendNotification:

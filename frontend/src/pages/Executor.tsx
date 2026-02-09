@@ -103,18 +103,25 @@ type ExecutionRecord = {
     commanded_unit?: string
     commanded_soc_target?: number
     commanded_water_temp?: number
+}
+
+// REV F52 Phase 2: ActionResult interface for type safety
+interface ActionResult {
+    type: string
+    success: boolean
+    message: string
+    entity_id?: string
+    previous_value?: any
+    new_value?: any
+    verified_value?: any
+    verification_success?: boolean
+    skipped: boolean
+    error_details?: string | null
+}
+
+interface ExecutionRecord {
     // Action details (NEW)
-    action_results?: {
-        type: string
-        success: boolean
-        message: string
-        entity_id?: string
-        previous_value?: any
-        new_value?: any
-        verified_value?: any
-        verification_success?: boolean
-        skipped: boolean
-    }[]
+    action_results?: ActionResult[]
     // State before execution
     before_soc_percent?: number
     before_work_mode?: string
@@ -321,7 +328,7 @@ import {
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler)
 
-function ActionStatusIndicator({ result }: { result: any }) {
+function ActionStatusIndicator({ result }: { result: ActionResult }) {
     if (result.skipped && result.message?.includes('[SHADOW]')) {
         return <span className="text-[9px] text-purple-400 font-medium">⬢ SHADOW</span>
     }
@@ -1197,9 +1204,25 @@ export default function Executor() {
                                                                             )}
                                                                             {group.parent.message &&
                                                                                 !group.parent.success && (
-                                                                                    <span className="text-[9px] text-bad bg-bad/5 rounded px-1.5 py-0.5 mt-1 border border-bad/20 inline-block w-fit">
-                                                                                        {group.parent.message}
-                                                                                    </span>
+                                                                                    <div className="flex flex-col gap-1 mt-1">
+                                                                                        <span className="text-[9px] text-bad bg-bad/5 rounded px-1.5 py-0.5 border border-bad/20 inline-block w-fit">
+                                                                                            {group.parent.message}
+                                                                                        </span>
+                                                                                        {group.parent.error_details && (
+                                                                                            <span
+                                                                                                className="text-[8px] text-bad/70 font-mono bg-bad/5 rounded px-1.5 py-0.5 border border-bad/20 inline-block w-fit max-w-xs truncate"
+                                                                                                title={
+                                                                                                    group.parent
+                                                                                                        .error_details
+                                                                                                }
+                                                                                            >
+                                                                                                {
+                                                                                                    group.parent
+                                                                                                        .error_details
+                                                                                                }
+                                                                                            </span>
+                                                                                        )}
+                                                                                    </div>
                                                                                 )}
                                                                         </div>
                                                                         <div className="text-right ml-4">
@@ -1240,7 +1263,7 @@ export default function Executor() {
 
                                                                     {/* Composite Children */}
                                                                     {group.children.map(
-                                                                        (child: any, childIdx: number) => (
+                                                                        (child: ActionResult, childIdx: number) => (
                                                                             <div
                                                                                 key={childIdx}
                                                                                 className="ml-4 flex items-center justify-between p-2 rounded-lg bg-surface2/20 border border-line/10 border-l-2 border-l-accent/30"
@@ -1272,6 +1295,17 @@ export default function Executor() {
                                                                                             {child.entity_id}
                                                                                         </span>
                                                                                     )}
+                                                                                    {!child.success &&
+                                                                                        child.error_details && (
+                                                                                            <span
+                                                                                                className="text-[8px] text-bad/70 font-mono bg-bad/5 rounded px-1.5 py-0.5 border border-bad/20 inline-block w-fit max-w-xs truncate"
+                                                                                                title={
+                                                                                                    child.error_details
+                                                                                                }
+                                                                                            >
+                                                                                                {child.error_details}
+                                                                                            </span>
+                                                                                        )}
                                                                                 </div>
                                                                                 <div className="text-right ml-4">
                                                                                     <div className="text-[9px] text-muted font-medium">
