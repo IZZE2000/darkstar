@@ -103,6 +103,18 @@ type ExecutionRecord = {
     commanded_unit?: string
     commanded_soc_target?: number
     commanded_water_temp?: number
+    // State before execution
+    before_soc_percent?: number
+    before_work_mode?: string
+    before_water_temp?: number
+    before_pv_kw?: number
+    before_load_kw?: number
+    // Action details (REV F52 Phase 2)
+    action_results?: ActionResult[]
+    // Result
+    duration_ms?: number
+    error_message?: string
+    source?: string
 }
 
 // REV F52 Phase 2: ActionResult interface for type safety
@@ -117,21 +129,6 @@ interface ActionResult {
     verification_success?: boolean
     skipped: boolean
     error_details?: string | null
-}
-
-interface ExecutionRecord {
-    // Action details (NEW)
-    action_results?: ActionResult[]
-    // State before execution
-    before_soc_percent?: number
-    before_work_mode?: string
-    before_water_temp?: number
-    before_pv_kw?: number
-    before_load_kw?: number
-    // Result
-    duration_ms?: number
-    error_message?: string
-    source?: string
 }
 
 // API helpers - using relative paths for HA Ingress compatibility
