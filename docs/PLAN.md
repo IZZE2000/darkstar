@@ -123,184 +123,6 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 
 ---
 
-
-### [DONE] REV // IP5 — Sungrow & Fronius Logic Fixes
-
-**Goal:** Fix override logic to respect profile modes and update Sungrow profile with correct entities and behaviors.
-**Context:** "Zero Export To CT" is hardcoded in `override.py`, causing Sungrow inverters to fail during low SoC events. Sungrow integration has also updated entity names.
-
-**Plan:**
-
-#### Phase 1: Backend Logic & Profile Update [DONE]
-* [x] **Profile (`sungrow.yaml`):** Updated to mkaiser v2 integration entity names (`select.ems_mode`, `number.battery_max_charge_power`, etc.).
-* [x] **Profile (`sungrow.yaml`):** Update `forced_power` entity name to `number.battery_forced_charge_discharge_power`.
-* [x] **Profile (`sungrow.yaml`):** Fix Idle mode: use `Stop (default)` with `max_discharge_power=10` (not 0).
-* [x] **Backend (`actions.py`):** Fix `_set_charge_limit` to set BOTH `forced_power` AND `max_charge_power` in forced charge mode.
-* [x] **Backend (`actions.py`):** Fix `_set_discharge_limit` to set BOTH `forced_power` AND `max_discharge_power` in forced discharge mode.
-* [x] **Backend (`actions.py`):** Standardize `forced_power_entity` search to check for both `forced_power` and legacy `forced_power_entity` in `custom_entities`.
-* [x] **Backend (`override.py`):** Remove hardcoded `work_mode` from `actions` dict (Emergency/Low SoC/Fallback).
-* [x] **Backend (`controller.py`):** Verify `defaults` fall back to `profile.modes.zero_export`.
-* [x] **Backend (`controller.py`):** Force "W" units for Sungrow in `_calculate_charge_limit`.
-* [x] **Profile (`sungrow.yaml`):** Update `behavior.min_charge_w` from 100 to 10.
-* [x] **Frontend (`SystemTab.tsx`):** Hide `control_unit` selector when `profile.behavior.control_unit` is set (A or W), auto-use profile value.
-* [x] **Frontend (`SystemTab.tsx`):** Only show `control_unit` selector for `generic` profile (when `control_unit: null`).
-* [x] **Verification:** Full suite passing (102 tests).
-* [x] **USER VERIFICATION AND COMMIT:** Stop and let the user verify.
-
-#### Phase 2: Fronius Entity Routing & Defaults [DONE]
-* [x] **Backend (`actions.py`):** Fix `_set_charge_limit` to use `inverter.grid_charge_power` directly (stop looking in `custom_entities`).
-* [x] **Backend (`config.py`):** Verify `grid_charge_power_entity` is correctly aliased during config loading.
-* [x] **Profile (`fronius.yaml`):** Add BYD battery entities as defaults/suggestions (extracted from user production config).
-* [x] **Validation:** Add unit test for Fronius grid-charge routing to prevent regression with `pv_charge_limit`.
-* [x] **Verification:** Confirm fix in shadow mode logs.
-* [x] **USER VERIFICATION AND COMMIT:** Stop and let the user verify.
-
-#### Phase 3: Profile & Logic Verification [DONE]
-
-**Verification Summary:** All 4 inverter profiles audited against logic documentation. **74/74 tests passing.**
-
-**✅ Profile Entity Updates (mkaiser v2):**
-* [x] **Sungrow (`sungrow.yaml`):** Updated to mkaiser v2 integration entity names:
-  * `select.sg_ems_mode` → `select.ems_mode`
-  * `input_number.set_sg_battery_max_charge_power` → `number.battery_max_charge_power`
-  * `input_number.set_sg_battery_max_discharge_power` → `number.battery_max_discharge_power`
-  * `input_number.set_sg_export_power_limit` → `number.export_power_limit`
-* [x] **Documentation:** Added mkaiser v2 integration note to profile metadata
-
-**✅ Backend Audit:**
-* [x] `actions.py` (lines 636-648, 728-746): Correctly syncs `forced_power` in forced modes
-* [x] `actions.py` (lines 637-639, 729-731): Standardized search for `forced_power` + legacy `forced_power_entity`
-* [x] `override.py` (lines 144-186): No hardcoded `work_mode` in emergency/low SoC/fallback actions
-* [x] `controller.py` (lines 104-107): Falls back to `profile.modes.zero_export` correctly
-* [x] `controller.py` (lines 176-178, 255-257): Forces profile `control_unit` (W for Sungrow/Fronius)
-
-**✅ Frontend Audit:**
-* [x] `SystemTab.tsx` (lines 56-66): Disables `control_unit` selector for non-generic profiles
-* [x] `SystemTab.tsx` (lines 82-89): Auto-syncs `control_unit` from `profile.behavior.control_unit`
-
-**✅ Test Results:**
-* `test_executor_actions.py`: 29 tests passing
-* `test_executor_override.py`: 16 tests passing
-* `test_rev_ip4.py`: 3 tests passing
-* `test_executor_profiles.py`: 13 tests passing
-* **Total: 74/74 tests passing**
-
----
-
-### [DONE] REV // F48 — Fronius Skip Logic & UI Saving Fixes
-
-**Goal:** Resolve redundant discharge limit writes for Fronius and fix UI configuration saving bugs.
-**Context:** Fronius inverters in "Auto" mode handle their own discharge limits, making external writes redundant. Additionally, the settings UI failed to detect certain changes (like entity IDs) due to loose equality checks in the patch logic.
-
-**Plan:**
-
-#### Phase 1: Executor & Profile Logic [DONE]
-* [x] Add `skip_discharge_limit` flag to `WorkMode` dataclass.
-* [x] Update `fronius.yaml` to enable `skip_discharge_limit` for Auto modes.
-* [x] Implement skip logic in `ActionDispatcher._set_discharge_limit`.
-* [x] Verify via `test_executor_fronius_profile.py`.
-
-#### Phase 2: UI Saving Fixes [DONE]
-* [x] Refactor `areEqual` in `utils.ts` for strict change detection.
-* [x] Add debug logging to `buildPatch` and `useSettingsForm.ts`.
-* [x] Verify linting and formatting pass.
-
----
-
-### [DONE] REV // F49 — Settings UI Polish & Export Limit Switch
-
-**Goal:** Fix missing export limit switch, redundant shadow mode toggle, and improve visibility of advanced inverter logic strings.
-**Context:** Beta testers reported missing "Export Power Limit" switch (required for Sungrow). Shadow mode is redundant in settings. Inverter logic strings should be profile-aware.
-
-#### Phase 1: Backend Logic & Configuration [DONE]
-* [x] Add `grid_max_export_power_switch` to `InverterConfig` in `[executor/config.py]`
-* [x] Update `_set_max_export_power` to control the switch entity in `[executor/actions.py]`
-* [x] Expose new field in API config endpoints in `[backend/api/routers/executor.py]`
-* [x] Add tests for new switch logic in `test_executor_actions.py`
-
-#### Phase 2: Frontend & Profiles [DONE]
-* [x] Add Export Switch entity field in `[frontend/src/pages/settings/types.ts]`
-* [x] Fix visibility of Mode Strings and remove Shadow Mode
-* [x] Add `grid_max_export_power_switch` to `[profiles/sungrow.yaml]`
-* [x] Manual verification of UI behavior and log output
-
----
-
-### [DONE] REV // F50 — EV Charging Configuration Unification & UI Fixes
-
-**Goal:** Fix critical configuration mismatch causing EV features to fail, and add missing UI indicators.
-**Context:** Beta tester reported no re-planning when plugging in EV. Investigation revealed TWO separate configuration keys (`system.has_ev_charger` vs `ev_charger.enabled`) causing the backend to ignore EV sensors even when UI shows "EV charger installed" as enabled. Additionally, UI lacks visual feedback for plug status and EV charging visibility in charts.
-
-**Critical Issues Found:**
-1. **Backend checks `ev_charger.enabled`** but **UI sets `system.has_ev_charger`** - entities never monitored!
-2. **PowerFlow node** only shows when plugged in (no indication when unplugged)
-3. **ChartCard** has EV data but **no toggle** to show it (dataset always hidden)
-
-#### Phase 1: Configuration Unification [DONE]
-* [x] Change `ev_cfg.get("enabled", False)` to check `system.has_ev_charger` instead in `[backend/ha_socket.py]`
-* [x] Remove `enabled: false` field from `ev_charger:` section in `[config.default.yaml]` and `[config.yaml]`
-* [x] Remove `enabled` field from `EVChargerConfig` dataclass in `[executor/config.py]`
-* [x] Update comments in config files to clarify single source of truth
-
-#### Phase 2: PowerFlow Visual Indicator [DONE]
-* [x] Modify EV node to always render (remove `shouldRender` condition) in `[frontend/src/components/PowerFlowRegistry.ts]`
-* [x] Add greyed color state when unplugged, plug icon indicator when plugged in
-* [x] Update `[frontend/src/components/PowerFlowCard.tsx]` to support conditional icon and color
-
-#### Phase 3: ChartCard EV Toggle [DONE]
-* [x] Add `ev: false` to initial overlays state in localStorage migration (STORAGE_VERSION 3)
-* [x] Fix dataset index misalignment in `[frontend/src/components/ChartCard.tsx]`
-* [x] Add EV toggle button to chart overlay menu and remove `hidden: true` from EV dataset
-
-#### Phase 4: Testing & Validation [DONE]
-* [x] Verify EV entities are monitored when `system.has_ev_charger: true`
-* [x] Run `pytest` and `pnpm lint` to ensure no regressions
-
-#### Phase 5: UI Polish & EV SoC Display [DONE]
-* [x] Fix CSS variable (`--color-muted`), add `evSoc?: number` to PowerFlowData interface in `[frontend/src/components/PowerFlowRegistry.ts]`
-* [x] Add `subValueAccessor` to EV node for SoC display, update `[frontend/src/pages/Dashboard.tsx]` to capture and pass EV SoC
-* [x] Emit `ev_soc` value in live_metrics in `[backend/ha_socket.py]`
-
-#### Phase 6: Color Unification & Penalty Editor [DONE]
-* [x] Change EV overlay color from pink to violet (#8B5CF6) in chart and PowerFlow
-* [x] Remove redundant `ev_cfg.get("enabled", False)` checks in `[planner/pipeline.py]` and `[planner/solver/adapter.py]`
-* [x] Replace 4 flat penalty fields with single `penalty_levels` field in `[frontend/src/pages/settings/types.ts]`
-* [x] Create `PenaltyLevelsEditor` component and add to `[frontend/src/pages/settings/components/]`
-* [x] Handle `'penalty_levels'` type in `[frontend/src/pages/settings/utils.ts]`
-* [x] Add EV state fetching to `get_initial_state()` in `[inputs.py]`
-
----
-
-### [DONE] REV // F51 — EV Economic Planner (Modulation & Value Buckets)
-
-**Goal:** Implement continuous (modulating) EV power control and an economic "Value Bucket" model to replace hardcoded penalties and binary on/off logic.
-**Context:** Current binary logic causes grid limit deadlocks. Hardcoded 5000 SEK penalties ignore user "willingness to pay". Redundant configuration fields cause confusion.
-
-#### Phase 1: Configuration Cleanup & Schema [DONE]
-* [x] Remove redundant `soc_sensor`, `plug_sensor`, `switch_entity` from top-level `ev_charger` in `[config.yaml]`
-* [x] Remove legacy `min_target_soc` and `min_soc` fields from `[config.yaml]`
-* [x] Remove `ev_target_soc_percent` from `[planner/solver/types.py]` (replaced by bucket limits)
-* [x] Add support for multiple SOC-threshold "Incentive Buckets" (Value in SEK/kWh) in `[planner/solver/types.py]`
-
-#### Phase 2: Solver Logic (Kepler) [DONE]
-* [x] Change `ev_energy` constraint from `==` to `<=` (binary-guarded) in `[planner/solver/kepler.py]` - allows throttling under grid limits
-* [x] Implement multi-stage objective function with SoC range "Urgency Incentives" (SEK/kWh)
-* [x] Sign flip: incentives subtracted from cost (charging becomes "profit" for solver)
-* [x] Delete 5000 SEK `ev_target_violation` logic - urgency now entirely economic
-* [x] Run `repro_ev_block.py` variant to confirm modulation solves grid deadlock
-
-#### Phase 3: Frontend & UI [DONE]
-* [x] Update `[frontend/src/pages/settings/components/PenaltyLevelsEditor.tsx]` to "Threshold-based" (chained) UI
-* [x] Chained percentages: 0% -> T1 -> T2 -> T3 -> 100%
-* [x] Label penalty inputs as "Maximum Price (SEK/kWh)" or "Willingness to Pay"
-
-#### Phase 4: Integration & Hardening [DONE]
-* [x] Map new UI bucket thresholds to `KeplerConfig` in `[planner/pipeline.py]`
-* [x] Add logging warnings if `has_ev_charger` is ON but `input_sensors` are missing in `[inputs.py]`
-* [x] Verify low price limit (e.g., 0.5 SEK) correctly skips expensive slots even if SoC below target
-
----
-
 ### [DONE] REV // F52 — Composite Mode Entities Sungrow & Auto mode Fronius fixes
 
 **Goal:** Ensure composite mode entity changes (e.g., Sungrow `forced_charge_discharge_cmd`, `export_power_limit`) are properly logged to executor history and visible to users.
@@ -359,3 +181,46 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] Verify `_set_discharge_limit()` respects `skip_discharge_limit` flag and composite mode values.
 * [x] Verify composite mode entity loop correctly sets `max_discharge_power`.
 * [x] Profile loading test, linting, and pytest all pass.
+
+---
+
+### [PLANNED] REV // UI19 — Custom Date Picker for Grid & Financial Card
+
+**Goal:** Add custom date range selection to the Grid & Financial card, matching the Executor History date picker implementation.
+**Context:** Users currently have preset options (Today, Yesterday, 7 Days, 30 Days) but cannot select arbitrary date ranges for financial analysis.
+
+**Plan:**
+
+#### Phase 1: Frontend UI Updates [PLANNED]
+* [ ] Update period type in CommandDomains.tsx to include 'custom': `'today' | 'yesterday' | 'week' | 'month' | 'custom'`
+* [ ] Add state for startDate and endDate (string type, YYYY-MM-DD format)
+* [ ] Add "Custom" button to period selector
+* [ ] Show date input fields (start date, "to", end date) below period buttons when period is 'custom' (matching Executor History layout)
+* [ ] Add production-grade validation: prevent end date before start date, show inline error message
+* [ ] Update "Net Cost" label to show "Custom Period Cost" when using custom range
+
+#### Phase 2: Frontend Data Fetching [PLANNED]
+* [ ] Calculate default dates when switching to Custom (start date = previous period start, end date = today)
+* [ ] Modify API call to pass start_date and end_date query parameters when period is 'custom'
+* [ ] Handle loading states for custom date changes
+* [ ] Add error handling for invalid date ranges
+
+#### Phase 3: API Layer Updates [PLANNED]
+* [ ] Update energyRange function in api.ts to accept optional start_date and end_date parameters
+* [ ] Build query string with custom dates: `/api/energy/range?period=custom&start_date=${startDate}&end_date=${endDate}`
+* [ ] Update EnergyRangeResponse type to include 'custom' as valid period value
+
+#### Phase 4: Backend API Updates [PLANNED]
+* [ ] Add optional query parameters: start_date: str | None = None, end_date: str | None = None in services.py get_energy_range endpoint
+* [ ] Parse YYYY-MM-DD format dates and convert to timezone-aware datetime
+* [ ] If custom dates are provided, use them instead of period-based calculation
+* [ ] Skip real-time HA sensor overlay for custom periods (only apply to "today" preset)
+* [ ] Add validation for date range validity on backend
+
+#### Phase 5: Testing & Verification [PLANNED]
+* [ ] Test custom date range with valid dates
+* [ ] Test validation for invalid ranges (end date before start date)
+* [ ] Verify default dates populate correctly when switching from presets
+* [ ] Test with various date ranges (single day, week, month, multi-month)
+* [ ] Verify financial calculations are correct for custom ranges
+* [ ] Lint and type check all changes
