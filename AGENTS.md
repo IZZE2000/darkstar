@@ -4,14 +4,14 @@
 
 ### Python Environment
 - **Python version**: 3.12.0 (see .python-version)
-- **Virtual environment**: Located in `venv/` directory
-- **Install dependencies**: `pip install -r requirements.txt` (if available) or install packages individually
-- **Preferred interpreter for project-aware scripts**: `./venv/bin/python` (use this explicitly if sandboxed tooling cannot import site packages like `pandas` or project modules; assume `PYTHONPATH=.` when running repo-local tools).
-- **Run main planner**: `python planner.py`
-- **Test inputs module**: `python inputs.py`
-- **Run full test suite**: `PYTHONPATH=. python -m pytest -q`
-- **Run single test**: `python -m pytest tests/test_module.py::test_function -v` (if pytest is used)
-- **Run Dev Environment (Frontend + Backend + WebSockets)**: `pnpm run dev` (This is the recommended way to run the full stack).
+- **Virtual environment**: Located in `.venv/` (managed by `uv`)
+- **Install dependencies**: `uv pip install -r requirements.txt` (Source of Truth)
+- **Preferred interpreter**: `./.venv/bin/python` (Explicitly use this if sandboxed; assume `PYTHONPATH=.` for repo-local tools).
+- **Run main planner**: `uv run python bin/run_planner.py`
+- **Test inputs module**: `uv run python inputs.py`
+- **Run full test suite**: `uv run python -m pytest -q`
+- **Run single test**: `uv run python -m pytest tests/test_module.py::test_function -v`
+- **Run Dev Environment**: `pnpm run dev` (Runs Frontend + Backend + WebSockets concurrently).
 
 ### Fish Shell (Important!)
 The development environment uses **fish shell**. Special characters in commit messages cause issues:
@@ -29,6 +29,7 @@ The development environment uses **fish shell**. Special characters in commit me
 - `uvicorn` - ASGI server
 - `python-socketio` - Async WebSocket support
 - `lightgbm`: Aurora ML models
+- `sqlalchemy` / `aiosqlite`: Database and async ORM
 
 
 ## Code Style Guidelines
@@ -49,7 +50,7 @@ import yaml
 ### Linting & Quality Control
 *   **Mandatory Checks**: At the end of **every revision** (before marking as done), you MUST run the standard linting suite.
     *   **Frontend**: `pnpm lint` (must be error-free) and `pnpm format`.
-    *   **Backend**: `ruff check .` (if Python files were touched).
+    *   **Backend**: `uv run ruff check .` (if Python files were touched).
     *   **Scripts**: If `sys.path` manipulation is required before imports, use `# noqa: E402`.
 *   **Zero-Error Policy**: Do not leave known lint errors. If a rule cannot be satisfied, use a specific suppression comment with a justification, but prefer fixing the code.
 
@@ -152,15 +153,15 @@ When releasing a new version:
 The sidebar version is fetched from `/api/version` which uses `git describe --tags`. Without a proper tag, it shows `vX.Y.Z-N-ghash` format.
 
 ### Tooling
-- After major code changes or a completed revision (ACTIVATE VENV FIRST!):
+- After major code changes or a completed revision:
   - **Frontend**:
     - Run `pnpm format` in `frontend/` to fix formatting issues automatically.
     - Run `pnpm lint` in `frontend/` to verify code quality.
   - **Backend/General**:
-    - Run `ruff format .` to normalize formatting.
-    - Run `ruff check .` to lint and catch issues.
-    - Run `pyright .` to verify type safety (strict mode).
-    - Or simply run `./scripts/lint.sh` for all checks at once (it activates venv automatically).
+    - Run `uv run ruff format .` to normalize formatting.
+    - Run `uv run ruff check .` to lint and catch issues.
+    - Run `uv run pyright .` to verify type safety (strict mode).
+    - Or simply run `./scripts/lint.sh` for all checks at once.
 
 ### Development Protocol
 - **Production-Grade Only**: Always implement production-grade solutions. Never take shortcuts or use quick-fix approaches. Prefer clean, maintainable, and robust implementations.
@@ -182,6 +183,13 @@ The sidebar version is fetched from `/api/version` which uses `git describe --ta
   - Making major architectural changes.
   - Archiving revisions.
   - **Updating any files in the `docs/` directory.**
+
+### Git & Commit Standards
+- **Strict Conventional Commits**: Mandatory for all commits.
+- **Format**: `type(scope): description`
+- **Allowed Types**: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`, `perf`.
+- **Commitlint**: Automatically enforced via hooks. Ensure messages pass `commitlint` before pushing.
+- **Fish Shell**: Avoid `()` in commit messages if using `-m`.
 
 ## Project Structure
 - `backend/` - FastAPI API, Strategy Engine (`backend/strategy/`), and internal `SchedulerService`.
