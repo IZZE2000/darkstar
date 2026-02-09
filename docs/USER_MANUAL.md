@@ -123,3 +123,37 @@ Darkstar treats your Electric Vehicle as a "Deferrable Load." This means it unde
 
 ### "The plan keeps changing!"
 *   This is normal. Darkstar replans every time new data comes in (weather updates, new prices). It's constantly course-correcting, like a GPS avoiding traffic.
+
+---
+
+## 📚 6. FAQ
+
+### "Executor not setting entity" - How to check history logs
+
+Some inverter profiles (like Sungrow) require setting **multiple entities** to achieve a specific mode. For example, "Charge from Grid" might require:
+- Setting the work mode to "Forced Charge"
+- Setting an EMS mode switch to "Forced Mode"
+- Setting a forced charge/discharge command to "Charge"
+- Setting an export power limit to 0
+
+**How to verify what the executor is doing:**
+
+1. **Go to the Executor tab** in the Darkstar dashboard
+2. **Find the execution record** for the time when the mode should have changed
+3. **Expand the record** (click on it) to see detailed action results
+4. **Look for composite mode actions** - these are shown as sub-items of the main mode change
+5. **Check each entity change**:
+   - ✅ **Green check**: Entity was set successfully
+   - ❌ **Red X**: Entity set failed (shows error message)
+
+**Common issues:**
+- **Wrong entity ID**: The entity doesn't exist in Home Assistant
+- **Permission denied**: Darkstar's Home Assistant token doesn't have write access
+- **Invalid value**: The value you're trying to set isn't accepted by the inverter
+- **Read-only entity**: Some integrations expose entities as read-only
+
+**What to do:**
+1. Check the Executor history for specific error messages
+2. Verify entity IDs match your Home Assistant setup
+3. Check inverter profile configuration in Settings
+4. Test the entity manually in Home Assistant Developer Tools to confirm it's writable

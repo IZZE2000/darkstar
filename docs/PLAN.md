@@ -355,12 +355,12 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
     *   [x] Display entity ID and value changes in history table or detail view
     *   [x] Differentiate composite mode actions from primary mode changes visually (grouped/indented)
 
-#### Phase 3: Documentation & User Guide (TBD)
-* [ ] **[docs/](file:///home/s/sync/documents/projects/darkstar/docs/):** Document composite mode behavior in inverter profile documentation.
+#### Phase 3: Documentation & User Guide [DONE]
+* [x] **[docs/](file:///home/s/sync/documents/projects/darkstar/docs/):** Document composite mode behavior in inverter profile documentation.
     *   Explain that some modes require setting multiple HA entities
     *   Provide examples (Sungrow charge_from_grid sets `ems_mode` + `forced_charge_discharge_cmd` + `export_power_limit`)
     *   Explain that all entity changes are logged to executor history
-* [ ] **Troubleshooting Guide:** Add FAQ entry for "Executor not setting entity" - how to check history logs.
+* [x] **Troubleshooting Guide:** Add FAQ entry for "Executor not setting entity" - how to check history logs.
 
 #### Phase 4: Ambiguous Mode Resolution Fix (Sungrow) [DONE]
 * [x] **[executor/actions.py](file:///home/s/sync/documents/projects/darkstar/executor/actions.py):** Fix ambiguity between "Charge from Grid" and "Export" modes for profiles like Sungrow where the main mode string is identical.

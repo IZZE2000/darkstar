@@ -90,6 +90,33 @@ modes:
 
 ---
 
+---
+
+## Advanced: Composite Modes
+
+Some inverters (like Sungrow) require setting multiple entities to achieve a specific state. Darkstar supports this via **Composite Modes**.
+
+Instead of a single string value, a mode can define a `set_entities` map:
+
+```yaml
+modes:
+  charge_from_grid:
+    value: "Forced Charge"  # Primary Work Mode entity value
+    set_entities:
+      select.sungrow_ems_mode: "Forced Mode"
+      switch.sungrow_forced_charge_discharge_cmd: "Charge"
+      number.sungrow_export_power_limit: 0
+    # Optional: Skip specific verification for the main mode if needed
+    # skip_verification: true
+```
+
+### Key Behaviors:
+1.  **Atomic Execution**: The executor sets the primary `value` first, then iterates through `set_entities`.
+2.  **Full Logging**: Every single entity change is logged to the **Executor History** as a sub-item of the main mode change.
+3.  **Verification**: Darkstar verifies *every* entity in the composite list, not just the main one.
+
+---
+
 ## Testing & Validation
 
 Before submitting a PR, validate your profile:
