@@ -89,6 +89,7 @@ export default function Dashboard() {
         water_kw?: number
         ev_kw?: number
         ev_plugged_in?: boolean // Rev UI18
+        ev_soc?: number // Rev F50 Phase 5: EV battery SoC
     }>({})
 
     // REV LCL01: Health status for config validation banners
@@ -114,6 +115,7 @@ export default function Dashboard() {
             water_kw: data.water_kw ?? prev.water_kw,
             ev_kw: data.ev_kw ?? prev.ev_kw,
             ev_plugged_in: data.ev_plugged_in !== undefined ? data.ev_plugged_in : prev.ev_plugged_in,
+            ev_soc: data.ev_soc !== undefined ? data.ev_soc : prev.ev_soc,
         }))
     })
 
@@ -777,6 +779,7 @@ export default function Dashboard() {
                                     kw: livePower.ev_kw ?? 0,
                                 },
                                 evPluggedIn: livePower.ev_plugged_in, // Rev UI18
+                                evSoc: livePower.ev_soc, // Rev F50 Phase 5: EV SoC
                             }}
                         />
                     </div>

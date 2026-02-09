@@ -16,6 +16,7 @@ export interface PowerFlowData {
     water: { kw: number }
     ev?: { kw: number }
     evPluggedIn?: boolean // Rev UI18: Streamed from backend
+    evSoc?: number // Rev F50 Phase 5: EV battery SoC percentage
 }
 
 export interface FlowNodeConfig {
@@ -102,9 +103,11 @@ export const NODE_REGISTRY: FlowNodeConfig[] = [
         id: 'ev',
         configKey: 'system.has_ev_charger', // Match settings key
         lucideIcon: (data: PowerFlowData) => (data.evPluggedIn ? Plug : Car),
-        color: (data: PowerFlowData) => (data.evPluggedIn ? 'rgb(var(--color-peak))' : 'rgb(var(--color-text-muted))'),
+        color: (data: PowerFlowData) => (data.evPluggedIn ? 'rgb(var(--color-peak))' : 'rgb(var(--color-muted))'),
         label: 'EV',
         valueAccessor: (data) => (data.ev ? fmtKw(data.ev.kw) : '0.0 kW'),
+        subValueAccessor: (data) =>
+            data.evPluggedIn && data.evSoc !== undefined ? `${data.evSoc.toFixed(0)}%` : undefined,
         glowIntensityAccessor: (data) => (data.ev ? Math.min(data.ev.kw / 11, 1) : 0),
     },
 ]

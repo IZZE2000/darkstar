@@ -206,6 +206,12 @@ class HAWebSocketClient:
                             entity_id = event.get("data", {}).get("entity_id")
                             new_state = event.get("data", {}).get("new_state", {})
 
+                            # DIAG: Log EV state changes for debugging (F50)
+                            if entity_id and "ev" in entity_id.lower():
+                                logger.debug(
+                                    f"Received state_changed for {entity_id} = {new_state.get('state')}, monitored={entity_id in self.monitored_entities}"
+                                )
+
                             if entity_id in self.monitored_entities:
                                 self._handle_state_change(entity_id, new_state)
 
@@ -278,6 +284,22 @@ class HAWebSocketClient:
                 state_val = new_state.get("state")
                 logger.debug(f"EV SoC updated: {entity_id}={state_val}")
 
+                # Parse SoC value for live metrics
+                try:
+                    soc_val = (
+                        float(state_val)
+                        if state_val not in (None, "unknown", "unavailable")
+                        else None
+                    )
+                    if soc_val is not None:
+                        self.latest_values["ev_soc"] = soc_val
+                        # Emit via live_metrics for UI display
+                        from backend.events import emit_live_metrics
+
+                        emit_live_metrics({"ev_soc": soc_val})
+                except (ValueError, TypeError):
+                    pass  # Invalid SoC value, ignore
+
                 # Note: We don't trigger replan on every SoC change to avoid noise
                 # Re-planning happens on schedule or when plug state changes
 
@@ -338,6 +360,10 @@ class HAWebSocketClient:
             # Include EV plug state if we know it (Rev UI18)
             if "ev_plugged_in" in self.latest_values:
                 payload["ev_plugged_in"] = self.latest_values["ev_plugged_in"]
+
+            # Include EV SoC if we know it (Rev F50 Phase 5)
+            if "ev_soc" in self.latest_values:
+                payload["ev_soc"] = self.latest_values["ev_soc"]
 
             emit_live_metrics(payload)
 

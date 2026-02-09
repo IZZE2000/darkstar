@@ -266,3 +266,15 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] **Backend:** Verify EV entities are monitored when `system.has_ev_charger: true`
 * [x] **Testing:** Run `pytest` and `pnpm lint` to ensure no regressions
 * [x] **USER VERIFICATION AND COMMIT:** Final wrap-up and user review
+
+
+#### Phase 5: UI Polish & EV SoC Display [DONE]
+* [x] **[PowerFlowRegistry.ts](file:///home/s/sync/documents/projects/darkstar/frontend/src/components/PowerFlowRegistry.ts:105):** Fix CSS variable: change `--color-text-muted` to `--color-muted` (fixes black node)
+* [x] **[PowerFlowRegistry.ts](file:///home/s/sync/documents/projects/darkstar/frontend/src/components/PowerFlowRegistry.ts:18):** Add `evSoc?: number` to PowerFlowData interface
+* [x] **[PowerFlowRegistry.ts](file:///home/s/sync/documents/projects/darkstar/frontend/src/components/PowerFlowRegistry.ts:107):** Add `subValueAccessor` to EV node to show SoC percentage when plugged in
+* [x] **[Dashboard.tsx](file:///home/s/sync/documents/projects/darkstar/frontend/src/pages/Dashboard.tsx:91):** Add `ev_soc?: number` to livePower state type
+* [x] **[Dashboard.tsx](file:///home/s/sync/documents/projects/darkstar/frontend/src/pages/Dashboard.tsx:115):** Capture `ev_soc` in live_metrics WebSocket handler
+* [x] **[Dashboard.tsx](file:///home/s/sync/documents/projects/darkstar/frontend/src/pages/Dashboard.tsx:778):** Pass `evSoc: livePower.ev_soc` to PowerFlowCard data
+* [x] **[ha_socket.py](file:///home/s/sync/documents/projects/darkstar/backend/ha_socket.py:275):** Emit `ev_soc` value in live_metrics alongside `ev_plugged_in`
+* [x] **Testing:** Verify node shows grey when unplugged, peak color + SoC when plugged in
+* [x] **USER VERIFICATION AND COMMIT:** Final verification and commit
