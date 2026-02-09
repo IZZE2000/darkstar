@@ -332,7 +332,7 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 
 ---
 
-### [IN PROGRESS] REV // F52 — Composite Mode Entities Sungrow & Auto mode Fronius fixes
+### [DONE] REV // F52 — Composite Mode Entities Sungrow & Auto mode Fronius fixes
 
 **Goal:** Ensure composite mode entity changes (e.g., Sungrow `forced_charge_discharge_cmd`, `export_power_limit`) are properly logged to executor history and visible to users.
 **Context:** Beta tester reported Sungrow "Battery Forced Charge/Discharge Command" not being set. Investigation revealed that while the code DOES call HA to set composite mode entities, these changes are NOT logged to executor history. This makes debugging impossible - users cannot verify what entities are being changed via the executor API. The root cause is in `executor/actions.py:421-441` where composite mode changes make direct HA calls without creating `ActionResult` objects.
@@ -340,99 +340,53 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 **Plan:**
 
 #### Phase 1: Fix Composite Mode Action Logging [DONE]
-* [x] **[executor/actions.py](file:///home/s/sync/documents/projects/darkstar/executor/actions.py:421-441):** Refactor composite mode entity loop to create `ActionResult` objects for each entity change.
-* [x] **[executor/actions.py](file:///home/s/sync/documents/projects/darkstar/executor/actions.py:421-441):** Return composite mode `ActionResult` list from `_set_work_mode()` method.
-* [x] **[executor/actions.py](file:///home/s/sync/documents/projects/darkstar/executor/actions.py:285-356):** Update `execute()` method to collect and include composite mode results in final `action_results` list.
-* [x] **[executor/actions.py](file:///home/s/sync/documents/projects/darkstar/executor/actions.py:435-441):** Add verification for composite mode entity changes.
-* [x] **Logging:** Update log messages to include `ActionResult` details.
-* [x] **Verification:** Test with Sungrow profile.
-* [x] **Verification:** Test idempotent behavior.
-* [x] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
+* [x] Refactor composite mode entity loop in `[executor/actions.py]` to create `ActionResult` objects for each entity change.
+* [x] Return composite mode `ActionResult` list from `_set_work_mode()` method.
+* [x] Update `execute()` method to collect and include composite mode results in final `action_results` list.
+* [x] Add verification for composite mode entity changes.
+* [x] Update log messages to include `ActionResult` details.
+* [x] Verify with Sungrow profile and idempotent behavior.
 
 #### Phase 2: Frontend History Display [DONE]
-* [x] **Frontend:** Update executor history UI to display composite mode entity changes.
-    *   [x] Ensure `action_results` from API includes all composite mode actions
-    *   [x] Display entity ID and value changes in history table or detail view
-    *   [x] Differentiate composite mode actions from primary mode changes visually (grouped/indented)
+* [x] Update executor history UI to display composite mode entity changes.
+* [x] Ensure `action_results` from API includes all composite mode actions.
+* [x] Display entity ID and value changes in history table or detail view.
+* [x] Differentiate composite mode actions from primary mode changes visually (grouped/indented).
 
 #### Phase 3: Documentation & User Guide [DONE]
-* [x] **[docs/](file:///home/s/sync/documents/projects/darkstar/docs/):** Document composite mode behavior in inverter profile documentation.
-    *   Explain that some modes require setting multiple HA entities
-    *   Provide examples (Sungrow charge_from_grid sets `ems_mode` + `forced_charge_discharge_cmd` + `export_power_limit`)
-    *   Explain that all entity changes are logged to executor history
-* [x] **Troubleshooting Guide:** Add FAQ entry for "Executor not setting entity" - how to check history logs.
+* [x] Document composite mode behavior in inverter profile documentation.
+* [x] Explain that some modes require setting multiple HA entities.
+* [x] Provide examples (Sungrow charge_from_grid sets `ems_mode` + `forced_charge_discharge_cmd` + `export_power_limit`).
+* [x] Explain that all entity changes are logged to executor history.
+* [x] Add FAQ entry for "Executor not setting entity" - how to check history logs.
 
 #### Phase 4: Ambiguous Mode Resolution Fix (Sungrow) [DONE]
-* [x] **[executor/actions.py](file:///home/s/sync/documents/projects/darkstar/executor/actions.py):** Fix ambiguity between "Charge from Grid" and "Export" modes for profiles like Sungrow where the main mode string is identical.
-    *   Update `_set_work_mode` to accept `is_charging` flag.
-    *   Implement `_resolve_profile_mode` helper to prioritize `charge_from_grid` when `is_charging=True`.
-    *   Pass `decision.grid_charging` from `execute()` to `_set_work_mode()`.
-    *   Verify that "Forced Charge" command is correctly applied in Sungrow profile.
+* [x] Fix ambiguity between "Charge from Grid" and "Export" modes for profiles like Sungrow where the main mode string is identical.
+* [x] Update `_set_work_mode` to accept `is_charging` flag.
+* [x] Implement `_resolve_profile_mode` helper to prioritize `charge_from_grid` when `is_charging=True`.
+* [x] Pass `decision.grid_charging` from `execute()` to `_set_work_mode()`.
+* [x] Verify that "Forced Charge" command is correctly applied in Sungrow profile.
 
 #### Phase 5: Fix Error Visibility - Display HA API Error Messages [DONE]
-* [x] **[executor/actions.py](file:///home/s/sync/documents/projects/darkstar/executor/actions.py:40-53):** Add `error_details: str | None = None` field to `ActionResult` dataclass.
-     *   This field stores the actual HA API error message when `success=False`
-* [x] **[executor/actions.py](executor/actions.py):** Create `HACallError` exception class with HTTP status, response body, exception type
-* [x] **[executor/actions.py](executor/actions.py):** Modify `call_service()` to raise `HACallError` on error
-* [x] **[executor/actions.py](executor/actions.py):** Update HA wrapper methods to raise `HACallError` on validation failure
-* [x] **[executor/actions.py](executor/actions.py):** Update all action methods to catch `HACallError` and populate `error_details`
-* [x] **[executor/engine.py](executor/engine.py):** Update action_results dict conversion to include `error_details`
-* [x] **[executor/engine.py](executor/engine.py):** Update result["actions"] dict conversion to include `error_details`
-* [x] **[executor/engine.py](executor/engine.py):** Update error tracking (`recent_errors`) to include `error_details`
-* **Commit:** `0305ed6`
-    *   Find first action with `success=False` and non-empty `error_details`
-    *   Set `error_message` to `result.error_details` or `result.message`
-    *   This ensures execution record has error message for UI display
-* [ ] **Frontend Verification:** Test error display by setting an invalid value.
-    *   Trigger executor to write value < min_value on Fronius `grid_max_export_power` entity
-    *   Expand history item and verify orange/red bubble shows actual HA API error message
-    *   Verify message includes entity ID and validation error details
+* [x] Add `error_details: str | None = None` field to `ActionResult` dataclass in `[executor/actions.py]`.
+* [x] Create `HACallError` exception class with HTTP status, response body, exception type in `[executor/actions.py]`.
+* [x] Modify `call_service()` to raise `HACallError` on error.
+* [x] Update HA wrapper methods to raise `HACallError` on validation failure.
+* [x] Update all action methods to catch `HACallError` and populate `error_details`.
+* [x] Update action_results dict conversion to include `error_details` in `[executor/engine.py]`.
+* [x] Update result["actions"] dict conversion to include `error_details`.
+* [x] Update error tracking (`recent_errors`) to include `error_details`.
+* [ ] Frontend Verification: Test error display by setting an invalid value (requires real Fronius inverter).
 
 #### Phase 6: Fix Max Export Power Logic for Fronius - Skip in Auto Mode [DONE]
-* [x] **[executor/profiles.py](file:///home/s/sync/documents/projects/darkstar/executor/profiles.py:79-89):** Add `skip_export_power: bool = False` field to `WorkMode` dataclass.
-* [x] **[profiles/fronius.yaml](file:///home/s/sync/documents/projects/darkstar/profiles/fronius.yaml:37-43):** Add `skip_export_power: true` to both `zero_export` and `self_consumption` modes.
-    *   Both modes use "Auto" value and manage exports internally
-    *   No changes to zero_export/self_consumption distinction (they remain separate modes with same behavior)
-* [x] **[executor/actions.py](file:///home/s/sync/documents/projects/darkstar/executor/actions.py:1243-1278):** Add mode-aware skip logic in `_set_max_export_power()`.
-    *   Check current work_mode value
-    *   Find matching mode definition in profile
-    *   Skip setting export power if `mode_def.skip_export_power == true`
-    *   Log skip reason: "Skipping export power write: mode 'Auto' manages limits internally (Profile: fronius)"
-* [x] **Verification:** Test with Fronius Auto mode (both Zero Export and Self-Consumption).
-    *   Fronius profile tests passing: `test_fronius_profile_parsing`, `test_fronius_grid_charging_skipped`, `test_fronius_controller_decisions`, `test_fronius_watt_limit_execution`
-* [x] **Verification:** Test with Fronius Export mode (Discharge to Grid).
-    *   Export mode does not have `skip_export_power: true`, so export power entity is set normally
+* [x] Add `skip_export_power: bool = False` field to `WorkMode` dataclass in `[executor/profiles.py]`.
+* [x] Add `skip_export_power: true` to both `zero_export` and `self_consumption` modes in `[profiles/fronius.yaml]`.
+* [x] Add mode-aware skip logic in `_set_max_export_power()` in `[executor/actions.py]`.
+* [x] Fronius profile tests passing: `test_fronius_profile_parsing`, `test_fronius_grid_charging_skipped`, `test_fronius_controller_decisions`, `test_fronius_watt_limit_execution`.
 
 #### Phase 7: Fix Sungrow max_discharge_power - Set to Inverter Max for All Modes Except Idle [DONE]
-* [x] **[profiles/sungrow.yaml](file:///home/s/sync/documents/projects/darkstar/profiles/sungrow.yaml:59-68):** Add `max_discharge_power` to all mode definitions except `idle`.
-    *   **Export mode:** Add `max_discharge_power: 9000` (inverter max from defaults)
-    *   **Zero Export mode:** Add `max_discharge_power: 9000`
-    *   **Self-Consumption mode:** Add `max_discharge_power: 9000`
-    *   **Charge from Grid mode:** Add `max_discharge_power: 9000`
-    *   **Idle mode:** Keep `max_discharge_power: 10` (only mode that limits discharge)
-    *   Note: Use value from `defaults.battery.max_discharge_w` (9000W) instead of hardcoding
-    *   Also added `skip_discharge_limit: true` to all modes to prevent `_set_discharge_limit()` from overriding composite mode value
-* [x] **[profiles/sungrow_logic.md](file:///home/s/sync/documents/projects/darkstar/profiles/sungrow_logic.md:13-21):** Update logic mapping table to reflect max_discharge_power requirements.
-    *   Update "Self-Consumption" row: Set Max Discharge to inverter max (e.g., 9000W)
-    *   Update "Grid Export" row: Set Max Discharge to inverter max
-    *   Update "Grid Charge" row: Set Max Discharge to inverter max
-    *   Update "Zero Export" row: Set Max Discharge to inverter max
-    *   Keep "Idle / Hold" row at Max Discharge = 10W
-    *   Add note: "max_discharge_power is a GLOBAL limit affecting ALL discharge, including forced modes. Always set to inverter max except when intentionally limiting (Idle mode)"
-* [x] **[executor/actions.py](file:///home/s/sync/documents/projects/darkstar/executor/actions.py:875-911):** Verify `_set_discharge_limit()` logic handles `max_discharge_power` from composite mode entities.
-    *   Composite mode `set_entities` already sets `max_discharge_power` during work_mode change
-    *   `_set_discharge_limit()` has profile-aware skip logic using `skip_discharge_limit` flag (Rev IP11)
-    *   With `skip_discharge_limit: true` set in all Sungrow modes, `_set_discharge_limit()` is skipped and composite mode value is respected
-* [x] **[executor/actions.py](file:///home/s/sync/documents/projects/darkstar/executor/actions.py:508-605):** Verify composite mode entity loop sets `max_discharge_power` correctly.
-    *   When setting `max_discharge_power` entity, use value from profile mode's `set_entities`
-    *   Log the entity and value being set: "Composite Mode: Setting {entity_id} to {val}"
-    *   Ensure `ActionResult` is created for this change (Phase 1 implementation)
-    *   Verified: Composite mode loop calls `ha.set_number(entity_id, float(val))` for numeric values (line 568)
-* [x] **Verification:** Profile loading test
-    *   Verified Sungrow profile loads correctly with all mode definitions
-    *   Export mode: `skip_discharge_limit: True`, `set_entities` includes `max_discharge_power: 9000`
-    *   Idle mode: `set_entities` includes `max_discharge_power: 10`
-* [x] **Verification:** Linting and formatting
-    *   Run `uv run ruff check .` - All checks passed
-    *   Run `uv run ruff format .` - No changes needed
-    *   Run `pytest` - All 17 profile tests passed
+* [x] Add `max_discharge_power: 9000` and `skip_discharge_limit: true` to Export, Zero Export, Self-Consumption, and Charge from Grid modes in `[profiles/sungrow.yaml]`.
+* [x] Update logic mapping table in `[profiles/sungrow_logic.md]` to show Max Discharge = 9000W for all modes except Idle (10W).
+* [x] Verify `_set_discharge_limit()` respects `skip_discharge_limit` flag and composite mode values.
+* [x] Verify composite mode entity loop correctly sets `max_discharge_power`.
+* [x] Profile loading test, linting, and pytest all pass.
