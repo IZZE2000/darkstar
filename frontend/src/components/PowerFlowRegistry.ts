@@ -5,7 +5,7 @@
  * Nodes can be enabled/disabled based on system configuration.
  */
 
-import { Sun, Home, Battery, BatteryCharging, Zap, Droplets, Car } from 'lucide-react'
+import { Sun, Home, Battery, BatteryCharging, Zap, Droplets, Car, Plug } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
 export interface PowerFlowData {
@@ -21,9 +21,9 @@ export interface PowerFlowData {
 export interface FlowNodeConfig {
     id: 'solar' | 'house' | 'battery' | 'grid' | 'water' | 'ev'
     configKey?: string // Required for optional nodes (e.g., 'system.has_solar')
-    lucideIcon: LucideIcon
+    lucideIcon: LucideIcon | ((data: PowerFlowData) => LucideIcon)
     lucideIconCharging?: LucideIcon
-    color: string
+    color: string | ((data: PowerFlowData) => string)
     label: string | ((data: PowerFlowData) => string)
     valueAccessor: (data: PowerFlowData) => string
     subValueAccessor?: (data: PowerFlowData) => string | undefined
@@ -101,11 +101,10 @@ export const NODE_REGISTRY: FlowNodeConfig[] = [
     {
         id: 'ev',
         configKey: 'system.has_ev_charger', // Match settings key
-        lucideIcon: Car,
-        color: 'rgb(var(--color-peak))',
+        lucideIcon: (data: PowerFlowData) => (data.evPluggedIn ? Plug : Car),
+        color: (data: PowerFlowData) => (data.evPluggedIn ? 'rgb(var(--color-peak))' : 'rgb(var(--color-text-muted))'),
         label: 'EV',
         valueAccessor: (data) => (data.ev ? fmtKw(data.ev.kw) : '0.0 kW'),
         glowIntensityAccessor: (data) => (data.ev ? Math.min(data.ev.kw / 11, 1) : 0),
-        shouldRender: (data) => !!data.evPluggedIn, // Rev UI18: Hide if unplugged
     },
 ]

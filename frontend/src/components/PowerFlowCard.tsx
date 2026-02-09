@@ -9,6 +9,7 @@
 import { useMemo } from 'react'
 import { motion } from 'framer-motion'
 import { NODE_REGISTRY, type PowerFlowData, type FlowNodeConfig } from './PowerFlowRegistry'
+import type { LucideIcon } from 'lucide-react'
 
 // =============================================================================
 // TYPES
@@ -94,9 +95,22 @@ interface NodeProps {
     glowIntensity: number
     isCharging?: boolean
     compact?: boolean
+    resolvedColor: string
+    resolvedIcon: LucideIcon
 }
 
-function Node({ x, y, node, value, subValue, glowIntensity, isCharging, compact }: NodeProps) {
+function Node({
+    x,
+    y,
+    node,
+    value,
+    subValue,
+    glowIntensity,
+    isCharging,
+    compact,
+    resolvedColor,
+    resolvedIcon,
+}: NodeProps) {
     const iconSize = compact ? 18 : 25
 
     // Pill shape dimensions
@@ -104,7 +118,7 @@ function Node({ x, y, node, value, subValue, glowIntensity, isCharging, compact 
     const pillHeight = compact ? 40 : 50
     const pillRadius = pillHeight / 2
 
-    const IconComponent = (isCharging && node.lucideIconCharging) || node.lucideIcon
+    const IconComponent = (isCharging && node.lucideIconCharging) || resolvedIcon
 
     // TWEAK THESE VALUES:
     const bgOpacity = 1.0 // Background opacity (0.0 to 1.0)
@@ -121,7 +135,7 @@ function Node({ x, y, node, value, subValue, glowIntensity, isCharging, compact 
                     height={pillHeight + 20}
                     rx={pillRadius + 10}
                     ry={pillRadius + 10}
-                    fill={node.color}
+                    fill={resolvedColor}
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 0.1 + glowIntensity * 0.15 }}
                     transition={{ duration: 0.4 }}
@@ -135,7 +149,7 @@ function Node({ x, y, node, value, subValue, glowIntensity, isCharging, compact 
                 height={pillHeight}
                 rx={pillRadius}
                 ry={pillRadius}
-                fill={node.color}
+                fill={resolvedColor}
                 fillOpacity={bgOpacity}
             />
             {/* Icon on the left (centered in the left radius) */}
@@ -289,7 +303,7 @@ export default function PowerFlowCard({ data, systemConfig, compact = false }: P
                 // Battery, Grid: + is towards house (import/discharge), - is away (export/charge)
                 let power = 0
                 let reverse = false
-                const color = node.color
+                const color = (typeof node.color === 'function' ? node.color(data) : node.color) as string
 
                 switch (node.id) {
                     case 'solar':
@@ -331,6 +345,11 @@ export default function PowerFlowCard({ data, systemConfig, compact = false }: P
 
                 const resolvedLabel = typeof node.label === 'function' ? node.label(data) : node.label
 
+                const resolvedColor = (typeof node.color === 'function' ? node.color(data) : node.color) as string
+                const resolvedIcon = (
+                    typeof node.lucideIcon === 'function' ? node.lucideIcon(data) : node.lucideIcon
+                ) as LucideIcon
+
                 return (
                     <Node
                         key={node.id}
@@ -343,6 +362,8 @@ export default function PowerFlowCard({ data, systemConfig, compact = false }: P
                         glowIntensity={node.glowIntensityAccessor(data)}
                         isCharging={node.isChargingAccessor?.(data)}
                         compact={compact}
+                        resolvedColor={resolvedColor}
+                        resolvedIcon={resolvedIcon}
                     />
                 )
             })}

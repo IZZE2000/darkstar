@@ -248,12 +248,12 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] **Documentation:** Update comments in config files to clarify single source of truth
 * [x] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
 
-#### Phase 2: PowerFlow Visual Indicator [PLANNED]
-* [ ] **[PowerFlowRegistry.ts](file:///home/s/sync/documents/projects/darkstar/frontend/src/components/PowerFlowRegistry.ts:101):** Modify EV node to always render (remove `shouldRender` condition)
-* [ ] **[PowerFlowRegistry.ts](file:///home/s/sync/documents/projects/darkstar/frontend/src/components/PowerFlowRegistry.ts:105):** Add greyed color state when `!data.evPluggedIn` (use `--color-text-muted` or similar)
-* [ ] **[PowerFlowRegistry.ts](file:///home/s/sync/documents/projects/darkstar/frontend/src/components/PowerFlowRegistry.ts:109):** Add plug icon indicator when `data.evPluggedIn` is true (use `lucide-react` Plug icon)
-* [ ] **[PowerFlowCard.tsx](file:///home/s/sync/documents/projects/darkstar/frontend/src/components/PowerFlowCard.tsx):** Update node rendering to support conditional icon and color based on plugged-in state
-* [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
+#### Phase 2: PowerFlow Visual Indicator [DONE]
+* [x] **[PowerFlowRegistry.ts](file:///home/s/sync/documents/projects/darkstar/frontend/src/components/PowerFlowRegistry.ts:101):** Modify EV node to always render (remove `shouldRender` condition)
+* [x] **[PowerFlowRegistry.ts](file:///home/s/sync/documents/projects/darkstar/frontend/src/components/PowerFlowRegistry.ts:105):** Add greyed color state when `!data.evPluggedIn` (use `--color-text-muted` or similar)
+* [x] **[PowerFlowRegistry.ts](file:///home/s/sync/documents/projects/darkstar/frontend/src/components/PowerFlowRegistry.ts:109):** Add plug icon indicator when `data.evPluggedIn` is true (use `lucide-react` Plug icon)
+* [x] **[PowerFlowCard.tsx](file:///home/s/sync/documents/projects/darkstar/frontend/src/components/PowerFlowCard.tsx):** Update node rendering to support conditional icon and color based on plugged-in state
+* [x] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
 
 #### Phase 3: ChartCard EV Toggle [PLANNED]
 * [ ] **[ChartCard.tsx](file:///home/s/sync/documents/projects/darkstar/frontend/src/components/ChartCard.tsx:787):** Add `ev: false` to initial overlays state in localStorage migration (increment STORAGE_VERSION to 3)
