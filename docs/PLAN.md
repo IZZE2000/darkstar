@@ -212,23 +212,21 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 **Goal:** Fix missing export limit switch, redundant shadow mode toggle, and improve visibility of advanced inverter logic strings.
 **Context:** Beta testers reported missing "Export Power Limit" switch (required for Sungrow). Shadow mode is redundant in settings. Inverter logic strings should be profile-aware.
 
-**Plan:**
-
 #### Phase 1: Backend Logic & Configuration [DONE]
-* [x] **[config.py](file:///home/s/sync/documents/projects/darkstar/executor/config.py):** Add `grid_max_export_power_switch` to `InverterConfig`.
-* [x] **[actions.py](file:///home/s/sync/documents/projects/darkstar/executor/actions.py):** Update `_set_max_export_power` to control the switch entity.
-* [x] **[executor.py](file:///home/s/sync/documents/projects/darkstar/backend/api/routers/executor.py):** Expose new field in API config endpoints.
-* [x] **Unit Tests:** Add tests for new switch logic in `test_executor_actions.py`.
+* [x] Add `grid_max_export_power_switch` to `InverterConfig` in `[executor/config.py]`
+* [x] Update `_set_max_export_power` to control the switch entity in `[executor/actions.py]`
+* [x] Expose new field in API config endpoints in `[backend/api/routers/executor.py]`
+* [x] Add tests for new switch logic in `test_executor_actions.py`
 
 #### Phase 2: Frontend & Profiles [DONE]
-* [x] **[types.ts](file:///home/s/sync/documents/projects/darkstar/frontend/src/pages/settings/types.ts):** Add Export Switch entity field.
-* [x] **[types.ts](file:///home/s/sync/documents/projects/darkstar/frontend/src/pages/settings/types.ts):** Fix visibility of Mode Strings and remove Shadow Mode.
-* [x] **[sungrow.yaml](file:///home/s/sync/documents/projects/darkstar/profiles/sungrow.yaml):** Add `grid_max_export_power_switch` to entity mapping.
-* [x] **Manual Verification:** Verify UI behavior and log output.
+* [x] Add Export Switch entity field in `[frontend/src/pages/settings/types.ts]`
+* [x] Fix visibility of Mode Strings and remove Shadow Mode
+* [x] Add `grid_max_export_power_switch` to `[profiles/sungrow.yaml]`
+* [x] Manual verification of UI behavior and log output
 
 ---
 
-### [PLANNED] REV // F50 — EV Charging Configuration Unification & UI Fixes
+### [DONE] REV // F50 — EV Charging Configuration Unification & UI Fixes
 
 **Goal:** Fix critical configuration mismatch causing EV features to fail, and add missing UI indicators.
 **Context:** Beta tester reported no re-planning when plugging in EV. Investigation revealed TWO separate configuration keys (`system.has_ev_charger` vs `ev_charger.enabled`) causing the backend to ignore EV sensors even when UI shows "EV charger installed" as enabled. Additionally, UI lacks visual feedback for plug status and EV charging visibility in charts.
@@ -238,62 +236,38 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 2. **PowerFlow node** only shows when plugged in (no indication when unplugged)
 3. **ChartCard** has EV data but **no toggle** to show it (dataset always hidden)
 
-**Plan:**
-
 #### Phase 1: Configuration Unification [DONE]
-* [x] **[backend/ha_socket.py](file:///home/s/sync/documents/projects/darkstar/backend/ha_socket.py:110):** Change `ev_cfg.get("enabled", False)` to check `system.has_ev_charger` instead
-* [x] **[config.default.yaml](file:///home/s/sync/documents/projects/darkstar/config.default.yaml:66):** Remove `enabled: false` field from `ev_charger:` section (keep only `system.has_ev_charger`)
-* [x] **[config.yaml](file:///home/s/sync/documents/projects/darkstar/config.yaml:69):** Remove `enabled: false` field from `ev_charger:` section
-* [x] **[executor/config.py](file:///home/s/sync/documents/projects/darkstar/executor/config.py):** Remove `enabled` field from `EVChargerConfig` dataclass (if exists)
-* [x] **Documentation:** Update comments in config files to clarify single source of truth
-* [x] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
+* [x] Change `ev_cfg.get("enabled", False)` to check `system.has_ev_charger` instead in `[backend/ha_socket.py]`
+* [x] Remove `enabled: false` field from `ev_charger:` section in `[config.default.yaml]` and `[config.yaml]`
+* [x] Remove `enabled` field from `EVChargerConfig` dataclass in `[executor/config.py]`
+* [x] Update comments in config files to clarify single source of truth
 
 #### Phase 2: PowerFlow Visual Indicator [DONE]
-* [x] **[PowerFlowRegistry.ts](file:///home/s/sync/documents/projects/darkstar/frontend/src/components/PowerFlowRegistry.ts:101):** Modify EV node to always render (remove `shouldRender` condition)
-* [x] **[PowerFlowRegistry.ts](file:///home/s/sync/documents/projects/darkstar/frontend/src/components/PowerFlowRegistry.ts:105):** Add greyed color state when `!data.evPluggedIn` (use `--color-text-muted` or similar)
-* [x] **[PowerFlowRegistry.ts](file:///home/s/sync/documents/projects/darkstar/frontend/src/components/PowerFlowRegistry.ts:109):** Add plug icon indicator when `data.evPluggedIn` is true (use `lucide-react` Plug icon)
-* [x] **[PowerFlowCard.tsx](file:///home/s/sync/documents/projects/darkstar/frontend/src/components/PowerFlowCard.tsx):** Update node rendering to support conditional icon and color based on plugged-in state
-* [x] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
+* [x] Modify EV node to always render (remove `shouldRender` condition) in `[frontend/src/components/PowerFlowRegistry.ts]`
+* [x] Add greyed color state when unplugged, plug icon indicator when plugged in
+* [x] Update `[frontend/src/components/PowerFlowCard.tsx]` to support conditional icon and color
 
 #### Phase 3: ChartCard EV Toggle [DONE]
-* [x] **[ChartCard.tsx](file:///home/s/sync/documents/projects/darkstar/frontend/src/components/ChartCard.tsx:787):** Add `ev: false` to initial overlays state in localStorage migration (increment STORAGE_VERSION to 3)
-* [x] **[ChartCard.tsx](file:///home/s/sync/documents/projects/darkstar/frontend/src/components/ChartCard.tsx:1056):** Fix dataset index misalignment (all indices after 7 were off-by-one)
-* [x] **[ChartCard.tsx](file:///home/s/sync/documents/projects/darkstar/frontend/src/components/ChartCard.tsx:1155):** Add EV toggle button to the chart overlay menu
-* [x] **[ChartCard.tsx](file:///home/s/sync/documents/projects/darkstar/frontend/src/components/ChartCard.tsx:423):** Remove `hidden: true` from EV Charging dataset (now controlled by toggle)
-* [x] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
+* [x] Add `ev: false` to initial overlays state in localStorage migration (STORAGE_VERSION 3)
+* [x] Fix dataset index misalignment in `[frontend/src/components/ChartCard.tsx]`
+* [x] Add EV toggle button to chart overlay menu and remove `hidden: true` from EV dataset
 
 #### Phase 4: Testing & Validation [DONE]
-* [x] **Backend:** Verify EV entities are monitored when `system.has_ev_charger: true`
-* [x] **Testing:** Run `pytest` and `pnpm lint` to ensure no regressions
-* [x] **USER VERIFICATION AND COMMIT:** Final wrap-up and user review
-
+* [x] Verify EV entities are monitored when `system.has_ev_charger: true`
+* [x] Run `pytest` and `pnpm lint` to ensure no regressions
 
 #### Phase 5: UI Polish & EV SoC Display [DONE]
-* [x] **[PowerFlowRegistry.ts](file:///home/s/sync/documents/projects/darkstar/frontend/src/components/PowerFlowRegistry.ts:105):** Fix CSS variable: change `--color-text-muted` to `--color-muted` (fixes black node)
-* [x] **[PowerFlowRegistry.ts](file:///home/s/sync/documents/projects/darkstar/frontend/src/components/PowerFlowRegistry.ts:18):** Add `evSoc?: number` to PowerFlowData interface
-* [x] **[PowerFlowRegistry.ts](file:///home/s/sync/documents/projects/darkstar/frontend/src/components/PowerFlowRegistry.ts:107):** Add `subValueAccessor` to EV node to show SoC percentage when plugged in
-* [x] **[Dashboard.tsx](file:///home/s/sync/documents/projects/darkstar/frontend/src/pages/Dashboard.tsx:91):** Add `ev_soc?: number` to livePower state type
-* [x] **[Dashboard.tsx](file:///home/s/sync/documents/projects/darkstar/frontend/src/pages/Dashboard.tsx:115):** Capture `ev_soc` in live_metrics WebSocket handler
-* [x] **[Dashboard.tsx](file:///home/s/sync/documents/projects/darkstar/frontend/src/pages/Dashboard.tsx:778):** Pass `evSoc: livePower.ev_soc` to PowerFlowCard data
-* [x] **[ha_socket.py](file:///home/s/sync/documents/projects/darkstar/backend/ha_socket.py:275):** Emit `ev_soc` value in live_metrics alongside `ev_plugged_in`
-* [x] **Testing:** Verify node shows grey when unplugged, peak color + SoC when plugged in
-* [x] **USER VERIFICATION AND COMMIT:** Final verification and commit
+* [x] Fix CSS variable (`--color-muted`), add `evSoc?: number` to PowerFlowData interface in `[frontend/src/components/PowerFlowRegistry.ts]`
+* [x] Add `subValueAccessor` to EV node for SoC display, update `[frontend/src/pages/Dashboard.tsx]` to capture and pass EV SoC
+* [x] Emit `ev_soc` value in live_metrics in `[backend/ha_socket.py]`
 
 #### Phase 6: Color Unification & Penalty Editor [DONE]
-* [x] **[ChartCard.tsx](file:///home/s/sync/documents/projects/darkstar/frontend/src/components/ChartCard.tsx:414-429):** Change EV overlay color from `DS.peak` (pink) to `DS.ai` (violet #8B5CF6)
-* [x] **[ChartCard.tsx](file:///home/s/sync/documents/projects/darkstar/frontend/src/components/ChartCard.tsx:1158-1171):** Update EV toggle button styling to use `bg-ai/20 border-ai` instead of `bg-peak/20 border-peak`
-* [x] **[PowerFlowRegistry.ts](file:///home/s/sync/documents/projects/darkstar/frontend/src/components/PowerFlowRegistry.ts:104-105):** Change EV node peak color to violet when plugged in (match ChartCard)
-* [x] **[index.css](file:///home/s/sync/documents/projects/darkstar/frontend/src/index.css):** Ensure `--color-ai` is properly defined (violet #8B5CF6)
-* [x] **[pipeline.py](file:///home/s/sync/documents/projects/darkstar/planner/pipeline.py:398):** Remove redundant `and ev_cfg.get("enabled", False)` - use only `has_ev_charger`
-* [x] **[adapter.py](file:///home/s/sync/documents/projects/darkstar/planner/solver/adapter.py:196):** Remove redundant `and ev_cfg.get("enabled", False)` - use only `system.has_ev_charger`
-* [x] **[config.default.yaml](file:///home/s/sync/documents/projects/darkstar/config.default.yaml:69-104):** Verify no `enabled` field exists under `ev_charger:` section
-* [x] **[types.ts](file:///home/s/sync/documents/projects/darkstar/frontend/src/pages/settings/types.ts:1268-1319):** Replace 4 flat penalty fields with single `penalty_levels` field using new type
-* [x] **[types.ts](file:///home/s/sync/documents/projects/darkstar/frontend/src/pages/settings/types.ts):** Add `'penalty_levels'` to FieldType union
-* [x] **[PenaltyLevelsEditor.tsx](file:///home/s/sync/documents/projects/darkstar/frontend/src/pages/settings/components/PenaltyLevelsEditor.tsx):** Create new component for editing array-based penalty levels (emergency/high/normal/opportunistic)
-* [x] **[SettingsField.tsx](file:///home/s/sync/documents/projects/darkstar/frontend/src/pages/settings/components/SettingsField.tsx):** Add case for `'penalty_levels'` type rendering PenaltyLevelsEditor
-* [x] **[utils.ts](file:///home/s/sync/documents/projects/darkstar/frontend/src/pages/settings/utils.ts):** Handle `'penalty_levels'` type in `parseFieldInput` and `buildFormState`
-* [x] **[inputs.py](file:///home/s/sync/documents/projects/darkstar/inputs.py:708-722):** Add EV state fetching to `get_initial_state()` - fetch `ev_soc_percent` from `input_sensors.ev_soc` and `ev_plugged_in` from `input_sensors.ev_plug`
-* [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
+* [x] Change EV overlay color from pink to violet (#8B5CF6) in chart and PowerFlow
+* [x] Remove redundant `ev_cfg.get("enabled", False)` checks in `[planner/pipeline.py]` and `[planner/solver/adapter.py]`
+* [x] Replace 4 flat penalty fields with single `penalty_levels` field in `[frontend/src/pages/settings/types.ts]`
+* [x] Create `PenaltyLevelsEditor` component and add to `[frontend/src/pages/settings/components/]`
+* [x] Handle `'penalty_levels'` type in `[frontend/src/pages/settings/utils.ts]`
+* [x] Add EV state fetching to `get_initial_state()` in `[inputs.py]`
 
 ---
 
@@ -302,33 +276,28 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 **Goal:** Implement continuous (modulating) EV power control and an economic "Value Bucket" model to replace hardcoded penalties and binary on/off logic.
 **Context:** Current binary logic causes grid limit deadlocks. Hardcoded 5000 SEK penalties ignore user "willingness to pay". Redundant configuration fields cause confusion.
 
-**Plan:**
-
 #### Phase 1: Configuration Cleanup & Schema [DONE]
-* [x] **[config.yaml](file:///home/s/sync/documents/projects/darkstar/config.yaml):** Remove redundant `soc_sensor`, `plug_sensor`, and `switch_entity` from top-level `ev_charger`.
-* [x] **[config.yaml](file:///home/s/sync/documents/projects/darkstar/config.yaml):** Remove legacy `min_target_soc` and `min_soc` fields.
-* [x] **[KeplerConfig](file:///home/s/sync/documents/projects/darkstar/planner/solver/types.py):** Remove `ev_target_soc_percent` (to be replaced by bucket limits).
-* [x] **[KeplerConfig](file:///home/s/sync/documents/projects/darkstar/planner/solver/types.py):** Add support for multiple SOC-threshold "Incentive Buckets" (Value in SEK/kWh).
-* [x] **USER VERIFICATION:** Confirm schema matches the "Willingness to Pay" economic model.
+* [x] Remove redundant `soc_sensor`, `plug_sensor`, `switch_entity` from top-level `ev_charger` in `[config.yaml]`
+* [x] Remove legacy `min_target_soc` and `min_soc` fields from `[config.yaml]`
+* [x] Remove `ev_target_soc_percent` from `[planner/solver/types.py]` (replaced by bucket limits)
+* [x] Add support for multiple SOC-threshold "Incentive Buckets" (Value in SEK/kWh) in `[planner/solver/types.py]`
 
 #### Phase 2: Solver Logic (Kepler) [DONE]
-* [x] **Continuous Power:** Change `ev_energy` constraint from `==` to `<=` (binary-guarded) in `kepler.py`. This allows the solver to "throttle" charging to fit under grid limits.
-* [x] **Value Bucket Model:** Implement multi-stage objective function terms where each SoC range earns a specific "Urgency Incentive" (SEK/kWh).
-* [x] **Sign Flip:** Core logic fix to ensure incentives are subtracted from cost (making charging a "profit" for the solver).
-* [x] **Remove Hardcoded Penalty:** Delete the 5000 SEK `ev_target_violation` logic; urgency is now entirely economic.
-* [x] **Verification:** Run `repro_ev_block.py` variant to confirm modulation solves the grid deadlock.
+* [x] Change `ev_energy` constraint from `==` to `<=` (binary-guarded) in `[planner/solver/kepler.py]` - allows throttling under grid limits
+* [x] Implement multi-stage objective function with SoC range "Urgency Incentives" (SEK/kWh)
+* [x] Sign flip: incentives subtracted from cost (charging becomes "profit" for solver)
+* [x] Delete 5000 SEK `ev_target_violation` logic - urgency now entirely economic
+* [x] Run `repro_ev_block.py` variant to confirm modulation solves grid deadlock
 
 #### Phase 3: Frontend & UI [DONE]
-* [x] **[PenaltyLevelsEditor.tsx](file:///home/s/sync/documents/projects/darkstar/frontend/src/pages/settings/components/PenaltyLevelsEditor.tsx):** Update to a "Threshold-based" (chained) UI.
-* [x] **UI Logic:** Level 1 ends at X%, Level 2 starts at X% and ends at Y%, etc. (chained percentages). 0% -> T1 -> T2 -> T3 -> 100%.
-* [x] **Labeling:** Clearly label penalty inputs as "Maximum Price (SEK/kWh)" or "Willingness to Pay".
-* [x] **Settings Schema:** Simplify to shared percentage boundaries.
+* [x] Update `[frontend/src/pages/settings/components/PenaltyLevelsEditor.tsx]` to "Threshold-based" (chained) UI
+* [x] Chained percentages: 0% -> T1 -> T2 -> T3 -> 100%
+* [x] Label penalty inputs as "Maximum Price (SEK/kWh)" or "Willingness to Pay"
 
 #### Phase 4: Integration & Hardening [DONE]
-* [x] **[planner/pipeline.py](file:///home/s/sync/documents/projects/darkstar/planner/pipeline.py):** Map new UI bucket thresholds to `KeplerConfig`.
-* [x] **[inputs.py](file:///home/s/sync/documents/projects/darkstar/inputs.py):** Add logging warnings if `has_ev_charger` is ON but `input_sensors` are missing.
-* [x] **Final Verification:** Verify that setting a low price limit (e.g., 0.5 SEK) correctly skips expensive slots even if SoC is below "target".
-* [x] **USER VERIFICATION AND COMMIT:** Final wrap-up and user review.
+* [x] Map new UI bucket thresholds to `KeplerConfig` in `[planner/pipeline.py]`
+* [x] Add logging warnings if `has_ev_charger` is ON but `input_sensors` are missing in `[inputs.py]`
+* [x] Verify low price limit (e.g., 0.5 SEK) correctly skips expensive slots even if SoC below target
 
 ---
 
