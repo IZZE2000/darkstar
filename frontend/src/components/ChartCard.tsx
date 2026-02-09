@@ -50,6 +50,7 @@ const chartOptions: ChartConfiguration['options'] = {
             caretPadding: 8,
             callbacks: {
                 labelPointStyle: function (context) {
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     const dataset = context.dataset as any
                     // Dashed lines get filled circle markers
                     if (dataset.borderDash && dataset.borderDash.length > 0) {

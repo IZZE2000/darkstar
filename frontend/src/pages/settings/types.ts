@@ -10,6 +10,7 @@ export type FieldType =
     | 'tilt'
     | 'solar_arrays'
     | 'penalty_levels'
+    | 'info'
 
 export interface HaEntity {
     entity_id: string
@@ -42,6 +43,8 @@ export interface BaseField {
     isAdvanced?: boolean
     /** Subsection grouping within a card */
     subsection?: string
+    /** Custom CSS classes for the field wrapper (e.g., col-span-2) */
+    className?: string
 }
 
 export interface InverterProfile {
@@ -1107,6 +1110,75 @@ export const parameterSections: SettingsSection[] = [
             },
         ],
     },
+    // EV Charger Settings
+    {
+        title: 'EV Charger',
+        description: 'Configuration for smart EV charging optimization.',
+        fields: [
+            {
+                key: 'ev_charger.max_power_kw',
+                label: 'Max Charging Power (kW)',
+                path: ['ev_charger', 'max_power_kw'],
+                type: 'number',
+                helper: 'Maximum charging power your EV charger supports (e.g., 7.4 for 32A single-phase).',
+                className: 'col-span-1',
+                showIf: {
+                    configKey: 'system.has_ev_charger',
+                    value: true,
+                    disabledText: "Enable 'EV charger installed' in System Profile to configure",
+                },
+            },
+            {
+                key: 'ev_charger.penalty_levels',
+                label: 'Penalty Levels (Urgency)',
+                path: ['ev_charger', 'penalty_levels'],
+                type: 'penalty_levels',
+                className: 'col-span-1 sm:row-span-4',
+                showIf: {
+                    configKey: 'system.has_ev_charger',
+                    value: true,
+                    disabledText: "Enable 'EV charger installed' in System Profile to configure",
+                },
+            },
+            {
+                key: 'ev_charger.battery_capacity_kwh',
+                label: 'EV Battery Capacity (kWh)',
+                path: ['ev_charger', 'battery_capacity_kwh'],
+                type: 'number',
+                helper: 'Usable battery capacity of your EV. Used to calculate SoC targets.',
+                className: 'col-span-1',
+                showIf: {
+                    configKey: 'system.has_ev_charger',
+                    value: true,
+                    disabledText: "Enable 'EV charger installed' in System Profile to configure",
+                },
+            },
+            {
+                key: 'ev_charger.replan_on_plugin',
+                label: 'Re-plan on plug-in',
+                path: ['ev_charger', 'replan_on_plugin'],
+                type: 'boolean',
+                helper: 'Trigger immediate re-planning when the EV is plugged in.',
+                className: 'col-span-1',
+                showIf: {
+                    configKey: 'system.has_ev_charger',
+                    value: true,
+                    disabledText: "Enable 'EV charger installed' in System Profile to configure",
+                },
+            },
+            {
+                key: 'ev_charger.info_box',
+                label: 'Willingness to Pay',
+                path: [], // Virtual field for UI only
+                type: 'info',
+                className: 'col-span-1',
+                showIf: {
+                    configKey: 'system.has_ev_charger',
+                    value: true,
+                },
+            },
+        ],
+    },
     {
         title: 'Learning Parameter Limits',
         description: 'Limits that keep learning adjustments conservative.',
@@ -1209,72 +1281,6 @@ export const parameterSections: SettingsSection[] = [
                     { label: '6 Days', value: '6' },
                     { label: '7 Days', value: '7' },
                 ],
-            },
-        ],
-    },
-    // EV Charger Settings
-    {
-        title: 'EV Charger',
-        description: 'Configuration for smart EV charging optimization.',
-        fields: [
-            {
-                key: 'ev_charger.max_power_kw',
-                label: 'Max Charging Power (kW)',
-                path: ['ev_charger', 'max_power_kw'],
-                type: 'number',
-                helper: 'Maximum charging power your EV charger supports (e.g., 7.4 for 32A single-phase).',
-                showIf: {
-                    configKey: 'system.has_ev_charger',
-                    value: true,
-                    disabledText: "Enable 'EV charger installed' in System Profile to configure",
-                },
-            },
-            {
-                key: 'ev_charger.battery_capacity_kwh',
-                label: 'EV Battery Capacity (kWh)',
-                path: ['ev_charger', 'battery_capacity_kwh'],
-                type: 'number',
-                helper: 'Usable battery capacity of your EV. Used to calculate SoC targets.',
-                showIf: {
-                    configKey: 'system.has_ev_charger',
-                    value: true,
-                    disabledText: "Enable 'EV charger installed' in System Profile to configure",
-                },
-            },
-            {
-                key: 'ev_charger.min_target_soc',
-                label: 'Min Target SoC (%)',
-                path: ['ev_charger', 'min_target_soc'],
-                type: 'number',
-                helper: 'Minimum SoC to ensure by end of planning horizon. Planner will charge even at expensive times to reach this.',
-                showIf: {
-                    configKey: 'system.has_ev_charger',
-                    value: true,
-                    disabledText: "Enable 'EV charger installed' in System Profile to configure",
-                },
-            },
-            {
-                key: 'ev_charger.replan_on_plugin',
-                label: 'Re-plan on plug-in',
-                path: ['ev_charger', 'replan_on_plugin'],
-                type: 'boolean',
-                helper: 'Trigger immediate re-planning when the EV is plugged in.',
-                showIf: {
-                    configKey: 'system.has_ev_charger',
-                    value: true,
-                    disabledText: "Enable 'EV charger installed' in System Profile to configure",
-                },
-            },
-            {
-                key: 'ev_charger.penalty_levels',
-                label: 'Penalty Levels (Urgency)',
-                path: ['ev_charger', 'penalty_levels'],
-                type: 'penalty_levels',
-                showIf: {
-                    configKey: 'system.has_ev_charger',
-                    value: true,
-                    disabledText: "Enable 'EV charger installed' in System Profile to configure",
-                },
             },
         ],
     },

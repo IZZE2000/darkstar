@@ -163,6 +163,29 @@ export const SettingsField: React.FC<SettingsFieldProps> = ({
                         disabled={isDisabled}
                     />
                 )
+            case 'info':
+                return (
+                    <div className="flex items-start gap-3 p-4 bg-ai/5 border border-ai/20 rounded-2xl">
+                        <div className="p-2 bg-ai/10 rounded-lg shrink-0">
+                            <span className="text-ai text-sm font-bold">ⓘ</span>
+                        </div>
+                        <div className="space-y-1">
+                            <p className="text-xs font-bold text-ai/80 uppercase tracking-wider">Willingness to Pay</p>
+                            <p className="text-[11px] text-muted leading-relaxed">
+                                Defines the maximum electricity price (SEK/kWh) you are willing to pay for each charge
+                                level.
+                                <span className="text-text/80 mx-1 border-b border-dotted border-muted/50 pb-0.5 whitespace-nowrap">
+                                    High values
+                                </span>{' '}
+                                force charging regardless of grid price.
+                                <span className="text-text/80 mx-1 border-b border-dotted border-muted/50 pb-0.5 whitespace-nowrap">
+                                    Low values
+                                </span>{' '}
+                                wait for cheap electricity.
+                            </p>
+                        </div>
+                    </div>
+                )
             case 'number':
             case 'text':
             case 'array':
@@ -187,18 +210,24 @@ export const SettingsField: React.FC<SettingsFieldProps> = ({
     }
 
     return (
-        <div className={`space-y-1 ${!isEnabled ? 'opacity-40 pointer-events-none' : ''}`}>
+        <div className={`space-y-1 ${!isEnabled ? 'opacity-40 pointer-events-none' : ''} ${field.className || ''}`}>
             {!isEnabled && field.showIf?.disabledText && (
                 <div className="text-xs text-muted italic mb-1">{field.showIf.disabledText}</div>
             )}
             <label className="block text-sm font-medium mb-1.5 flex items-center gap-1.5">
                 <span
-                    className={field.type === 'boolean' ? 'sr-only' : 'text-[10px] uppercase tracking-wide text-muted'}
+                    className={
+                        field.type === 'boolean' || field.type === 'info'
+                            ? 'sr-only'
+                            : 'text-[10px] uppercase tracking-wide text-muted'
+                    }
                 >
                     {field.label}
                 </span>
                 {field.notImplemented && <Badge variant="warning">NOT IMPLEMENTED</Badge>}
-                <Tooltip text={(configHelp as Record<string, string>)[field.key] || field.helper} />
+                {field.type !== 'info' && (
+                    <Tooltip text={(configHelp as Record<string, string>)[field.key] || field.helper} />
+                )}
             </label>
             {renderInput()}
             {error && <p className="text-[11px] text-bad">{error}</p>}

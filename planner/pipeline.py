@@ -400,10 +400,9 @@ class PlannerPipeline:
             kepler_config.ev_current_soc_percent = ev_soc
             kepler_config.ev_plugged_in = ev_plugged
             logger.info(
-                "EV Charger: SoC=%.1f%%, Plugged=%s, Target=%.1f%%",
+                "EV Charger: SoC=%.1f%%, Plugged=%s",
                 ev_soc,
                 ev_plugged,
-                kepler_config.ev_target_soc_percent,
             )
 
         # Rev K19: Vacation Mode Anti-Legionella

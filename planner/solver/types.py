@@ -10,6 +10,14 @@ from datetime import datetime
 
 
 @dataclass
+class IncentiveBucket:
+    """EV incentive bucket based on SoC threshold."""
+
+    threshold_soc: float
+    value_sek: float
+
+
+@dataclass
 class KeplerConfig:
     """Configuration for the Kepler MILP solver."""
 
@@ -63,14 +71,10 @@ class KeplerConfig:
     ev_charging_enabled: bool = False  # Master switch for EV optimization
     ev_max_power_kw: float = 0.0  # Max EV charging power (kW)
     ev_battery_capacity_kwh: float = 0.0  # EV battery capacity
-    ev_target_soc_percent: float = 40.0  # Target SoC to reach by next morning
-    ev_current_soc_percent: float = 0.0  # Current EV SoC (for dynamic penalty)
+    ev_current_soc_percent: float = 0.0  # Current EV SoC
     ev_plugged_in: bool = False  # Whether car is currently plugged in
-    # Dynamic penalty levels based on SoC urgency
-    ev_penalty_emergency: float = 10.0  # SoC < 20%: charge NOW
-    ev_penalty_high: float = 2.0  # SoC 20-40%: high priority
-    ev_penalty_normal: float = 0.5  # SoC 40-70%: normal priority
-    ev_penalty_opportunistic: float = 0.1  # SoC > 70%: opportunistic
+    # Incentive buckets for piecewise linear objective (Rev // F51)
+    ev_incentive_buckets: list[IncentiveBucket] | None = None
 
     def __post_init__(self):
         """Validate configuration after initialization."""

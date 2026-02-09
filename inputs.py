@@ -716,10 +716,16 @@ async def get_initial_state(config_path: str = "config.yaml") -> dict[str, Any]:
             ha_ev_soc = await get_ha_sensor_float(ev_soc_entity)
             if ha_ev_soc is not None:
                 ev_soc_percent = ha_ev_soc
+            else:
+                logger.warning("EV SoC sensor %s returned no data, defaulting to 0%", ev_soc_entity)
+        else:
+            logger.warning("has_ev_charger is true but ev_soc sensor is not configured")
 
         ev_plug_entity = input_sensors.get("ev_plug")
         if ev_plug_entity:
             ev_plugged_in = await get_ha_bool(ev_plug_entity)
+        else:
+            logger.warning("has_ev_charger is true but ev_plug sensor is not configured")
 
     return {
         "battery_soc_percent": battery_soc_percent,

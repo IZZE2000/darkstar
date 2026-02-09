@@ -156,9 +156,8 @@ class EVChargerConfig:
     switch_entity: str | None = None
     max_power_kw: float = 7.4
     battery_capacity_kwh: float | None = None
-    min_target_soc: int = 40
     replan_on_plugin: bool = True
-    penalty_levels: dict[str, float] = field(default_factory=lambda: DEFAULT_PENALTY_LEVELS.copy())
+    penalty_levels: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -380,9 +379,8 @@ def load_executor_config(config_path: str = "config.yaml") -> ExecutorConfig:
         switch_entity=_str_or_none(ev_data.get("switch_entity")),
         max_power_kw=float(ev_data.get("max_power_kw", EVChargerConfig.max_power_kw)),
         battery_capacity_kwh=ev_data.get("battery_capacity_kwh"),
-        min_target_soc=int(ev_data.get("min_target_soc", EVChargerConfig.min_target_soc)),
         replan_on_plugin=bool(ev_data.get("replan_on_plugin", EVChargerConfig.replan_on_plugin)),
-        penalty_levels=ev_data.get("penalty_levels", DEFAULT_PENALTY_LEVELS.copy()),
+        penalty_levels=ev_data.get("penalty_levels", []),
     )
 
     notif_data: dict[str, Any] = (

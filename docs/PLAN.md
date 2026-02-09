@@ -294,3 +294,38 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] **[utils.ts](file:///home/s/sync/documents/projects/darkstar/frontend/src/pages/settings/utils.ts):** Handle `'penalty_levels'` type in `parseFieldInput` and `buildFormState`
 * [x] **[inputs.py](file:///home/s/sync/documents/projects/darkstar/inputs.py:708-722):** Add EV state fetching to `get_initial_state()` - fetch `ev_soc_percent` from `input_sensors.ev_soc` and `ev_plugged_in` from `input_sensors.ev_plug`
 * [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
+
+---
+
+### [DONE] REV // F51 — EV Economic Planner (Modulation & Value Buckets)
+
+**Goal:** Implement continuous (modulating) EV power control and an economic "Value Bucket" model to replace hardcoded penalties and binary on/off logic.
+**Context:** Current binary logic causes grid limit deadlocks. Hardcoded 5000 SEK penalties ignore user "willingness to pay". Redundant configuration fields cause confusion.
+
+**Plan:**
+
+#### Phase 1: Configuration Cleanup & Schema [DONE]
+* [x] **[config.yaml](file:///home/s/sync/documents/projects/darkstar/config.yaml):** Remove redundant `soc_sensor`, `plug_sensor`, and `switch_entity` from top-level `ev_charger`.
+* [x] **[config.yaml](file:///home/s/sync/documents/projects/darkstar/config.yaml):** Remove legacy `min_target_soc` and `min_soc` fields.
+* [x] **[KeplerConfig](file:///home/s/sync/documents/projects/darkstar/planner/solver/types.py):** Remove `ev_target_soc_percent` (to be replaced by bucket limits).
+* [x] **[KeplerConfig](file:///home/s/sync/documents/projects/darkstar/planner/solver/types.py):** Add support for multiple SOC-threshold "Incentive Buckets" (Value in SEK/kWh).
+* [x] **USER VERIFICATION:** Confirm schema matches the "Willingness to Pay" economic model.
+
+#### Phase 2: Solver Logic (Kepler) [DONE]
+* [x] **Continuous Power:** Change `ev_energy` constraint from `==` to `<=` (binary-guarded) in `kepler.py`. This allows the solver to "throttle" charging to fit under grid limits.
+* [x] **Value Bucket Model:** Implement multi-stage objective function terms where each SoC range earns a specific "Urgency Incentive" (SEK/kWh).
+* [x] **Sign Flip:** Core logic fix to ensure incentives are subtracted from cost (making charging a "profit" for the solver).
+* [x] **Remove Hardcoded Penalty:** Delete the 5000 SEK `ev_target_violation` logic; urgency is now entirely economic.
+* [x] **Verification:** Run `repro_ev_block.py` variant to confirm modulation solves the grid deadlock.
+
+#### Phase 3: Frontend & UI [DONE]
+* [x] **[PenaltyLevelsEditor.tsx](file:///home/s/sync/documents/projects/darkstar/frontend/src/pages/settings/components/PenaltyLevelsEditor.tsx):** Update to a "Threshold-based" (chained) UI.
+* [x] **UI Logic:** Level 1 ends at X%, Level 2 starts at X% and ends at Y%, etc. (chained percentages). 0% -> T1 -> T2 -> T3 -> 100%.
+* [x] **Labeling:** Clearly label penalty inputs as "Maximum Price (SEK/kWh)" or "Willingness to Pay".
+* [x] **Settings Schema:** Simplify to shared percentage boundaries.
+
+#### Phase 4: Integration & Hardening [DONE]
+* [x] **[planner/pipeline.py](file:///home/s/sync/documents/projects/darkstar/planner/pipeline.py):** Map new UI bucket thresholds to `KeplerConfig`.
+* [x] **[inputs.py](file:///home/s/sync/documents/projects/darkstar/inputs.py):** Add logging warnings if `has_ev_charger` is ON but `input_sensors` are missing.
+* [x] **Final Verification:** Verify that setting a low price limit (e.g., 0.5 SEK) correctly skips expensive slots even if SoC is below "target".
+* [x] **USER VERIFICATION AND COMMIT:** Final wrap-up and user review.

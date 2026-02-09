@@ -63,36 +63,27 @@ battery_economics:
 # Treats EV as a deferrable load with SoC-based urgency. Unlike the house battery,
 # EV charging is grid-only (never drains house battery into car).
 ev_charger:
-  # Home Assistant Entities (REQUIRED when enabled)
-  switch_entity: ""                # HA entity to enable/disable smart charging
-  soc_sensor: ""                   # HA entity for EV battery SoC (%)
-  plug_sensor: ""                  # HA entity for plug status (on=plugged in)
-
   # Physical Parameters
   max_power_kw: 7.4                # Max charging power (kW) - typical 1-phase 32A = 7.4kW
   battery_capacity_kwh: 77.0       # EV battery capacity (kWh) - adjust for your car
-  min_target_soc: 40               # Default target SoC % to ensure by next morning
 
-  # Dynamic Penalty System (SoC-based urgency)
-  # Controls how "expensive" cheap electricity feels to the optimizer.
-  # Higher penalty = more urgent to charge, even at higher prices.
+  # Incentive Buckets (Willingness to Pay)
+  # Controls how "expensive" electricity can be for each SoC range.
+  # Higher value (SEK/kWh) = more urgent to charge in that range.
+  # Thresholds are chained: 0% -> Tier 1 Max -> Tier 2 Max -> ... -> 100%
   penalty_levels:
     - name: "emergency"
-      min_soc: 0                   # Apply below this SoC (or always if negative)
       max_soc: 20                  # Apply up to this SoC
-      penalty_sek: 10.0            # Charge NOW regardless of price (emergency)
+      penalty_sek: 10.0            # Willingness to pay (SEK/kWh) - High value = charge NOW
     - name: "high"
-      min_soc: 20
       max_soc: 40
-      penalty_sek: 2.0             # High priority - charge even at moderate prices
+      penalty_sek: 2.0             # High value - charge even at moderate prices
     - name: "normal"
-      min_soc: 40
       max_soc: 70
       penalty_sek: 0.5             # Normal - prefer cheap hours
     - name: "opportunistic"
-      min_soc: 70
       max_soc: 100
-      penalty_sek: 0.1             # Low priority - only at very cheap prices
+      penalty_sek: 0.1             # Low value - only at very cheap prices
 
   # Replanning Events (trigger new optimization immediately)
   replan_on_plugin: true           # Trigger when car plugs in
@@ -338,7 +329,8 @@ executor:
   # EV Charger Control
   # The executor controls EV charging by setting charge current or enabling/disabling.
   ev_charger:
-    control_entity: ""       # HA entity for charge current (A) or power (W) or on/off
+    switch_entity: ""        # HA entity to enable/disable smart charging (e.g. switch.ev_charger)
+    control_entity: ""       # HA entity for charge current (A) or power (W)
     control_mode: "current"  # "current" (A), "power" (W), or "switch" (on/off)
     max_current_a: 32.0      # Max charge current when control_mode=current
     enabled_entity: ""       # HA entity to enable/disable smart charging (read-only state)

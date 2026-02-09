@@ -65,14 +65,22 @@ class KeplerSolver:
             needs_water_start = False
 
         # EV Charging as deferrable load (Rev K25)
+        # modulation and incentive buckets (REV // F51)
         ev_enabled = config.ev_charging_enabled and config.ev_plugged_in
         if ev_enabled:
-            ev_charge = pulp.LpVariable.dicts("ev_charge", range(T), cat="Binary")
-            # EV energy tracking variable (kWh charged in each slot)
+            # EV energy tracking variable (kWh charged in each slot) - Continuous modulation!
             ev_energy = pulp.LpVariable.dicts("ev_energy_kwh", range(T), lowBound=0.0)
+
+            # Incentive Buckets: Piecewise linear objective terms
+            buckets = config.ev_incentive_buckets or []
+            num_buckets = len(buckets)
+            ev_bucket_charged = pulp.LpVariable.dicts(
+                "ev_bucket_charged", range(num_buckets), lowBound=0.0
+            )
         else:
-            ev_charge = dict.fromkeys(range(T), 0)
             ev_energy = dict.fromkeys(range(T), 0.0)
+            ev_bucket_charged = {}
+            num_buckets = 0
 
         # SoC state variables (T+1 states for T slots)
 
@@ -100,18 +108,32 @@ class KeplerSolver:
         # "Block Overshoot" variable (soft penalty for massive blocks)
         block_overshoot = pulp.LpVariable.dicts("block_overshoot", range(T), lowBound=0.0)
 
-        # Rev K25: Calculate dynamic EV penalty based on current SoC
-        ev_penalty_sek = 0.0
-        if ev_enabled:
-            current_ev_soc = config.ev_current_soc_percent
-            if current_ev_soc < 20:
-                ev_penalty_sek = config.ev_penalty_emergency
-            elif current_ev_soc < 40:
-                ev_penalty_sek = config.ev_penalty_high
-            elif current_ev_soc < 70:
-                ev_penalty_sek = config.ev_penalty_normal
-            else:
-                ev_penalty_sek = config.ev_penalty_opportunistic
+        # Rev // F51: Setup EV Incentive Buckets
+        if ev_enabled and num_buckets > 0:
+            ev_capacity = config.ev_battery_capacity_kwh
+            ev_current_kwh = ev_capacity * (config.ev_current_soc_percent / 100.0)
+
+            prev_threshold_soc = 0.0
+            accum_energy_cap = 0.0
+
+            for i, b in enumerate(buckets):
+                bucket_soc_range = b.threshold_soc - prev_threshold_soc
+                bucket_capacity_kwh = max(0.0, ev_capacity * (bucket_soc_range / 100.0))
+
+                # How much of this bucket is ALREADY full?
+                already_full = max(0.0, min(bucket_capacity_kwh, ev_current_kwh - accum_energy_cap))
+                remaining_cap = max(0.0, bucket_capacity_kwh - already_full)
+
+                # Constrain bucket charging
+                prob += ev_bucket_charged[i] <= remaining_cap
+
+                prev_threshold_soc = b.threshold_soc
+                accum_energy_cap += bucket_capacity_kwh
+
+            # Total energy charged must equal sum of buckets
+            prob += pulp.lpSum(ev_energy[t] for t in range(T)) == pulp.lpSum(
+                ev_bucket_charged[i] for i in range(num_buckets)
+            )
 
         # Slack variables for soft constraints (Phase 2)
         # We index min_kwh_violation by day index (max 365 days, sufficient size)
@@ -143,10 +165,10 @@ class KeplerSolver:
                 water_heat[t] * config.water_heating_power_kw * h if water_enabled else 0
             )
 
-            # EV charging load for this slot (kWh) - Rev K25
+            # EV charging load for this slot (kWh) - Rev // F51 (Continuous)
             if ev_enabled:
-                # EV charging power = binary * max_power * slot_hours
-                prob += ev_energy[t] == ev_charge[t] * config.ev_max_power_kw * h
+                # Modulating power: Bound by max_power, not binary
+                prob += ev_energy[t] <= config.ev_max_power_kw * h
             else:
                 ev_energy[t] = 0.0
 
@@ -167,7 +189,7 @@ class KeplerSolver:
                 # EV can only charge from grid or solar (not from battery discharge)
                 # This ensures energy doesn't leave the house battery to the car
                 prob += (
-                    ev_energy[t] <= grid_import[t] + s.pv_kwh + 0.001
+                    ev_energy[t] <= grid_import[t] + s.pv_kwh + 1e-6
                 )  # Small epsilon for numerical stability
 
             # Phase 4 Pivot: Re-introduced water_start binary for guidance
@@ -236,9 +258,8 @@ class KeplerSolver:
             # credit on charge. The terminal_value and wear_cost are sufficient
             # for arbitrage decisions.
 
-            # Rev K25: EV charging cost with dynamic urgency penalty
-            # This makes "cheap" electricity feel more expensive when EV SoC is low
-            slot_ev_cost = ev_energy[t] * ev_penalty_sek if ev_enabled else 0.0
+            # Rev // F51: EV charging gain from incentive buckets is handled in objective aggregate
+            slot_ev_cost = 0.0
 
             total_cost.append(
                 slot_import_cost
@@ -282,25 +303,8 @@ class KeplerSolver:
             # If no target, we don't care where we end up (within min_soc limits)
             pass
 
-        # Rev K25: EV Target SoC Constraint
-        # Ensure EV reaches target SoC by end of optimization horizon
-        if ev_enabled and config.ev_target_soc_percent > 0:
-            # Calculate target kWh to add
-            ev_target_kwh = (
-                config.ev_battery_capacity_kwh
-                * (config.ev_target_soc_percent - config.ev_current_soc_percent)
-                / 100.0
-            )
-            if ev_target_kwh > 0:
-                # Soft constraint: sum of all EV charging >= target_kwh - violation
-                ev_target_violation = pulp.LpVariable("ev_target_violation_kwh", lowBound=0.0)
-                prob += (
-                    pulp.lpSum(ev_energy[t] for t in range(T))
-                    >= ev_target_kwh - ev_target_violation
-                )
-                # Penalty for not reaching target (high priority)
-                EV_TARGET_PENALTY = 5000.0
-                total_cost.append(EV_TARGET_PENALTY * ev_target_violation)
+        # Rev // F51: Removed legacy EV target SoC constraint.
+        # Replaced by Incentive Buckets in the objective function.
 
         # Water Heating Constraints (Rev K17/K18/K21)
         gap_violation_penalty = 0.0
@@ -422,6 +426,13 @@ class KeplerSolver:
                 if water_enabled
                 else 0.0
             )
+            # Rev // F51: SUBTRACT incentive bucket value from objective
+            # Since we MINIMIZE cost, an incentive is a negative cost.
+            - (
+                pulp.lpSum(ev_bucket_charged[i] * buckets[i].value_sek for i in range(num_buckets))
+                if ev_enabled and num_buckets > 0
+                else 0.0
+            )
         )
 
         # Solve using GLPK (available in Alpine) or CBC as fallback
@@ -478,10 +489,10 @@ class KeplerSolver:
                 else:
                     w_kw = 0.0
 
-                # EV charging power (kW) from binary decision - Rev K25
+                # EV charging power (kW) from continuous energy - Rev // F51
                 if ev_enabled:
-                    ev_val = pulp.value(ev_charge[t])
-                    ev_kw = config.ev_max_power_kw if ev_val and ev_val > 0.5 else 0.0
+                    ev_energy_val = pulp.value(ev_energy[t])
+                    ev_kw = ev_energy_val / h if h > 0 else 0.0
                 else:
                     ev_kw = 0.0
 

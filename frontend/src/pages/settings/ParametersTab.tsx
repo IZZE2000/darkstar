@@ -71,7 +71,7 @@ export const ParametersTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMo
                                                             animate="animate"
                                                             exit="exit"
                                                             transition={{ duration: 0.2, ease: 'easeOut' }}
-                                                            className="overflow-visible pb-4"
+                                                            className={`overflow-visible ${field.className || ''}`}
                                                         >
                                                             <SettingsField
                                                                 field={field}

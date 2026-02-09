@@ -9,7 +9,7 @@ from typing import Any
 
 import pandas as pd
 
-from .types import KeplerConfig, KeplerInput, KeplerInputSlot, KeplerResult
+from .types import IncentiveBucket, KeplerConfig, KeplerInput, KeplerInputSlot, KeplerResult
 
 
 def planner_to_kepler_input(df: pd.DataFrame, initial_soc_kwh: float) -> KeplerInput:
@@ -299,30 +299,22 @@ def config_to_kepler_config(
         defer_up_to_hours=float(wh_cfg.get("defer_up_to_hours", 0.0)),
         # Rev E4: Export Toggle
         enable_export=bool(planner_config.get("export", {}).get("enable_export", True)),
-        # Rev K25: EV Charging Configuration
+        # Rev // F51: Piecewise Incentive Buckets
         ev_charging_enabled=ev_enabled,
         ev_max_power_kw=float(ev_cfg.get("max_power_kw", 0.0)),
         ev_battery_capacity_kwh=float(ev_cfg.get("battery_capacity_kwh", 0.0)),
-        ev_target_soc_percent=float(ev_cfg.get("min_target_soc", 40.0)),
         ev_current_soc_percent=0.0,  # Set by pipeline from HA sensor
         ev_plugged_in=False,  # Set by pipeline from HA sensor
-        # Penalty levels from config
-        ev_penalty_emergency=float(ev_cfg.get("penalty_levels", [{}])[0].get("penalty_sek", 10.0))
+        ev_incentive_buckets=[
+            IncentiveBucket(
+                threshold_soc=float(p.get("max_soc", 100.0)),
+                value_sek=float(p.get("penalty_sek", 0.0)),
+            )
+            for p in ev_cfg.get("penalty_levels", [])
+            if "max_soc" in p or "penalty_sek" in p
+        ]
         if ev_cfg.get("penalty_levels")
-        else 10.0,
-        ev_penalty_high=float(ev_cfg.get("penalty_levels", [{}, {}])[1].get("penalty_sek", 2.0))
-        if ev_cfg.get("penalty_levels") and len(ev_cfg.get("penalty_levels")) > 1
-        else 2.0,
-        ev_penalty_normal=float(
-            ev_cfg.get("penalty_levels", [{}, {}, {}])[2].get("penalty_sek", 0.5)
-        )
-        if ev_cfg.get("penalty_levels") and len(ev_cfg.get("penalty_levels")) > 2
-        else 0.5,
-        ev_penalty_opportunistic=float(
-            ev_cfg.get("penalty_levels", [{}, {}, {}, {}])[3].get("penalty_sek", 0.1)
-        )
-        if ev_cfg.get("penalty_levels") and len(ev_cfg.get("penalty_levels")) > 3
-        else 0.1,
+        else None,
     )
 
     return kepler_cfg
