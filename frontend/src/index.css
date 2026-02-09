@@ -1086,3 +1086,14 @@ body::before {
     scrollbar-width: thin;
     scrollbar-color: rgb(var(--color-line)) transparent;
 }
+
+/* Hide native number input spinners */
+.no-spinner::-webkit-outer-spin-button,
+.no-spinner::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+.no-spinner {
+    -moz-appearance: textfield;
+}

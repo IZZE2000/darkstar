@@ -1,4 +1,5 @@
 import React from 'react'
+import { NumberInput } from '../../../components/ui/NumberInput'
 
 interface PenaltyLevel {
     name: string
@@ -79,39 +80,41 @@ export const PenaltyLevelsEditor: React.FC<PenaltyLevelsEditorProps> = ({ value,
                                             {isLast ? 'Range' : 'Limit %'}
                                         </span>
                                         <div className="flex items-center">
-                                            <input
-                                                type="number"
-                                                value={level.max_soc}
-                                                disabled={disabled}
-                                                onChange={(e) =>
-                                                    updateLevel(tier.key, {
-                                                        max_soc: Math.min(
-                                                            100,
-                                                            Math.max(startSoc, parseInt(e.target.value) || 0),
-                                                        ),
-                                                    })
-                                                }
-                                                className="w-10 bg-transparent text-center text-xs font-mono font-bold text-accent focus:outline-none focus:ring-0 transition-colors"
-                                            />
-                                            <span className="text-[10px] text-muted/40 font-bold ml-0.5">%</span>
+                                            <div className="w-16">
+                                                <NumberInput
+                                                    value={level.max_soc}
+                                                    onChange={(val) =>
+                                                        updateLevel(tier.key, {
+                                                            max_soc: Math.min(
+                                                                100,
+                                                                Math.max(startSoc, parseInt(val) || 0),
+                                                            ),
+                                                        })
+                                                    }
+                                                    disabled={disabled}
+                                                    className="h-8 text-xs font-mono font-bold"
+                                                />
+                                            </div>
+                                            <span className="text-[10px] text-muted/40 font-bold ml-1.5">%</span>
                                         </div>
                                     </div>
                                 </div>
 
                                 {/* Value Input */}
-                                <div className="relative group">
-                                    <input
-                                        type="number"
-                                        step="0.01"
-                                        min="0"
-                                        value={level.penalty_sek}
-                                        onChange={(e) =>
-                                            updateLevel(tier.key, { penalty_sek: parseFloat(e.target.value) || 0 })
-                                        }
-                                        disabled={disabled}
-                                        className="w-28 rounded-lg border border-line/40 bg-surface2 pr-14 pl-3 py-2.5 text-sm text-text font-bold font-mono focus:border-ai focus:ring-1 focus:ring-ai/20 focus:outline-none transition-all text-right group-hover:border-line/80 shadow-sm"
-                                    />
-                                    <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] text-muted/60 font-bold pointer-events-none mt-0.5">
+                                <div className="relative group flex items-center gap-2">
+                                    <div className="w-32">
+                                        <NumberInput
+                                            value={level.penalty_sek}
+                                            onChange={(val) =>
+                                                updateLevel(tier.key, { penalty_sek: parseFloat(val) || 0 })
+                                            }
+                                            step={0.01}
+                                            min={0}
+                                            disabled={disabled}
+                                            className="font-bold font-mono text-right"
+                                        />
+                                    </div>
+                                    <span className="text-[10px] text-muted/60 font-bold pointer-events-none whitespace-nowrap">
                                         SEK/kWh
                                     </span>
                                 </div>

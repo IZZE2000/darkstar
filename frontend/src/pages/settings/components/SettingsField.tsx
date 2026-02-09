@@ -12,6 +12,7 @@ import { Badge } from '../../../components/ui/Badge'
 import configHelp from '../../../config-help.json'
 import { SolarArraysEditor } from './SolarArraysEditor'
 import { PenaltyLevelsEditor } from './PenaltyLevelsEditor'
+import { NumberInput } from '../../../components/ui/NumberInput'
 
 interface SettingsFieldProps {
     field: BaseField
@@ -189,11 +190,25 @@ export const SettingsField: React.FC<SettingsFieldProps> = ({
             case 'number':
             case 'text':
             case 'array':
-            default:
+            default: {
+                if (field.type === 'number') {
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    const numField = field as any
+                    return (
+                        <NumberInput
+                            value={value}
+                            onChange={(val) => onChange(field.key, val)}
+                            disabled={isDisabled}
+                            className={isDisabled ? 'opacity-50 cursor-not-allowed' : ''}
+                            step={numField.step ? Number(numField.step) : undefined}
+                            min={numField.min ? Number(numField.min) : undefined}
+                            max={numField.max ? Number(numField.max) : undefined}
+                        />
+                    )
+                }
                 return (
                     <input
-                        type={field.type === 'number' ? 'number' : 'text'}
-                        inputMode={field.type === 'number' ? 'decimal' : undefined}
+                        type="text"
                         value={value}
                         onChange={(e) => onChange(field.key, e.target.value)}
                         className={`w-full rounded-lg border border-line/50 bg-surface2 px-3 py-2 text-sm text-text focus:border-accent focus:outline-none ${
@@ -202,6 +217,7 @@ export const SettingsField: React.FC<SettingsFieldProps> = ({
                         disabled={isDisabled}
                     />
                 )
+            }
         }
     }
 
