@@ -78,27 +78,23 @@ export const PenaltyLevelsEditor: React.FC<PenaltyLevelsEditorProps> = ({ value,
                                         <span className="text-[8px] uppercase text-text/40 font-bold mb-0.5">
                                             {isLast ? 'Range' : 'Limit %'}
                                         </span>
-                                        {isLast ? (
-                                            <span className="text-xs font-mono font-bold text-muted/60 px-2">100%</span>
-                                        ) : (
-                                            <div className="flex items-center">
-                                                <input
-                                                    type="number"
-                                                    value={level.max_soc}
-                                                    disabled={disabled}
-                                                    onChange={(e) =>
-                                                        updateLevel(tier.key, {
-                                                            max_soc: Math.min(
-                                                                100,
-                                                                Math.max(startSoc, parseInt(e.target.value) || 0),
-                                                            ),
-                                                        })
-                                                    }
-                                                    className="w-10 bg-transparent text-center text-xs font-mono font-bold text-accent focus:outline-none focus:ring-0 transition-colors"
-                                                />
-                                                <span className="text-[10px] text-muted/40 font-bold ml-0.5">%</span>
-                                            </div>
-                                        )}
+                                        <div className="flex items-center">
+                                            <input
+                                                type="number"
+                                                value={level.max_soc}
+                                                disabled={disabled}
+                                                onChange={(e) =>
+                                                    updateLevel(tier.key, {
+                                                        max_soc: Math.min(
+                                                            100,
+                                                            Math.max(startSoc, parseInt(e.target.value) || 0),
+                                                        ),
+                                                    })
+                                                }
+                                                className="w-10 bg-transparent text-center text-xs font-mono font-bold text-accent focus:outline-none focus:ring-0 transition-colors"
+                                            />
+                                            <span className="text-[10px] text-muted/40 font-bold ml-0.5">%</span>
+                                        </div>
                                     </div>
                                 </div>
 
