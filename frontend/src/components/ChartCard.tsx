@@ -420,7 +420,6 @@ const createChartData = (
                 glow: true,
                 borderWidth: 0,
                 borderRadius: 2,
-                hidden: true,
                 yAxisID: 'y1',
                 barPercentage: 0.85,
                 categoryPercentage: 0.9,
@@ -787,7 +786,7 @@ export default function ChartCard({
     const [overlays, setOverlays] = useState(() => {
         // Load from localStorage if available, otherwise use defaults
         const STORAGE_KEY = 'darkstar-chart-overlays'
-        const STORAGE_VERSION = 2 // Increment to force migration
+        const STORAGE_VERSION = 3 // Increment to force migration
 
         try {
             const saved = localStorage.getItem(STORAGE_KEY)
@@ -807,6 +806,7 @@ export default function ChartCard({
                         discharge: true,
                         export: true,
                         water: false,
+                        ev: false,
                         socTarget: false,
                         socProjected: false,
                         socActual: true,
@@ -826,6 +826,7 @@ export default function ChartCard({
                     discharge: parsed.discharge ?? true,
                     export: parsed.export ?? true,
                     water: parsed.water ?? false,
+                    ev: parsed.ev ?? false,
                     socTarget: parsed.socTarget ?? false,
                     socProjected: parsed.socProjected ?? false,
                     socActual: parsed.socActual ?? true,
@@ -844,6 +845,7 @@ export default function ChartCard({
             discharge: true,
             export: true,
             water: false,
+            ev: false,
             socTarget: false,
             socProjected: false,
             socActual: true,
@@ -896,7 +898,7 @@ export default function ChartCard({
                 // For NEW users (no localStorage), enable all overlays by default
                 if (!hasStoredPreferences) {
                     setOverlays({
-                        _version: 2,
+                        _version: 3,
                         price: true,
                         pv: true,
                         load: true,
@@ -904,6 +906,7 @@ export default function ChartCard({
                         discharge: true,
                         export: true,
                         water: true,
+                        ev: true,
                         socTarget: true,
                         socProjected: true,
                         socActual: true,
@@ -1052,17 +1055,18 @@ export default function ChartCard({
             if (ds[4]) ds[4].hidden = !overlays.discharge
             if (ds[5]) ds[5].hidden = !overlays.export
             if (ds[6]) ds[6].hidden = !overlays.water
-            if (ds[7]) ds[7].hidden = !overlays.socTarget
-            if (ds[8]) ds[8].hidden = !overlays.socProjected
-            if (ds[9]) ds[9].hidden = !overlays.socActual
+            if (ds[7]) ds[7].hidden = !overlays.ev
+            if (ds[8]) ds[8].hidden = !overlays.socTarget
+            if (ds[9]) ds[9].hidden = !overlays.socProjected
+            if (ds[10]) ds[10].hidden = !overlays.socActual
 
             // Actual Overlays
-            if (ds[10]) ds[10].hidden = !overlays.showActual || !overlays.pv
-            if (ds[11]) ds[11].hidden = !overlays.showActual || !overlays.load
-            if (ds[12]) ds[12].hidden = !overlays.showActual || !overlays.charge
-            if (ds[13]) ds[13].hidden = !overlays.showActual || !overlays.discharge
-            if (ds[14]) ds[14].hidden = !overlays.showActual || !overlays.export
-            if (ds[15]) ds[15].hidden = !overlays.showActual || !overlays.water
+            if (ds[11]) ds[11].hidden = !overlays.showActual || !overlays.pv
+            if (ds[12]) ds[12].hidden = !overlays.showActual || !overlays.load
+            if (ds[13]) ds[13].hidden = !overlays.showActual || !overlays.charge
+            if (ds[14]) ds[14].hidden = !overlays.showActual || !overlays.discharge
+            if (ds[15]) ds[15].hidden = !overlays.showActual || !overlays.export
+            if (ds[16]) ds[16].hidden = !overlays.showActual || !overlays.water
 
             try {
                 if (chartRef.current) {
@@ -1158,6 +1162,7 @@ export default function ChartCard({
                                 ['Load', 'load', 'bg-house/20 border-house'],
                                 ['Charge', 'charge', 'bg-bad/20 border-bad'],
                                 ['Discharge', 'discharge', 'bg-peak/20 border-peak'],
+                                ['EV', 'ev', 'bg-peak/20 border-peak'],
                                 ['Export', 'export', 'bg-good/20 border-good'],
                                 ['Water', 'water', 'bg-water/20 border-water'],
                                 ['SoC Target', 'socTarget', 'bg-night/20 border-night'],
