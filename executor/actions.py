@@ -547,12 +547,14 @@ class ActionDispatcher:
                 aux_previous = self.ha.get_state_value(entity_id)
 
                 # Idempotent skip
-                if str(aux_previous) == str(val):
+                # Idempotent skip: only skip if value matches AND (mode didn't change and intent didn't change)
+                # This ensures we re-assert the composite values on mode transitions even if same.
+                if str(aux_previous) == str(val) and not mode_changed:
                     results.append(
                         ActionResult(
                             action_type="composite_mode",
                             success=True,
-                            message=f"Already at {val}",
+                            message=f"{key} already at {val}",
                             previous_value=aux_previous,
                             new_value=val,
                             entity_id=entity_id,
@@ -614,9 +616,9 @@ class ActionDispatcher:
                     ActionResult(
                         action_type="composite_mode",
                         success=aux_success,
-                        message=f"Changed {aux_previous} → {val}"
+                        message=f"{key}: {aux_previous} → {val}"
                         if aux_success
-                        else f"Failed: {aux_error_details}"
+                        else f"{key} failed: {aux_error_details}"
                         if aux_error_details
                         else f"Failed to set {key}",
                         previous_value=aux_previous,

@@ -217,6 +217,17 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] Composite mode entities are processed independently of work_mode changes
 * [x] Execution history will be cleaner with fewer "Skipped" entries for unsupported features
 
+#### Phase 8: Fix Execution History Display & Idempotent Logic [DONE]
+* [x] **Frontend Fix:** Investigate execution history rendering to include "composite_mode" action type
+* [x] Add display logic for composite_mode actions in history UI (ChartCard.tsx or equivalent)
+* [x] **Backend Fix:** Update `_apply_composite_entities()` idempotent skip logic to be context-aware
+* [x] Track last composite entity values in executor state to prevent unnecessary skips
+* [x] Only skip writes when both value AND intent context match (e.g., don't skip "Forced charge" if previous was "Forced discharge")
+* [x] **Verification:** Test Sungrow profile switching from export to charge_from_grid in consecutive slots
+* [x] Verify `forced_charge_discharge_cmd` updates correctly in HA
+* [x] Verify execution history shows composite_mode actions
+* [x] All executor tests pass
+
 ---
 
 ### [DONE] REV // ARC15 — Entity-Centric Config Restructure for Load Disaggregation
