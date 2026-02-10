@@ -207,12 +207,14 @@ def _validate_config_for_save(config: dict[str, Any]) -> list[dict[str, str]]:
     """Validate config and return list of issues.
 
     REV LCL01: Run on every config save to catch misconfigurations immediately.
+    ARC15: Added validation for water_heaters[] and ev_chargers[] arrays.
     Returns list of {"severity": "error"|"warning", "message": str, "guidance": str}
     """
     issues: list[dict[str, str]] = []
     system_cfg = config.get("system", {})
     water_cfg = config.get("water_heating", {})
     battery_cfg = config.get("battery", {})
+    config_version = config.get("config_version", 1)
 
     # Battery: ERROR if enabled but no capacity (breaks MILP solver)
     if system_cfg.get("has_battery", True):
@@ -231,20 +233,191 @@ def _validate_config_for_save(config: dict[str, Any]) -> list[dict[str, str]]:
             )
 
     # Water heater: WARNING (feature disabled, system still works)
+    # ARC15: Also validate new water_heaters[] array format
     if system_cfg.get("has_water_heater", True):
-        try:
-            power_kw = float(water_cfg.get("power_kw", 0) or 0)
-        except (ValueError, TypeError):
-            power_kw = 0.0
-        if power_kw <= 0:
-            issues.append(
-                {
-                    "severity": "warning",
-                    "message": "Water heater enabled but power not configured",
-                    "guidance": "Set water_heating.power_kw to your heater's power (e.g., 3.0), "
-                    "or set system.has_water_heater to false.",
-                }
-            )
+        water_heaters = config.get("water_heaters", [])
+
+        if config_version >= 2 and water_heaters:
+            # Validate new array format
+            existing_ids = set()
+            for i, wh in enumerate(water_heaters):
+                # Check for required fields
+                if not wh.get("id"):
+                    issues.append(
+                        {
+                            "severity": "error",
+                            "message": f"Water heater {i + 1} is missing required field 'id'",
+                            "guidance": "Each water heater must have a unique 'id' field (e.g., 'main_tank').",
+                        }
+                    )
+                elif wh["id"] in existing_ids:
+                    issues.append(
+                        {
+                            "severity": "error",
+                            "message": f"Duplicate water heater ID: '{wh['id']}'",
+                            "guidance": "Each water heater must have a unique ID.",
+                        }
+                    )
+                else:
+                    existing_ids.add(wh["id"])
+
+                if not wh.get("name"):
+                    issues.append(
+                        {
+                            "severity": "error",
+                            "message": f"Water heater '{wh.get('id', i + 1)}' is missing required field 'name'",
+                            "guidance": "Each water heater must have a display name.",
+                        }
+                    )
+
+                # Validate power values are positive
+                power_kw = wh.get("power_kw", 0)
+                if not isinstance(power_kw, int | float) or power_kw <= 0:
+                    issues.append(
+                        {
+                            "severity": "error",
+                            "message": f"Water heater '{wh.get('id', i + 1)}' has invalid power_kw: {power_kw}",
+                            "guidance": "power_kw must be a positive number (e.g., 3.0).",
+                        }
+                    )
+
+                # Validate sensor format
+                sensor = wh.get("sensor", "")
+                if sensor and not sensor.startswith("sensor."):
+                    issues.append(
+                        {
+                            "severity": "warning",
+                            "message": f"Water heater '{wh.get('id', i + 1)}' sensor may be invalid: {sensor}",
+                            "guidance": "Sensors should be valid Home Assistant entity IDs (e.g., 'sensor.vvb_power').",
+                        }
+                    )
+
+            # Check if at least one water heater is enabled
+            if not any(wh.get("enabled", True) for wh in water_heaters):
+                issues.append(
+                    {
+                        "severity": "warning",
+                        "message": "All water heaters are disabled",
+                        "guidance": "Enable at least one water heater or set system.has_water_heater to false.",
+                    }
+                )
+        else:
+            # Legacy validation for config_version < 2
+            try:
+                power_kw = float(water_cfg.get("power_kw", 0) or 0)
+            except (ValueError, TypeError):
+                power_kw = 0.0
+            if power_kw <= 0:
+                issues.append(
+                    {
+                        "severity": "warning",
+                        "message": "Water heater enabled but power not configured",
+                        "guidance": "Set water_heating.power_kw to your heater's power (e.g., 3.0), "
+                        "or set system.has_water_heater to false.",
+                    }
+                )
+
+    # EV Charger: WARNING (feature disabled, system still works)
+    # ARC15: Validate new ev_chargers[] array format
+    if system_cfg.get("has_ev_charger", False):
+        ev_chargers = config.get("ev_chargers", [])
+
+        if config_version >= 2 and ev_chargers:
+            # Validate new array format
+            existing_ev_ids = set()
+            for i, ev in enumerate(ev_chargers):
+                # Check for required fields
+                if not ev.get("id"):
+                    issues.append(
+                        {
+                            "severity": "error",
+                            "message": f"EV charger {i + 1} is missing required field 'id'",
+                            "guidance": "Each EV charger must have a unique 'id' field (e.g., 'main_ev').",
+                        }
+                    )
+                elif ev["id"] in existing_ev_ids:
+                    issues.append(
+                        {
+                            "severity": "error",
+                            "message": f"Duplicate EV charger ID: '{ev['id']}'",
+                            "guidance": "Each EV charger must have a unique ID.",
+                        }
+                    )
+                else:
+                    existing_ev_ids.add(ev["id"])
+
+                if not ev.get("name"):
+                    issues.append(
+                        {
+                            "severity": "error",
+                            "message": f"EV charger '{ev.get('id', i + 1)}' is missing required field 'name'",
+                            "guidance": "Each EV charger must have a display name.",
+                        }
+                    )
+
+                # Validate power values are positive
+                max_power_kw = ev.get("max_power_kw", 0)
+                if not isinstance(max_power_kw, int | float) or max_power_kw <= 0:
+                    issues.append(
+                        {
+                            "severity": "error",
+                            "message": f"EV charger '{ev.get('id', i + 1)}' has invalid max_power_kw: {max_power_kw}",
+                            "guidance": "max_power_kw must be a positive number (e.g., 11.0).",
+                        }
+                    )
+
+                # Validate battery capacity
+                capacity = ev.get("battery_capacity_kwh", 0)
+                if not isinstance(capacity, int | float) or capacity <= 0:
+                    issues.append(
+                        {
+                            "severity": "error",
+                            "message": f"EV charger '{ev.get('id', i + 1)}' has invalid battery_capacity_kwh: {capacity}",
+                            "guidance": "battery_capacity_kwh must be a positive number (e.g., 82.0).",
+                        }
+                    )
+
+                # Validate SoC percentages
+                min_soc = ev.get("min_soc_percent", 0)
+                if not isinstance(min_soc, int | float) or min_soc < 0 or min_soc > 100:
+                    issues.append(
+                        {
+                            "severity": "warning",
+                            "message": f"EV charger '{ev.get('id', i + 1)}' has invalid min_soc_percent: {min_soc}",
+                            "guidance": "min_soc_percent must be between 0 and 100.",
+                        }
+                    )
+
+                target_soc = ev.get("target_soc_percent", 0)
+                if not isinstance(target_soc, int | float) or target_soc < 0 or target_soc > 100:
+                    issues.append(
+                        {
+                            "severity": "warning",
+                            "message": f"EV charger '{ev.get('id', i + 1)}' has invalid target_soc_percent: {target_soc}",
+                            "guidance": "target_soc_percent must be between 0 and 100.",
+                        }
+                    )
+
+                # Validate sensor format
+                sensor = ev.get("sensor", "")
+                if sensor and not sensor.startswith("sensor."):
+                    issues.append(
+                        {
+                            "severity": "warning",
+                            "message": f"EV charger '{ev.get('id', i + 1)}' sensor may be invalid: {sensor}",
+                            "guidance": "Sensors should be valid Home Assistant entity IDs (e.g., 'sensor.tesla_power').",
+                        }
+                    )
+
+            # Check if at least one EV charger is enabled
+            if not any(ev.get("enabled", True) for ev in ev_chargers):
+                issues.append(
+                    {
+                        "severity": "warning",
+                        "message": "All EV chargers are disabled",
+                        "guidance": "Enable at least one EV charger or set system.has_ev_charger to false.",
+                    }
+                )
 
     # Solar: WARNING (PV forecasts will be zero)
     if system_cfg.get("has_solar", True):
