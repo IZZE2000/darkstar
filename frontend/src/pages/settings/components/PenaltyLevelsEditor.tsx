@@ -25,8 +25,8 @@ export const PenaltyLevelsEditor: React.FC<PenaltyLevelsEditorProps> = ({ value,
     const currentLevels: PenaltyLevel[] = Array.isArray(value)
         ? value
         : typeof value === 'string' && value.trim()
-            ? JSON.parse(value)
-            : []
+          ? JSON.parse(value)
+          : []
 
     // Ensure we have all 4 tiers present for the UI
     const safeValue = TIERS.map((tier) => {

@@ -44,15 +44,13 @@ def test_fronius_profile_parsing(fronius_profile):
 
 @pytest.mark.asyncio
 async def test_fronius_grid_charging_skipped(mock_ha, executor_config, fronius_profile):
-    """Verify that _set_grid_charging skips the switch call for Fronius."""
+    """Verify that _set_grid_charging returns None for Fronius (mode-based charging)."""
     dispatcher = ActionDispatcher(mock_ha, executor_config, profile=fronius_profile)
 
-    # Enabled=True should still return success but skip the actual HA call
+    # For Fronius (no separate grid charging switch), should return None (silent skip)
     result = await dispatcher._set_grid_charging(True)
 
-    assert result.success is True
-    assert result.skipped is True
-    assert "Handled by work_mode" in result.message
+    assert result is None, "Fronius should return None for grid_charging (mode-based)"
     # Verify HA set_switch was NEVER called
     mock_ha.set_switch.assert_not_called()
 

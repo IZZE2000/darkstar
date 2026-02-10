@@ -638,31 +638,139 @@ flowchart TB
 
 ---
 
-## 12. Load Disaggregation Architecture (Rev ML2)
+## 12. Load Disaggregation Architecture (Rev ARC15 - Entity-Centric Design)
 
 Load Disaggregation improves forecast accuracy and optimization quality by isolating strictly "uncontrollable" home load (Base Load) from heavy appliances that can be rescheduled or monitored separately (Controllable Loads).
 
-### 12.1 The Data Pipeline
-1.  **Observation** (`backend/loads/service.py`):
-    - `LoadDisaggregator` fetches real-time power from specific appliance sensors (EV, Water Heater, etc.) via Home Assistant.
-    - **Formula**: `Base Load (kW) = Total Home Load - Sum(Controllable Loads)`.
-    - **Guardrails**: Clamps to 0 if negative; monitors sensor health for automated fallback.
-2.  **Storage** (`backend/recorder.py`):
-    - The `Recorder` stores this clean **Base Load** into the `slot_observations` table.
-3.  **Forecasting** (`ml/forward.py`):
-    - ML models are trained on this clean historical base load.
-    - Predictive inference generates `base_load_forecast_kwh` into the `slot_forecasts` table.
-4.  **Planning** (`inputs.py`):
-    - The Planner fetches the `base_load_forecast_kwh`.
-    - It ensures that **strictly Base Load** is passed to Kepler, preventing the "Double Counting" bug where controllable loads are included in the forecast *and* added by the solver.
+### 12.1 Entity-Centric Configuration Philosophy
 
-### 12.2 Registry Pattern
+**ARC15** introduces a **single source of truth** for each controllable load. Previously, configuration was duplicated across:
+- `system.has_*` toggles (feature flags)
+- `input_sensors.*_power` entities (sensor references)
+- `deferrable_loads[]` array (load disaggregation settings)
+
+This duplication caused silent failures where enabling a feature in the UI didn't automatically populate the `deferrable_loads` array, leading to "dirty" training data for ML models.
+
+**The New Entity-Centric Model:**
+```yaml
+# One section per device type, supporting multiple instances
+water_heaters:
+  - id: main_tank
+    name: "Main Water Heater"
+    enabled: true
+    power_kw: 3.0
+    min_kwh_per_day: 6.0
+    max_hours_between_heating: 8
+    water_min_spacing_hours: 4
+    sensor: sensor.vvb_power      # Power sensor for disaggregation
+    type: binary                  # Load type for disaggregation
+    nominal_power_kw: 3.0         # Nominal power for load calc
+
+ev_chargers:
+  - id: tesla_model_3
+    name: "Tesla Model 3"
+    enabled: true
+    max_power_kw: 11.0
+    battery_capacity_kwh: 82.0
+    min_soc_percent: 20.0
+    target_soc_percent: 80.0
+    sensor: sensor.tesla_power    # Power sensor for disaggregation
+    type: variable
+    nominal_power_kw: 11.0
+```
+
+**Key Benefits:**
+- **Single Source of Truth**: All settings, sensors, and load characteristics in one place
+- **Multiple Devices**: Supports multiple water heaters and EV chargers per household
+- **Auto-Discovery**: `system.has_water_heater` and `system.has_ev_charger` are automatically set based on `any(w.enabled for w in water_heaters)`
+- **Migration**: Old `deferrable_loads[]` arrays are automatically converted on startup
+
+### 12.2 The Data Pipeline
+
+1.  **Configuration Loading** (`backend/config/migrate_arc15.py`):
+    - On startup, detects if config uses legacy format (`config_version < 2`)
+    - Auto-migrates `deferrable_loads[]` entries to `water_heaters[]` / `ev_chargers[]`
+    - Updates `config_version` to 2 after successful migration
+
+2.  **Observation** (`backend/loads/service.py`):
+    - `LoadDisaggregator` reads device configurations from `water_heaters[]` and `ev_chargers[]` arrays
+    - Fetches real-time power from device sensors via Home Assistant
+    - **Formula**: `Base Load (kW) = Total Home Load - Sum(Enabled Controllable Loads)`.
+    - **Guardrails**: Clamps to 0 if negative; monitors sensor health for automated fallback
+
+3.  **Storage** (`backend/recorder.py`):
+    - The `Recorder` stores this clean **Base Load** into the `slot_observations` table
+    - Controllable loads are tracked separately for analytics
+
+4.  **Forecasting** (`ml/forward.py`):
+    - ML models are trained on this clean historical base load (without controllable loads)
+    - Predictive inference generates `base_load_forecast_kwh` into the `slot_forecasts` table
+
+5.  **Planning** (`planner/solver/adapter.py`):
+    - The Planner fetches the `base_load_forecast_kwh`
+    - Passes **strictly Base Load** to Kepler
+    - Kepler adds its own decision variables for controllable loads (water heating, EV charging)
+    - Prevents the "Double Counting" bug where controllable loads appear in forecast *and* are added by solver
+
+### 12.3 Load Type Registry
+
 The `LoadDisaggregator` uses a **Registry Pattern**, allowing different types of loads to be managed uniformly:
-- **Binary Loads**: On/Off (e.g., standard water heaters).
-- **Variable Loads**: Modulating power (e.g., EV chargers, Heat Pumps).
 
-### 12.3 Kepler Integration
-Kepler receives the clean base load forecast and adds its own decision variables (or forced constraints) for controllable loads (like water heating) to satisfy the house energy balance. This ensures the solver can trade off battery energy vs. appliance shifting with 100% accuracy.
+| Type | Description | Example | Power Characteristic |
+|------|-------------|---------|---------------------|
+| **binary** | On/Off loads with fixed power | Standard water heaters | Constant when ON |
+| **modulating** | Variable power on/off loads | Smart water heaters | Varies 0 to max |
+| **variable** | Continuously variable power | EV chargers, Heat Pumps | 0 to max based on demand |
+| **constant** | Fixed power when active | Pool pumps | Constant when running |
+
+### 12.4 Kepler Integration with Multiple Devices
+
+When multiple water heaters or EV chargers are configured:
+
+**Water Heaters**:
+- Power ratings are summed: `total_water_power = sum(h.power_kw for h in enabled_heaters)`
+- Energy requirements are summed: `total_min_kwh = sum(h.min_kwh_per_day for h in enabled_heaters)`
+- Spacing constraints use the strictest (minimum) values across all heaters
+- Kepler schedules heating blocks considering all heaters as a combined load
+
+**EV Chargers**:
+- Each EV is modeled as a separate deferrable load with its own SoC constraints
+- Power limits are summed for total EV charging capacity
+- Battery capacities are tracked per-EV for SoC calculations
+- Penalty levels can be configured per-EV based on urgency needs
+
+This ensures the solver can trade off battery energy vs. appliance shifting with 100% accuracy, even with complex multi-device households.
+
+### 12.5 Future Extensibility
+
+The entity-centric design supports easy addition of new deferrable load types:
+
+```yaml
+# Future additions (schema ready)
+pool_heaters:
+  - id: pool_heater_main
+    name: "Pool Heater"
+    enabled: true
+    power_kw: 5.0
+    sensor: sensor.pool_power
+    type: binary
+    nominal_power_kw: 5.0
+
+heat_pumps:
+  - id: hp_main
+    name: "Air Source Heat Pump"
+    enabled: true
+    power_kw: 3.0
+    sensor: sensor.hp_power
+    type: variable
+    nominal_power_kw: 3.0
+```
+
+To add a new load type:
+1. Define the array schema in `config.default.yaml`
+2. Add entity type to `backend/loads/models.py`
+3. Register the load type in `backend/loads/service.py`
+4. Add UI section in `frontend/src/pages/settings/types.ts`
 
 ---
 

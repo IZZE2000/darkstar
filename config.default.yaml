@@ -6,7 +6,6 @@
 # =============================================================================
 
 # System Metadata
-version: "2.5.12-beta"
 config_version: 2                     # Config format version (for migration tracking)
 timezone: "Europe/Stockholm"          # IANA timezone for all schedule calculations
 
@@ -58,38 +57,6 @@ battery:
 
 battery_economics:
   battery_cycle_cost_kwh: 0.2      # Degradation cost applied per kWh cycled through the battery
-
-
-# EV Charging (Smart Grid-Only Charging)
-# Treats EV as a deferrable load with SoC-based urgency. Unlike the house battery,
-# EV charging is grid-only (never drains house battery into car).
-ev_charger:
-  # Physical Parameters
-  max_power_kw: 7.4                # Max charging power (kW) - typical 1-phase 32A = 7.4kW
-  battery_capacity_kwh: 77.0       # EV battery capacity (kWh) - adjust for your car
-
-  # Incentive Buckets (Willingness to Pay)
-  # Controls how "expensive" electricity can be for each SoC range.
-  # Higher value (SEK/kWh) = more urgent to charge in that range.
-  # Thresholds are chained: 0% -> Tier 1 Max -> Tier 2 Max -> ... -> 100%
-  penalty_levels:
-    - name: "emergency"
-      max_soc: 20                  # Apply up to this SoC
-      penalty_sek: 10.0            # Willingness to pay (SEK/kWh) - High value = charge NOW
-    - name: "high"
-      max_soc: 40
-      penalty_sek: 2.0             # High value - charge even at moderate prices
-    - name: "normal"
-      max_soc: 70
-      penalty_sek: 0.5             # Normal - prefer cheap hours
-    - name: "opportunistic"
-      max_soc: 100
-      penalty_sek: 0.1             # Low value - only at very cheap prices
-
-  # Replanning Events (trigger new optimization immediately)
-  replan_on_plugin: true           # Trigger when car plugs in
-  replan_on_unplug: false          # Trigger when car unplugs
-  replan_on_soc_change: false      # Trigger when SoC updates (can be noisy)
 
 
 # Water Heating
@@ -175,34 +142,6 @@ ev_chargers:
   #   sensor: sensor.fiat_power
   #   type: variable
   #   nominal_power_kw: 7.4
-
-# =============================================================================
-# DEPRECATED: Deferrable Loads (Legacy Format)
-# =============================================================================
-# This section is DEPRECATED and will be auto-migrated to water_heaters/ev_chargers
-# arrays above. Do NOT edit - changes will be overwritten on startup.
-# Migration happens automatically if this section exists (config_version < 2).
-# =============================================================================
-# Deferrable & Controllable Loads (Load Disaggregation) - DEPRECATED
-# deferrable_loads:
-  # DEPRECATED: This array is replaced by water_heaters[] and ev_chargers[] above.
-  # The migration script automatically converts entries from old configs.
-  # Example of OLD format (kept for reference only):
-  # - id: water_heater
-  #   name: "Water Heater"
-  #   sensor_key: water_power
-  #   type: binary
-  #   nominal_power_kw: 3.0
-  # - id: ev_charger
-  #   name: "EV Charger"
-  #   sensor_key: ev_power
-  #   type: variable
-  #   nominal_power_kw: 11.0
-  # - id: heat_pump
-  #   name: "Heat Pump"
-  #   sensor_key: hp_power
-  #   type: variable
-  #   nominal_power_kw: 5.0
 
 
 # S-Index Configuration (Risk & Safety Strategy)

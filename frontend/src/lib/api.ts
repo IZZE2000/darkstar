@@ -90,6 +90,32 @@ export type ConfigResponse = {
         theme_accent_index?: number
         theme_mode?: 'light' | 'dark' | 'system'
     }
+    // ARC15: Entity-Centric Configuration
+    water_heaters?: {
+        id: string
+        name: string
+        enabled: boolean
+        power_kw: number
+        min_kwh_per_day: number
+        max_hours_between_heating: number
+        water_min_spacing_hours: number
+        sensor: string
+        type: 'binary' | 'modulating'
+        nominal_power_kw: number
+    }[]
+    ev_chargers?: {
+        id: string
+        name: string
+        enabled: boolean
+        max_power_kw: number
+        battery_capacity_kwh: number
+        min_soc_percent: number
+        target_soc_percent: number
+        sensor: string
+        type: 'variable' | 'constant'
+        nominal_power_kw: number
+        penalty_levels?: { max_soc: number; penalty_sek: number }[]
+    }[]
     [key: string]: unknown
 }
 export type ConfigSaveError = { field?: string; message: string }

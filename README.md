@@ -130,7 +130,20 @@ notifications:
 If you have a smart water heater, Darkstar can optimize its heating schedule. It controls the water heater thermostat temperature with set levels:
 
 ```yaml
-# In config.yaml under executor:
+# In config.yaml - Entity-Centric Configuration (ARC15)
+water_heaters:
+  - id: main_tank
+    name: "Main Water Heater"
+    enabled: true
+    power_kw: 3.0
+    min_kwh_per_day: 6.0
+    max_hours_between_heating: 8
+    water_min_spacing_hours: 4
+    sensor: sensor.vvb_power
+    type: binary
+    nominal_power_kw: 3.0
+
+# Control entity for the water heater
 executor:
   water_heater:
     target_entity: input_number.your_water_heater_temp
@@ -146,6 +159,51 @@ executor:
 | `temp_normal` | 60°C    | Planner schedules heating      |
 | `temp_boost`  | 70°C    | You press "Water Boost" button |
 | `temp_max`    | 85°C    | Excess PV with full battery    |
+
+### EV Charger (Optional)
+
+Darkstar can optimize EV charging as a deferrable load:
+
+```yaml
+# Entity-Centric Configuration (ARC15)
+ev_chargers:
+  - id: tesla_model_3
+    name: "Tesla Model 3"
+    enabled: true
+    max_power_kw: 11.0
+    battery_capacity_kwh: 82.0
+    min_soc_percent: 20.0
+    target_soc_percent: 80.0
+    sensor: sensor.tesla_power
+    type: variable
+    nominal_power_kw: 11.0
+```
+
+### Multiple Devices
+
+You can add multiple water heaters and EV chargers:
+
+```yaml
+water_heaters:
+  - id: main_tank
+    name: "Main Water Heater"
+    enabled: true
+    # ... settings
+  - id: upstairs_tank
+    name: "Upstairs Water Heater"
+    enabled: true
+    # ... settings
+
+ev_chargers:
+  - id: tesla
+    name: "Tesla Model 3"
+    enabled: true
+    # ... settings
+  - id: fiat
+    name: "Fiat 500e"
+    enabled: false  # Disabled, won't be used
+    # ... settings
+```
 
 
 ## Home Assistant Integration
