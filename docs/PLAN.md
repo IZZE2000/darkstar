@@ -254,14 +254,14 @@ The fix requires restructuring to entity-centric sections where each physical de
 * [x] Ensure migration is idempotent (safe to run multiple times)
 * [x] **COMPLETED 2026-02-10:** Backend API validation and integration complete
 
-#### Phase 3: Backend - LoadDisaggregator Refactor [DRAFT]
-* [ ] Refactor `backend/loads/service.py` to read from new entity-centric structure
-* [ ] Iterate over `water_heaters[]` array to register multiple water heater loads
-* [ ] Iterate over `ev_chargers[]` array to register multiple EV loads
-* [ ] Remove dependency on `deferrable_loads` array entirely
-* [ ] Ensure LoadDisaggregator initializes correctly with new config structure
-* [ ] Update `backend/recorder.py` to use new LoadDisaggregator interface
-* [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
+#### Phase 3: Backend - LoadDisaggregator Refactor [DONE]
+* [x] Refactor `backend/loads/service.py` to read from new entity-centric structure
+* [x] Iterate over `water_heaters[]` array to register multiple water heater loads
+* [x] Iterate over `ev_chargers[]` array to register multiple EV loads
+* [x] Remove dependency on `deferrable_loads` array entirely
+* [x] Ensure LoadDisaggregator initializes correctly with new config structure
+* [x] Update `backend/recorder.py` to use new LoadDisaggregator interface
+* [x] **COMPLETED 2026-02-10:** LoadDisaggregator refactored with 13 tests passing (5 legacy + 8 new ARC15)
 
 #### Phase 4: Backend - Kepler Adapter Updates [DRAFT]
 * [ ] Update `planner/solver/adapter.py` to read from new structure

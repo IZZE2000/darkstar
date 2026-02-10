@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import logging
 from typing import Any
 
@@ -22,9 +24,112 @@ class LoadDisaggregator:
         self._initialize_loads()
 
     def _initialize_loads(self):
-        """Initialize loads from configuration."""
-        load_configs = self.config.get("deferrable_loads", [])
+        """Initialize loads from configuration.
+
+        ARC15: Updated to use new entity-centric structure (water_heaters[], ev_chargers[])
+        while maintaining backward compatibility with deferrable_loads during transition.
+        """
+        config_version = self.config.get("config_version", 1)
         input_sensors = self.config.get("input_sensors", {})
+
+        # Check for new entity-centric format (ARC15)
+        water_heaters = self.config.get("water_heaters", [])
+        ev_chargers = self.config.get("ev_chargers", [])
+
+        if config_version >= 2 and (water_heaters or ev_chargers):
+            # Use new entity-centric format
+            self._initialize_from_entity_arrays(water_heaters, ev_chargers)
+        else:
+            # Fall back to legacy deferrable_loads format
+            self._initialize_from_deferrable_loads(input_sensors)
+
+    def _initialize_from_entity_arrays(self, water_heaters: list[dict], ev_chargers: list[dict]):
+        """Initialize loads from new entity-centric arrays (ARC15)."""
+        # Process water heaters
+        for wh in water_heaters:
+            if not wh.get("enabled", True):
+                logger.debug(f"Skipping disabled water heater: {wh.get('id')}")
+                continue
+
+            load_id = wh.get("id")
+            if not load_id:
+                logger.warning("Found water heater without ID, skipping.")
+                continue
+
+            name = wh.get("name", load_id)
+            entity_id = wh.get("sensor")
+            l_type_str = wh.get("type", "binary")
+            nominal_power = wh.get("nominal_power_kw", wh.get("power_kw", 0.0))
+
+            if not entity_id:
+                logger.warning(f"No sensor configured for water heater '{load_id}', skipping.")
+                continue
+
+            # Map type string to enum
+            try:
+                l_type = LoadType(l_type_str)
+            except ValueError:
+                logger.warning(
+                    f"Invalid load type '{l_type_str}' for water heater '{load_id}', defaulting to binary"
+                )
+                l_type = LoadType.BINARY
+
+            load = DeferrableLoad(
+                load_id=load_id,
+                name=name,
+                sensor_key=entity_id,
+                load_type=l_type,
+                nominal_power_kw=nominal_power,
+            )
+            self.register_load(load)
+            logger.info(f"Registered water heater from ARC15 config: {load_id}")
+
+        # Process EV chargers
+        for ev in ev_chargers:
+            if not ev.get("enabled", True):
+                logger.debug(f"Skipping disabled EV charger: {ev.get('id')}")
+                continue
+
+            load_id = ev.get("id")
+            if not load_id:
+                logger.warning("Found EV charger without ID, skipping.")
+                continue
+
+            name = ev.get("name", load_id)
+            entity_id = ev.get("sensor")
+            l_type_str = ev.get("type", "variable")
+            nominal_power = ev.get("nominal_power_kw", ev.get("max_power_kw", 0.0))
+
+            if not entity_id:
+                logger.warning(f"No sensor configured for EV charger '{load_id}', skipping.")
+                continue
+
+            # Map type string to enum
+            try:
+                l_type = LoadType(l_type_str)
+            except ValueError:
+                logger.warning(
+                    f"Invalid load type '{l_type_str}' for EV charger '{load_id}', defaulting to variable"
+                )
+                l_type = LoadType.VARIABLE
+
+            load = DeferrableLoad(
+                load_id=load_id,
+                name=name,
+                sensor_key=entity_id,
+                load_type=l_type,
+                nominal_power_kw=nominal_power,
+            )
+            self.register_load(load)
+            logger.info(f"Registered EV charger from ARC15 config: {load_id}")
+
+    def _initialize_from_deferrable_loads(self, input_sensors: dict):
+        """Initialize loads from legacy deferrable_loads format."""
+        load_configs = self.config.get("deferrable_loads", [])
+
+        if not load_configs:
+            logger.debug("No deferrable_loads configured")
+            return
 
         for lc in load_configs:
             load_id = lc.get("id")
@@ -65,6 +170,7 @@ class LoadDisaggregator:
                 nominal_power_kw=nominal_power,
             )
             self.register_load(load)
+            logger.debug(f"Registered deferrable load from legacy config: {load_id}")
 
     def register_load(self, load: DeferrableLoad):
         """Register a load in the disaggregator."""

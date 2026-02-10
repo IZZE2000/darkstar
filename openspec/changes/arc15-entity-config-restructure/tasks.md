@@ -1,41 +1,40 @@
-# ARC15 Phase 2 Tasks
+# ARC15 Phase 3 Tasks
 
-## Phase 2: Backend - Config Migration & Loading
+## Phase 3: Backend - LoadDisaggregator Refactor
 
-- [x] **TASK-1**: Update backend/api/routers/config.py for new schema
-  - Added support for validating water_heaters[] and ev_chargers[] arrays ✓
-  - Updated _validate_config_for_save() to handle new entity-centric fields ✓
-  - Added duplicate ID detection for both arrays ✓
-  - Added required field validation ✓
-  - Added numeric value validation (positive numbers) ✓
-  - Added SoC percentage range validation for EVs ✓
-  - Maintained backward compatibility with legacy format ✓
+- [x] **TASK-1**: Read and understand current LoadDisaggregator implementation
+  - Read backend/loads/service.py to understand current structure ✓
+  - Understand how it currently uses deferrable_loads array ✓
+  - Identify all places that need to be updated ✓
 
-- [x] **TASK-2**: Update config validation helpers
-  - Validation for water_heater entry structure ✓
-  - Validation for ev_charger entry structure ✓
-  - Validate unique IDs within each array ✓
-  - Validate sensor entity_id format ✓
+- [x] **TASK-2**: Refactor LoadDisaggregator to use new entity-centric structure
+  - Updated _initialize_loads() to detect config_version and choose format ✓
+  - Created _initialize_from_entity_arrays() for ARC15 format ✓
+  - Created _initialize_from_deferrable_loads() for legacy format ✓
+  - Supports multiple water heaters ✓
+  - Supports multiple EV chargers ✓
+  - Skips disabled devices ✓
+  - Maintains backward compatibility with deferrable_loads ✓
 
-- [x] **TASK-3**: Update config save API
-  - Config save API handles nested entity arrays via deep_update ✓
-  - Preserves user-defined order of entities ✓
-  - Maintains config_version: 2 on save ✓
-  - Deletion handled by frontend sending empty arrays ✓
+- [x] **TASK-3**: Update backend/recorder.py to use new LoadDisaggregator interface
+  - No changes needed - recorder.py passes config directly to LoadDisaggregator ✓
+  - LoadDisaggregator handles the format detection internally ✓
 
-- [x] **TASK-4**: Test config API endpoints
-  - GET /api/config returns new schema correctly ✓
-  - POST /api/config saves water_heaters[] properly ✓
-  - POST /api/config saves ev_chargers[] properly ✓
-  - Validation rejects invalid entries ✓
-  - Backward compatibility with old format ✓
+- [x] **TASK-4**: Create adapter helper functions
+  - LoadDisaggregator automatically detects format based on config_version ✓
+  - No external adapter functions needed - handled internally ✓
+  - Backward compatibility maintained ✓
 
-- [x] **TASK-5**: Update loading utilities
-  - load_yaml() handles new structure ✓
-  - deferrable_loads still works during transition ✓
+- [x] **TASK-5**: Write tests for refactored LoadDisaggregator
+  - Test with single water heater ✓
+  - Test with multiple water heaters ✓
+  - Test with single EV charger ✓
+  - Test with multiple EV chargers ✓
+  - Test backward compatibility ✓
+  - 8 new tests added ✓
 
 - [x] **TASK-6**: Run integration tests
-  - Created comprehensive test suite (12 tests) ✓
-  - All tests passing ✓
-  - Existing migration tests still passing ✓
-  - Linting checks pass ✓
+  - All 13 LoadDisaggregator tests passing ✓
+  - Existing tests still pass ✓
+  - New ARC15 tests passing ✓
+  - Linting clean ✓
