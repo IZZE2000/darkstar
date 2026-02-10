@@ -326,6 +326,31 @@ class ActionDispatcher:
         self.shadow_mode = shadow_mode
         self.profile = profile
 
+    def _get_mode_def_for_value(self, mode_value: str) -> Any | None:
+        """Get the WorkMode definition for a given mode value string.
+
+        Args:
+            mode_value: The mode value string (e.g., "Auto", "Charge from Grid")
+
+        Returns:
+            WorkMode object if found, None otherwise
+        """
+        if not self.profile:
+            return None
+
+        for attr in [
+            "export",
+            "zero_export",
+            "self_consumption",
+            "force_discharge",
+            "charge_from_grid",
+            "idle",
+        ]:
+            mode = getattr(self.profile.modes, attr, None)
+            if mode and mode.value == mode_value:
+                return mode
+        return None
+
     async def execute(self, decision: ControllerDecision) -> list[ActionResult]:
         """
         Execute all actions from a controller decision.
@@ -346,6 +371,9 @@ class ActionDispatcher:
             )
             results.extend(mode_results)
 
+        # Get mode definition for skip flag checking (REV F53 Phase 1)
+        mode_def = self._get_mode_def_for_value(target_mode) if self.profile else None
+
         # Optimization: Identify if we should skip power limits based on mode (REV IP4)
         # We skip discharge/export limits in Charge and Hold/Idle modes to prevent conflict.
         is_charging = False
@@ -360,9 +388,19 @@ class ActionDispatcher:
                 is_idle = True
 
         # 2. Set grid charging (Rev O1)
+        # Skip if profile uses mode-based charging (REV F53 Phase 1)
         if self.config.has_battery:
-            result = await self._set_grid_charging(decision.grid_charging)
-            results.append(result)
+            skip_grid_charging = (
+                self.profile and not self.profile.capabilities.separate_grid_charging_switch
+            )
+            if skip_grid_charging:
+                logger.debug(
+                    "Skipping grid_charging action: profile '%s' uses mode-based charging",
+                    self.profile.metadata.name,
+                )
+            else:
+                result = await self._set_grid_charging(decision.grid_charging)
+                results.append(result)
 
         # 3. Set charge limit (Rev O1 + E3)
         if self.config.has_battery and decision.write_charge_current:
@@ -371,8 +409,16 @@ class ActionDispatcher:
 
         # 4. Set discharge limit (Rev O1 + E3)
         # Skip if in Charge or Idle mode (Generic optimization REV IP4)
+        # OR if profile mode has skip_discharge_limit flag (REV F53 Phase 1)
         if self.config.has_battery and decision.write_discharge_current:
-            if is_charging or is_idle:
+            skip_discharge = is_charging or is_idle
+            if not skip_discharge and mode_def and mode_def.skip_discharge_limit:
+                skip_discharge = True
+                logger.debug(
+                    "Skipping discharge_limit action: mode '%s' has skip_discharge_limit=true",
+                    target_mode,
+                )
+            if skip_discharge:
                 logger.debug("Skipping discharge_limit action: mode is %s", target_mode)
             else:
                 result = await self._set_discharge_limit(
@@ -392,8 +438,16 @@ class ActionDispatcher:
 
         # 7. Set max export power (Bug fix #1)
         # Skip if in Charge or Idle mode (Generic optimization REV IP4)
+        # OR if profile mode has skip_export_power flag (REV F53 Phase 1)
         if self.config.has_battery:
-            if is_charging or is_idle:
+            skip_export = is_charging or is_idle
+            if not skip_export and mode_def and mode_def.skip_export_power:
+                skip_export = True
+                logger.debug(
+                    "Skipping max_export_power action: mode '%s' has skip_export_power=true",
+                    target_mode,
+                )
+            if skip_export:
                 logger.debug("Skipping max_export_power action: mode is %s", target_mode)
             else:
                 result = await self._set_max_export_power(decision.export_power_w)

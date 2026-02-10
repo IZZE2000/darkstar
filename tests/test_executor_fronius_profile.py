@@ -92,3 +92,70 @@ async def test_fronius_watt_limit_execution(mock_ha, executor_config, fronius_pr
 
     # Verify HA set_number was called with Watts entity
     mock_ha.set_number.assert_called_with("number.fronius_charge_power", 2500.0)
+
+
+@pytest.mark.asyncio
+async def test_fronius_auto_mode_skips_extraneous_entities(
+    mock_ha, executor_config, fronius_profile
+):
+    """REV F53: Verify Auto mode only writes work_mode and soc_target, skipping grid_charging, discharge_limit, and max_export_power."""
+    from executor.controller import ControllerDecision
+
+    # Add soc_target entity to config so it gets tested
+    executor_config.inverter.soc_target = "number.soc_target"
+
+    # Mock current state - return different value from target so work_mode gets executed
+    def mock_get_state_value(entity_id):
+        # The entity_id is the full HA entity path (e.g., "select.fronius_battery_mode")
+        # Return "Discharge to Grid" for work_mode entity to trigger a change to "Auto"
+        if entity_id == executor_config.inverter.work_mode:
+            return "Discharge to Grid"
+        if entity_id == executor_config.inverter.soc_target:
+            return "40"  # Different from target of 50
+        return "Auto"
+
+    mock_ha.get_state_value.side_effect = mock_get_state_value
+    mock_ha.set_select_option.return_value = True
+    mock_ha.set_input_number.return_value = True
+
+    dispatcher = ActionDispatcher(mock_ha, executor_config, profile=fronius_profile)
+
+    # Create a decision for Auto mode (self_consumption)
+    decision = ControllerDecision(
+        work_mode="Auto",  # Fronius self_consumption and zero_export both use "Auto"
+        grid_charging=False,
+        charge_value=0,
+        discharge_value=100,
+        soc_target=50,
+        water_temp=40,
+        export_power_w=5000.0,
+        write_charge_current=False,
+        write_discharge_current=True,  # Would normally write, but should be skipped in Auto mode
+    )
+
+    results = await dispatcher.execute(decision)
+
+    # Collect action types that were executed (not skipped)
+    executed_actions = [r.action_type for r in results if not r.skipped]
+    skipped_actions = [r.action_type for r in results if r.skipped]
+
+    # In Auto mode, only work_mode and soc_target should be executed
+    assert "work_mode" in executed_actions, (
+        f"work_mode should be executed in Auto mode. Results: {[(r.action_type, r.skipped, r.message) for r in results]}"
+    )
+    assert "soc_target" in executed_actions, "soc_target should be executed in Auto mode"
+
+    # These should be skipped in Auto mode per profile flags
+    assert "grid_charging" in skipped_actions or "grid_charging" not in executed_actions, (
+        "grid_charging should be skipped in Auto mode (separate_grid_charging_switch=false)"
+    )
+    assert "discharge_limit" in skipped_actions or "discharge_limit" not in executed_actions, (
+        "discharge_limit should be skipped in Auto mode (skip_discharge_limit=true)"
+    )
+    assert "max_export_power" in skipped_actions or "max_export_power" not in executed_actions, (
+        "max_export_power should be skipped in Auto mode (skip_export_power=true)"
+    )
+
+    # Verify the HA calls that should NOT be made in Auto mode
+    mock_ha.set_switch.assert_not_called()  # grid_charging
+    # discharge_limit and max_export_power would call set_number, but should be skipped

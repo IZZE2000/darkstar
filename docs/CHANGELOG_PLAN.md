@@ -4,6 +4,110 @@ This document contains the archive of all completed revisions. It serves as the 
 
 ---
 
+### [DONE] REV // UI19 — Custom Date Picker for Grid & Financial Card
+
+**Goal:** Add custom date range selection to the Grid & Financial card, matching the Executor History date picker implementation.
+**Context:** Users currently have preset options (Today, Yesterday, 7 Days, 30 Days) but cannot select arbitrary date ranges for financial analysis.
+
+**Plan:**
+
+#### Phase 1: Frontend UI Updates [DONE]
+* [x] Update period type in CommandDomains.tsx to include 'custom': `'today' | 'yesterday' | 'week' | 'month' | 'custom'`
+* [x] Add state for startDate and endDate (string type, YYYY-MM-DD format)
+* [x] Add "Custom" button to period selector
+* [x] Show date input fields (start date, "to", end date) below period buttons when period is 'custom' (matching Executor History layout)
+* [x] Add production-grade validation: prevent end date before start date, show inline error message
+* [x] Update "Net Cost" label to show "Custom Period Cost" when using custom range
+
+#### Phase 2: Frontend Data Fetching [DONE]
+* [x] Calculate default dates when switching to Custom (start date = previous period start, end date = today)
+* [x] Modify API call to pass start_date and end_date query parameters when period is 'custom'
+* [x] Handle loading states for custom date changes
+* [x] Add error handling for invalid date ranges
+
+#### Phase 3: API Layer Updates [DONE]
+* [x] Update energyRange function in api.ts to accept optional start_date and end_date parameters
+* [x] Build query string with custom dates: `/api/energy/range?period=custom&start_date=${startDate}&end_date=${endDate}`
+* [x] Update EnergyRangeResponse type to include 'custom' as valid period value
+
+#### Phase 4: Backend API Updates [DONE]
+* [x] Add optional query parameters: start_date: str | None = None, end_date: str | None = None in services.py get_energy_range endpoint
+* [x] Parse YYYY-MM-DD format dates and convert to timezone-aware datetime
+* [x] If custom dates are provided, use them instead of period-based calculation
+* [x] Skip real-time HA sensor overlay for custom periods (only apply to "today" preset)
+* [x] Add validation for date range validity on backend
+
+#### Phase 5: Testing & Verification [DONE]
+* [x] Test custom date range with valid dates
+* [x] Test validation for invalid ranges (end date before start date)
+* [x] Verify default dates populate correctly when switching from presets
+* [x] Test with various date ranges (single day, week, month, multi-month)
+* [x] Verify financial calculations are correct for custom ranges
+* [x] Lint and type check all changes
+
+---
+
+### [DONE] REV // F52 — Composite Mode Entities Sungrow & Auto mode Fronius fixes
+
+**Goal:** Ensure composite mode entity changes (e.g., Sungrow `forced_charge_discharge_cmd`, `export_power_limit`) are properly logged to executor history and visible to users.
+**Context:** Beta tester reported Sungrow "Battery Forced Charge/Discharge Command" not being set. Investigation revealed that while the code DOES call HA to set composite mode entities, these changes are NOT logged to executor history. This makes debugging impossible - users cannot verify what entities are being changed via the executor API. The root cause is in `executor/actions.py:421-441` where composite mode changes make direct HA calls without creating `ActionResult` objects.
+
+**Plan:**
+
+#### Phase 1: Fix Composite Mode Action Logging [DONE]
+* [x] Refactor composite mode entity loop in `[executor/actions.py]` to create `ActionResult` objects for each entity change.
+* [x] Return composite mode `ActionResult` list from `_set_work_mode()` method.
+* [x] Update `execute()` method to collect and include composite mode results in final `action_results` list.
+* [x] Add verification for composite mode entity changes.
+* [x] Update log messages to include `ActionResult` details.
+* [x] Verify with Sungrow profile and idempotent behavior.
+
+#### Phase 2: Frontend History Display [DONE]
+* [x] Update executor history UI to display composite mode entity changes.
+* [x] Ensure `action_results` from API includes all composite mode actions.
+* [x] Display entity ID and value changes in history table or detail view.
+* [x] Differentiate composite mode actions from primary mode changes visually (grouped/indented).
+
+#### Phase 3: Documentation & User Guide [DONE]
+* [x] Document composite mode behavior in inverter profile documentation.
+* [x] Explain that some modes require setting multiple HA entities.
+* [x] Provide examples (Sungrow charge_from_grid sets `ems_mode` + `forced_charge_discharge_cmd` + `export_power_limit`).
+* [x] Explain that all entity changes are logged to executor history.
+* [x] Add FAQ entry for "Executor not setting entity" - how to check history logs.
+
+#### Phase 4: Ambiguous Mode Resolution Fix (Sungrow) [DONE]
+* [x] Fix ambiguity between "Charge from Grid" and "Export" modes for profiles like Sungrow where the main mode string is identical.
+* [x] Update `_set_work_mode` to accept `is_charging` flag.
+* [x] Implement `_resolve_profile_mode` helper to prioritize `charge_from_grid` when `is_charging=True`.
+* [x] Pass `decision.grid_charging` from `execute()` to `_set_work_mode()`.
+* [x] Verify that "Forced Charge" command is correctly applied in Sungrow profile.
+
+#### Phase 5: Fix Error Visibility - Display HA API Error Messages [DONE]
+* [x] Add `error_details: str | None = None` field to `ActionResult` dataclass in `[executor/actions.py]`.
+* [x] Create `HACallError` exception class with HTTP status, response body, exception type in `[executor/actions.py]`.
+* [x] Modify `call_service()` to raise `HACallError` on error.
+* [x] Update HA wrapper methods to raise `HACallError` on validation failure.
+* [x] Update all action methods to catch `HACallError` and populate `error_details`.
+* [x] Update action_results dict conversion to include `error_details` in `[executor/engine.py]`.
+* [x] Update result["actions"] dict conversion to include `error_details`.
+* [x] Update error tracking (`recent_errors`) to include `error_details`.
+* [ ] Frontend Verification: Test error display by setting an invalid value (requires real Fronius inverter).
+
+#### Phase 6: Fix Max Export Power Logic for Fronius - Skip in Auto Mode [DONE]
+* [x] Add `skip_export_power: bool = False` field to `WorkMode` dataclass in `[executor/profiles.py]`.
+* [x] Add `skip_export_power: true` to both `zero_export` and `self_consumption` modes in `[profiles/fronius.yaml]`.
+* [x] Add mode-aware skip logic in `_set_max_export_power()` in `[executor/actions.py]`.
+* [x] Fronius profile tests passing: `test_fronius_profile_parsing`, `test_fronius_grid_charging_skipped`, `test_fronius_controller_decisions`, `test_fronius_watt_limit_execution`.
+
+#### Phase 7: Fix Sungrow max_discharge_power - Set to Inverter Max for All Modes Except Idle [DONE]
+* [x] Add `max_discharge_power: 9000` and `skip_discharge_limit: true` to Export, Zero Export, Self-Consumption, and Charge from Grid modes in `[profiles/sungrow.yaml]`.
+* [x] Update logic mapping table in `[profiles/sungrow_logic.md]` to show Max Discharge = 9000W for all modes except Idle (10W).
+* [x] Verify `_set_discharge_limit()` respects `skip_discharge_limit` flag and composite mode values.
+* [x] Verify composite mode entity loop correctly sets `max_discharge_power`.
+* [x] Profile loading test, linting, and pytest all pass.
+
+---
+
 ### [DONE] REV // F51 — EV Economic Planner (Modulation & Value Buckets)
 
 **Goal:** Implement continuous (modulating) EV power control and an economic "Value Bucket" model to replace hardcoded penalties and binary on/off logic.
