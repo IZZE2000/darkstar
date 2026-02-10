@@ -10,6 +10,7 @@ export type FieldType =
     | 'tilt'
     | 'solar_arrays'
     | 'penalty_levels'
+    | 'entity_array'
     | 'info'
 
 export interface HaEntity {
@@ -45,6 +46,8 @@ export interface BaseField {
     subsection?: string
     /** Custom CSS classes for the field wrapper (e.g., col-span-2) */
     className?: string
+    /** For entity_array type: specifies which entity type to manage */
+    entityType?: 'water_heater' | 'ev_charger'
 }
 
 export interface InverterProfile {
@@ -1175,6 +1178,48 @@ export const parameterSections: SettingsSection[] = [
                 showIf: {
                     configKey: 'system.has_ev_charger',
                     value: true,
+                },
+            },
+        ],
+    },
+    // ARC15: Entity-Centric Water Heaters (replaces water_heating section)
+    {
+        title: 'Water Heaters',
+        description: 'Configure multiple water heaters for optimization and load disaggregation.',
+        fields: [
+            {
+                key: 'water_heaters',
+                label: 'Water Heaters',
+                path: ['water_heaters'],
+                type: 'entity_array',
+                entityType: 'water_heater',
+                className: 'col-span-2',
+                helper: 'Add and configure water heaters for optimization. Each heater needs a unique ID, name, power rating, and sensor.',
+                showIf: {
+                    configKey: 'system.has_water_heater',
+                    value: true,
+                    disabledText: "Enable 'Smart water heater' in System Profile to configure",
+                },
+            },
+        ],
+    },
+    // ARC15: Entity-Centric EV Chargers (replaces ev_charger section)
+    {
+        title: 'EV Chargers',
+        description: 'Configure multiple EV chargers for optimization and load disaggregation.',
+        fields: [
+            {
+                key: 'ev_chargers',
+                label: 'EV Chargers',
+                path: ['ev_chargers'],
+                type: 'entity_array',
+                entityType: 'ev_charger',
+                className: 'col-span-2',
+                helper: 'Add and configure EV chargers for optimization. Each charger needs a unique ID, name, power rating, and sensor.',
+                showIf: {
+                    configKey: 'system.has_ev_charger',
+                    value: true,
+                    disabledText: "Enable 'EV charger installed' in System Profile to configure",
                 },
             },
         ],

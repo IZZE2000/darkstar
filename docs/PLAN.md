@@ -272,16 +272,16 @@ The fix requires restructuring to entity-centric sections where each physical de
 * [x] Handle multiple water heaters in MILP solver input generation
 * [x] **COMPLETED 2026-02-10:** Phase 4 implementation complete with 24 tests passing
 
-#### Phase 5: Frontend - Settings UI Redesign [DRAFT]
-* [ ] Redesign System Settings UI to show entity-centric sections
-* [ ] Water Heaters section: list view with add/edit/remove for multiple water heaters
-* [ ] Each Water Heater card shows: name, power rating, sensor, spacing constraints
-* [ ] EV Chargers section: list view with add/edit/remove for multiple EVs
-* [ ] Each EV card shows: name, max power, battery capacity, sensor
-* [ ] Remove confusing `deferrable_loads` references from UI
-* [ ] Update form state management to handle new nested structure
-* [ ] Ensure validation works for new schema
-* [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
+#### Phase 5: Frontend - Settings UI Redesign [DONE]
+* [x] Redesign System Settings UI to show entity-centric sections
+* [x] Water Heaters section: list view with add/edit/remove for multiple water heaters
+* [x] Each Water Heater card shows: name, power rating, sensor, spacing constraints
+* [x] EV Chargers section: list view with add/edit/remove for multiple EVs
+* [x] Each EV card shows: name, max power, battery capacity, sensor
+* [x] Remove confusing `deferrable_loads` references from UI
+* [x] Update form state management to handle new nested structure
+* [x] Ensure validation works for new schema
+* [x] **COMPLETED 2026-02-10:** Phase 5 implementation complete with EntityArrayEditor component
 
 #### Phase 6: Frontend - API Integration [DRAFT]
 * [ ] Update frontend API types to match new backend schema

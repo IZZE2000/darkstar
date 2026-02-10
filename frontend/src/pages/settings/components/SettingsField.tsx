@@ -1,6 +1,7 @@
 import React from 'react'
 import { BaseField, HaEntity } from '../types'
 import { shouldRenderField } from '../logic'
+import type { WaterHeaterEntity, EVChargerEntity } from './EntityArrayEditor'
 import Tooltip from '../../../components/Tooltip'
 import AzimuthDial from '../../../components/AzimuthDial'
 import TiltDial from '../../../components/TiltDial'
@@ -12,6 +13,7 @@ import { Badge } from '../../../components/ui/Badge'
 import configHelp from '../../../config-help.json'
 import { SolarArraysEditor } from './SolarArraysEditor'
 import { PenaltyLevelsEditor } from './PenaltyLevelsEditor'
+import { EntityArrayEditor } from './EntityArrayEditor'
 import { NumberInput } from '../../../components/ui/NumberInput'
 
 interface SettingsFieldProps {
@@ -164,6 +166,22 @@ export const SettingsField: React.FC<SettingsFieldProps> = ({
                         disabled={isDisabled}
                     />
                 )
+            case 'entity_array': {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const entityField = field as any
+                const entityType = entityField.entityType as 'water_heater' | 'ev_charger'
+                const entities = JSON.parse(value || '[]') as WaterHeaterEntity[] | EVChargerEntity[]
+                return (
+                    <EntityArrayEditor
+                        entities={entities}
+                        entityType={entityType}
+                        onChange={(newEntities) => onChange(field.key, JSON.stringify(newEntities))}
+                        disabled={isDisabled}
+                        haEntities={haEntities}
+                        haLoading={haLoading}
+                    />
+                )
+            }
             case 'info':
                 return (
                     <div className="flex items-start gap-3 p-4 bg-ai/5 border border-ai/20 rounded-2xl">
