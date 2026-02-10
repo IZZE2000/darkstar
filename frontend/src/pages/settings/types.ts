@@ -77,6 +77,11 @@ export interface SettingsSection<T extends BaseField = BaseField> {
     description: string
     isHA?: boolean
     fields: T[]
+    /** Section-level conditional visibility */
+    showIf?: {
+        configKey: string
+        value?: string | boolean | number | (string | boolean | number)[]
+    }
 }
 
 export const systemSections: SettingsSection[] = [
@@ -897,6 +902,68 @@ export const parameterSections: SettingsSection[] = [
         ],
     },
 
+    // EV Charger Settings (Legacy - global settings)
+    {
+        title: 'EV Charger',
+        description: 'Global EV charging settings: penalty levels, replanning triggers, and charging behavior.',
+        showIf: {
+            configKey: 'system.has_ev_charger',
+            value: true,
+        },
+        fields: [
+            {
+                key: 'ev_charger.penalty_levels',
+                label: 'Penalty Levels (Urgency)',
+                path: ['ev_charger', 'penalty_levels'],
+                type: 'penalty_levels',
+                className: 'col-span-1 sm:row-span-3',
+                helper: 'Define willingness to pay at different SoC levels. Higher penalties force charging regardless of price.',
+            },
+            {
+                key: 'ev_charger.replan_on_plugin',
+                label: 'Re-plan on plug-in',
+                path: ['ev_charger', 'replan_on_plugin'],
+                type: 'boolean',
+                helper: 'Trigger immediate re-planning when the EV is plugged in.',
+                className: 'col-span-1',
+            },
+            {
+                key: 'ev_charger.replan_on_unplug',
+                label: 'Re-plan on unplug',
+                path: ['ev_charger', 'replan_on_unplug'],
+                type: 'boolean',
+                helper: 'Trigger re-planning when the EV is unplugged.',
+                className: 'col-span-1',
+            },
+            {
+                key: 'ev_charger.info_box',
+                label: 'Willingness to Pay',
+                path: [], // Virtual field for UI only
+                type: 'info',
+                className: 'col-span-1',
+            },
+        ],
+    },
+    // ARC15: Entity-Centric EV Chargers (replaces ev_charger section)
+    {
+        title: 'EV Chargers',
+        description: 'Configure multiple EV chargers for optimization and load disaggregation.',
+        showIf: {
+            configKey: 'system.has_ev_charger',
+            value: true,
+        },
+        fields: [
+            {
+                key: 'ev_chargers',
+                label: 'EV Chargers',
+                path: ['ev_chargers'],
+                type: 'entity_array',
+                entityType: 'ev_charger',
+                className: 'col-span-2',
+                helper: 'Add and configure EV chargers for optimization. Each charger needs a unique ID, name, power rating, and sensor.',
+            },
+        ],
+    },
     {
         title: 'Water Heating',
         description: 'Quota, deferral, and sizing controls for the water heater scheduler.',
@@ -1113,79 +1180,14 @@ export const parameterSections: SettingsSection[] = [
             },
         ],
     },
-    // EV Charger Settings
-    {
-        title: 'EV Charger',
-        description: 'Configuration for smart EV charging optimization.',
-        fields: [
-            {
-                key: 'ev_charger.max_power_kw',
-                label: 'Max Charging Power (kW)',
-                path: ['ev_charger', 'max_power_kw'],
-                type: 'number',
-                helper: 'Maximum charging power your EV charger supports (e.g., 7.4 for 32A single-phase).',
-                className: 'col-span-1',
-                showIf: {
-                    configKey: 'system.has_ev_charger',
-                    value: true,
-                    disabledText: "Enable 'EV charger installed' in System Profile to configure",
-                },
-            },
-            {
-                key: 'ev_charger.penalty_levels',
-                label: 'Penalty Levels (Urgency)',
-                path: ['ev_charger', 'penalty_levels'],
-                type: 'penalty_levels',
-                className: 'col-span-1 sm:row-span-4',
-                showIf: {
-                    configKey: 'system.has_ev_charger',
-                    value: true,
-                    disabledText: "Enable 'EV charger installed' in System Profile to configure",
-                },
-            },
-            {
-                key: 'ev_charger.battery_capacity_kwh',
-                label: 'EV Battery Capacity (kWh)',
-                path: ['ev_charger', 'battery_capacity_kwh'],
-                type: 'number',
-                helper: 'Usable battery capacity of your EV. Used to calculate SoC targets.',
-                className: 'col-span-1',
-                showIf: {
-                    configKey: 'system.has_ev_charger',
-                    value: true,
-                    disabledText: "Enable 'EV charger installed' in System Profile to configure",
-                },
-            },
-            {
-                key: 'ev_charger.replan_on_plugin',
-                label: 'Re-plan on plug-in',
-                path: ['ev_charger', 'replan_on_plugin'],
-                type: 'boolean',
-                helper: 'Trigger immediate re-planning when the EV is plugged in.',
-                className: 'col-span-1',
-                showIf: {
-                    configKey: 'system.has_ev_charger',
-                    value: true,
-                    disabledText: "Enable 'EV charger installed' in System Profile to configure",
-                },
-            },
-            {
-                key: 'ev_charger.info_box',
-                label: 'Willingness to Pay',
-                path: [], // Virtual field for UI only
-                type: 'info',
-                className: 'col-span-1',
-                showIf: {
-                    configKey: 'system.has_ev_charger',
-                    value: true,
-                },
-            },
-        ],
-    },
     // ARC15: Entity-Centric Water Heaters (replaces water_heating section)
     {
         title: 'Water Heaters',
         description: 'Configure multiple water heaters for optimization and load disaggregation.',
+        showIf: {
+            configKey: 'system.has_water_heater',
+            value: true,
+        },
         fields: [
             {
                 key: 'water_heaters',
@@ -1195,32 +1197,6 @@ export const parameterSections: SettingsSection[] = [
                 entityType: 'water_heater',
                 className: 'col-span-2',
                 helper: 'Add and configure water heaters for optimization. Each heater needs a unique ID, name, power rating, and sensor.',
-                showIf: {
-                    configKey: 'system.has_water_heater',
-                    value: true,
-                    disabledText: "Enable 'Smart water heater' in System Profile to configure",
-                },
-            },
-        ],
-    },
-    // ARC15: Entity-Centric EV Chargers (replaces ev_charger section)
-    {
-        title: 'EV Chargers',
-        description: 'Configure multiple EV chargers for optimization and load disaggregation.',
-        fields: [
-            {
-                key: 'ev_chargers',
-                label: 'EV Chargers',
-                path: ['ev_chargers'],
-                type: 'entity_array',
-                entityType: 'ev_charger',
-                className: 'col-span-2',
-                helper: 'Add and configure EV chargers for optimization. Each charger needs a unique ID, name, power rating, and sensor.',
-                showIf: {
-                    configKey: 'system.has_ev_charger',
-                    value: true,
-                    disabledText: "Enable 'EV charger installed' in System Profile to configure",
-                },
             },
         ],
     },

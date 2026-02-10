@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Badge } from '../../../components/ui/Badge'
 import Switch from '../../../components/ui/Switch'
 import EntitySelect from '../../../components/EntitySelect'
+import { NumberInput } from '../../../components/ui/NumberInput'
 import { HaEntity } from '../types'
 
 // Water Heater Entity Type
@@ -280,24 +281,20 @@ export const EntityArrayEditor: React.FC<EntityArrayEditorProps> = ({
                                             <label className="text-[10px] uppercase font-bold text-muted mb-1.5 block">
                                                 {isWaterHeater ? 'Power Rating' : 'Max Charging Power'} (kW) *
                                             </label>
-                                            <input
-                                                type="number"
-                                                step="0.1"
-                                                min="0"
+                                            <NumberInput
                                                 value={
                                                     isWaterHeater
                                                         ? (entity as WaterHeaterEntity).power_kw
                                                         : (entity as EVChargerEntity).max_power_kw
                                                 }
-                                                onChange={(e) =>
+                                                onChange={(val) =>
                                                     updateEntity(index, {
-                                                        [isWaterHeater ? 'power_kw' : 'max_power_kw']: Number(
-                                                            e.target.value,
-                                                        ),
+                                                        [isWaterHeater ? 'power_kw' : 'max_power_kw']: Number(val),
                                                     } as Partial<WaterHeaterEntity | EVChargerEntity>)
                                                 }
                                                 disabled={disabled}
-                                                className="w-full rounded-lg border border-line/50 bg-surface2 px-3 py-2 text-sm text-text focus:border-accent focus:outline-none disabled:opacity-50"
+                                                step={0.1}
+                                                min={0}
                                             />
                                         </div>
 
@@ -306,23 +303,21 @@ export const EntityArrayEditor: React.FC<EntityArrayEditorProps> = ({
                                             <label className="text-[10px] uppercase font-bold text-muted mb-1.5 block">
                                                 {isWaterHeater ? 'Daily Energy Requirement' : 'Battery Capacity'} (kWh)
                                             </label>
-                                            <input
-                                                type="number"
-                                                step="0.1"
-                                                min="0"
+                                            <NumberInput
                                                 value={
                                                     isWaterHeater
                                                         ? (entity as WaterHeaterEntity).min_kwh_per_day
                                                         : (entity as EVChargerEntity).battery_capacity_kwh
                                                 }
-                                                onChange={(e) =>
+                                                onChange={(val) =>
                                                     updateEntity(index, {
                                                         [isWaterHeater ? 'min_kwh_per_day' : 'battery_capacity_kwh']:
-                                                            Number(e.target.value),
+                                                            Number(val),
                                                     } as Partial<WaterHeaterEntity | EVChargerEntity>)
                                                 }
                                                 disabled={disabled}
-                                                className="w-full rounded-lg border border-line/50 bg-surface2 px-3 py-2 text-sm text-text focus:border-accent focus:outline-none disabled:opacity-50"
+                                                step={0.1}
+                                                min={0}
                                             />
                                         </div>
 
@@ -382,16 +377,14 @@ export const EntityArrayEditor: React.FC<EntityArrayEditorProps> = ({
                                             <label className="text-[10px] uppercase font-bold text-muted mb-1.5 block">
                                                 Nominal Power (kW)
                                             </label>
-                                            <input
-                                                type="number"
-                                                step="0.1"
-                                                min="0"
+                                            <NumberInput
                                                 value={entity.nominal_power_kw}
-                                                onChange={(e) =>
-                                                    updateEntity(index, { nominal_power_kw: Number(e.target.value) })
+                                                onChange={(val) =>
+                                                    updateEntity(index, { nominal_power_kw: Number(val) })
                                                 }
                                                 disabled={disabled}
-                                                className="w-full rounded-lg border border-line/50 bg-surface2 px-3 py-2 text-sm text-text focus:border-accent focus:outline-none disabled:opacity-50"
+                                                step={0.1}
+                                                min={0}
                                             />
                                         </div>
 
@@ -402,38 +395,34 @@ export const EntityArrayEditor: React.FC<EntityArrayEditorProps> = ({
                                                     <label className="text-[10px] uppercase font-bold text-muted mb-1.5 block">
                                                         Max Hours Between Heating
                                                     </label>
-                                                    <input
-                                                        type="number"
-                                                        step="1"
-                                                        min="1"
-                                                        max="24"
+                                                    <NumberInput
                                                         value={(entity as WaterHeaterEntity).max_hours_between_heating}
-                                                        onChange={(e) =>
+                                                        onChange={(val) =>
                                                             updateEntity(index, {
-                                                                max_hours_between_heating: Number(e.target.value),
+                                                                max_hours_between_heating: Number(val),
                                                             } as Partial<WaterHeaterEntity>)
                                                         }
                                                         disabled={disabled}
-                                                        className="w-full rounded-lg border border-line/50 bg-surface2 px-3 py-2 text-sm text-text focus:border-accent focus:outline-none disabled:opacity-50"
+                                                        step={1}
+                                                        min={1}
+                                                        max={24}
                                                     />
                                                 </div>
                                                 <div>
                                                     <label className="text-[10px] uppercase font-bold text-muted mb-1.5 block">
                                                         Min Spacing (hours)
                                                     </label>
-                                                    <input
-                                                        type="number"
-                                                        step="0.5"
-                                                        min="0"
-                                                        max="12"
+                                                    <NumberInput
                                                         value={(entity as WaterHeaterEntity).water_min_spacing_hours}
-                                                        onChange={(e) =>
+                                                        onChange={(val) =>
                                                             updateEntity(index, {
-                                                                water_min_spacing_hours: Number(e.target.value),
+                                                                water_min_spacing_hours: Number(val),
                                                             } as Partial<WaterHeaterEntity>)
                                                         }
                                                         disabled={disabled}
-                                                        className="w-full rounded-lg border border-line/50 bg-surface2 px-3 py-2 text-sm text-text focus:border-accent focus:outline-none disabled:opacity-50"
+                                                        step={0.5}
+                                                        min={0}
+                                                        max={12}
                                                     />
                                                 </div>
                                             </>
@@ -446,38 +435,34 @@ export const EntityArrayEditor: React.FC<EntityArrayEditorProps> = ({
                                                     <label className="text-[10px] uppercase font-bold text-muted mb-1.5 block">
                                                         Min SoC (%)
                                                     </label>
-                                                    <input
-                                                        type="number"
-                                                        step="1"
-                                                        min="0"
-                                                        max="100"
+                                                    <NumberInput
                                                         value={(entity as EVChargerEntity).min_soc_percent}
-                                                        onChange={(e) =>
+                                                        onChange={(val) =>
                                                             updateEntity(index, {
-                                                                min_soc_percent: Number(e.target.value),
+                                                                min_soc_percent: Number(val),
                                                             } as Partial<EVChargerEntity>)
                                                         }
                                                         disabled={disabled}
-                                                        className="w-full rounded-lg border border-line/50 bg-surface2 px-3 py-2 text-sm text-text focus:border-accent focus:outline-none disabled:opacity-50"
+                                                        step={1}
+                                                        min={0}
+                                                        max={100}
                                                     />
                                                 </div>
                                                 <div>
                                                     <label className="text-[10px] uppercase font-bold text-muted mb-1.5 block">
                                                         Target SoC (%)
                                                     </label>
-                                                    <input
-                                                        type="number"
-                                                        step="1"
-                                                        min="0"
-                                                        max="100"
+                                                    <NumberInput
                                                         value={(entity as EVChargerEntity).target_soc_percent}
-                                                        onChange={(e) =>
+                                                        onChange={(val) =>
                                                             updateEntity(index, {
-                                                                target_soc_percent: Number(e.target.value),
+                                                                target_soc_percent: Number(val),
                                                             } as Partial<EVChargerEntity>)
                                                         }
                                                         disabled={disabled}
-                                                        className="w-full rounded-lg border border-line/50 bg-surface2 px-3 py-2 text-sm text-text focus:border-accent focus:outline-none disabled:opacity-50"
+                                                        step={1}
+                                                        min={0}
+                                                        max={100}
                                                     />
                                                 </div>
                                             </>

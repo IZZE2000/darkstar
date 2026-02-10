@@ -25,8 +25,8 @@ export const PenaltyLevelsEditor: React.FC<PenaltyLevelsEditorProps> = ({ value,
     const currentLevels: PenaltyLevel[] = Array.isArray(value)
         ? value
         : typeof value === 'string' && value.trim()
-          ? JSON.parse(value)
-          : []
+            ? JSON.parse(value)
+            : []
 
     // Ensure we have all 4 tiers present for the UI
     const safeValue = TIERS.map((tier) => {
@@ -76,11 +76,11 @@ export const PenaltyLevelsEditor: React.FC<PenaltyLevelsEditorProps> = ({ value,
                                 {/* Chained SoC Range Display */}
                                 <div className="flex items-center gap-1.5 bg-surface2/40 px-3 py-2 rounded-lg border border-line/20">
                                     <div className="flex flex-col items-center">
-                                        <span className="text-[8px] uppercase text-text/40 font-bold mb-0.5">
+                                        <span className="text-[10px] uppercase text-text/60 font-bold mb-0.5">
                                             {isLast ? 'Range' : 'Limit %'}
                                         </span>
                                         <div className="flex items-center">
-                                            <div className="w-16">
+                                            <div className="w-21">
                                                 <NumberInput
                                                     value={level.max_soc}
                                                     onChange={(val) =>
@@ -92,7 +92,7 @@ export const PenaltyLevelsEditor: React.FC<PenaltyLevelsEditorProps> = ({ value,
                                                         })
                                                     }
                                                     disabled={disabled}
-                                                    className="h-8 text-xs font-mono font-bold"
+                                                    className="h-8 text-sm font-mono font-bold text-center"
                                                 />
                                             </div>
                                             <span className="text-[10px] text-muted/40 font-bold ml-1.5">%</span>

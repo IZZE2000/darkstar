@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import AzimuthDial from '../../../components/AzimuthDial'
 import TiltDial from '../../../components/TiltDial'
 import { Badge } from '../../../components/ui/Badge'
+import { NumberInput } from '../../../components/ui/NumberInput'
 
 interface SolarArray {
     name: string
@@ -157,14 +158,11 @@ export const SolarArraysEditor: React.FC<SolarArraysEditorProps> = ({ arrays, on
                                                         value={array.azimuth}
                                                         onChange={(val) => updateArray(index, { azimuth: val })}
                                                     />
-                                                    <input
-                                                        type="number"
+                                                    <NumberInput
                                                         value={array.azimuth}
-                                                        onChange={(e) =>
-                                                            updateArray(index, { azimuth: Number(e.target.value) })
-                                                        }
+                                                        onChange={(val) => updateArray(index, { azimuth: Number(val) })}
                                                         disabled={disabled}
-                                                        className="w-full mt-2 rounded-lg border border-line/50 bg-surface2 px-3 py-2 text-xs text-text focus:border-accent focus:outline-none"
+                                                        step={1}
                                                     />
                                                 </div>
                                                 <div>
@@ -175,14 +173,11 @@ export const SolarArraysEditor: React.FC<SolarArraysEditorProps> = ({ arrays, on
                                                         value={array.tilt}
                                                         onChange={(val) => updateArray(index, { tilt: val })}
                                                     />
-                                                    <input
-                                                        type="number"
+                                                    <NumberInput
                                                         value={array.tilt}
-                                                        onChange={(e) =>
-                                                            updateArray(index, { tilt: Number(e.target.value) })
-                                                        }
+                                                        onChange={(val) => updateArray(index, { tilt: Number(val) })}
                                                         disabled={disabled}
-                                                        className="w-full mt-2 rounded-lg border border-line/50 bg-surface2 px-3 py-2 text-xs text-text focus:border-accent focus:outline-none"
+                                                        step={1}
                                                     />
                                                 </div>
                                             </div>
@@ -196,15 +191,11 @@ export const SolarArraysEditor: React.FC<SolarArraysEditorProps> = ({ arrays, on
                                                 <span className="text-[9px] text-muted mb-1 block">
                                                     Peak Power (kWp)
                                                 </span>
-                                                <input
-                                                    type="number"
-                                                    step="0.1"
+                                                <NumberInput
                                                     value={array.kwp}
-                                                    onChange={(e) =>
-                                                        updateArray(index, { kwp: Number(e.target.value) })
-                                                    }
+                                                    onChange={(val) => updateArray(index, { kwp: Number(val) })}
                                                     disabled={disabled}
-                                                    className="w-full rounded-lg border border-line/50 bg-surface2 px-3 py-2 text-sm text-text focus:border-accent focus:outline-none"
+                                                    step={0.1}
                                                 />
                                                 {array.kwp > 50 && (
                                                     <p className="text-[10px] text-bad mt-1">

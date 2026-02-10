@@ -38,6 +38,23 @@ export const ParametersTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMo
                 const isEntirelyAdvanced = section.fields.every((f) => f.isAdvanced)
                 const shouldShowCard = advancedMode || !isEntirelyAdvanced
 
+                // Check section-level showIf
+                let sectionEnabled = true
+                if (section.showIf) {
+                    const configValue = form[section.showIf.configKey]
+                    if (section.showIf.value !== undefined) {
+                        if (Array.isArray(section.showIf.value)) {
+                            sectionEnabled = section.showIf.value.includes(configValue as string | boolean | number)
+                        } else {
+                            sectionEnabled = configValue === String(section.showIf.value)
+                        }
+                    } else {
+                        sectionEnabled = Boolean(configValue)
+                    }
+                }
+
+                if (!sectionEnabled) return null
+
                 return (
                     <AnimatePresence key={section.title} initial={false}>
                         {shouldShowCard && (
@@ -58,7 +75,9 @@ export const ParametersTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMo
                                             Optimization
                                         </span>
                                     </div>
-                                    <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                                    <div
+                                        className={`mt-5 grid gap-4 ${section.title === 'EV Charger' ? 'sm:grid-cols-[2fr_1fr]' : 'sm:grid-cols-2'}`}
+                                    >
                                         <AnimatePresence initial={false}>
                                             {section.fields.map(
                                                 (field) =>
