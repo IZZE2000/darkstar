@@ -96,3 +96,7 @@ data/planner_learning.db-wal
 docs/prompts/
 
 .opencode
+# Config backups
+config.yaml.backup*
+config.yaml.pre*
+config.yaml.bak
