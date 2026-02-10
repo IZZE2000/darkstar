@@ -197,10 +197,13 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] Return type changed from `ActionResult` to `ActionResult | None`
 * [x] All 28 executor action tests pass
 
-#### Phase 5: Fix Max Export Power Silent Skip [DRAFT]
-* [ ] Add profile-aware skip logic to `_set_max_export_power()` similar to discharge_limit
-* [ ] Return `None` for modes that shouldn't show export power changes
-* [ ] Verify export modes show export power, non-export modes don't
+#### Phase 5: Fix Max Export Power Silent Skip [DONE]
+* [x] Add profile-aware skip logic to `_set_max_export_power()` to return `None`
+* [x] Return `None` when mode has `skip_export_power: true` or profile doesn't support export limits
+* [x] Return `None` when entity not configured and not required
+* [x] Update `execute()` method to filter out `None` results
+* [x] Return type changed from `ActionResult` to `ActionResult | None`
+* [x] All 28 executor action tests pass
 
 #### Phase 6: Execute Method Null Handling [DRAFT]
 * [ ] Update `execute()` method to filter out `None` results from all action methods

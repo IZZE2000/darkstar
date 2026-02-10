@@ -439,7 +439,7 @@ class ActionDispatcher:
             result = await self.set_water_temp(decision.water_temp)
             results.append(result)
 
-        # 7. Set max export power (Bug fix #1)
+        # 7. Set max export power (Bug fix #1 + Rev F54 Phase 5)
         # Skip if in Charge or Idle mode (Generic optimization REV IP4)
         # OR if profile mode has skip_export_power flag (REV F53 Phase 1)
         if self.config.has_battery:
@@ -454,7 +454,8 @@ class ActionDispatcher:
                 logger.debug("Skipping max_export_power action: mode is %s", target_mode)
             else:
                 result = await self._set_max_export_power(decision.export_power_w)
-                results.append(result)
+                if result is not None:
+                    results.append(result)
 
         return results
 
@@ -1292,11 +1293,11 @@ class ActionDispatcher:
             error_details=error_details,
         )
 
-    async def _set_max_export_power(self, watts: float) -> ActionResult:
+    async def _set_max_export_power(self, watts: float) -> ActionResult | None:
         """Set max grid export power (Bug Fix #1)."""
         start = time.time()
 
-        # Profile-aware Skip Logic (Rev F52 Phase 6)
+        # Profile-aware Skip Logic (Rev F52 Phase 6 + Rev F54 Phase 5)
         # If the current mode handles export limits internally, we skip the write.
         if self.profile:
             current_mode = self.ha.get_state_value(self.config.inverter.work_mode_entity)
@@ -1321,14 +1322,7 @@ class ActionDispatcher:
                     current_mode,
                     self.profile.metadata.name,
                 )
-                return ActionResult(
-                    action_type="max_export_power",
-                    success=True,
-                    message=f"Skipped per mode setting: {current_mode}",
-                    skipped=True,
-                    duration_ms=int((time.time() - start) * 1000),
-                    error_details=None,
-                )
+                return None  # Silent skip - no entry in execution history
 
         entity = self.config.inverter.grid_max_export_power_entity
 
@@ -1337,14 +1331,7 @@ class ActionDispatcher:
                 "Skipping max_export_power action: profile '%s' does not support grid export limit control",
                 self.profile.metadata.name,
             )
-            return ActionResult(
-                action_type="max_export_power",
-                success=True,
-                message="",  # Silent skip
-                skipped=True,
-                duration_ms=int((time.time() - start) * 1000),
-                error_details=None,
-            )
+            return None  # Silent skip - no entry in execution history
 
         if not _is_entity_configured(entity):
             # Check if this entity is actually required by the profile
@@ -1354,14 +1341,7 @@ class ActionDispatcher:
 
             if not is_required:
                 # Silent skip - not configured and not required
-                return ActionResult(
-                    action_type="max_export_power",
-                    success=True,
-                    message="",
-                    skipped=True,
-                    duration_ms=int((time.time() - start) * 1000),
-                    error_details=None,
-                )
+                return None  # Silent skip - no entry in execution history
 
             logger.debug("Skipping max_export_power action: entity not configured")
             return ActionResult(
