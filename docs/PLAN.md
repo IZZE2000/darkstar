@@ -199,11 +199,11 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] Add production-grade validation: prevent end date before start date, show inline error message
 * [x] Update "Net Cost" label to show "Custom Period Cost" when using custom range
 
-#### Phase 2: Frontend Data Fetching [PLANNED]
-* [ ] Calculate default dates when switching to Custom (start date = previous period start, end date = today)
-* [ ] Modify API call to pass start_date and end_date query parameters when period is 'custom'
-* [ ] Handle loading states for custom date changes
-* [ ] Add error handling for invalid date ranges
+#### Phase 2: Frontend Data Fetching [DONE]
+* [x] Calculate default dates when switching to Custom (start date = previous period start, end date = today)
+* [x] Modify API call to pass start_date and end_date query parameters when period is 'custom'
+* [x] Handle loading states for custom date changes
+* [x] Add error handling for invalid date ranges
 
 #### Phase 3: API Layer Updates [PLANNED]
 * [ ] Update energyRange function in api.ts to accept optional start_date and end_date parameters
