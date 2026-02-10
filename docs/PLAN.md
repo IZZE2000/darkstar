@@ -219,7 +219,7 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 
 ---
 
-### [DRAFT] REV // ARC15 — Entity-Centric Config Restructure for Load Disaggregation
+### [PLANNED] REV // ARC15 — Entity-Centric Config Restructure for Load Disaggregation
 
 **Goal:** Restructure configuration to eliminate duplication between `system.has_*` toggles, `input_sensors.*_power` entities, and `deferrable_loads` array. Create a single source of truth per entity with clear, expandable sections for Water Heating, EV Chargers, and future deferrable loads.
 
@@ -376,3 +376,18 @@ ev_chargers:                       # Array for multiple EVs
 - [ ] Documentation reflects new architecture
 - [ ] Settings UI is intuitive and guides user clearly
 - [ ] Schema is future-proof for pool heaters, heat pumps, etc.
+
+---
+
+### [PLANNED] REV // F55 — Fix History Display Bug (Respect Inversion Flags)
+
+**Goal:** Fix Sungrow/inverted battery charging slots appearing as discharges in history.
+**Context:** The background recorder ignores inversion flags, recording raw HA values which lead to incorrect energy calculations in the database.
+
+**Plan:**
+
+#### Phase 1: Fix Recorder & Backfill [DRAFT]
+* [ ] Update `backend/recorder.py` to respect `battery_power_inverted` and `grid_power_inverted`.
+* [ ] Update `backend/learning/backfill.py` to auto-detect cumulative battery charge/discharge sensors.
+* [ ] Update `backend/learning/engine.py` canonicalization to map battery energy names to DB fields.
+* [ ] Verify with new test suite `tests/test_recorder_inversion.py`.
