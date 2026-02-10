@@ -318,7 +318,7 @@ export type EnergyTodayResponse = {
 }
 
 export type EnergyRangeResponse = {
-    period: 'today' | 'yesterday' | 'week' | 'month'
+    period: 'today' | 'yesterday' | 'week' | 'month' | 'custom'
     start_date: string
     end_date: string
     grid_import_kwh: number
@@ -615,8 +615,17 @@ export const Api = {
     },
     // Energy stats from HA sensors
     energyToday: () => getJSON<EnergyTodayResponse>('/api/energy/today'),
-    energyRange: (period: 'today' | 'yesterday' | 'week' | 'month') =>
-        getJSON<EnergyRangeResponse>(`/api/energy/range?period=${period}`),
+    energyRange: (
+        period: 'today' | 'yesterday' | 'week' | 'month' | 'custom',
+        start_date?: string,
+        end_date?: string,
+    ) => {
+        let url = `/api/energy/range?period=${period}`
+        if (period === 'custom' && start_date && end_date) {
+            url += `&start_date=${start_date}&end_date=${end_date}`
+        }
+        return getJSON<EnergyRangeResponse>(url)
+    },
     // Log management
     logInfo: () => getJSON<LogInfoResponse>('/api/system/log-info'),
     systemHealth: () => getJSON<SystemHealthResponse>('/api/system/health'),

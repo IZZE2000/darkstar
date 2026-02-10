@@ -81,7 +81,10 @@ const ProgressBar = ({ value, total, colorClass }: { value: number; total: numbe
 // --- Domain Cards ---
 
 export function GridDomain({ netCost, importKwh, exportKwh }: GridCardProps) {
-    const [period, setPeriod] = useState<'today' | 'yesterday' | 'week' | 'month'>('today')
+    const [period, setPeriod] = useState<'today' | 'yesterday' | 'week' | 'month' | 'custom'>('today')
+    const [startDate, setStartDate] = useState<string>('')
+    const [endDate, setEndDate] = useState<string>('')
+    const [dateError, setDateError] = useState<string | null>(null)
     const [rangeData, setRangeData] = useState<{
         import_cost_sek: number
         export_revenue_sek: number
@@ -94,12 +97,37 @@ export function GridDomain({ netCost, importKwh, exportKwh }: GridCardProps) {
     } | null>(null)
     const [loading, setLoading] = useState(true)
 
+    // Validation helper for custom date range
+    const validateDateRange = (start: string, end: string): boolean => {
+        if (!start || !end) return false
+        const startDate = new Date(start)
+        const endDate = new Date(end)
+        if (endDate < startDate) {
+            setDateError('End date must be after start date')
+            return false
+        }
+        setDateError(null)
+        return true
+    }
+
     // Fetch data when period changes
     useEffect(() => {
         let cancelled = false
 
-        Api.energyRange(period)
-            .then((data) => {
+        const fetchData = async () => {
+            if (period === 'custom' && (!startDate || !endDate)) {
+                // Wait for both dates to be set
+                setLoading(false)
+                return
+            }
+
+            if (period === 'custom' && !validateDateRange(startDate, endDate)) {
+                setLoading(false)
+                return
+            }
+
+            try {
+                const data = await Api.energyRange(period, startDate, endDate)
                 if (!cancelled) {
                     setRangeData({
                         import_cost_sek: data.import_cost_sek,
@@ -112,18 +140,19 @@ export function GridDomain({ netCost, importKwh, exportKwh }: GridCardProps) {
                         slot_count: data.slot_count,
                     })
                 }
-            })
-            .catch(() => {
+            } catch {
                 if (!cancelled) setRangeData(null)
-            })
-            .finally(() => {
+            } finally {
                 if (!cancelled) setLoading(false)
-            })
+            }
+        }
+
+        fetchData()
 
         return () => {
             cancelled = true
         }
-    }, [period])
+    }, [period, startDate, endDate])
 
     // Use range data for display, fallback to props for "today"
     const displayNetCost = rangeData?.net_cost_sek ?? netCost
@@ -136,6 +165,7 @@ export function GridDomain({ netCost, importKwh, exportKwh }: GridCardProps) {
         { key: 'yesterday', label: 'Yesterday' },
         { key: 'week', label: '7 Days' },
         { key: 'month', label: '30 Days' },
+        { key: 'custom', label: 'Custom' },
     ] as const
 
     return (
@@ -158,6 +188,18 @@ export function GridDomain({ netCost, importKwh, exportKwh }: GridCardProps) {
                         onClick={() => {
                             setPeriod(p.key)
                             setLoading(true)
+                            // Set default dates when switching to Custom
+                            if (p.key === 'custom') {
+                                const today = new Date()
+                                const lastWeek = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000)
+                                setEndDate(today.toISOString().split('T')[0])
+                                setStartDate(lastWeek.toISOString().split('T')[0])
+                                setDateError(null)
+                            } else {
+                                setStartDate('')
+                                setEndDate('')
+                                setDateError(null)
+                            }
                         }}
                         className={`px-2 py-0.5 text-[9px] font-medium rounded-full transition ${
                             period === p.key
@@ -170,18 +212,46 @@ export function GridDomain({ netCost, importKwh, exportKwh }: GridCardProps) {
                 ))}
             </div>
 
+            {/* Custom Date Range Inputs */}
+            {period === 'custom' && (
+                <div className="flex items-center gap-2 mb-2 relative z-10">
+                    <input
+                        type="date"
+                        value={startDate}
+                        onChange={(e) => {
+                            setStartDate(e.target.value)
+                            if (endDate) validateDateRange(e.target.value, endDate)
+                        }}
+                        className="bg-surface2/50 border border-line/30 rounded px-2 py-0.5 text-[9px] text-text focus:outline-none focus:ring-1 focus:ring-accent"
+                    />
+                    <span className="text-muted text-[9px]">to</span>
+                    <input
+                        type="date"
+                        value={endDate}
+                        onChange={(e) => {
+                            setEndDate(e.target.value)
+                            if (startDate) validateDateRange(startDate, e.target.value)
+                        }}
+                        className="bg-surface2/50 border border-line/30 rounded px-2 py-0.5 text-[9px] text-text focus:outline-none focus:ring-1 focus:ring-accent"
+                    />
+                </div>
+            )}
+            {dateError && <div className="text-[9px] text-bad mb-2 relative z-10">{dateError}</div>}
+
             {/* Big Metric: Net Cost */}
             <div className="mb-3 relative z-10">
                 <div className="text-[10px] text-muted uppercase tracking-wider mb-0.5">
-                    Net{' '}
-                    {period === 'today'
-                        ? 'Daily'
-                        : period === 'yesterday'
-                          ? 'Yesterday'
-                          : period === 'week'
-                            ? '7 Day'
-                            : '30 Day'}{' '}
-                    Cost
+                    {period === 'custom'
+                        ? 'Custom Period Cost'
+                        : `Net ${
+                              period === 'today'
+                                  ? 'Daily'
+                                  : period === 'yesterday'
+                                    ? 'Yesterday'
+                                    : period === 'week'
+                                      ? '7 Day'
+                                      : '30 Day'
+                          } Cost`}
                 </div>
                 <div className="flex items-baseline gap-1">
                     <span

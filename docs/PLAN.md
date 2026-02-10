@@ -184,20 +184,20 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 
 ---
 
-### [PLANNED] REV // UI19 — Custom Date Picker for Grid & Financial Card
+### [IN PROGRESS] REV // UI19 — Custom Date Picker for Grid & Financial Card
 
 **Goal:** Add custom date range selection to the Grid & Financial card, matching the Executor History date picker implementation.
 **Context:** Users currently have preset options (Today, Yesterday, 7 Days, 30 Days) but cannot select arbitrary date ranges for financial analysis.
 
 **Plan:**
 
-#### Phase 1: Frontend UI Updates [PLANNED]
-* [ ] Update period type in CommandDomains.tsx to include 'custom': `'today' | 'yesterday' | 'week' | 'month' | 'custom'`
-* [ ] Add state for startDate and endDate (string type, YYYY-MM-DD format)
-* [ ] Add "Custom" button to period selector
-* [ ] Show date input fields (start date, "to", end date) below period buttons when period is 'custom' (matching Executor History layout)
-* [ ] Add production-grade validation: prevent end date before start date, show inline error message
-* [ ] Update "Net Cost" label to show "Custom Period Cost" when using custom range
+#### Phase 1: Frontend UI Updates [DONE]
+* [x] Update period type in CommandDomains.tsx to include 'custom': `'today' | 'yesterday' | 'week' | 'month' | 'custom'`
+* [x] Add state for startDate and endDate (string type, YYYY-MM-DD format)
+* [x] Add "Custom" button to period selector
+* [x] Show date input fields (start date, "to", end date) below period buttons when period is 'custom' (matching Executor History layout)
+* [x] Add production-grade validation: prevent end date before start date, show inline error message
+* [x] Update "Net Cost" label to show "Custom Period Cost" when using custom range
 
 #### Phase 2: Frontend Data Fetching [PLANNED]
 * [ ] Calculate default dates when switching to Custom (start date = previous period start, end date = today)
@@ -224,3 +224,95 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [ ] Test with various date ranges (single day, week, month, multi-month)
 * [ ] Verify financial calculations are correct for custom ranges
 * [ ] Lint and type check all changes
+
+---
+
+### [PLANNED] REV // F53 — Fronius Auto Mode Entity Write Fixes
+
+**Goal:** Prevent extraneous entity writes in Fronius "Auto" work mode. Only `minimum_reserve` (SoC target) should be written in Auto mode.
+**Context:** Beta tester reports Fronius in "Auto" mode is receiving writes for `grid_charging`, `max_export_power`, and `discharge_limit` entities. Per `fronius_logic.md`, Auto mode ignores all controls except `minimum_reserve`.
+
+**Plan:**
+
+#### Phase 1: Fix Auto Mode Skip Logic [PLANNED]
+* [ ] Update `execute()` in `[executor/actions.py]` to check profile `skip_*` flags BEFORE calling `_set_grid_charging()`, `_set_discharge_limit()`, `_set_max_export_power()`
+* [ ] Fix generic optimization logic (lines 349-400) that only checks Charge/Idle modes, ignoring profile flags
+* [ ] Verify `self_consumption` and `zero_export` modes (both "Auto") properly skip all 3 entities
+* [ ] Test that only `soc_target` and `work_mode` are written in Auto mode
+
+#### Phase 2: Fix Idle Status Display [PLANNED]
+* [ ] Update `_generate_reason()` in `[executor/controller.py]` to use profile mode descriptions instead of hardcoded "Hold/Idle" and "Zero-Export" labels
+* [ ] Use `profile.modes.*.description` for the reason string when available
+* [ ] Ensure "Auto" mode shows correct description, not "Idle"
+
+#### Phase 3: Fix Config Reload on UI Save [PLANNED]
+* [ ] Add `executor.reload_config()` call in `[backend/api/routers/config.py]` after successful config save
+* [ ] Import `get_executor_instance` from executor router
+* [ ] Call reload_config() only if executor is running
+* [ ] Verify executor immediately picks up new settings without restart
+* [ ] Test with changing SoC target - should reflect immediately in executor status
+
+---
+
+### [DRAFT] REV // F54 — Sungrow Executor Display & Composite Mode Fixes
+
+**Goal:** Fix three critical issues reported by Sungrow beta tester: Forced cmd not updating when work_mode unchanged, incorrect entity display in execution history, and unwanted SoC Target visibility.
+
+**Context:** Sungrow profile uses composite mode entities (forced_charge_discharge_cmd, export_power_limit, max_discharge_power) that are set alongside work_mode changes. User reports that forced commands aren't updating and execution history shows confusing/misleading information.
+
+**Issues Identified:**
+
+1. **Forced cmd not written independently:** In `_set_work_mode()` (actions.py:462), composite mode entities are ONLY processed when work_mode changes. If Sungrow is already in "Forced mode" but needs to switch from "Forced discharge" to "Forced charge", the forced_charge_discharge_cmd is never updated because the composite loop is skipped when work_mode is already at target.
+
+2. **Grid Charging shown incorrectly:** `_set_grid_charging()` returns ActionResult with "Handled by work_mode" message for Sungrow even though it's mode-based and shouldn't be displayed at all.
+
+3. **SoC Target shown for unsupported profile:** `_set_soc_target()` returns ActionResult even when `supports_soc_target: false`, causing it to appear in execution history.
+
+4. **Discharge Limit shown when skipped:** Even with `skip_discharge_limit: true`, an ActionResult is returned with "Skipped per mode setting" message.
+
+5. **Max Export Power shown incorrectly:** Similar to discharge limit, this shows up even when it shouldn't for Sungrow modes.
+
+**Plan:**
+
+#### Phase 1: Fix Composite Mode Independent Updates [DRAFT]
+* [ ] Refactor `_set_work_mode()` in `[executor/actions.py]` to process composite mode entities even when work_mode is already at target
+* [ ] Extract composite entity processing into separate helper method `_apply_composite_entities()`
+* [ ] Call `_apply_composite_entities()` after the idempotency check for work_mode
+* [ ] Ensure forced_charge_discharge_cmd updates when charging intent changes (charge vs discharge) even if EMS mode stays "Forced mode"
+* [ ] Add test case: Sungrow switching from Forced Discharge to Forced Charge while staying in Forced mode
+
+#### Phase 2: Fix Grid Charging Silent Skip [DRAFT]
+* [ ] Modify `_set_grid_charging()` in `[executor/actions.py]` to return `None` when `separate_grid_charging_switch: false`
+* [ ] Update `execute()` method to handle `None` return values (filter out before appending to results)
+* [ ] Verify Sungrow self-consumption mode shows NO grid charging entry in history
+* [ ] Verify Generic profile with separate switch still shows grid charging correctly
+
+#### Phase 3: Fix SoC Target Silent Skip [DRAFT]
+* [ ] Modify `_set_soc_target()` to return `None` when profile has `supports_soc_target: false`
+* [ ] Ensure no ActionResult is created for unsupported profiles
+* [ ] Verify Sungrow profile never shows SoC Target in execution history
+* [ ] Verify Fronius/Deye profiles still show SoC Target when it changes
+
+#### Phase 4: Fix Discharge Limit Silent Skip [DRAFT]
+* [ ] Modify `_set_discharge_limit()` to return `None` when `skip_discharge_limit: true` for current mode
+* [ ] Remove the "Skipped per mode setting" ActionResult for truly skipped actions
+* [ ] Verify Sungrow modes with skip_discharge_limit don't show discharge_limit entries
+
+#### Phase 5: Fix Max Export Power Silent Skip [DRAFT]
+* [ ] Add profile-aware skip logic to `_set_max_export_power()` similar to discharge_limit
+* [ ] Return `None` for modes that shouldn't show export power changes
+* [ ] Verify export modes show export power, non-export modes don't
+
+#### Phase 6: Execute Method Null Handling [DRAFT]
+* [ ] Update `execute()` method to filter out `None` results from all action methods
+* [ ] Add type hints: `-> ActionResult | None`
+* [ ] Ensure no regression in action_results processing in engine.py
+
+#### Phase 7: Testing & Verification [DRAFT]
+* [ ] Test Sungrow profile: Forced mode changes (discharge->charge) with same work_mode
+* [ ] Test Sungrow profile: Self-consumption mode shows only work_mode + composite entities
+* [ ] Test Fronius profile: Verify no regression in Auto mode behavior
+* [ ] Test Generic profile: Verify all entities still display correctly
+* [ ] Run frontend lint (`pnpm lint`)
+* [ ] Run backend pytest (`uv run pytest`)
+* [ ] Update relevant tests in `test_executor_actions.py`
