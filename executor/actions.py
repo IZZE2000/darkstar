@@ -427,10 +427,11 @@ class ActionDispatcher:
                 )
                 results.append(result)
 
-        # 5. Set SoC target (Rev O1)
+        # 5. Set SoC target (Rev O1 + Rev F54 Phase 3)
         if self.config.has_battery:
             result = await self._set_soc_target(decision.soc_target)
-            results.append(result)
+            if result is not None:
+                results.append(result)
 
         # 6. Set water heater target (Rev O1)
         if self.config.has_water_heater:
@@ -1088,24 +1089,18 @@ class ActionDispatcher:
             error_details=error_details,
         )
 
-    async def _set_soc_target(self, target: int) -> ActionResult:
+    async def _set_soc_target(self, target: int) -> ActionResult | None:
         """Set SoC target."""
         start = time.time()
         entity = self.config.inverter.soc_target_entity
 
+        # Handle profile without SoC target support (Rev F54 Phase 3)
         if self.profile and not self.profile.capabilities.supports_soc_target:
             logger.debug(
                 "Skipping soc_target action: profile '%s' does not support SoC target control",
                 self.profile.metadata.name,
             )
-            return ActionResult(
-                action_type="soc_target",
-                success=True,
-                message="",  # Silent skip
-                skipped=True,
-                duration_ms=int((time.time() - start) * 1000),
-                error_details=None,
-            )
+            return None  # Silent skip - no entry in execution history
 
         if not _is_entity_configured(entity):
             # Check if this entity is actually required by the profile
@@ -1116,14 +1111,7 @@ class ActionDispatcher:
 
             if not is_required:
                 # Silent skip - not configured and not required
-                return ActionResult(
-                    action_type="soc_target",
-                    success=True,
-                    message="",  # Empty message = no log
-                    skipped=True,
-                    duration_ms=int((time.time() - start) * 1000),
-                    error_details=None,
-                )
+                return None  # Silent skip - no entry in execution history
 
             logger.debug("Skipping soc_target action: entity not configured")
             return ActionResult(

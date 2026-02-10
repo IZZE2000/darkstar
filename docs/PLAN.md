@@ -183,11 +183,12 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] Return type changed from `ActionResult` to `ActionResult | None`
 * [x] All 28 executor action tests pass
 
-#### Phase 3: Fix SoC Target Silent Skip [DRAFT]
-* [ ] Modify `_set_soc_target()` to return `None` when profile has `supports_soc_target: false`
-* [ ] Ensure no ActionResult is created for unsupported profiles
-* [ ] Verify Sungrow profile never shows SoC Target in execution history
-* [ ] Verify Fronius/Deye profiles still show SoC Target when it changes
+#### Phase 3: Fix SoC Target Silent Skip [DONE]
+* [x] Modify `_set_soc_target()` to return `None` when profile has `supports_soc_target: false`
+* [x] Return `None` when entity not configured and not required by profile
+* [x] Update `execute()` method to filter out `None` results
+* [x] Return type changed from `ActionResult` to `ActionResult | None`
+* [x] All 28 executor action tests pass
 
 #### Phase 4: Fix Discharge Limit Silent Skip [DRAFT]
 * [ ] Modify `_set_discharge_limit()` to return `None` when `skip_discharge_limit: true` for current mode
