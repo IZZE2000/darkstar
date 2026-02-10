@@ -19,13 +19,13 @@ advisor:
 # System Parameters
 system:
   system_id: prod
-  inverter_profile: generic        # Profile: generic | deye | fronius | victron
+  inverter_profile: deye           # Profile: generic | deye | fronius | victron
 
   # System Profile Toggles (what hardware do you have?)
   has_solar: true         # Enable PV forecasting & solar-related features
   has_battery: true       # Enable battery control & grid arbitrage
   has_water_heater: true  # Enable water heating optimization
-  has_ev_charger: false   # Enable EV charging optimization
+  has_ev_charger: true    # Enable EV charging optimization
   grid_meter_type: net    # Meter type: net (single +/- sensor) | dual (separate import/export)
 
   grid:
@@ -33,15 +33,17 @@ system:
   inverter:
     max_power_kw: 8.0                 # Maximum inverter AC power output
   location:
-    latitude: 55.123                # Decimal degrees, positive north (for PV forecasting)
-    longitude: 13.123               # Decimal degrees, positive east (for PV forecasting)
+    latitude: 55.493221             # Decimal degrees, positive north (for PV forecasting)
+    longitude: 13.111221            # Decimal degrees, positive east (for PV forecasting)
   solar_arrays:
-    - name: "Main Array"
-      azimuth: 180                       # Panel direction: 0°=North, 90°=East, 180°=South, 270°=West
-      kwp: 5.0                           # Total DC peak power of PV array in kilowatts
-      tilt: 35                           # Panel angle from horizontal: 0°=flat, 90°=vertical
-
-# Battery Specifications
+    - azimuth: 150
+      kwp: 8
+      tilt: 45
+      name: Roof
+    - name: Garage
+      azimuth: 180
+      tilt: 0
+      kwp: 10
 battery:
   capacity_kwh: 34.2
   nominal_voltage_v: 48.0             # Nominal battery voltage (used for Planning)
@@ -50,22 +52,57 @@ battery:
   max_discharge_a: 185.0              # Max discharging current (A)
   max_charge_w: 5000.0                # Max charging power (W)
   max_discharge_w: 5000.0             # Max discharging power (W)
-  min_soc_percent: 12
+  min_soc_percent: 14
   max_soc_percent: 100                # Planner target ceiling
   roundtrip_efficiency_percent: 95.0
   charge_efficiency: 0.92             # Charging efficiency (0-1)
 
+  max_charge_power_kw: 8
+  max_discharge_power_kw: 8
 battery_economics:
   battery_cycle_cost_kwh: 0.2      # Degradation cost applied per kWh cycled through the battery
 
 
-# Water Heating (Global Settings)
-# Per-device settings (power, min_kwh_per_day, spacing) are now in water_heaters[] array below
+# EV Charging (Smart Grid-Only Charging)
+# Treats EV as a deferrable load with SoC-based urgency. Unlike the house battery,
+# EV charging is grid-only (never drains house battery into car).
+ev_charger:
+  # Physical Parameters
+  max_power_kw: 3                  # Max charging power (kW) - typical 1-phase 32A = 7.4kW
+  battery_capacity_kwh: 30         # EV battery capacity (kWh) - adjust for your car
+
+  # Incentive Buckets (Willingness to Pay)
+  # Controls how "expensive" electricity can be for each SoC range.
+  # Higher value (SEK/kWh) = more urgent to charge in that range.
+  # Thresholds are chained: 0% -> Tier 1 Max -> Tier 2 Max -> ... -> 100%
+  penalty_levels:
+    - name: emergency
+      max_soc: 20
+      penalty_sek: 100
+    - name: high
+      max_soc: 40
+      penalty_sek: 100
+    - name: normal
+      max_soc: 70
+      penalty_sek: 100
+    - name: opportunistic
+      max_soc: 100
+      penalty_sek: 100
+  replan_on_plugin: true           # Trigger when car plugs in
+  replan_on_unplug: false          # Trigger when car unplugs
+  replan_on_soc_change: false      # Trigger when SoC updates (can be noisy)
+
+
+# Water Heating
 water_heating:
-  defer_up_to_hours: 6             # Allow deferring "today's" heating into early tomorrow morning (up to N hours) if cheaper
-  block_start_penalty_sek: 3.0     # Penalty per heating start (higher = more consolidated bulk heating)
-  comfort_level: 3                 # 1-5 (Economy→Maximum) - controls gap penalty
-  spacing_penalty_sek: 0.20        # Soft penalty for frequent starts
+  power_kw: 3.0                    # Power consumption of the water heater
+  min_kwh_per_day: 6.0             # Minimum energy to heat per day (usually 2-3h run time)
+  defer_up_to_hours: 0             # Allow deferring "today's" heating into early tomorrow morning (up to N hours) if cheaper
+  block_start_penalty_sek: 1.0     # Penalty per heating start (higher = more consolidated bulk heating)
+  max_hours_between_heating: 8     # Max gap before comfort penalty (only used if enable_top_ups is true)
+  comfort_level: 4                 # 1-5 (Economy→Maximum) - controls gap penalty
+  min_spacing_hours: 5.0           # Min gap between starts to avoid efficiency loss
+  spacing_penalty_sek: 1.20        # Soft penalty for frequent starts
   enable_top_ups: true             # Enable spaced top-up heating blocks (vs bulk heating only)
 
 
@@ -75,7 +112,7 @@ water_heating:
     anti_legionella_temp_c: 65        # Target temperature for safety cycle
     anti_legionella_interval_days: 7  # Run cycle every N days
     anti_legionella_duration_hours: 3.0  # Duration at power_kw (e.g., 3h * 3kW = 9kWh)
-    end_date: ""                      # Vacation mode end date (set by UI/Automation)
+    end_date: ''                      # Vacation mode end date (set by UI/Automation)
 
   # Advanced Water Heating Tuning (Rev K17)
   # Controls how the solver prioritizes water heating comfort and blocking.
@@ -91,57 +128,17 @@ water_heating:
 # Water Heaters (Array for multiple water heaters)
 # ARC15: Replaces deferrable_loads entry for water heating
 water_heaters:
-  - id: main_tank                    # Unique identifier (slug format)
-    name: "Main Water Heater"        # Display name in UI
-    enabled: true                    # Master toggle for this heater
-    power_kw: 3.0                    # Rated power consumption (kW)
-    min_kwh_per_day: 6.0             # Minimum daily energy requirement (kWh)
-    max_hours_between_heating: 8     # Max comfort gap between heating cycles
-    water_min_spacing_hours: 4       # Minimum gap between heating starts
-    sensor: sensor.vvb_power         # Home Assistant entity for power reading
-    type: binary                     # Load type: binary (on/off) or modulating
-    nominal_power_kw: 3.0            # Nominal power for load calculations
-
-  # Example: Second water heater (disabled by default)
-  # - id: upstairs_tank
-  #   name: "Upstairs Water Heater"
-  #   enabled: false
-  #   power_kw: 3.0
-  #   min_kwh_per_day: 4.0
-  #   max_hours_between_heating: 12
-  #   water_min_spacing_hours: 4
-  #   sensor: sensor.wh2_power
-  #   type: binary
-  #   nominal_power_kw: 3.0
-
-# EV Chargers (Array for multiple electric vehicles)
-# ARC15: Replaces deferrable_loads entry for EV charging
-ev_chargers:
-  - id: tesla_model_3                # Unique identifier (slug format)
-    name: "Tesla Model 3"            # Display name in UI
-    enabled: false                   # Master toggle for this EV (set true to enable)
-    max_power_kw: 11.0               # Maximum charging power (kW)
-    battery_capacity_kwh: 82.0       # Battery capacity for SoC calculations (kWh)
-    min_soc_percent: 20.0            # Minimum SoC constraint (%)
-    target_soc_percent: 80.0         # Target SoC for charging (%)
-    sensor: sensor.tesla_power       # Home Assistant entity for power reading
-    type: variable                   # Load type: variable (EV) or constant
-    nominal_power_kw: 11.0           # Nominal power for load calculations
-
-  # Example: Second EV (disabled by default)
-  # - id: fiat_500e
-  #   name: "Fiat 500e"
-  #   enabled: false
-  #   max_power_kw: 7.4
-  #   battery_capacity_kwh: 42.0
-  #   min_soc_percent: 20.0
-  #   target_soc_percent: 80.0
-  #   sensor: sensor.fiat_power
-  #   type: variable
-  #   nominal_power_kw: 7.4
-
-
-# S-Index Configuration (Risk & Safety Strategy)
+  - id: main_tank
+    name: Water Heater
+    enabled: true
+    power_kw: 3.0
+    min_kwh_per_day: 6.0
+    max_hours_between_heating: 8
+    water_min_spacing_hours: 5.0
+    sensor: "sensor.vvb_power"
+    type: fixed
+    nominal_power_kw: 3.0
+ev_chargers: []
 s_index:
   mode: "probabilistic"            # Options: probabilistic | dynamic
   static_factor:                   # Used when mode=static
@@ -151,7 +148,7 @@ s_index:
   temp_weight: 0.3                 # Weight for temperature adjustment
   temp_baseline_c: 15.0            # Baseline temperature (no adjustment)
   temp_cold_c: -10.0               # Temperature where adjustment reaches 100%
-  s_index_horizon_days: 4          # Number of days ahead to evaluate (integer)
+  s_index_horizon_days: 5          # Number of days ahead to evaluate (integer)
   risk_appetite: 3                 # 1-5 scale (1=safe, 3=neutral, 5=gambler)
   max_safety_buffer_percent: 20    # Max reserve capacity to hold at 100% deficit (default 40%)
 
@@ -172,7 +169,7 @@ debug:
 automation:
   enable_scheduler: true               # Enable automatic schedule regeneration
   schedule:
-    every_minutes: 30                  # How often to regenerate schedule
+    every_minutes: '30'                # How often to regenerate schedule
     jitter_minutes: 0                  # Random delay to avoid thundering herd
   ml_training:
     enabled: true                      # Enable automatic ML model retraining
@@ -189,7 +186,7 @@ automation:
 learning:
   enable: true                         # Master switch: enables telemetry storage and learning features
   sqlite_path: "data/planner_learning.db"  # Database path for storing planner telemetry (observations, forecasts, plans, metrics)
-  horizon_days: 3                      # Number of days of Aurora ML forecasts to generate (2-7 days, affects CPU usage)
+  horizon_days: 2                      # Number of days of Aurora ML forecasts to generate (2-7 days, affects CPU usage)
   min_improvement_threshold: 0.015     # Minimum improvement (0-1 scale) required before applying learned adjustments (prevents noise)
   auto_tune_enabled: true              # Enable Analyst: automatically adjusts forecast overlays based on historical bias (hourly load/PV corrections)
   reflex_enabled: true                 # Enable Reflex: tunes physical/policy parameters (S-Index, PV confidence, battery cost, capacity) based on safety/confidence/ROI/capacity analysis
@@ -210,6 +207,8 @@ learning:
     future_price_guard_buffer_sek: 0.05  # Max daily change to future price guard buffer (SEK per day)
 
 # Nordpool API Configuration (electricity prices)
+  default_battery_cost_sek_per_kwh: 0.02
+  sensor_map: {}
 nordpool:
   price_area: "SE4"                    # Nordpool bidding zone (SE1-SE4, NO1-NO5, DK1-DK2, FI, etc.)
   currency: "SEK"                      # Price currency
@@ -222,8 +221,9 @@ pricing:
   energy_tax_sek: 0.439                # Energy tax per kWh
 
 # Forecasting Adjustments (Aurora ML tuning)
+  subscription_fee_sek_per_month: 593.0
 forecasting:
-  active_forecast_version: "2.5.4-beta"
+  active_forecast_version: "aurora"
   pv_confidence_percent: 83.0          # PV forecast scaling (100 = trust forecast fully)
   load_safety_margin_percent: 117.0    # Load forecast scaling (>100 = expect more load)
 
@@ -243,69 +243,72 @@ kepler:
 # =============================================================================
 
 # Input Sensors (entities Darkstar READS from Home Assistant)
+  target_soc_penalty_sek: 10.0
 input_sensors:
   # Context sensors for ML features
-  alarm_state: ""        # Alarm panel for occupancy detection (ML feature)
-  vacation_mode: ""     # Vacation mode toggle (reduces load forecasts)
+  alarm_state: "alarm_control_panel.alarmo" # Alarm panel for occupancy detection (ML feature)
+  vacation_mode: "input_boolean.vacation_mode" # Vacation mode toggle (reduces load forecasts)
 
   # Core energy sensors (real-time power)
-  battery_soc: ""           # Current battery state of charge (%)
-  pv_power: ""             # Current PV production (W or kW)
-  load_power: ""         # Current load consumption (W or kW)
-  battery_power: ""   # Current battery power (+ discharge, - charge)
-  water_power: ""                  # Current water heater power (W or kW)
+  battery_soc: 'sensor.inverter_battery' # Current battery state of charge (%)
+  pv_power: "sensor.inverter_pv_power" # Current PV production (W or kW)
+  load_power: "sensor.inverter_load_power" # Current load consumption (W or kW)
+  battery_power: "sensor.inverter_battery_power" # Current battery power (+ discharge, - charge)
+  water_power: "sensor.vvb_power"  # Current water heater power (W or kW)
   ev_power: ""              # Current EV charging power (W or kW)
-  ev_soc: ""                # EV battery state of charge (%) - Required for smart charging
-  ev_plug: ""               # EV plug status (on/off or connected/disconnected) - Required for smart charging
-  grid_power: ""         # Current grid power (+ import, - export) (Used if meter_type=net)
-  grid_import_power: ""    # Current grid import power (W/kW) (Used if meter_type=dual)
-  grid_export_power: ""    # Current grid export power (W/kW) (Used if meter_type=dual)
+  ev_soc: "sensor.inverter_battery" # EV battery state of charge (%) - Required for smart charging
+  ev_plug: "input_boolean.ev_mockup" # EV plug status (on/off or connected/disconnected) - Required for smart charging
+  grid_power: "sensor.inverter_grid_power" # Current grid power (+ import, - export) (Used if meter_type=net)
+  grid_import_power: ''    # Current grid import power (W/kW) (Used if meter_type=dual)
+  grid_export_power: ''    # Current grid export power (W/kW) (Used if meter_type=dual)
 
   # Cumulative energy sensors (totals)
-  total_battery_charge: ""      # Cumulative battery charge (kWh)
-  total_battery_discharge: "" # Cumulative battery discharge (kWh)
-  total_grid_export: ""          # Cumulative grid export (kWh)
-  total_grid_import: ""          # Cumulative grid import (kWh)
-  total_load_consumption: ""  # Cumulative load (kWh)
-  total_pv_production: ""           # Cumulative PV production (kWh)
-  water_heater_consumption: ""               # Water heater daily energy (kWh)
+  total_battery_charge: "sensor.inverter_total_battery_charge" # Cumulative battery charge (kWh)
+  total_battery_discharge: "sensor.inverter_total_battery_discharge" # Cumulative battery discharge (kWh)
+  total_grid_export: "sensor.inverter_total_energy_export" # Cumulative grid export (kWh)
+  total_grid_import: "sensor.inverter_total_energy_import" # Cumulative grid import (kWh)
+  total_load_consumption: "sensor.inverter_total_load_consumption" # Cumulative load (kWh)
+  total_pv_production: "sensor.inverter_total_production" # Cumulative PV production (kWh)
+  water_heater_consumption: "sensor.vvb_energy_daily" # Water heater daily energy (kWh)
 
   # Daily sensors for Dashboard "Today's Stats" card
-  today_grid_import: ""          # Today's grid import (kWh)
-  today_grid_export: ""          # Today's grid export (kWh)
-  today_battery_charge: ""       # Today's battery charge (kWh)
-  today_battery_discharge: "" # Today's battery discharge (kWh)
-  today_pv_production: ""           # Today's PV production (kWh)
-  today_load_consumption: ""  # Today's load consumption (kWh)
-  today_net_cost: ""                               # Today's net electricity cost
+  today_grid_import: "sensor.inverter_today_energy_import" # Today's grid import (kWh)
+  today_grid_export: "sensor.inverter_today_energy_export" # Today's grid export (kWh)
+  today_battery_charge: "sensor.inverter_today_battery_charge" # Today's battery charge (kWh)
+  today_battery_discharge: "sensor.inverter_today_battery_discharge" # Today's battery discharge (kWh)
+  today_pv_production: "sensor.inverter_today_production" # Today's PV production (kWh)
+  today_load_consumption: "sensor.inverter_today_load_consumption" # Today's load consumption (kWh)
+  today_net_cost: "sensor.daily_cost"              # Today's net electricity cost
 
 # Executor (control loop that WRITES to Home Assistant)
+  battery_power_inverted: false
+  grid_power_inverted: false
 executor:
   enabled: true                                  # Enable executor control loop
   shadow_mode: true                              # Log actions but don't execute (for testing)
-  interval_seconds: 60                           # How often to run (default: 1 minute)
+  interval_seconds: '60'                         # How often to run (default: 1 minute)
   pause_reminder_minutes: 30                     # Notify if paused longer than this
   history_retention_days: 30                     # Keep execution history for N days
 
   # Toggle entities (read by executor to check if enabled)
-  automation_toggle_entity: ""           # Master enable/disable switch
-  manual_override_entity: ""    # Manual override active flag
+  automation_toggle_entity: "input_boolean.darkstar_enable" # Master enable/disable switch
+  manual_override_entity: "input_boolean.darkstar_manual_override" # Manual override active flag
   # Inverter Control Entities (executor WRITES to these)
   inverter:
-    work_mode: ""                     # Inverter mode selector
-    soc_target: ""                 # Target maintenance level. Acts as a discharge floor (won't discharge below this %) AND a grid charge target (won't charge above this % from grid). Required for inverters like Deye (behavior for other inverters unknown).
+    work_mode: "select.inverter_work_mode" # Inverter mode selector
+    soc_target: 'input_number.master_soc_target' # Target maintenance level. Acts as a discharge floor (won't discharge below this %) AND a grid charge target (won't charge above this % from grid). Required for inverters like Deye (behavior for other inverters unknown).
     work_mode_export: "Export First"                                # Value for export mode
     work_mode_zero_export: "Zero Export To CT"                      # Value for zero-export mode
-    grid_charging_enable: ""     # Enable/disable grid charging
-    max_charge_current: ""     # Max charge current (A)
-    max_discharge_current: ""  # Max discharge current (A)
-    grid_max_export_power: ""           # Max grid export power (Watts)
+    grid_charging_enable: "switch.inverter_battery_grid_charging" # Enable/disable grid charging
+    max_charge_current: "number.inverter_battery_max_charge_current" # Max charge current (A)
+    max_discharge_current: "number.inverter_battery_max_discharge_current" # Max discharge current (A)
+    grid_max_export_power: "number.inverter_grid_export_limit" # Max grid export power (Watts)
     grid_max_export_power_switch: ""    # Switch entity to enable/disable grid export limit
 
     # Control Unit Configuration (REV E3)
     control_unit: "A"                                                 # "A" (Amperes) or "W" (Watts)
-    max_charge_power: ""                                       # Entity for max charge power (W)
-    max_discharge_power: ""                                    # Entity for max discharge power (W)
+    max_charge_power: ''                                       # Entity for max charge power (W)
+    max_discharge_power: ''                                    # Entity for max discharge power (W)
 
   # Controller Parameters (electrical conversion constants)
   controller:
@@ -322,8 +325,9 @@ executor:
   # Water Heater Control
   # The executor controls your water heater by setting a target temperature.
   # These temps define the operating modes:
+    charge_efficiency: 0.92
   water_heater:
-    target_entity: ""  # HA entity to control
+    target_entity: "input_number.vvbtemp" # HA entity to control
     temp_off: 40       # Idle mode (legionella-safe minimum)
     temp_normal: 60    # Scheduled heating target (used by planner)
     temp_boost: 70     # Manual boost button (Dashboard/Executor)
@@ -340,7 +344,7 @@ executor:
 
   # Notifications (via Home Assistant notify service)
   notifications:
-    service: ""  # HA notify service to use
+    service: "notify.mobile_app_sebastians_iphone" # HA notify service to use
     on_charge_start: true              # Notify when grid charging starts
     on_charge_stop: false              # Notify when grid charging stops
     on_export_start: true              # Notify when export/discharge starts
@@ -356,6 +360,8 @@ executor:
   # Override Configuration (real-time safety triggers)
   # These settings control when the executor overrides the planned schedule
   # to protect the battery or utilize excess energy.
+    on_discharge_start: false
+    on_discharge_stop: false
   override:
     # Export prevention floor: Stop exporting if SoC drops to this level.
     # This is a safety buffer ABOVE your min_soc to prevent excessive discharge.
@@ -383,6 +389,8 @@ ui:
 
 # Appliances (for manual scheduling UI)
 # Define appliances that can be scheduled in the Planning tab
+  debug_mode: true
+  theme_mode: dark
 appliances:
   dishwasher:
     label: Dishwasher                  # Display name in UI
@@ -393,3 +401,24 @@ appliances:
   washing_machine:
     label: "Washing Machine"
     duration_hours: 2.0
+deferrable_loads:
+  # List of loads that can be disaggregated from the main load sensor.
+  # These loads are subtracted from total load to train ML on "Base Load".
+  - id: water_heater           # Unique identifier for the load
+    name: Water Heater         # Display name
+    sensor_key: water_power    # Key in input_sensors for power reading (W or kW)
+    type: fixed                # 'fixed' (binary on/off) or 'variable' (modulating)
+    nominal_power_kw: 3.0      # Rated power when fully on
+
+# S-Index Configuration (Risk & Safety Strategy)
+charging_strategy:
+  charge_threshold_percentile: 15      # Bottom X% of daily prices are considered 'cheap'
+  cheap_price_tolerance_sek: 0.05      # Extends 'cheap' window to prices within this tolerance
+  price_smoothing_sek_kwh: 0.05        # Groups slots slightly above cheapest into charge window
+  block_consolidation_tolerance_sek: 0.05  # Price tolerance for merging adjacent charge blocks
+  consolidation_max_gap_slots: 0       # Max gap (in 15-min slots) to bridge when consolidating
+
+# Water Heating
+arbitrage:
+  enable_peak_only_export: false
+  export_future_price_guard: false

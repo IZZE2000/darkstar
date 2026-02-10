@@ -364,6 +364,43 @@ def migrate_arc15_entity_config(config: Any) -> tuple[Any, bool]:
     return config, changed
 
 
+def cleanup_water_heating_duplicates(config: Any) -> tuple[Any, bool]:
+    """
+    Cleanup: Remove duplicate keys from water_heating that now exist in water_heaters[].
+
+    These keys are per-device settings and should not be duplicated in the global section:
+    - power_kw (now in water_heaters[].power_kw)
+    - min_kwh_per_day (now in water_heaters[].min_kwh_per_day)
+    - max_hours_between_heating (now in water_heaters[].max_hours_between_heating)
+    - min_spacing_hours (different name in array: water_min_spacing_hours)
+    """
+    changed = False
+
+    # Only cleanup if new array format exists
+    if "water_heaters" not in config or not config.get("water_heaters", []):
+        return config, changed
+
+    water_heating = config.get("water_heating", {})
+    if not water_heating:
+        return config, changed
+
+    # Keys to remove (they're now per-device in water_heaters[])
+    duplicate_keys = [
+        "power_kw",
+        "min_kwh_per_day",
+        "max_hours_between_heating",
+        "min_spacing_hours",
+    ]
+
+    for key in duplicate_keys:
+        if key in water_heating:
+            water_heating.pop(key)
+            logger.info(f"Removed duplicate key from water_heating: {key}")
+            changed = True
+
+    return config, changed
+
+
 def template_aware_merge(default_cfg: dict, user_cfg: dict) -> None:
     """
     Uses default_cfg as the BASE (template).
@@ -437,6 +474,7 @@ async def migrate_config(
         migrate_soc_target_entity,
         migrate_inverter_profile_keys,
         migrate_arc15_entity_config,  # ARC15: Entity-centric config restructure
+        cleanup_water_heating_duplicates,  # Cleanup: Remove duplicate keys from water_heating
     ]
 
     for step in legacy_steps:
