@@ -12,6 +12,124 @@ import pandas as pd
 from .types import IncentiveBucket, KeplerConfig, KeplerInput, KeplerInputSlot, KeplerResult
 
 
+def _get_config_version(config: dict[str, Any]) -> int:
+    """Detect config format version for ARC15 migration compatibility."""
+    return int(config.get("config_version", 1))
+
+
+def _aggregate_water_heaters(
+    water_heaters: list[dict], legacy_wh: dict | None = None
+) -> dict[str, Any]:
+    """
+    Aggregate multiple water heaters into single KeplerConfig parameters.
+    ARC15: Sum power ratings, use legacy water_heating or first heater for comfort settings.
+
+    Args:
+        water_heaters: List of water heater configs from new structure
+        legacy_wh: Legacy water_heating section for fallback comfort settings
+    """
+    enabled_wh = [wh for wh in water_heaters if wh.get("enabled", True)]
+
+    if not enabled_wh:
+        return {
+            "power_kw": 0.0,
+            "min_kwh_per_day": 0.0,
+            "comfort_level": 3,
+            "enable_top_ups": True,
+            "max_hours_between_heating": 8.0,
+            "min_spacing_hours": 5.0,
+            "defer_up_to_hours": 0.0,
+        }
+
+    # Sum power ratings and daily requirements
+    total_power = sum(float(wh.get("power_kw", 0.0)) for wh in enabled_wh)
+    total_min_kwh = sum(float(wh.get("min_kwh_per_day", 0.0)) for wh in enabled_wh)
+
+    # Use first enabled heater's timing settings (device-specific)
+    first_wh = enabled_wh[0]
+
+    # Comfort settings: use legacy water_heating section if available, otherwise heater's values
+    # The water_heaters array has 'water_min_spacing_hours' not 'min_spacing_hours'
+    spacing_hours = first_wh.get("water_min_spacing_hours") or first_wh.get("min_spacing_hours")
+
+    if legacy_wh:
+        # Use legacy section for comfort settings (global user preferences)
+        return {
+            "power_kw": total_power,
+            "min_kwh_per_day": total_min_kwh,
+            "comfort_level": int(legacy_wh.get("comfort_level", 3)),
+            "enable_top_ups": bool(legacy_wh.get("enable_top_ups", True)),
+            "max_hours_between_heating": float(first_wh.get("max_hours_between_heating", 8.0)),
+            "min_spacing_hours": float(spacing_hours or legacy_wh.get("min_spacing_hours", 5.0)),
+            "defer_up_to_hours": float(legacy_wh.get("defer_up_to_hours", 0.0)),
+        }
+    else:
+        # No legacy section - use defaults
+        return {
+            "power_kw": total_power,
+            "min_kwh_per_day": total_min_kwh,
+            "comfort_level": int(first_wh.get("comfort_level", 3)),
+            "enable_top_ups": bool(first_wh.get("enable_top_ups", True)),
+            "max_hours_between_heating": float(first_wh.get("max_hours_between_heating", 8.0)),
+            "min_spacing_hours": float(spacing_hours or 5.0),
+            "defer_up_to_hours": float(first_wh.get("defer_up_to_hours", 0.0)),
+        }
+
+
+def _aggregate_ev_chargers(ev_chargers: list[dict]) -> dict[str, Any]:
+    """
+    Aggregate multiple EV chargers into single KeplerConfig parameters.
+    ARC15: Sum max power, use largest battery capacity, merge incentive buckets.
+    """
+    enabled_ev = [ev for ev in ev_chargers if ev.get("enabled", True)]
+
+    if not enabled_ev:
+        return {
+            "max_power_kw": 0.0,
+            "battery_capacity_kwh": 0.0,
+            "penalty_levels": [],
+        }
+
+    # Sum max charging power
+    total_max_power = sum(float(ev.get("max_power_kw", 0.0)) for ev in enabled_ev)
+
+    # Use largest battery capacity (conservative approach)
+    max_battery_capacity = max(float(ev.get("battery_capacity_kwh", 0.0)) for ev in enabled_ev)
+
+    # Merge incentive buckets from all EVs (take the most conservative penalties)
+    all_buckets = []
+    for ev in enabled_ev:
+        levels = ev.get("penalty_levels", [])
+        if levels:
+            all_buckets.extend(levels)
+
+    # If multiple EVs have penalty levels, merge by taking max penalty at each threshold
+    merged_buckets = []
+    if all_buckets:
+        # Group by threshold SoC and take highest penalty
+        threshold_map: dict[float, float] = {}
+        for bucket in all_buckets:
+            if "max_soc" in bucket:
+                threshold = float(bucket["max_soc"])
+                penalty = float(bucket.get("penalty_sek", 0.0))
+                threshold_map[threshold] = max(threshold_map.get(threshold, 0.0), penalty)
+
+        # Sort by threshold and create merged buckets
+        for threshold in sorted(threshold_map.keys()):
+            merged_buckets.append(
+                {
+                    "max_soc": threshold,
+                    "penalty_sek": threshold_map[threshold],
+                }
+            )
+
+    return {
+        "max_power_kw": total_max_power,
+        "battery_capacity_kwh": max_battery_capacity,
+        "penalty_levels": merged_buckets,
+    }
+
+
 def planner_to_kepler_input(df: pd.DataFrame, initial_soc_kwh: float) -> KeplerInput:
     """
     Convert Planner DataFrame to KeplerInput.
@@ -189,11 +307,29 @@ def config_to_kepler_config(
             val = overrides[key]
         return float(val) if val is not None else default
 
-    wh_cfg = planner_config.get("water_heating", {})
+    # ARC15: Detect config format and load water heating settings
+    config_version = _get_config_version(planner_config)
+    water_heaters = planner_config.get("water_heaters", [])
+    ev_chargers = planner_config.get("ev_chargers", [])
+    legacy_wh = planner_config.get("water_heating", {})
 
-    # Rev K25: EV Charging Configuration
-    ev_cfg = planner_config.get("ev_charger", {})
-    ev_enabled = system.get("has_ev_charger", False)
+    if config_version >= 2 and water_heaters:
+        # Use new entity-centric structure (aggregate multiple heaters)
+        # Pass legacy section for comfort settings fallback
+        wh_cfg = _aggregate_water_heaters(water_heaters, legacy_wh)
+    else:
+        # Fallback to legacy format
+        wh_cfg = legacy_wh
+
+    # ARC15: Load EV charging settings
+    if config_version >= 2 and ev_chargers:
+        # Use new entity-centric structure (aggregate multiple chargers)
+        ev_cfg = _aggregate_ev_chargers(ev_chargers)
+        ev_enabled = any(ev.get("enabled", True) for ev in ev_chargers)
+    else:
+        # Fallback to legacy format
+        ev_cfg = planner_config.get("ev_charger", {})
+        ev_enabled = system.get("has_ev_charger", False)
 
     capacity = float(battery.get("capacity_kwh", 13.5))
     charge_eff = float(battery.get("charge_efficiency", 0.95))

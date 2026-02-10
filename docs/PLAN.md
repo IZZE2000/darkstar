@@ -263,14 +263,14 @@ The fix requires restructuring to entity-centric sections where each physical de
 * [x] Update `backend/recorder.py` to use new LoadDisaggregator interface
 * [x] **COMPLETED 2026-02-10:** LoadDisaggregator refactored with 13 tests passing (5 legacy + 8 new ARC15)
 
-#### Phase 4: Backend - Kepler Adapter Updates [DRAFT]
-* [ ] Update `planner/solver/adapter.py` to read from new structure
-* [ ] Iterate over `water_heaters[]` for water heating optimization parameters
-* [ ] Iterate over `ev_chargers[]` for EV optimization parameters
-* [ ] Ensure Kepler receives correct power ratings and constraints
-* [ ] Handle multiple EVs in MILP solver input generation
-* [ ] Handle multiple water heaters in MILP solver input generation
-* [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
+#### Phase 4: Backend - Kepler Adapter Updates [DONE]
+* [x] Update `planner/solver/adapter.py` to read from new structure
+* [x] Iterate over `water_heaters[]` for water heating optimization parameters
+* [x] Iterate over `ev_chargers[]` for EV optimization parameters
+* [x] Ensure Kepler receives correct power ratings and constraints
+* [x] Handle multiple EVs in MILP solver input generation
+* [x] Handle multiple water heaters in MILP solver input generation
+* [x] **COMPLETED 2026-02-10:** Phase 4 implementation complete with 24 tests passing
 
 #### Phase 5: Frontend - Settings UI Redesign [DRAFT]
 * [ ] Redesign System Settings UI to show entity-centric sections
