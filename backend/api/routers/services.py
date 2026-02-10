@@ -467,10 +467,12 @@ async def get_energy_today() -> dict[str, float]:
 @router_services.get(
     "/energy/range",
     summary="Get Energy Range",
-    description="Get energy range data (today, yesterday, week, month).",
+    description="Get energy range data (today, yesterday, week, month, custom).",
 )
 async def get_energy_range(
     period: str = "today",
+    start_date: str | None = None,
+    end_date: str | None = None,
     store: LearningStore = Depends(get_learning_store),
 ) -> dict[str, Any]:
     """Get energy range data."""
@@ -494,8 +496,24 @@ async def get_energy_range(
         now_local = datetime.now(tz)
         today_local = now_local.date()
 
-        # Determine date range based on period
-        if period == "today":
+        # Determine date range based on period or custom dates
+        if period == "custom" and start_date and end_date:
+            # Parse custom dates (YYYY-MM-DD format)
+            try:
+                custom_start = datetime.strptime(start_date, "%Y-%m-%d").date()
+                custom_end = datetime.strptime(end_date, "%Y-%m-%d").date()
+
+                # Validate date range
+                if custom_end < custom_start:
+                    raise ValueError("End date must be after start date")
+
+                start_date = custom_start
+                end_date = custom_end
+            except ValueError as e:
+                if "does not match format" in str(e):
+                    raise ValueError("Invalid date format. Use YYYY-MM-DD") from e
+                raise
+        elif period == "today":
             start_date = end_date = today_local
         elif period == "yesterday":
             end_date = today_local - timedelta(days=1)

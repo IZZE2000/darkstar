@@ -205,17 +205,17 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] Handle loading states for custom date changes
 * [x] Add error handling for invalid date ranges
 
-#### Phase 3: API Layer Updates [PLANNED]
-* [ ] Update energyRange function in api.ts to accept optional start_date and end_date parameters
-* [ ] Build query string with custom dates: `/api/energy/range?period=custom&start_date=${startDate}&end_date=${endDate}`
-* [ ] Update EnergyRangeResponse type to include 'custom' as valid period value
+#### Phase 3: API Layer Updates [DONE]
+* [x] Update energyRange function in api.ts to accept optional start_date and end_date parameters
+* [x] Build query string with custom dates: `/api/energy/range?period=custom&start_date=${startDate}&end_date=${endDate}`
+* [x] Update EnergyRangeResponse type to include 'custom' as valid period value
 
-#### Phase 4: Backend API Updates [PLANNED]
-* [ ] Add optional query parameters: start_date: str | None = None, end_date: str | None = None in services.py get_energy_range endpoint
-* [ ] Parse YYYY-MM-DD format dates and convert to timezone-aware datetime
-* [ ] If custom dates are provided, use them instead of period-based calculation
-* [ ] Skip real-time HA sensor overlay for custom periods (only apply to "today" preset)
-* [ ] Add validation for date range validity on backend
+#### Phase 4: Backend API Updates [DONE]
+* [x] Add optional query parameters: start_date: str | None = None, end_date: str | None = None in services.py get_energy_range endpoint
+* [x] Parse YYYY-MM-DD format dates and convert to timezone-aware datetime
+* [x] If custom dates are provided, use them instead of period-based calculation
+* [x] Skip real-time HA sensor overlay for custom periods (only apply to "today" preset)
+* [x] Add validation for date range validity on backend
 
 #### Phase 5: Testing & Verification [PLANNED]
 * [ ] Test custom date range with valid dates
