@@ -23,6 +23,17 @@ def detect_old_format(config: dict) -> bool:
 
     Returns True if migration is needed.
     """
+    # Check for legacy sections that need cleanup (even if version is already 2)
+    has_legacy_sections = "deferrable_loads" in config or "ev_charger" in config
+
+    if has_legacy_sections:
+        logger.info(
+            "Legacy sections detected that need cleanup: deferrable_loads=%s, ev_charger=%s",
+            "deferrable_loads" in config,
+            "ev_charger" in config,
+        )
+        return True
+
     # Check explicit version
     current_version = config.get("config_version", 1)
     if current_version >= TARGET_CONFIG_VERSION:
@@ -309,25 +320,49 @@ def migrate_to_arc15(old_config: dict) -> dict:
         return new_config
 
     # Migrate water heaters
-    if "water_heaters" not in new_config:
-        new_config["water_heaters"] = migrate_water_heater(old_config)
-        logger.info("Created water_heaters array with %d entries", len(new_config["water_heaters"]))
+    existing_water_heaters = new_config.get("water_heaters", [])
+    if not existing_water_heaters:
+        # No water heaters exist, migrate from old format
+        migrated_wh = migrate_water_heater(old_config)
+        new_config["water_heaters"] = migrated_wh
+        logger.info("Migrated water_heaters array with %d entries", len(migrated_wh))
     else:
-        logger.debug("water_heaters array already exists, skipping migration")
+        logger.debug(
+            "water_heaters array already exists with %d entries, skipping migration",
+            len(existing_water_heaters),
+        )
 
     # Migrate EV chargers
-    if "ev_chargers" not in new_config:
-        new_config["ev_chargers"] = migrate_ev_charger(old_config)
-        logger.info("Created ev_chargers array with %d entries", len(new_config["ev_chargers"]))
+    existing_ev_chargers = new_config.get("ev_chargers", [])
+    if not existing_ev_chargers:
+        # No EV chargers exist, migrate from old format
+        migrated_ev = migrate_ev_charger(old_config)
+        new_config["ev_chargers"] = migrated_ev
+        logger.info("Migrated ev_chargers array with %d entries", len(migrated_ev))
     else:
-        logger.debug("ev_chargers array already exists, skipping migration")
+        logger.debug(
+            "ev_chargers array already exists with %d entries, skipping migration",
+            len(existing_ev_chargers),
+        )
 
     # Update config version
     new_config["config_version"] = TARGET_CONFIG_VERSION
     logger.info("Set config_version to %d", TARGET_CONFIG_VERSION)
 
-    # Note: We keep the old deferrable_loads section for reference,
-    # but it's marked as deprecated in the YAML comments
+    # CLEANUP: Remove all legacy sections that have been migrated
+    legacy_sections = ["deferrable_loads", "ev_charger"]
+    for section in legacy_sections:
+        if section in new_config:
+            del new_config[section]
+            logger.info("Removed legacy section: %s", section)
+
+    # CLEANUP: Remove legacy fields from ev_charger that don't exist anymore
+    # (These are now per-device in ev_chargers[] array)
+    legacy_ev_fields = ["replan_on_soc_change"]
+    for field in legacy_ev_fields:
+        # Check if this field exists anywhere in the config
+        if field in str(new_config):
+            logger.info("Found legacy field to clean up: %s", field)
 
     # Validate the migrated config
     validation_errors = validate_migrated_config(new_config)
