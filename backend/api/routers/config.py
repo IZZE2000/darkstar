@@ -5,6 +5,7 @@ from typing import Any, cast
 from fastapi import APIRouter, Body, HTTPException
 from ruamel.yaml import YAML
 
+from backend.api.routers.executor import get_executor_instance
 from executor.profiles import get_profile_from_config
 from inputs import load_home_assistant_config, load_notifications_config, load_yaml
 
@@ -181,6 +182,16 @@ async def save_config(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
         # Save the config (even if warnings exist)
         with config_path.open("w", encoding="utf-8") as f:
             yaml_handler.dump(data, f)  # type: ignore
+
+        # REV F53: Notify executor to reload config after successful save
+        try:
+            executor = get_executor_instance()
+            if executor is not None:
+                executor.reload_config()
+                logger.info("Executor configuration reloaded after config save")
+        except Exception as e:
+            # Log but don't fail the save if executor reload fails
+            logger.warning("Failed to reload executor config after save: %s", e)
 
         # Return success with any warnings
         if warnings:

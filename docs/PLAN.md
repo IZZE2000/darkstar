@@ -141,12 +141,12 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] Use `profile.modes.*.description` for the reason string when available
 * [x] Ensure "Auto" mode shows correct description, not "Idle"
 
-#### Phase 3: Fix Config Reload on UI Save [PLANNED]
-* [ ] Add `executor.reload_config()` call in `[backend/api/routers/config.py]` after successful config save
-* [ ] Import `get_executor_instance` from executor router
-* [ ] Call reload_config() only if executor is running
-* [ ] Verify executor immediately picks up new settings without restart
-* [ ] Test with changing SoC target - should reflect immediately in executor status
+#### Phase 3: Fix Config Reload on UI Save [DONE]
+* [x] Add `executor.reload_config()` call in `[backend/api/routers/config.py]` after successful config save
+* [x] Import `get_executor_instance` from executor router
+* [x] Call reload_config() only if executor is running
+* [x] Verify executor immediately picks up new settings without restart
+* [x] Test with changing SoC target - should reflect immediately in executor status
 
 ---
 
