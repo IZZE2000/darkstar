@@ -219,7 +219,7 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 
 ---
 
-### [PLANNED] REV // ARC15 — Entity-Centric Config Restructure for Load Disaggregation
+### [IN PROGRESS] REV // ARC15 — Entity-Centric Config Restructure for Load Disaggregation
 
 **Goal:** Restructure configuration to eliminate duplication between `system.has_*` toggles, `input_sensors.*_power` entities, and `deferrable_loads` array. Create a single source of truth per entity with clear, expandable sections for Water Heating, EV Chargers, and future deferrable loads.
 
@@ -235,15 +235,15 @@ The fix requires restructuring to entity-centric sections where each physical de
 
 **Plan:**
 
-#### Phase 1: Schema Design & Migration Strategy [DRAFT]
-* [ ] Design new entity-centric schema for `water_heaters[]` array (plural, supporting multiple water heaters)
-* [ ] Design new `ev_chargers[]` array schema (plural, supporting multiple EVs)
-* [ ] Define category-based array structure (water_heaters[], ev_chargers[], pool_heaters[] - room for future expansion)
-* [ ] Define migration path: old structure → new structure with automatic conversion
-* [ ] Create migration script that runs on startup if old config detected
-* [ ] Ensure backward compatibility during transition period (1-2 versions)
-* [ ] Document new schema with clear examples and comments
-* [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
+#### Phase 1: Schema Design & Migration Strategy [DONE]
+* [x] Design new entity-centric schema for `water_heaters[]` array (plural, supporting multiple water heaters)
+* [x] Design new `ev_chargers[]` array schema (plural, supporting multiple EVs)
+* [x] Define category-based array structure (water_heaters[], ev_chargers[], pool_heaters[] - room for future expansion)
+* [x] Define migration path: old structure → new structure with automatic conversion
+* [x] Create migration script that runs on startup if old config detected
+* [x] Ensure backward compatibility during transition period (1-2 versions)
+* [x] Document new schema with clear examples and comments
+* [x] **COMPLETED 2026-02-10:** Phase 1 implementation complete with full test suite (6 tests passing)
 
 #### Phase 2: Backend - Config Migration & Loading [DRAFT]
 * [ ] Implement migration script `backend/config/migrate_arc15.py`

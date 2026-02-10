@@ -224,6 +224,146 @@ def migrate_inverter_profile_keys(config: Any) -> tuple[Any, bool]:
     return config, changed
 
 
+def migrate_arc15_entity_config(config: Any) -> tuple[Any, bool]:
+    """
+    Migration for REV ARC15: Entity-Centric Config Restructure.
+
+    Converts old deferrable_loads array to new water_heaters[] and ev_chargers[] arrays.
+    This provides a single source of truth for each entity type and eliminates
+    duplication between system toggles, input_sensors, and deferrable_loads.
+
+    Migration rules:
+    - deferrable_loads with id="water_heater" -> water_heaters[]
+    - deferrable_loads with id="ev_charger" or type="ev" -> ev_chargers[]
+    - Preserves all settings and maps sensors appropriately
+    - Sets config_version to 2
+    """
+    changed = False
+
+    # Check if already migrated (config_version >= 2 or new arrays exist)
+    current_version = config.get("config_version", 1)
+    if current_version >= 2:
+        logger.debug("Config already at version %d, skipping ARC15 migration", current_version)
+        return config, False
+
+    if "water_heaters" in config and "ev_chargers" in config:
+        logger.debug("New entity arrays already exist, marking as migrated")
+        config["config_version"] = 2
+        return config, True
+
+    deferrable_loads = config.get("deferrable_loads", [])
+    if not deferrable_loads:
+        logger.debug("No deferrable_loads to migrate")
+        # Still mark as migrated if we have the new arrays or nothing to migrate
+        if "water_heaters" in config or "ev_chargers" in config:
+            config["config_version"] = 2
+            changed = True
+        return config, changed
+
+    input_sensors = config.get("input_sensors", {})
+    water_heating = config.get("water_heating", {})
+    ev_charger = config.get("ev_charger", {})
+    system = config.get("system", {})
+
+    # Initialize new arrays if they don't exist
+    if "water_heaters" not in config:
+        config["water_heaters"] = []
+    if "ev_chargers" not in config:
+        config["ev_chargers"] = []
+
+    water_heaters = config["water_heaters"]
+    ev_chargers = config["ev_chargers"]
+
+    # Track existing IDs to avoid duplicates
+    existing_water_ids = {wh.get("id") for wh in water_heaters if wh.get("id")}
+    existing_ev_ids = {ev.get("id") for ev in ev_chargers if ev.get("id")}
+
+    for load in deferrable_loads:
+        load_id = load.get("id", "")
+        load_type = load.get("type", "").lower()
+
+        if load_id == "water_heater" or load_type == "binary":
+            # Migrate to water_heaters
+            if "main_tank" in existing_water_ids:
+                logger.debug("Water heater 'main_tank' already exists, skipping")
+                continue
+
+            has_water = system.get("has_water_heater", False)
+            sensor_key = load.get("sensor_key", "water_power")
+            sensor_entity = input_sensors.get(sensor_key, f"sensor.{sensor_key}")
+
+            water_heater = {
+                "id": "main_tank",
+                "name": load.get("name", "Main Water Heater"),
+                "enabled": has_water,
+                "power_kw": load.get("nominal_power_kw", 3.0),
+                "min_kwh_per_day": water_heating.get("min_kwh_per_day", 6.0),
+                "max_hours_between_heating": water_heating.get("max_hours_between_heating", 8),
+                "water_min_spacing_hours": water_heating.get("min_spacing_hours", 4),
+                "sensor": sensor_entity,
+                "type": load_type or "binary",
+                "nominal_power_kw": load.get("nominal_power_kw", 3.0),
+            }
+
+            water_heaters.append(water_heater)
+            existing_water_ids.add("main_tank")
+            logger.info(
+                "Migrated water heater from deferrable_loads: id=%s, enabled=%s, power=%.1fkW",
+                water_heater["id"],
+                water_heater["enabled"],
+                water_heater["power_kw"],
+            )
+            changed = True
+
+        elif load_id in ["ev_charger", "ev"] or load_type == "variable":
+            # Migrate to ev_chargers
+            if "main_ev" in existing_ev_ids:
+                logger.debug("EV charger 'main_ev' already exists, skipping")
+                continue
+
+            has_ev = system.get("has_ev_charger", False)
+            sensor_key = load.get("sensor_key", "ev_power")
+            sensor_entity = input_sensors.get(sensor_key, f"sensor.{sensor_key}")
+
+            ev_entry = {
+                "id": "main_ev",
+                "name": load.get("name", "EV Charger"),
+                "enabled": has_ev,
+                "max_power_kw": load.get("nominal_power_kw", 7.4),
+                "battery_capacity_kwh": ev_charger.get("battery_capacity_kwh", 77.0),
+                "min_soc_percent": 20.0,
+                "target_soc_percent": 80.0,
+                "sensor": sensor_entity,
+                "type": load_type or "variable",
+                "nominal_power_kw": load.get("nominal_power_kw", 7.4),
+            }
+
+            ev_chargers.append(ev_entry)
+            existing_ev_ids.add("main_ev")
+            logger.info(
+                "Migrated EV charger from deferrable_loads: id=%s, enabled=%s, power=%.1fkW, capacity=%.1fkWh",
+                ev_entry["id"],
+                ev_entry["enabled"],
+                ev_entry["max_power_kw"],
+                ev_entry["battery_capacity_kwh"],
+            )
+            changed = True
+        else:
+            logger.warning("Unknown deferrable_load type: id=%s, type=%s", load_id, load_type)
+
+    # Mark deferrable_loads for removal (it's deprecated)
+    if changed and deferrable_loads:
+        logger.info("deferrable_loads array will be deprecated after migration")
+
+    # Update config version
+    if changed or water_heaters or ev_chargers:
+        config["config_version"] = 2
+        logger.info("Set config_version to 2 (ARC15 migration)")
+        changed = True
+
+    return config, changed
+
+
 def template_aware_merge(default_cfg: dict, user_cfg: dict) -> None:
     """
     Uses default_cfg as the BASE (template).
@@ -296,6 +436,7 @@ async def migrate_config(
         migrate_solar_arrays,
         migrate_soc_target_entity,
         migrate_inverter_profile_keys,
+        migrate_arc15_entity_config,  # ARC15: Entity-centric config restructure
     ]
 
     for step in legacy_steps:
