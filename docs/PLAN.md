@@ -216,3 +216,163 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] Grid charging, SoC target, discharge limit, and max export power now return `None` for silent skips
 * [x] Composite mode entities are processed independently of work_mode changes
 * [x] Execution history will be cleaner with fewer "Skipped" entries for unsupported features
+
+---
+
+### [DRAFT] REV // ARC15 — Entity-Centric Config Restructure for Load Disaggregation
+
+**Goal:** Restructure configuration to eliminate duplication between `system.has_*` toggles, `input_sensors.*_power` entities, and `deferrable_loads` array. Create a single source of truth per entity with clear, expandable sections for Water Heating, EV Chargers, and future deferrable loads.
+
+**Context:**
+Current configuration duplicates the same information in 3 locations:
+- `system.has_water_heater` / `system.has_ev_charger` (toggles)
+- `input_sensors.water_power` / `input_sensors.ev_power` (sensors)
+- `deferrable_loads[]` array (for LoadDisaggregator)
+
+When users enable water heating in the UI, load disaggregation fails silently because the `deferrable_loads` array is never auto-populated. This causes the ML model to train on "dirty" total load (including deferrable loads) instead of "clean" base load, resulting in inaccurate forecasts.
+
+The fix requires restructuring to entity-centric sections where each physical device (water heater, EV charger) has ONE config location containing all its settings, sensors, and load characteristics.
+
+**Plan:**
+
+#### Phase 1: Schema Design & Migration Strategy [DRAFT]
+* [ ] Design new entity-centric schema for `water_heaters[]` array (plural, supporting multiple water heaters)
+* [ ] Design new `ev_chargers[]` array schema (plural, supporting multiple EVs)
+* [ ] Define category-based array structure (water_heaters[], ev_chargers[], pool_heaters[] - room for future expansion)
+* [ ] Define migration path: old structure → new structure with automatic conversion
+* [ ] Create migration script that runs on startup if old config detected
+* [ ] Ensure backward compatibility during transition period (1-2 versions)
+* [ ] Document new schema with clear examples and comments
+* [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
+
+#### Phase 2: Backend - Config Migration & Loading [DRAFT]
+* [ ] Implement migration script `backend/config/migrate_arc15.py`
+* [ ] Detect old config format and auto-convert to new format
+* [ ] Update `backend/api/routers/config.py` to handle new schema
+* [ ] Update config validation to support both old and new structures during transition
+* [ ] Add config version tracking to detect migrations needed
+* [ ] Ensure migration is idempotent (safe to run multiple times)
+* [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
+
+#### Phase 3: Backend - LoadDisaggregator Refactor [DRAFT]
+* [ ] Refactor `backend/loads/service.py` to read from new entity-centric structure
+* [ ] Iterate over `water_heaters[]` array to register multiple water heater loads
+* [ ] Iterate over `ev_chargers[]` array to register multiple EV loads
+* [ ] Remove dependency on `deferrable_loads` array entirely
+* [ ] Ensure LoadDisaggregator initializes correctly with new config structure
+* [ ] Update `backend/recorder.py` to use new LoadDisaggregator interface
+* [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
+
+#### Phase 4: Backend - Kepler Adapter Updates [DRAFT]
+* [ ] Update `planner/solver/adapter.py` to read from new structure
+* [ ] Iterate over `water_heaters[]` for water heating optimization parameters
+* [ ] Iterate over `ev_chargers[]` for EV optimization parameters
+* [ ] Ensure Kepler receives correct power ratings and constraints
+* [ ] Handle multiple EVs in MILP solver input generation
+* [ ] Handle multiple water heaters in MILP solver input generation
+* [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
+
+#### Phase 5: Frontend - Settings UI Redesign [DRAFT]
+* [ ] Redesign System Settings UI to show entity-centric sections
+* [ ] Water Heaters section: list view with add/edit/remove for multiple water heaters
+* [ ] Each Water Heater card shows: name, power rating, sensor, spacing constraints
+* [ ] EV Chargers section: list view with add/edit/remove for multiple EVs
+* [ ] Each EV card shows: name, max power, battery capacity, sensor
+* [ ] Remove confusing `deferrable_loads` references from UI
+* [ ] Update form state management to handle new nested structure
+* [ ] Ensure validation works for new schema
+* [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
+
+#### Phase 6: Frontend - API Integration [DRAFT]
+* [ ] Update frontend API types to match new backend schema
+* [ ] Ensure config save/load handles new structure correctly
+* [ ] Test UI with multiple EVs configured
+* [ ] Test UI with multiple water heaters configured
+* [ ] Test migration detection and user notification
+* [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
+
+#### Phase 7: Documentation & Migration Guide [DRAFT]
+* [ ] Update `docs/ARCHITECTURE.md` with new load disaggregation design
+* [ ] Document entity-centric configuration philosophy
+* [ ] Create migration guide for existing users
+* [ ] Update config.default.yaml with new structure and extensive comments
+* [ ] Update README with new configuration examples
+* [ ] Document how to add future deferrable loads (pool heaters, heat pumps)
+* [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
+
+#### Phase 8: Testing & Validation [DRAFT]
+* [ ] Write comprehensive tests for config migration scenarios
+* [ ] Test LoadDisaggregator with new structure
+* [ ] Test Kepler solver with multiple EVs
+* [ ] Test frontend UI with various configurations
+* [ ] Test migration from old to new format
+* [ ] Test backward compatibility during transition
+* [ ] Run full integration test suite
+* [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
+
+**New Config Structure (Target):**
+```yaml
+system:
+  has_water_heater: true           # Global toggle (any water_heaters[] item enabled)
+  has_ev_charger: true             # Global toggle (any ev_chargers[] item enabled)
+  # ... other toggles
+
+water_heaters:                     # Array for multiple water heaters (plural!)
+  - id: main_tank                  # Unique identifier
+    name: "Main Water Heater"      # Display name
+    enabled: true                  # Can disable individual heaters
+    power_kw: 3.0                  # Rated power
+    min_kwh_per_day: 6.0           # Daily energy requirement
+    max_hours_between_heating: 8   # Comfort constraint
+    water_min_spacing_hours: 4     # Minimum gap between heating cycles
+    sensor: sensor.vvb_power       # Power sensor for disaggregation
+    type: binary                   # Load type (binary/modulating)
+    nominal_power_kw: 3.0          # Nominal power for load calc
+
+  - id: upstairs_tank              # Second water heater example
+    name: "Upstairs Tank"
+    enabled: false                 # Disabled for now
+    power_kw: 3.0
+    min_kwh_per_day: 4.0
+    sensor: sensor.wh2_power
+    type: binary
+    nominal_power_kw: 3.0
+
+ev_chargers:                       # Array for multiple EVs
+  - id: tesla_model_3              # Unique identifier
+    name: "Tesla Model 3"          # Display name
+    enabled: true                  # Can disable individual EVs
+    max_power_kw: 11.0             # Max charging power
+    battery_capacity_kwh: 82.0     # EV battery size
+    min_soc_percent: 20.0          # Minimum charge level
+    target_soc_percent: 80.0       # Target charge level
+    sensor: sensor.tesla_power     # Power sensor for disaggregation
+    type: variable                 # Load type
+    nominal_power_kw: 11.0         # Nominal power for load calc
+
+  - id: fiat_500e                  # Second EV example
+    name: "Fiat 500e"
+    enabled: true
+    max_power_kw: 7.4
+    battery_capacity_kwh: 42.0
+    sensor: sensor.fiat_power
+    type: variable
+    nominal_power_kw: 7.4
+
+# Future expansion examples:
+# pool_heaters: []
+# heat_pumps: []
+# dishwashers: []
+
+# deferrable_loads[] REMOVED - no longer needed
+```
+
+**Acceptance Criteria:**
+- [ ] User can add multiple water heaters with individual settings and load disaggregation works
+- [ ] User can add multiple EV chargers with individual settings and load disaggregation works
+- [ ] Config has single source of truth per entity (no duplication)
+- [ ] Migration from old format happens automatically on startup
+- [ ] All existing tests pass with new structure
+- [ ] Documentation reflects new architecture
+- [ ] Settings UI is intuitive and guides user clearly
+- [ ] Schema is future-proof for pool heaters, heat pumps, etc.
