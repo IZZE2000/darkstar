@@ -20,27 +20,7 @@
 | **Idle / Hold** (PV OK, no discharge) | `Block discharging` | 0 | 0 | User Config | - |
 | **Zero Export** (Emergency stop) | `Auto` | 0 | Max | User Config | `0` |
 
-## Verification Questions
-
-1.  **Export Limiting:**
-    *   **Confirmed:** Darkstar can use `switch.fronius_gen24_export_limit_enable` + `number.fronius_gen24_export_limit_rate` for emergency zero-export scenarios.
-    *   *Note:* When `switch.fronius_gen24_export_limit_enable` is `on`, the inverter enforces the value set in `number.fronius_gen24_export_limit_rate`.
-
-2.  **Power Control Granularity:**
-    *   The integration documentation states grid charge power must be in multiples of 10W.
-    *   *Question:* Does Darkstar need to round to 10W increments, or does the integration handle this?
-    *   **Confirmed:** Darkstar have to round to 10W increments.
-
-3.  **Auto Mode Behavior:**
-    *   **Proposed:** Darkstar will use `Auto` mode as the default/self-consumption state.
-    *   *Question:* Is this correct, or should we use a different mode for normal operation?
-    *   **Confirmed:** We will use **`Auto` mode** as the default/self-consumption state.
-
-## Integration Source Notes
-
-Based on the provided documentation from callifo/fronius_modbus:
-
-### Storage Control Modes
+## Storage Control Modes
 
 | Mode | Description |
 | :--- | :--- |
@@ -53,7 +33,7 @@ Based on the provided documentation from callifo/fronius_modbus:
 | `Block discharging` | The storage can only be charged with PV power. |
 | `Block charging` | The storage can only be discharged and won't be charged with PV power. |
 
-### Controls Used by Modes
+## Controls Used by Modes
 
 | Mode | Charge Limit | Discharge Limit | Grid Charge Power | Grid Discharge Power | Minimum Reserve |
 | :--- | :--- | :--- | :--- | :--- | :--- |
