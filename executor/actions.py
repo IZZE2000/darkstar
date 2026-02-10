@@ -400,7 +400,8 @@ class ActionDispatcher:
                 )
             else:
                 result = await self._set_grid_charging(decision.grid_charging)
-                results.append(result)
+                if result is not None:
+                    results.append(result)
 
         # 3. Set charge limit (Rev O1 + E3)
         if self.config.has_battery and decision.write_charge_current:
@@ -737,41 +738,26 @@ class ActionDispatcher:
 
         return results
 
-    async def _set_grid_charging(self, enabled: bool) -> ActionResult:
+    async def _set_grid_charging(self, enabled: bool) -> ActionResult | None:
         """Set grid charging switch."""
         start = time.time()
         entity = self.config.inverter.grid_charging_entity
         target = "on" if enabled else "off"
 
-        # Handle grid charging via profile logic if available (Rev ARC13 Phase 4)
+        # Handle grid charging via profile logic if available (Rev ARC13 Phase 4 + Rev F54 Phase 2)
         if self.profile:
             if not self.profile.capabilities.grid_charging_control:
                 logger.debug(
                     "Skipping grid_charging action: profile '%s' does not support grid charging control",
                     self.profile.metadata.name,
                 )
-                return ActionResult(
-                    action_type="grid_charging",
-                    success=True,
-                    message="",  # Silent skip
-                    skipped=True,
-                    duration_ms=int((time.time() - start) * 1000),
-                    error_details=None,
-                )
+                return None  # Silent skip - no entry in execution history
             if not self.profile.capabilities.separate_grid_charging_switch:
                 logger.debug(
                     "Skipping grid_charging switch: profile '%s' uses mode-based charging",
                     self.profile.metadata.name,
                 )
-            return ActionResult(
-                action_type="grid_charging",
-                success=True,
-                message=f"Handled by work_mode ({target})",
-                new_value=target,
-                skipped=True,
-                duration_ms=int((time.time() - start) * 1000),
-                error_details=None,
-            )
+                return None  # Silent skip - no entry in execution history
 
         if not _is_entity_configured(entity):
             logger.debug("Skipping grid_charging action: entity not configured")

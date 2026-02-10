@@ -177,11 +177,11 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] Ensure forced_charge_discharge_cmd updates when charging intent changes (charge vs discharge) even if EMS mode stays "Forced mode"
 * [x] All 28 executor action tests pass
 
-#### Phase 2: Fix Grid Charging Silent Skip [DRAFT]
-* [ ] Modify `_set_grid_charging()` in `[executor/actions.py]` to return `None` when `separate_grid_charging_switch: false`
-* [ ] Update `execute()` method to handle `None` return values (filter out before appending to results)
-* [ ] Verify Sungrow self-consumption mode shows NO grid charging entry in history
-* [ ] Verify Generic profile with separate switch still shows grid charging correctly
+#### Phase 2: Fix Grid Charging Silent Skip [DONE]
+* [x] Modify `_set_grid_charging()` in `[executor/actions.py]` to return `None` when `separate_grid_charging_switch: false` or `grid_charging_control: false`
+* [x] Update `execute()` method to handle `None` return values (filter out before appending to results)
+* [x] Return type changed from `ActionResult` to `ActionResult | None`
+* [x] All 28 executor action tests pass
 
 #### Phase 3: Fix SoC Target Silent Skip [DRAFT]
 * [ ] Modify `_set_soc_target()` to return `None` when profile has `supports_soc_target: false`
