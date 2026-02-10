@@ -969,46 +969,11 @@ export const parameterSections: SettingsSection[] = [
         description: 'Quota, deferral, and sizing controls for the water heater scheduler.',
         fields: [
             {
-                key: 'water_heating.power_kw',
-                label: 'Water heater power (kW)',
-                path: ['water_heating', 'power_kw'],
-                type: 'number',
-                showIf: {
-                    configKey: 'system.has_water_heater',
-                    value: true,
-                    disabledText: "Enable 'Smart water heater' in System Profile to configure",
-                },
-            },
-            {
                 key: 'water_heating.defer_up_to_hours',
                 label: 'Max defer hours',
                 path: ['water_heating', 'defer_up_to_hours'],
                 type: 'number',
                 isAdvanced: true,
-                showIf: {
-                    configKey: 'system.has_water_heater',
-                    value: true,
-                    disabledText: "Enable 'Smart water heater' in System Profile to configure",
-                },
-            },
-            {
-                key: 'water_heating.min_kwh_per_day',
-                label: 'Min kWh/day',
-                path: ['water_heating', 'min_kwh_per_day'],
-                type: 'number',
-                showIf: {
-                    configKey: 'system.has_water_heater',
-                    value: true,
-                    disabledText: "Enable 'Smart water heater' in System Profile to configure",
-                },
-            },
-            {
-                key: 'water_heating.min_spacing_hours',
-                label: 'Min spacing (hours)',
-                path: ['water_heating', 'min_spacing_hours'],
-                type: 'number',
-                isAdvanced: true,
-                helper: 'Minimum gap between heating sessions to avoid efficiency loss.',
                 showIf: {
                     configKey: 'system.has_water_heater',
                     value: true,
@@ -1082,14 +1047,6 @@ export const parameterSections: SettingsSection[] = [
                     value: true,
                     disabledText: "Enable 'Smart water heater' in System Profile to configure",
                 },
-            },
-            {
-                key: 'water_heating.max_hours_between_heating',
-                label: 'Max gap comfort penalty (h)',
-                helper: 'Advanced: Max gap before comfort penalty (only used if top-ups are enabled).',
-                path: ['water_heating', 'max_hours_between_heating'],
-                type: 'number',
-                isAdvanced: true,
             },
             {
                 key: 'executor.water_heater.temp_off',

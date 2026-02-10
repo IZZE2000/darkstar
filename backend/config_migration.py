@@ -401,6 +401,46 @@ def cleanup_water_heating_duplicates(config: Any) -> tuple[Any, bool]:
     return config, changed
 
 
+def _validate_config_structure(config: Any) -> bool:
+    """
+    Validates that the config has minimum expected structure.
+    Prevents merging empty/corrupted configs with defaults.
+
+    Returns True if config passes validation, False otherwise.
+    """
+    # Must have system section with key identifiers
+    if not isinstance(config, dict):
+        logger.error("Config is not a dictionary")
+        return False
+
+    system = config.get("system")
+    if not isinstance(system, dict):
+        logger.error("Config missing 'system' section")
+        return False
+
+    # Check for critical keys that indicate a valid user config
+    # If these are missing, the config is likely empty/corrupted
+    critical_keys = ["system_id", "inverter_profile", "has_solar", "has_battery"]
+    missing_keys = [key for key in critical_keys if key not in system]
+
+    if missing_keys:
+        logger.error(f"Config missing critical keys in system section: {missing_keys}")
+        return False
+
+    # Additional check: verify location section exists (strong indicator of user config)
+    location = system.get("location")
+    if not isinstance(location, dict):
+        logger.error("Config missing 'system.location' section")
+        return False
+
+    if "latitude" not in location or "longitude" not in location:
+        logger.error("Config missing location coordinates")
+        return False
+
+    logger.debug("Config structure validation passed")
+    return True
+
+
 def template_aware_merge(default_cfg: dict, user_cfg: dict) -> None:
     """
     Uses default_cfg as the BASE (template).
@@ -424,6 +464,61 @@ def template_aware_merge(default_cfg: dict, user_cfg: dict) -> None:
                 target[key] = value
 
     recursive_merge(default_cfg, user_cfg)
+
+
+def _extract_critical_values(config: Any) -> dict:
+    """Extract critical user values that should never be lost."""
+    if not isinstance(config, dict):
+        return {}
+
+    system = config.get("system", {})
+    return {
+        "inverter_profile": system.get("inverter_profile"),
+        "has_ev_charger": system.get("has_ev_charger"),
+        "has_water_heater": system.get("has_water_heater"),
+        "latitude": system.get("location", {}).get("latitude"),
+        "longitude": system.get("location", {}).get("longitude"),
+        "solar_arrays_count": len(system.get("solar_arrays", [])),
+        "min_soc": config.get("battery", {}).get("min_soc_percent"),
+    }
+
+
+def _validate_critical_values_preserved(before: dict, after: dict) -> bool:
+    """
+    Verify that critical user values were preserved during merge.
+    Returns True if all values are preserved, False otherwise.
+    """
+    critical_keys = [
+        "inverter_profile",
+        "has_ev_charger",
+        "has_water_heater",
+        "latitude",
+        "longitude",
+        "solar_arrays_count",
+        "min_soc",
+    ]
+
+    issues = []
+    for key in critical_keys:
+        before_val = before.get(key)
+        after_val = after.get(key)
+
+        # Skip if value was None before (not set)
+        if before_val is None:
+            continue
+
+        # Check if value changed to a default
+        if after_val != before_val:
+            # Special case: allow solar_arrays_count to increase (adding default arrays)
+            if key == "solar_arrays_count" and (after_val or 0) > (before_val or 0):
+                continue
+            issues.append(f"{key}: {before_val} -> {after_val}")
+
+    if issues:
+        logger.error(f"❌ CRITICAL VALUES LOST DURING MIGRATION: {', '.join(issues)}")
+        return False
+
+    return True
 
 
 async def migrate_config(
@@ -456,6 +551,14 @@ async def migrate_config(
 
         if user_config is None or not isinstance(user_config, dict):
             logger.error(f"❌ Config {config_path} is invalid or empty.")
+            return
+
+        # SAFETY CHECK: Verify config has minimum expected structure
+        # This prevents merging an empty/corrupted config with defaults
+        if not _validate_config_structure(user_config):
+            logger.error(
+                f"❌ Config {config_path} failed structure validation. Aborting migration to prevent data loss."
+            )
             return
 
     except Exception as e:
@@ -525,7 +628,21 @@ async def migrate_config(
             # OR matches user? Usually migration brings it UP to default version.
             pass
 
+        # CAPTURE CRITICAL VALUES BEFORE MERGE
+        critical_before = _extract_critical_values(user_config)
+        logger.debug(f"Critical values before merge: {critical_before}")
+
         template_aware_merge(final_config, user_config)
+
+        # VALIDATE CRITICAL VALUES AFTER MERGE
+        critical_after = _extract_critical_values(final_config)
+        logger.debug(f"Critical values after merge: {critical_after}")
+
+        if not _validate_critical_values_preserved(critical_before, critical_after):
+            logger.error("❌ CRITICAL CONFIG VALUES WOULD BE LOST! Aborting migration.")
+            logger.error("This usually means the user config failed to load properly.")
+            logger.error(f"Please check {config_path} for corruption or file locks.")
+            return
 
         # 5. Save (Strict Enforcement)
         # We always save because we want to enforce the default structure/comments.
