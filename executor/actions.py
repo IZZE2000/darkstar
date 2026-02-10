@@ -408,7 +408,7 @@ class ActionDispatcher:
             result = await self._set_charge_limit(decision.charge_value, decision.control_unit)
             results.append(result)
 
-        # 4. Set discharge limit (Rev O1 + E3)
+        # 4. Set discharge limit (Rev O1 + E3 + Rev F54 Phase 4)
         # Skip if in Charge or Idle mode (Generic optimization REV IP4)
         # OR if profile mode has skip_discharge_limit flag (REV F53 Phase 1)
         if self.config.has_battery and decision.write_discharge_current:
@@ -425,7 +425,8 @@ class ActionDispatcher:
                 result = await self._set_discharge_limit(
                     decision.discharge_value, decision.control_unit
                 )
-                results.append(result)
+                if result is not None:
+                    results.append(result)
 
         # 5. Set SoC target (Rev O1 + Rev F54 Phase 3)
         if self.config.has_battery:
@@ -943,11 +944,11 @@ class ActionDispatcher:
             error_details=error_details,
         )
 
-    async def _set_discharge_limit(self, value: float, unit: str) -> ActionResult:
+    async def _set_discharge_limit(self, value: float, unit: str) -> ActionResult | None:
         """Set max discharging limit (Amps or Watts)."""
         start = time.time()
 
-        # 1. Profile-aware Skip Logic (Rev IP11)
+        # 1. Profile-aware Skip Logic (Rev IP11 + Rev F54 Phase 4)
         # If the current mode handles discharge limits internally, we skip the write.
         if self.profile:
             current_mode = self.ha.get_state_value(self.config.inverter.work_mode_entity)
@@ -972,14 +973,7 @@ class ActionDispatcher:
                     current_mode,
                     self.profile.metadata.name,
                 )
-                return ActionResult(
-                    action_type="discharge_limit",
-                    success=True,
-                    message=f"Skipped per mode setting: {current_mode}",
-                    skipped=True,
-                    duration_ms=int((time.time() - start) * 1000),
-                    error_details=None,
-                )
+                return None  # Silent skip - no entry in execution history
 
         if unit == "W":
             entity = self.config.inverter.max_discharging_power_entity

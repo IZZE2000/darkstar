@@ -190,10 +190,12 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] Return type changed from `ActionResult` to `ActionResult | None`
 * [x] All 28 executor action tests pass
 
-#### Phase 4: Fix Discharge Limit Silent Skip [DRAFT]
-* [ ] Modify `_set_discharge_limit()` to return `None` when `skip_discharge_limit: true` for current mode
-* [ ] Remove the "Skipped per mode setting" ActionResult for truly skipped actions
-* [ ] Verify Sungrow modes with skip_discharge_limit don't show discharge_limit entries
+#### Phase 4: Fix Discharge Limit Silent Skip [DONE]
+* [x] Modify `_set_discharge_limit()` to return `None` when `skip_discharge_limit: true` for current mode
+* [x] Remove the "Skipped per mode setting" ActionResult for truly skipped actions
+* [x] Update `execute()` method to filter out `None` results
+* [x] Return type changed from `ActionResult` to `ActionResult | None`
+* [x] All 28 executor action tests pass
 
 #### Phase 5: Fix Max Export Power Silent Skip [DRAFT]
 * [ ] Add profile-aware skip logic to `_set_max_export_power()` similar to discharge_limit
