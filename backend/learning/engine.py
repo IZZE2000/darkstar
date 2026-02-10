@@ -36,6 +36,13 @@ class LearningEngine:
         # Corrected: {entity_id: canonical} -> {entity_id: canonical}
         self.sensor_map = {str(k).lower(): str(v).lower() for k, v in raw_map.items()}
 
+        # Load inversion flags from input_sensors (REV F55)
+        input_sensors = self.config.get("input_sensors", {})
+        self.inversion_flags = {
+            "battery": input_sensors.get("battery_power_inverted", False),
+            "grid": input_sensors.get("grid_power_inverted", False),
+        }
+
     def _load_config(self, config_path: str) -> dict:
         """Load configuration from YAML file"""
         try:
@@ -117,6 +124,11 @@ class LearningEngine:
             return "import"
         if stripped in ("grid_export", "energy_export", "to_grid"):
             return "export"
+        # REV F55: Handle battery_power and grid_power sensors
+        if stripped in ("battery_power", "battery"):
+            return "battery"
+        if stripped in ("grid_power",):
+            return "grid"
 
         aliases = {
             "import": {"grid_import", "gridin", "import", "grid", "from_grid", "energy_import"},
@@ -124,7 +136,8 @@ class LearningEngine:
             "pv": {"pv", "solar", "pvproduction", "production", "yield", "solar_yield"},
             "load": {"load", "consumption", "house", "usage", "load_consumption", "house_load"},
             "water": {"water", "vvb", "waterheater", "heater"},
-            "soc": {"soc", "battery_soc", "socpercent", "battery"},
+            "soc": {"soc", "battery_soc", "socpercent"},
+            "battery": {"battery"},  # REV F55: battery power sensors (not SoC)
         }
         for canonical, names in aliases.items():
             if stripped in names:
@@ -309,6 +322,18 @@ class LearningEngine:
                 energy_kwh = resampled * hours_per_slot
             else:
                 energy_kwh = (resampled / 1000.0) * hours_per_slot
+
+            # Apply inversion for battery sensors (REV F55)
+            if canonical == "battery" and self.inversion_flags.get("battery", False):
+                energy_kwh = -energy_kwh
+                logger.debug(f"Applied battery_power_inverted for {sensor_name}")
+
+            # Apply inversion for grid sensors (REV F55)
+            if canonical in ("grid", "import", "export") and self.inversion_flags.get(
+                "grid", False
+            ):
+                energy_kwh = -energy_kwh
+                logger.debug(f"Applied grid_power_inverted for {sensor_name}")
 
             if canonical == "battery":
                 if "batt_discharge_kwh" not in slot_df.columns:

@@ -349,15 +349,16 @@ The fix requires restructuring to entity-centric sections where each physical de
 
 ---
 
-### [PLANNED] REV // F55 — Fix History Display Bug (Respect Inversion Flags)
+### [DONE] REV // F55 — Fix History Display Bug (Respect Inversion Flags)
 
 **Goal:** Fix Sungrow/inverted battery charging slots appearing as discharges in history.
 **Context:** The background recorder ignores inversion flags, recording raw HA values which lead to incorrect energy calculations in the database.
 
 **Plan:**
 
-#### Phase 1: Fix Recorder & Backfill [DRAFT]
-* [ ] Update `backend/recorder.py` to respect `battery_power_inverted` and `grid_power_inverted`.
-* [ ] Update `backend/learning/backfill.py` to auto-detect cumulative battery charge/discharge sensors.
-* [ ] Update `backend/learning/engine.py` canonicalization to map battery energy names to DB fields.
-* [ ] Verify with new test suite `tests/test_recorder_inversion.py`.
+#### Phase 1: Fix Recorder & Backfill [DONE]
+* [x] Update `backend/recorder.py` to respect `battery_power_inverted` and `grid_power_inverted`.
+* [x] Update `backend/learning/engine.py` canonicalization to map battery energy names to DB fields.
+* [x] Update `backend/learning/engine.py` etl_power_to_slots to apply inversion flags.
+* [x] Created comprehensive test suite `tests/test_recorder_inversion.py` with 8 tests.
+* [x] All tests pass (8 new + 3 existing recorder tests).

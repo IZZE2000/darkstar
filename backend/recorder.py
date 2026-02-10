@@ -92,6 +92,19 @@ async def record_observation_from_current_state(
     battery_kw = await get_kw("battery_power")
     water_kw = await get_kw("water_power")
 
+    # Apply inversion flags if configured (REV F55)
+    input_sensors = config.get("input_sensors", {})
+    if input_sensors.get("battery_power_inverted", False):
+        battery_kw = -battery_kw
+        logger.debug(f"Applied battery_power_inverted: {battery_kw:.3f}kW")
+
+    # Handle grid inversion for net meter type
+    if meter_type == "net" and input_sensors.get("grid_power_inverted", False):
+        grid_net_kw = -grid_net_kw
+        import_kw = max(0.0, grid_net_kw)
+        export_kw = max(0.0, -grid_net_kw)
+        logger.debug(f"Applied grid_power_inverted: net={grid_net_kw:.3f}kW")
+
     # Estimate Energy for the 15m slot (kWh = avg_kW * 0.25h)
     # This is a Rough Approximation if we don't have cumulative counters
     # ideally we would diff cumulative counters.
