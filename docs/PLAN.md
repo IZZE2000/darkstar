@@ -136,10 +136,10 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] Verify `self_consumption` and `zero_export` modes (both "Auto") properly skip all 3 entities
 * [x] Test that only `soc_target` and `work_mode` are written in Auto mode
 
-#### Phase 2: Fix Idle Status Display [PLANNED]
-* [ ] Update `_generate_reason()` in `[executor/controller.py]` to use profile mode descriptions instead of hardcoded "Hold/Idle" and "Zero-Export" labels
-* [ ] Use `profile.modes.*.description` for the reason string when available
-* [ ] Ensure "Auto" mode shows correct description, not "Idle"
+#### Phase 2: Fix Idle Status Display [DONE]
+* [x] Update `_generate_reason()` in `[executor/controller.py]` to use profile mode descriptions instead of hardcoded "Hold/Idle" and "Zero-Export" labels
+* [x] Use `profile.modes.*.description` for the reason string when available
+* [x] Ensure "Auto" mode shows correct description, not "Idle"
 
 #### Phase 3: Fix Config Reload on UI Save [PLANNED]
 * [ ] Add `executor.reload_config()` call in `[backend/api/routers/config.py]` after successful config save

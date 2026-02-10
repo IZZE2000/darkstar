@@ -18,7 +18,7 @@ from dataclasses import dataclass
 # from typing import Any, Dict, Optional, Tuple
 from .config import ControllerConfig, InverterConfig, WaterHeaterConfig
 from .override import OverrideResult, SlotPlan, SystemState
-from .profiles import InverterProfile
+from .profiles import InverterProfile, WorkMode
 
 logger = logging.getLogger(__name__)
 
@@ -218,6 +218,10 @@ class Controller:
                 grid_charging = True
             else:
                 grid_charging = slot.charge_kw > 0 and slot.export_kw == 0
+
+            # Ensure work_mode is not None for type safety
+            if work_mode is None:
+                work_mode = ""
         else:
             # Legacy hardcoded logic for Deye
             work_mode = (
@@ -336,6 +340,23 @@ class Controller:
             # No water heating - use configured off temp
             return self.water_heater_config.temp_off
 
+    def _get_mode_def_for_value(self, value: str) -> "WorkMode | None":
+        """Find mode definition by its value string."""
+        if not self.profile:
+            return None
+        for mode_name in [
+            "export",
+            "zero_export",
+            "self_consumption",
+            "charge_from_grid",
+            "force_discharge",
+            "idle",
+        ]:
+            mode_def = getattr(self.profile.modes, mode_name)
+            if mode_def and mode_def.value == value:
+                return mode_def
+        return None
+
     def _generate_reason(self, slot: SlotPlan, work_mode: str, grid_charging: bool) -> str:
         """Generate a human-readable reason for the decision."""
         parts: list[str] = []
@@ -350,7 +371,12 @@ class Controller:
         if not parts:
             parts.append("Hold/Idle")
 
-        mode_str = "Export" if work_mode == "Export First" else "Zero-Export"
+        # Use profile mode description if available, fall back to legacy labels
+        mode_def = self._get_mode_def_for_value(work_mode)
+        if mode_def and mode_def.description:
+            mode_str = mode_def.description
+        else:
+            mode_str = "Export" if work_mode == "Export First" else "Zero-Export"
         charge_str = "Grid+" if grid_charging else ""
 
         return f"Plan: {', '.join(parts)} | {charge_str}{mode_str} | SoC→{slot.soc_target}%"

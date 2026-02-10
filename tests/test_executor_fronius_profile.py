@@ -159,3 +159,37 @@ async def test_fronius_auto_mode_skips_extraneous_entities(
     # Verify the HA calls that should NOT be made in Auto mode
     mock_ha.set_switch.assert_not_called()  # grid_charging
     # discharge_limit and max_export_power would call set_number, but should be skipped
+
+
+def test_fronius_reason_uses_profile_descriptions(executor_config, fronius_profile):
+    """REV F53: Verify that controller decision reasons use profile mode descriptions instead of hardcoded labels."""
+    controller = Controller(
+        config=executor_config.controller,
+        inverter_config=executor_config.inverter,
+        profile=fronius_profile,
+    )
+
+    # Case 1: Idle mode (zero_export) - should use profile description
+    # When no activities planned, controller uses zero_export mode
+    slot = SlotPlan(charge_kw=0.0, export_kw=0.0, soc_target=50)
+    state = SystemState(current_soc_percent=80.0)
+    decision = controller.decide(slot, state)
+
+    assert decision.work_mode == "Auto"  # zero_export mode value
+    # The reason should contain the zero_export profile description, not hardcoded "Zero-Export"
+    assert fronius_profile.modes.zero_export.description in decision.reason, (
+        f"Expected profile description '{fronius_profile.modes.zero_export.description}' in reason, got: {decision.reason}"
+    )
+    assert "Zero-Export" not in decision.reason, (
+        f"Reason should NOT contain hardcoded 'Zero-Export', got: {decision.reason}"
+    )
+
+    # Case 2: Export mode - should use profile description
+    slot = SlotPlan(charge_kw=0.0, export_kw=5.0, soc_target=50)
+    decision = controller.decide(slot, state)
+
+    assert decision.work_mode == "Discharge to Grid"
+    # The reason should contain the profile description
+    assert fronius_profile.modes.export.description in decision.reason, (
+        f"Expected profile description '{fronius_profile.modes.export.description}' in reason, got: {decision.reason}"
+    )
