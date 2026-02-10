@@ -16,7 +16,7 @@ import requests
 
 from .config import ExecutorConfig
 from .controller import ControllerDecision
-from .profiles import InverterProfile
+from .profiles import InverterProfile, WorkMode
 
 logger = logging.getLogger(__name__)
 
@@ -455,6 +455,178 @@ class ActionDispatcher:
 
         return results
 
+    async def _apply_composite_entities(
+        self,
+        target_mode: str,
+        is_charging: bool,
+        mode_changed: bool,
+    ) -> list[ActionResult]:
+        """Apply composite mode entities for inverters that require multiple entity changes.
+
+        This is called even when work_mode hasn't changed, to support inverters like Sungrow
+        where multiple logical modes share the same work_mode value (e.g., "Forced mode")
+        but have different composite entity requirements.
+
+        Args:
+            target_mode: The target work mode string value
+            is_charging: Whether we're in a charging intent context
+            mode_changed: Whether the primary work_mode entity was actually changed
+
+        Returns:
+            List of ActionResult objects for composite entity operations
+        """
+        results: list[ActionResult] = []
+
+        if not self.profile:
+            return results
+
+        # unique string value -> mode object lookup
+        mode_obj = None
+
+        # Rev F52 Phase 4: Ambiguous Mode Resolution
+        # Determine which mode object matches the target string AND intent
+        # Priority:
+        # 1. If is_charging=True, check charge_from_grid first
+        # 2. Check all other modes
+
+        # Helper to find matching mode in a list
+        def find_mode(mode_list: list[WorkMode | None]) -> WorkMode | None:
+            for m in mode_list:
+                if m and m.value == target_mode:
+                    return m
+            return None
+
+        if is_charging:
+            mode_obj = find_mode([self.profile.modes.charge_from_grid])
+
+        if not mode_obj:
+            # Standard lookup order (Export/Zero/Self/ForceDischarge/Idle)
+            # Note: We exclude charge_from_grid here if is_charging is False to avoid accidental match
+            # if it shares a value with another mode (e.g. Sungrow Forced Mode)
+            candidates = [
+                self.profile.modes.export,
+                self.profile.modes.zero_export,
+                self.profile.modes.self_consumption,
+                self.profile.modes.force_discharge,
+                self.profile.modes.idle,
+            ]
+            # Only include charge_from_grid as fallback if we haven't checked it yet (unlikely path)
+            if not is_charging:
+                # If we are NOT charging, we explicitly prefer Export/ForceDischarge over GridCharge
+                pass
+            else:
+                candidates.append(self.profile.modes.charge_from_grid)
+
+            mode_obj = find_mode(candidates)
+
+        if mode_obj and mode_obj.set_entities:
+            logger.debug(
+                "Applying composite mode entities for %s (Intent: Charging=%s, ModeChanged=%s)",
+                target_mode,
+                is_charging,
+                mode_changed,
+            )
+            for key, val in mode_obj.set_entities.items():
+                # Look up entity ID from custom_entities config
+                # Fallback to standard entities checks if needed, but custom_entities is preferred for profile-specifics
+                aux_start = time.time()
+                entity_id = self.config.inverter.custom_entities.get(key)
+                if not _is_entity_configured(entity_id):
+                    logger.warning(
+                        "Profile requires setting '%s' to '%s', but entity is not configured",
+                        key,
+                        val,
+                    )
+                    continue
+
+                # Capture previous state
+                aux_previous = self.ha.get_state_value(entity_id)
+
+                # Idempotent skip
+                if str(aux_previous) == str(val):
+                    results.append(
+                        ActionResult(
+                            action_type="composite_mode",
+                            success=True,
+                            message=f"Already at {val}",
+                            previous_value=aux_previous,
+                            new_value=val,
+                            entity_id=entity_id,
+                            skipped=True,
+                            duration_ms=int((time.time() - aux_start) * 1000),
+                            error_details=None,
+                        )
+                    )
+                    continue
+
+                if self.shadow_mode:
+                    logger.info(
+                        "[SHADOW] Composite Mode: Would set %s to %s (current: %s)",
+                        entity_id,
+                        val,
+                        aux_previous,
+                    )
+                    results.append(
+                        ActionResult(
+                            action_type="composite_mode",
+                            success=True,
+                            message=f"[SHADOW] Would change {aux_previous} → {val}",
+                            previous_value=aux_previous,
+                            new_value=val,
+                            entity_id=entity_id,
+                            skipped=True,
+                            duration_ms=int((time.time() - aux_start) * 1000),
+                            error_details=None,
+                        )
+                    )
+                    continue
+
+                logger.info("Composite Mode: Setting %s to %s", entity_id, val)
+                aux_success = False
+                aux_error_details = None
+                try:
+                    if isinstance(val, int | float):
+                        aux_success = self.ha.set_number(entity_id, float(val))
+                    elif isinstance(val, str):
+                        aux_success = self.ha.set_select_option(entity_id, val)
+                    elif isinstance(val, bool):
+                        aux_success = self.ha.set_switch(entity_id, val)
+                except HACallError as e:
+                    aux_success = False
+                    aux_error_details = str(e)
+                    logger.error(
+                        "Composite mode entity %s failed: %s", entity_id, aux_error_details
+                    )
+
+                # Verification
+                aux_verified_value = None
+                aux_verification_success = None
+                if aux_success:
+                    aux_verified_value, aux_verification_success = await self._verify_action(
+                        entity_id, val
+                    )
+
+                results.append(
+                    ActionResult(
+                        action_type="composite_mode",
+                        success=aux_success,
+                        message=f"Changed {aux_previous} → {val}"
+                        if aux_success
+                        else f"Failed: {aux_error_details}"
+                        if aux_error_details
+                        else f"Failed to set {key}",
+                        previous_value=aux_previous,
+                        new_value=val,
+                        entity_id=entity_id,
+                        verified_value=aux_verified_value,
+                        verification_success=aux_verification_success,
+                        duration_ms=int((time.time() - aux_start) * 1000),
+                        error_details=aux_error_details,
+                    )
+                )
+
+        return results
+
     async def _set_work_mode(
         self, target_mode: str, is_charging: bool = False
     ) -> list[ActionResult]:
@@ -480,183 +652,38 @@ class ActionDispatcher:
         # Get current state
         current = self.ha.get_state_value(entity)
 
-        if current == target_mode:
-            results.append(
-                ActionResult(
-                    action_type="work_mode",
-                    success=True,
-                    message=f"Already at {target_mode}",
-                    previous_value=current,
-                    new_value=target_mode,
-                    entity_id=entity,
-                    skipped=True,
-                    duration_ms=int((time.time() - start) * 1000),
-                    error_details=None,
-                )
-            )
-            return results
+        # Track if primary work_mode entity actually changed
+        mode_changed = current != target_mode
+        success = True
+        error_details = None
 
-        if self.shadow_mode:
-            logger.info("[SHADOW] Would set work_mode to %s (current: %s)", target_mode, current)
-            # We don't return here anymore, but continue to process composite entities in shadow mode
-            success = True
-            error_details = None
+        if mode_changed:
+            if self.shadow_mode:
+                logger.info(
+                    "[SHADOW] Would set work_mode to %s (current: %s)", target_mode, current
+                )
+                success = True
+            else:
+                # Apply work mode change
+                try:
+                    success = self.ha.set_select_option(entity, target_mode)
+                except HACallError as e:
+                    success = False
+                    error_details = str(e)
+                    logger.error("Failed to set work mode: %s", error_details)
         else:
-            # Apply work mode change
-            try:
-                success = self.ha.set_select_option(entity, target_mode)
-                error_details = None
-            except HACallError as e:
-                success = False
-                error_details = str(e)
-                logger.error("Failed to set work mode: %s", error_details)
+            logger.debug("Work mode already at target: %s", target_mode)
 
-        # Handle composite mode entities (Rev IP2)
-        # Some inverters (e.g. Sungrow) require setting multiple entities for a single mode change
-        if success and self.profile:
-            # unique string value -> mode object lookup
-            mode_obj = None
-
-            # Rev F52 Phase 4: Ambiguous Mode Resolution
-            # Determine which mode object matches the target string AND intent
-            # Priority:
-            # 1. If is_charging=True, check charge_from_grid first
-            # 2. Check all other modes
-
-            # Helper to find matching mode in a list
-            def find_mode(mode_list):
-                for m in mode_list:
-                    if m and m.value == target_mode:
-                        return m
-                return None
-
-            if is_charging:
-                mode_obj = find_mode([self.profile.modes.charge_from_grid])
-
-            if not mode_obj:
-                # Standard lookup order (Export/Zero/Self/ForceDischarge/Idle)
-                # Note: We exclude charge_from_grid here if is_charging is False to avoid accidental match
-                # if it shares a value with another mode (e.g. Sungrow Forced Mode)
-                candidates = [
-                    self.profile.modes.export,
-                    self.profile.modes.zero_export,
-                    self.profile.modes.self_consumption,
-                    self.profile.modes.force_discharge,
-                    self.profile.modes.idle,
-                ]
-                # Only include charge_from_grid as fallback if we haven't checked it yet (unlikely path)
-                if not is_charging:
-                    # If we are NOT charging, we explicitly prefer Export/ForceDischarge over GridCharge
-                    pass
-                else:
-                    candidates.append(self.profile.modes.charge_from_grid)
-
-                mode_obj = find_mode(candidates)
-
-            if mode_obj and mode_obj.set_entities:
-                logger.debug(
-                    "Applying composite mode entities for %s (Intent: Charging=%s)",
-                    target_mode,
-                    is_charging,
-                )
-                for key, val in mode_obj.set_entities.items():
-                    # Look up entity ID from custom_entities config
-                    # Fallback to standard entities checks if needed, but custom_entities is preferred for profile-specifics
-                    aux_start = time.time()
-                    entity_id = self.config.inverter.custom_entities.get(key)
-                    if not _is_entity_configured(entity_id):
-                        logger.warning(
-                            "Profile requires setting '%s' to '%s', but entity is not configured",
-                            key,
-                            val,
-                        )
-                        continue
-
-                    # Capture previous state
-                    aux_previous = self.ha.get_state_value(entity_id)
-
-                    # Idempotent skip
-                    if str(aux_previous) == str(val):
-                        results.append(
-                            ActionResult(
-                                action_type="composite_mode",
-                                success=True,
-                                message=f"Already at {val}",
-                                previous_value=aux_previous,
-                                new_value=val,
-                                entity_id=entity_id,
-                                skipped=True,
-                                duration_ms=int((time.time() - aux_start) * 1000),
-                                error_details=None,
-                            )
-                        )
-                        continue
-
-                    if self.shadow_mode:
-                        logger.info(
-                            "[SHADOW] Composite Mode: Would set %s to %s (current: %s)",
-                            entity_id,
-                            val,
-                            aux_previous,
-                        )
-                        results.append(
-                            ActionResult(
-                                action_type="composite_mode",
-                                success=True,
-                                message=f"[SHADOW] Would change {aux_previous} → {val}",
-                                previous_value=aux_previous,
-                                new_value=val,
-                                entity_id=entity_id,
-                                skipped=True,
-                                duration_ms=int((time.time() - aux_start) * 1000),
-                                error_details=None,
-                            )
-                        )
-                        continue
-
-                    logger.info("Composite Mode: Setting %s to %s", entity_id, val)
-                    aux_success = False
-                    aux_error_details = None
-                    try:
-                        if isinstance(val, int | float):
-                            aux_success = self.ha.set_number(entity_id, float(val))
-                        elif isinstance(val, str):
-                            aux_success = self.ha.set_select_option(entity_id, val)
-                        elif isinstance(val, bool):
-                            aux_success = self.ha.set_switch(entity_id, val)
-                    except HACallError as e:
-                        aux_success = False
-                        aux_error_details = str(e)
-                        logger.error(
-                            "Composite mode entity %s failed: %s", entity_id, aux_error_details
-                        )
-
-                    # Verification
-                    aux_verified_value = None
-                    aux_verification_success = None
-                    if aux_success:
-                        aux_verified_value, aux_verification_success = await self._verify_action(
-                            entity_id, val
-                        )
-
-                    results.append(
-                        ActionResult(
-                            action_type="composite_mode",
-                            success=aux_success,
-                            message=f"Changed {aux_previous} → {val}"
-                            if aux_success
-                            else f"Failed: {aux_error_details}"
-                            if aux_error_details
-                            else f"Failed to set {key}",
-                            previous_value=aux_previous,
-                            new_value=val,
-                            entity_id=entity_id,
-                            verified_value=aux_verified_value,
-                            verification_success=aux_verification_success,
-                            duration_ms=int((time.time() - aux_start) * 1000),
-                            error_details=aux_error_details,
-                        )
-                    )
+        # Handle composite mode entities (Rev IP2 + Rev F54 Phase 1)
+        # Some inverters (e.g. Sungrow) require setting multiple entities for a single mode change.
+        # CRITICAL: Process composite entities EVEN when work_mode hasn't changed, because
+        # inverters like Sungrow use the same work_mode value for multiple logical modes
+        # (e.g., "Forced mode" for both export and charge), differing only in composite entities.
+        if self.profile:
+            composite_results = await self._apply_composite_entities(
+                target_mode, is_charging, mode_changed
+            )
+            results.extend(composite_results)
 
         # Mode settling delay (Rev IP1 Phase 3)
         if success and self.profile and self.profile.behavior.requires_mode_settling:
@@ -681,7 +708,9 @@ class ActionDispatcher:
 
         primary_msg = ""
         if success:
-            if self.shadow_mode:
+            if not mode_changed:
+                primary_msg = f"Already at {target_mode}"
+            elif self.shadow_mode:
                 primary_msg = f"[SHADOW] Would change {current} → {target_mode}"
             else:
                 primary_msg = f"Changed {current} → {target_mode}"
@@ -699,7 +728,8 @@ class ActionDispatcher:
                 entity_id=entity,
                 verified_value=verified_value,
                 verification_success=verification_success,
-                skipped=self.shadow_mode,  # Shadow actions are technically skipped
+                skipped=(not mode_changed)
+                or self.shadow_mode,  # Skip if already at target or shadow mode
                 duration_ms=duration,
                 error_details=error_details,
             ),

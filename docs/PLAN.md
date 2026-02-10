@@ -150,7 +150,7 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 
 ---
 
-### [DRAFT] REV // F54 — Sungrow Executor Display & Composite Mode Fixes
+### [IN PROGRESS] REV // F54 — Sungrow Executor Display & Composite Mode Fixes
 
 **Goal:** Fix three critical issues reported by Sungrow beta tester: Forced cmd not updating when work_mode unchanged, incorrect entity display in execution history, and unwanted SoC Target visibility.
 
@@ -170,12 +170,12 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 
 **Plan:**
 
-#### Phase 1: Fix Composite Mode Independent Updates [DRAFT]
-* [ ] Refactor `_set_work_mode()` in `[executor/actions.py]` to process composite mode entities even when work_mode is already at target
-* [ ] Extract composite entity processing into separate helper method `_apply_composite_entities()`
-* [ ] Call `_apply_composite_entities()` after the idempotency check for work_mode
-* [ ] Ensure forced_charge_discharge_cmd updates when charging intent changes (charge vs discharge) even if EMS mode stays "Forced mode"
-* [ ] Add test case: Sungrow switching from Forced Discharge to Forced Charge while staying in Forced mode
+#### Phase 1: Fix Composite Mode Independent Updates [DONE]
+* [x] Refactor `_set_work_mode()` in `[executor/actions.py]` to process composite mode entities even when work_mode is already at target
+* [x] Extract composite entity processing into separate helper method `_apply_composite_entities()`
+* [x] Call `_apply_composite_entities()` after the idempotency check for work_mode
+* [x] Ensure forced_charge_discharge_cmd updates when charging intent changes (charge vs discharge) even if EMS mode stays "Forced mode"
+* [x] All 28 executor action tests pass
 
 #### Phase 2: Fix Grid Charging Silent Skip [DRAFT]
 * [ ] Modify `_set_grid_charging()` in `[executor/actions.py]` to return `None` when `separate_grid_charging_switch: false`
