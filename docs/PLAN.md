@@ -122,3 +122,63 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [ ] **UI:** Show "Clipped Solar" in the dashboard forecast chart.
 
 ---
+
+### [PLANNED] REV // F58 — Sungrow Config Healing (Post-F57 Fixes)
+
+**Goal:** Fix critical Sungrow configuration bugs that survived F57: HA add-on migration failures, missing `custom_entities` section, UI save failures, and misleading error messages.
+
+**Context:** Investigation revealed F57 migration works correctly in backend, but HA add-on (`darkstar/run.sh`) uses naive key-adding logic that resurrects deprecated keys. Sungrow composite entities (`ems_mode`, `forced_charge_discharge_cmd`) belong in `executor.inverter.custom_entities` but config template doesn't create this section. Additionally, UI change detection has a critical bug treating `undefined` as equal to empty string, preventing users from saving new entity fields.
+
+**Plan:**
+
+#### Phase 1: Fix HA Add-on Migration [PLANNED]
+* [ ] Replace `deep_merge_missing()` in `darkstar/run.sh` with proper migration call
+* [ ] Import `backend.config_migration:migrate_config()` in run.sh Python block
+* [ ] Call `asyncio.run(migrate_config('/config/darkstar/config.yaml', '/app/config.default.yaml'))`
+* [ ] Remove `deep_merge_missing()` function entirely (lines 123-140)
+* [ ] Test: Create corrupted config with `version`, `deferrable_loads`, old `_entity` keys
+* [ ] Verify: After HA add-on start, all deprecated keys deleted, `config_version` set correctly
+
+#### Phase 2: Add `custom_entities` to Template [PLANNED]
+* [ ] Add empty `custom_entities: {}` section to `config.default.yaml` under `executor.inverter`
+* [ ] Add comment: `# Profile-specific composite entities (e.g., Sungrow ems_mode)`
+* [ ] Template merge will automatically add this section to existing configs
+* [ ] Test: Load config without `custom_entities`, verify template merge creates empty section
+
+#### Phase 3: Fix Error Messages [PLANNED]
+* [ ] Update `executor/profiles.py:get_missing_entities()` to distinguish standard vs custom paths
+* [ ] Create `STANDARD_ENTITY_KEYS` constant matching frontend's `standardInverterKeys`
+* [ ] Update error message logic (line 272):
+  - Standard keys: `"executor.inverter.{key}"`
+  - Custom keys: `"executor.inverter.custom_entities.{key}"`
+* [ ] Update suggestion messages accordingly
+* [ ] Test: Trigger missing entity validation for both standard and custom entities, verify paths are correct
+
+#### Phase 4: Fix UI Change Detection Bug [PLANNED]
+* [ ] Update `frontend/src/pages/settings/utils.ts:areEqual()` to treat `undefined → value` as a change
+* [ ] Add check: `if (a === undefined && b !== undefined && b !== '') return false`
+* [ ] This fixes the critical bug where adding new entity fields shows "No changes detected"
+* [ ] Test: Add new entity via UI, verify save succeeds and config is updated
+
+#### Phase 5: Integration Testing [PLANNED]
+* [ ] **Test 1 - HA Add-on Migration:**
+  - Create test config with: `version: 2.4.21-beta`, `deferrable_loads: []`, `executor.inverter.work_mode_entity`
+  - Start HA add-on via `./darkstar/run.sh` (bash script)
+  - Verify: All deprecated keys removed, `config_version: 2`, structure matches template
+* [ ] **Test 2 - Sungrow Setup:**
+  - Fresh config with `system.inverter_profile: sungrow`
+  - No `custom_entities` section
+  - Start app, verify template merge creates `executor.inverter.custom_entities: {}`
+  - Add entities via UI, verify save succeeds and values appear in config
+* [ ] **Test 3 - Error Messages:**
+  - Remove `executor.inverter.work_mode` (standard)
+  - Remove `executor.inverter.custom_entities.ems_mode` (custom)
+  - Check validation errors show correct paths
+* [ ] **Test 4 - UI Change Detection:**
+  - Fresh config with Sungrow profile, no `ems_mode` in `custom_entities`
+  - Open Settings > System, add `select.ems_mode` to EMS Mode entity field
+  - Click Save, verify "No changes detected" does NOT appear
+  - Verify config file contains the new entity
+* [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
+
+---
