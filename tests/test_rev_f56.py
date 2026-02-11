@@ -32,7 +32,8 @@ def test_get_missing_entities_with_custom_entities():
     config = {"executor": {"inverter": {"work_mode": None}}}
     missing = profile.get_missing_entities(config)
     assert "executor.inverter.work_mode" in missing
-    assert "executor.inverter.ems_mode" in missing
+    # REV F58: ems_mode is not in STANDARD_ENTITY_KEYS, so it should use custom_entities path
+    assert "executor.inverter.custom_entities.ems_mode" in missing
 
     # Case 2: One in root, one in custom_entities
     config = {

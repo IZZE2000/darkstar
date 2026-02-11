@@ -23,9 +23,9 @@ def test_sungrow_validation_missing_composite():
 
     missing = profile.get_missing_entities(invalid_config)
 
-    # Should report the missing composite entities
-    assert "executor.inverter.ems_mode" in missing
-    assert "executor.inverter.forced_charge_discharge_cmd" in missing
+    # Should report the missing composite entities with correct custom_entities path (REV F58)
+    assert "executor.inverter.custom_entities.ems_mode" in missing
+    assert "executor.inverter.custom_entities.forced_charge_discharge_cmd" in missing
 
 
 def test_sungrow_validation_valid():
