@@ -446,3 +446,125 @@ The fix requires restructuring to entity-centric sections where each physical de
 - "Missing Required Entities" shows in red with entity names
 - One-click "Apply Recommendations" populates all missing entities
 - No manual config.yaml editing required
+
+---
+
+### [PLANNED] REV // F57 — Config Migration & Save Path Unification
+
+**Goal:** Fix systematic config corruption from incomplete migrations and backend save bypass. Ensure all save operations (migration + UI) enforce template structure, delete deprecated keys, and preserve comments.
+
+**Context:** Beta tester config analysis revealed 10 specific corruption patterns:
+- All header/section/inline comments missing
+- Deprecated keys present: `deferrable_loads`, `ev_charger`, `solar_array`, `version`
+- Duplicate entity keys (old `_entity` suffix + new standardized names)
+- Wrong section ordering (`config_version` at line 307 instead of line 9)
+- Structural corruption (orphaned keys at wrong nesting levels)
+
+**Root Causes (Evidence-Based):**
+1. **Migrations log "will delete" but never actually delete** (`config_migration.py:354-356`)
+2. **Backend save bypasses template enforcement** (`config.py:164` uses `deep_update()` not template merge)
+3. **IP4 migration incomplete** (removes old entity keys in migration but UI re-adds them)
+4. **No `version` → `config_version` cleanup** for old configs
+5. **Comment loss** (backend save doesn't reload template, just modifies loaded dict)
+6. **Section ordering not enforced** after backend saves
+
+**Plan:**
+
+#### Phase 1: Fix Migration - Actually Delete Deprecated Keys [PLANNED]
+- [ ] Add `del config['deferrable_loads']` after ARC15 migration (line 356)
+- [ ] Add `del config['ev_charger']` after ARC15 migration
+- [ ] Verify `solar_array` deletion works (add validation after line 169)
+- [ ] Create `migrate_version_key()` function to rename `version` → `config_version`
+- [ ] Add `migrate_version_key` to migration pipeline as first step
+- [ ] Create centralized `DEPRECATED_KEYS` set and `DEPRECATED_NESTED_KEYS` dict
+- [ ] Create `remove_deprecated_keys()` cleanup function
+
+#### Phase 2: Fix Backend Save - Use Template Merge [PLANNED]
+- [ ] Update `save_config()` in `config.py` to load default template first
+- [ ] Merge user changes into template (preserves structure/comments)
+- [ ] Import and use `template_aware_merge()` from `config_migration`
+- [ ] Call `remove_deprecated_keys()` before writing
+- [ ] Ensure backend save path matches migration behavior exactly
+
+#### Phase 3: Add Timestamped Backup System [PLANNED]
+- [ ] Create `backups/` directory if not exists
+- [ ] Update `_write_config()` to create timestamped backups: `config_YYYYMMDD_HHMMSS.yaml`
+- [ ] Add retention logic: keep last 30 backups, auto-cleanup older ones
+- [ ] Extract to shared `create_timestamped_backup()` function
+- [ ] Use in both migration and backend save paths
+
+#### Phase 4: Add Config Validation Before Write [PLANNED]
+- [ ] Add post-merge validation: check no deprecated keys present
+- [ ] Verify `config_version` at correct position (index < 5)
+- [ ] Verify required sections present (system, battery, executor, input_sensors)
+- [ ] Log validation summary: template enforced, deprecated keys removed, backup created
+- [ ] Abort write if validation fails (never write corrupted config)
+
+#### Phase 5: Documentation & Logging [PLANNED]
+- [ ] Add operation summary logging after successful save
+- [ ] Update `ARCHITECTURE.md` with unified save strategy
+- [ ] Document template enforcement and backup retention
+
+#### Phase 6: Comprehensive Testing & Verification [PLANNED]
+
+**Unit Tests** (`tests/test_config_f57.py`):
+- [ ] Test: Deprecated keys actually deleted in migration
+- [ ] Test: Backend save preserves template comments
+- [ ] Test: Backend save enforces section ordering
+- [ ] Test: Timestamped backups created and retention works
+- [ ] Test: Duplicate entity keys removed (old `_entity` suffix)
+- [ ] Test: `version` → `config_version` migration works
+- [ ] Test: Validation prevents writing corrupted config
+- [ ] Test: Custom user keys preserved and marked
+- [ ] 40+ total test assertions covering all corruption patterns
+
+**Integration Tests - Healing Validation** (CRITICAL):
+```bash
+# Test 1: Corrupted config automatically heals
+cp "debugging/config (3).yaml" test_corrupted_config.yaml
+uv run python backend/config_migration.py
+# Verify all 10 corruption patterns fixed:
+# - All comments restored from template
+# - All deprecated keys removed
+# - Section ordering matches template
+# - config_version at line ~9
+# - Backup created in backups/
+```
+
+**Integration Tests - Regression Prevention**:
+```bash
+# Test 2: Healthy config stays healthy
+cp config.yaml test_healthy_config.yaml
+uv run python backend/config_migration.py
+# Verify NO damage:
+# - All user values preserved
+# - Comments maintained
+# - Structure intact
+# - No new deprecated keys
+```
+
+**Acceptance Criteria:**
+- [ ] **Healing Test**: Beta tester corrupted config processes cleanly (all 10 patterns fixed)
+- [ ] **Regression Test**: Healthy config unchanged (no new corruption)
+- [ ] All 40+ unit tests passing
+- [ ] Zero deprecated keys in output configs
+- [ ] All header comments present (7 lines from template)
+- [ ] All section comments present (20+ sections from template)
+- [ ] All inline comments present (100+ lines from template)
+- [ ] Section ordering matches template exactly
+- [ ] `config_version` at position ~line 9 (not line 307)
+- [ ] Timestamped backups created in `backups/` directory
+- [ ] Old backups cleaned up (max 30 retained)
+- [ ] No duplicate entity keys
+- [ ] Config loads without errors
+- [ ] Executor reads config successfully
+- [ ] Planner generates schedules without errors
+- [ ] No regressions in existing tests (all pass)
+
+**Migration Path:**
+Existing users with corrupted configs: On next startup, migration automatically:
+1. Deletes all deprecated keys
+2. Applies template structure (restores all comments)
+3. Fixes section ordering
+4. Creates timestamped backup
+5. User sees clean config with all comments restored
