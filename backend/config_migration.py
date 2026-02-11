@@ -165,9 +165,8 @@ def migrate_battery_config(config: Any) -> tuple[Any, bool]:
         if legacy_key in controller:
             val = controller.pop(legacy_key)
 
-            # Only set if not already present in target (preserve existing battery settings if any)
-            # OR if it was the redundant battery_capacity_kwh which we want to unify
-            if new_key not in battery or legacy_key == "battery_capacity_kwh":
+            # Only set if not already present in target (preserve existing battery settings)
+            if new_key not in battery:
                 battery[new_key] = val
                 logger.info(f"Migrated {legacy_key} -> battery.{new_key}")
                 changed = True
