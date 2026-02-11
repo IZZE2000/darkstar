@@ -173,7 +173,7 @@ export function useSettingsForm(fields: BaseField[]): UseSettingsFormReturn {
                 return false
             }
 
-            const patch = { ...buildPatch(config as unknown as Record<string, unknown>, form, fields), ...extraPatch }
+            const patch = { ...buildPatch(config as unknown as Record<string, unknown>, form, allFields), ...extraPatch }
             console.warn('[CONFIG_SAVE] Generated patch:', patch)
 
             if (Object.keys(patch).length === 0) {
@@ -229,9 +229,9 @@ export function useSettingsForm(fields: BaseField[]): UseSettingsFormReturn {
 
     const isDirty = useMemo(() => {
         if (!config) return false
-        const patch = buildPatch(config as unknown as Record<string, unknown>, form, fields)
+        const patch = buildPatch(config as unknown as Record<string, unknown>, form, allFields)
         return Object.keys(patch).length > 0
-    }, [config, form, fields])
+    }, [config, form])
 
     return {
         config,
