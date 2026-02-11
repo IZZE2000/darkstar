@@ -127,6 +127,53 @@ class TestProfileParsing:
         assert profile.behavior.control_unit == "A"
         assert profile.behavior.min_charge_a == 10.0
 
+    def test_parse_work_mode_skip_flags(self):
+        """Test parsing work mode skip flags (skip_discharge_limit, skip_export_power)."""
+        data = {
+            "metadata": {"name": "test", "version": "1.0.0"},
+            "modes": {
+                "zero_export": {
+                    "value": "Auto",
+                    "description": "Zero export mode",
+                    "skip_discharge_limit": True,
+                    "skip_export_power": True,
+                },
+                "self_consumption": {
+                    "value": "Auto",
+                    "description": "Self consumption",
+                    "skip_discharge_limit": False,
+                    "skip_export_power": False,
+                },
+                "export": {"value": "Export"},
+                "idle": {"value": "Standby"},
+            },
+        }
+
+        profile = parse_profile(data)
+
+        # Verify skip flags are parsed correctly
+        assert profile.modes.zero_export.skip_discharge_limit is True, (
+            "skip_discharge_limit should be True for zero_export"
+        )
+        assert profile.modes.zero_export.skip_export_power is True, (
+            "skip_export_power should be True for zero_export"
+        )
+
+        assert profile.modes.self_consumption.skip_discharge_limit is False, (
+            "skip_discharge_limit should be False for self_consumption"
+        )
+        assert profile.modes.self_consumption.skip_export_power is False, (
+            "skip_export_power should be False for self_consumption"
+        )
+
+        # Verify defaults when not specified
+        assert profile.modes.export.skip_discharge_limit is False, (
+            "skip_discharge_limit should default to False"
+        )
+        assert profile.modes.export.skip_export_power is False, (
+            "skip_export_power should default to False"
+        )
+
     def test_parse_minimal_profile(self):
         """Test parsing a minimal profile with defaults."""
         data = {

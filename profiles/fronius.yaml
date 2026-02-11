@@ -13,7 +13,7 @@ capabilities:
   supports_export_mode: true
   supports_zero_export: true
   supports_self_consumption: true
-  supports_soc_target: true
+  supports_soc_target: false
   supports_grid_export_limit: true
   supports_force_discharge: true
 

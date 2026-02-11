@@ -306,6 +306,7 @@ def _parse_work_mode(mode_data: dict[str, Any] | None) -> WorkMode | None:
         description=mode_data.get("description", ""),
         requires_grid_charging=mode_data.get("requires_grid_charging", False),
         skip_discharge_limit=mode_data.get("skip_discharge_limit", False),
+        skip_export_power=mode_data.get("skip_export_power", False),
         set_entities=mode_data.get("set_entities", {}),
     )
 

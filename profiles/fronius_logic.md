@@ -48,14 +48,16 @@
 
 ### Important Notes from Integration
 
-1. **Grid Charging Efficiency:** Grid charging efficiency is approximately 50-60% at low power levels (< 1000W). It improves at higher power levels.
+1. **SoC Target / Minimum Reserve:** Darkstar does NOT control the `number.byd_battery_box_premium_hv_minimum_reserve` entity. This is a **safety floor** configured by the user in the Fronius Web UI to ensure the battery always maintains a minimum charge level for emergencies. Darkstar's planned SoC targets are informational only on Fronius systems - they appear in the schedule but are not enforced via entity writes. The profile sets `supports_soc_target: false` to reflect this limitation.
 
-2. **Power Rounding:** Grid Charge Power must be set in multiples of 10W. If not rounded to 10, it may cause odd behavior (e.g., charging at 500W instead of requested value).
+2. **Grid Charging Efficiency:** Grid charging efficiency is approximately 50-60% at low power levels (< 1000W). It improves at higher power levels.
 
-3. **Power Reset:** After changing modes, power values are automatically set to 0. You must set the power value AFTER selecting the mode.
+3. **Power Rounding:** Grid Charge Power must be set in multiples of 10W. If not rounded to 10, it may cause odd behavior (e.g., charging at 500W instead of requested value).
 
-4. **Firmware:** Update GEN24 inverter firmware to 1.34.6-1 or higher otherwise battery charging might be limited.
+4. **Power Reset:** After changing modes, power values are automatically set to 0. You must set the power value AFTER selecting the mode.
 
-5. **Scheduled Charging:** Turn off scheduled (dis)charging in the Fronius Web UI to avoid unexpected behavior.
+5. **Firmware:** Update GEN24 inverter firmware to 1.34.6-1 or higher otherwise battery charging might be limited.
 
-6. **Mode Ordering:** Always change the mode FIRST, then set controls active in that mode.
+6. **Scheduled Charging:** Turn off scheduled (dis)charging in the Fronius Web UI to avoid unexpected behavior.
+
+7. **Mode Ordering:** Always change the mode FIRST, then set controls active in that mode.
