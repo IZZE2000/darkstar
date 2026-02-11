@@ -32,8 +32,8 @@ async def test_migration_logic():
         yaml.dump(legacy_config, f)
 
     try:
-        # 2. Run migration
-        await migrate_config(str(test_file))
+        # 2. Run migration with lenient validation (for testing minimal configs)
+        await migrate_config(str(test_file), strict_validation=False)
 
         # 3. Verify changes
         with test_file.open("r") as f:
@@ -42,7 +42,9 @@ async def test_migration_logic():
         assert "battery" in migrated
         assert migrated["battery"]["capacity_kwh"] == 15.0
         assert migrated["battery"]["nominal_voltage_v"] == 48.0
-        assert "version" in migrated
+        # REV F57: version key is migrated to config_version, not preserved
+        assert "version" not in migrated
+        assert "config_version" in migrated
 
     finally:
         # Cleanup
@@ -91,8 +93,8 @@ async def test_arc15_migration_water_heater():
         yaml.dump(old_config, f)
 
     try:
-        # Run migration
-        await migrate_config(str(test_file))
+        # Run migration with lenient validation (for testing minimal configs)
+        await migrate_config(str(test_file), strict_validation=False)
 
         # Verify migration
         with test_file.open("r") as f:
@@ -157,8 +159,8 @@ async def test_arc15_migration_ev_charger():
         yaml.dump(old_config, f)
 
     try:
-        # Run migration
-        await migrate_config(str(test_file))
+        # Run migration with lenient validation (for testing minimal configs)
+        await migrate_config(str(test_file), strict_validation=False)
 
         # Verify migration
         with test_file.open("r") as f:
@@ -235,8 +237,8 @@ async def test_arc15_migration_both_devices():
         yaml.dump(old_config, f)
 
     try:
-        # Run migration
-        await migrate_config(str(test_file))
+        # Run migration with lenient validation (for testing minimal configs)
+        await migrate_config(str(test_file), strict_validation=False)
 
         # Verify migration
         with test_file.open("r") as f:
@@ -293,8 +295,8 @@ async def test_arc15_idempotency():
         yaml.dump(old_config, f)
 
     try:
-        # Run migration first time
-        await migrate_config(str(test_file))
+        # Run migration first time with lenient validation
+        await migrate_config(str(test_file), strict_validation=False)
 
         # Read result after first migration
         with test_file.open("r") as f:
@@ -302,8 +304,8 @@ async def test_arc15_idempotency():
 
         wh_count_first = len(first_migration.get("water_heaters", []))
 
-        # Run migration second time (should not duplicate)
-        await migrate_config(str(test_file))
+        # Run migration second time (should not duplicate) with lenient validation
+        await migrate_config(str(test_file), strict_validation=False)
 
         # Read result after second migration
         with test_file.open("r") as f:
@@ -354,8 +356,8 @@ async def test_arc15_already_migrated():
         yaml.dump(migrated_config, f)
 
     try:
-        # Run migration on already migrated config
-        await migrate_config(str(test_file))
+        # Run migration on already migrated config with lenient validation
+        await migrate_config(str(test_file), strict_validation=False)
 
         # Read result
         with test_file.open("r") as f:

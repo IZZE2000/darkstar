@@ -210,16 +210,16 @@ def test_kepler_ev_no_battery_drain():
         min_soc_percent=0.0,
         max_soc_percent=100.0,
         target_soc_kwh=10.0,  # Want to keep battery full!
-        # EV Settings (REV F51: Use high incentive bucket to discourage charging)
+        # EV Settings (REV F51: Use penalty bucket to discourage charging when grid is expensive)
         ev_charging_enabled=True,
         ev_plugged_in=True,
         ev_max_power_kw=10.0,
         ev_battery_capacity_kwh=100.0,
         ev_current_soc_percent=10.0,
-        # REV F51: High incentive (80%+) discourages EV charging when grid is expensive
-        # 10% SoC to 80% = 70% battery = 70kWh needed from 100kWh EV
+        # REV F51: Negative penalty (NOT positive incentive) discourages EV charging
+        # The penalty is SUBTRACTED from objective, so negative = higher cost = discourage
         ev_incentive_buckets=[
-            IncentiveBucket(threshold_soc=80.0, value_sek=1000.0),  # Disincentivize charging at 80%
+            IncentiveBucket(threshold_soc=80.0, value_sek=-10.0),  # Penalty discourages charging
         ],
         wear_cost_sek_per_kwh=0.01,
     )
@@ -229,15 +229,15 @@ def test_kepler_ev_no_battery_drain():
 
     assert result.is_optimal
 
-    # REV F51: EV should charge 0 because high incentive (1000 SEK/kWh) makes it uneconomic
+    # REV F51: EV should NOT charge when penalty (-10 SEK/kWh) makes it uneconomic
     # compared to grid price (10 SEK/kWh) and limited solar.
     # EV cannot charge from battery because it's full (100%) and grid is too expensive.
     for s in result.slots:
-        # EV should either not charge or charge minimally
-        if s.ev_charge_kw > 0:
-            # Since incentive is 1000 and grid is 10, solver should prefer NOT charging
-            # But EV might still trickle charge at minimal power if penalty isn't high enough
-            assert s.ev_charge_kw <= 0.5  # Minimal or no charging
+        # EV should not charge when grid is expensive and penalty is applied
+        assert s.ev_charge_kw == pytest.approx(0.0, abs=0.01), (
+            f"EV should not charge when penalty is applied and grid is expensive. "
+            f"Got ev_charge_kw={s.ev_charge_kw}"
+        )
 
     # And total discharge cannot be more than load (0 in this case)
     total_discharge = sum(s.discharge_kwh for s in result.slots)

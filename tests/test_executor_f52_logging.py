@@ -84,31 +84,32 @@ async def test_composite_mode_logging_full_execution(
 
 @pytest.mark.asyncio
 async def test_composite_mode_idempotent_skip(mock_ha_client, executor_config, composite_profile):
-    """Test that auxiliary entity changes are skipped if already at target."""
+    """Test that auxiliary entity changes are skipped if already at target AND mode unchanged."""
+    # REV F56 Phase 2: Context-aware composite skip - entities are re-asserted on mode transitions
     # State lookup values in order of access:
-    # 1. Primary mode (Initial)
-    # 2. Aux 1 current (100) -> Skip
-    # 3. Aux 2 current (True) -> Skip
-    mock_ha_client.get_state_value.side_effect = ["Initial", "100", "True"]
+    # 1. Primary mode (ForcedCharge) - same as target, so mode_changed=False
+    # 2. Aux 1 current (100) -> Skip (already at target)
+    # 3. Aux 2 current (True) -> Skip (already at target)
+    mock_ha_client.get_state_value.side_effect = ["ForcedCharge", "100", "True"]
 
     dispatcher = ActionDispatcher(mock_ha_client, executor_config, profile=composite_profile)
 
-    # Mock verify_action for the primary mode only (since others are skipped)
+    # Mock verify_action for all entities (mode unchanged, so aux entities are skipped)
     dispatcher._verify_action = AsyncMock(return_value=("ForcedCharge", True))
 
     results = await dispatcher._set_work_mode("ForcedCharge", is_charging=True)
 
     assert len(results) == 3
     assert results[0].action_type == "work_mode"
-    assert results[0].skipped is False
+    assert results[0].skipped is True  # Mode already at target
 
     assert results[1].action_type == "composite_mode"
     assert results[1].entity_id == "number.aux_entity"
-    assert results[1].skipped is True
+    assert results[1].skipped is True  # Value already at target AND mode unchanged
 
     assert results[2].action_type == "composite_mode"
     assert results[2].entity_id == "switch.aux_switch"
-    assert results[2].skipped is True
+    assert results[2].skipped is True  # Value already at target AND mode unchanged
 
 
 @pytest.mark.asyncio

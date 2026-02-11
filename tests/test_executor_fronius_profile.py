@@ -96,11 +96,14 @@ async def test_fronius_watt_limit_execution(mock_ha, executor_config, fronius_pr
 async def test_fronius_auto_mode_skips_extraneous_entities(
     mock_ha, executor_config, fronius_profile
 ):
-    """REV F53: Verify Auto mode only writes work_mode and soc_target, skipping grid_charging, discharge_limit, and max_export_power."""
+    """REV F53/F54: Verify Auto mode only writes work_mode, skipping grid_charging, discharge_limit, max_export_power, and soc_target.
+
+    Note: Fronius does NOT support soc_target (uses minimum_reserve instead), so it's silently skipped per F54 Phase 3.
+    """
     from executor.controller import ControllerDecision
 
-    # Add soc_target entity to config so it gets tested
-    executor_config.inverter.soc_target = "number.soc_target"
+    # REV F54: Fronius profile has supports_soc_target=false, so soc_target returns None (silent skip)
+    # We intentionally DON'T add soc_target entity to test the silent skip behavior
 
     # Mock current state - return different value from target so work_mode gets executed
     def mock_get_state_value(entity_id):
@@ -108,8 +111,6 @@ async def test_fronius_auto_mode_skips_extraneous_entities(
         # Return "Discharge to Grid" for work_mode entity to trigger a change to "Auto"
         if entity_id == executor_config.inverter.work_mode:
             return "Discharge to Grid"
-        if entity_id == executor_config.inverter.soc_target:
-            return "40"  # Different from target of 50
         return "Auto"
 
     mock_ha.get_state_value.side_effect = mock_get_state_value
@@ -124,7 +125,7 @@ async def test_fronius_auto_mode_skips_extraneous_entities(
         grid_charging=False,
         charge_value=0,
         discharge_value=100,
-        soc_target=50,
+        soc_target=50,  # This will be silently skipped because Fronius doesn't support soc_target
         water_temp=40,
         export_power_w=5000.0,
         write_charge_current=False,
@@ -134,14 +135,20 @@ async def test_fronius_auto_mode_skips_extraneous_entities(
     results = await dispatcher.execute(decision)
 
     # Collect action types that were executed (not skipped)
-    executed_actions = [r.action_type for r in results if not r.skipped]
-    skipped_actions = [r.action_type for r in results if r.skipped]
+    executed_actions = [r.action_type for r in results if r and not r.skipped]
+    skipped_actions = [r.action_type for r in results if r and r.skipped]
 
-    # In Auto mode, only work_mode and soc_target should be executed
+    # In Auto mode, only work_mode should be executed
     assert "work_mode" in executed_actions, (
         f"work_mode should be executed in Auto mode. Results: {[(r.action_type, r.skipped, r.message) for r in results]}"
     )
-    assert "soc_target" in executed_actions, "soc_target should be executed in Auto mode"
+
+    # REV F54: soc_target returns None for profiles that don't support it (silent skip)
+    # It won't appear in results at all (not even as skipped)
+    soc_target_results = [r for r in results if r and r.action_type == "soc_target"]
+    assert len(soc_target_results) == 0, (
+        "soc_target should be silently skipped (returns None) for Fronius (supports_soc_target=false)"
+    )
 
     # These should be skipped in Auto mode per profile flags
     assert "grid_charging" in skipped_actions or "grid_charging" not in executed_actions, (

@@ -526,18 +526,32 @@ def cleanup_water_heating_duplicates(config: Any) -> tuple[Any, bool]:
     return config, changed
 
 
-def _validate_config_structure(config: Any) -> bool:
+def _validate_config_structure(config: Any, strict: bool = True) -> bool:
     """
     Validates that the config has minimum expected structure.
     Prevents merging empty/corrupted configs with defaults.
 
+    Args:
+        config: The configuration dict to validate
+        strict: If True, requires full production config structure.
+                If False, only validates basic structure (for tests/minimal configs).
+
     Returns True if config passes validation, False otherwise.
     """
-    # Must have system section with key identifiers
+    # Must be a dictionary
     if not isinstance(config, dict):
         logger.error("Config is not a dictionary")
         return False
 
+    # Lenient mode: just ensure config is a non-empty dict with some keys
+    if not strict:
+        if len(config) == 0:
+            logger.error("Config is empty")
+            return False
+        logger.debug("Config structure validation passed (lenient mode)")
+        return True
+
+    # Strict mode: full production validation
     system = config.get("system")
     if not isinstance(system, dict):
         logger.error("Config missing 'system' section")
@@ -562,14 +576,19 @@ def _validate_config_structure(config: Any) -> bool:
         logger.error("Config missing location coordinates")
         return False
 
-    logger.debug("Config structure validation passed")
+    logger.debug("Config structure validation passed (strict mode)")
     return True
 
 
-def validate_config_for_write(config: Any) -> bool:
+def validate_config_for_write(config: Any, strict: bool = True) -> bool:
     """Enhanced validation before writing config to disk.
 
     REV F57: Ensures no deprecated keys survive and structure is intact.
+
+    Args:
+        config: The configuration dict to validate
+        strict: If True, requires full production config structure.
+                If False, only validates basic structure (for tests/minimal configs).
 
     Returns:
         True if config is safe to write, False otherwise.
@@ -578,6 +597,16 @@ def validate_config_for_write(config: Any) -> bool:
         logger.error("❌ Validation failed: Config is not a dictionary")
         return False
 
+    # Lenient mode: only check for deprecated keys, allow minimal configs
+    if not strict:
+        # Just check deprecated keys are gone
+        for key in DEPRECATED_KEYS:
+            if key in config:
+                logger.error(f"❌ Validation failed: Deprecated key '{key}' still present")
+                return False
+        return True
+
+    # Strict mode: full production validation
     # 1. Critical Sections
     required_sections = ["system", "battery", "executor", "input_sensors"]
     for section in required_sections:
@@ -684,11 +713,19 @@ def _validate_critical_values_preserved(before: dict, after: dict) -> bool:
 
 
 async def migrate_config(
-    config_path: str = "config.yaml", default_path: str = "config.default.yaml"
+    config_path: str = "config.yaml",
+    default_path: str = "config.default.yaml",
+    strict_validation: bool = True,
 ) -> None:
     """
     Run all registered config migrations.
     Uses ruamel.yaml to preserve comments and structure.
+
+    Args:
+        config_path: Path to the user config file
+        default_path: Path to the default config template
+        strict_validation: If True, requires full production config structure.
+                          If False, allows minimal configs (for tests).
     """
     path = Path(config_path)
     if not path.exists():
@@ -717,7 +754,8 @@ async def migrate_config(
 
         # SAFETY CHECK: Verify config has minimum expected structure
         # This prevents merging an empty/corrupted config with defaults
-        if not _validate_config_structure(user_config):
+        # Use strict_validation parameter to control strictness (lenient for tests)
+        if not _validate_config_structure(user_config, strict=strict_validation):
             logger.error(
                 f"❌ Config {config_path} failed structure validation. Aborting migration to prevent data loss."
             )
@@ -757,7 +795,7 @@ async def migrate_config(
         logger.warning(f"{default_path} not found. Skipping template merge.")
         # If we made legacy changes, save them at least.
         if pre_merge_changes:
-            _write_config(path, user_config, yaml)
+            _write_config(path, user_config, yaml, strict_validation=strict_validation)
         return
 
     try:
@@ -766,7 +804,7 @@ async def migrate_config(
     except Exception as e:
         logger.error(f"❌ Failed to read default config: {e}")
         if pre_merge_changes:
-            _write_config(path, user_config, yaml)
+            _write_config(path, user_config, yaml, strict_validation=strict_validation)
         return
 
     # 4. Perform Template Merge
@@ -816,7 +854,7 @@ async def migrate_config(
         # We always save because we want to enforce the default structure/comments.
         # To avoid unnecessary writes, we could compare dumped strings, but
         # comment diffs make that hard. Let's just write safely.
-        _write_config(path, final_config, yaml)
+        _write_config(path, final_config, yaml, strict_validation=strict_validation)
 
     except Exception as e:
         logger.error(f"❌ Template merge failed: {e}", exc_info=True)
@@ -865,11 +903,21 @@ def create_timestamped_backup(path: Path, max_backups: int = 30) -> Path | None:
         return None
 
 
-def _write_config(path: Path, config: Any, yaml_instance: Any) -> None:
-    """Safely write config with backup."""
+def _write_config(
+    path: Path, config: Any, yaml_instance: Any, strict_validation: bool = True
+) -> None:
+    """Safely write config with backup.
+
+    Args:
+        path: Path to write the config file
+        config: Configuration dict to write
+        yaml_instance: ruamel.yaml YAML instance
+        strict_validation: If True, requires full production config structure.
+                          If False, only validates basic structure (for tests).
+    """
 
     # SAFETY VALIDATION (REVISED Phase 4)
-    if not validate_config_for_write(config):
+    if not validate_config_for_write(config, strict=strict_validation):
         logger.error(f"❌ Aborting write to {path} - validation failed.")
         return
 

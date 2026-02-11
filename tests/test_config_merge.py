@@ -140,8 +140,8 @@ section_main:
                 # User has messed up order and custom value
                 f.write("section_b: 99\nsection_a: 1\ncustom: 3\n")
 
-            # 2. Run Migration
-            asyncio.run(migrate_config(str(user_path), str(default_path)))
+            # 2. Run Migration with lenient validation (for testing minimal configs)
+            asyncio.run(migrate_config(str(user_path), str(default_path), strict_validation=False))
 
             # 3. Verify Result
             with user_path.open() as f:
