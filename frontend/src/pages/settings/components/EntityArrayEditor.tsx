@@ -97,13 +97,13 @@ export const EntityArrayEditor: React.FC<EntityArrayEditorProps> = ({
         const newEntity = isWaterHeater
             ? createDefaultWaterHeater(entities.length)
             : createDefaultEVCharger(entities.length)
-        const newEntities = [...entities, newEntity]
+        const newEntities = [...entities, newEntity] as WaterHeaterEntity[] | EVChargerEntity[]
         onChange(newEntities)
         setExpandedIndex(newEntities.length - 1)
     }
 
     const removeEntity = (index: number) => {
-        const newEntities = entities.filter((_, i) => i !== index)
+        const newEntities = entities.filter((_, i) => i !== index) as WaterHeaterEntity[] | EVChargerEntity[]
         onChange(newEntities)
         if (expandedIndex === index) {
             setExpandedIndex(null)
@@ -113,7 +113,9 @@ export const EntityArrayEditor: React.FC<EntityArrayEditorProps> = ({
     }
 
     const updateEntity = (index: number, updates: Partial<WaterHeaterEntity | EVChargerEntity>) => {
-        const newEntities = entities.map((e, i) => (i === index ? { ...e, ...updates } : e))
+        const newEntities = entities.map((e, i) => (i === index ? { ...e, ...updates } : e)) as
+            | WaterHeaterEntity[]
+            | EVChargerEntity[]
         onChange(newEntities)
     }
 
@@ -214,11 +216,12 @@ export const EntityArrayEditor: React.FC<EntityArrayEditorProps> = ({
                             <div className="flex items-center gap-2">
                                 {!disabled && (
                                     <>
-                                        <Switch
-                                            checked={entity.enabled}
-                                            onCheckedChange={() => toggleEnabled(index)}
-                                            onClick={(e) => e.stopPropagation()}
-                                        />
+                                        <span onClick={(e) => e.stopPropagation()}>
+                                            <Switch
+                                                checked={entity.enabled}
+                                                onCheckedChange={() => toggleEnabled(index)}
+                                            />
+                                        </span>
                                         <button
                                             type="button"
                                             onClick={(e) => {

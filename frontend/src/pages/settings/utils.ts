@@ -142,7 +142,8 @@ export function areEqual(a: unknown, b: unknown, type: string): boolean {
         type !== 'number' &&
         type !== 'array' &&
         type !== 'solar_arrays' &&
-        type !== 'penalty_levels'
+        type !== 'penalty_levels' &&
+        type !== 'entity_array'
     ) {
         const strA = a !== null && a !== undefined ? String(a).trim() : ''
         const strB = b !== null && b !== undefined ? String(b).trim() : ''
