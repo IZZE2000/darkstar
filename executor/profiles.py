@@ -264,6 +264,10 @@ class InverterProfile:
                 legacy_key = f"{entity_key}_entity"
                 val = inverter_config.get(legacy_key)
 
+            # REV F56: Check custom_entities as well for profile-specific required keys
+            if not val:
+                val = inverter_config.get("custom_entities", {}).get(entity_key)
+
             if not val:
                 missing.append(f"executor.inverter.{entity_key}")
 
@@ -533,6 +537,10 @@ def list_profiles(profiles_dir: str | Path = "profiles") -> list[dict[str, Any]]
                     },
                     "behavior": {
                         "control_unit": profile.behavior.control_unit,
+                    },
+                    "entities": {
+                        "required": profile.entities.required,
+                        "optional": profile.entities.optional,
                     },
                 }
             )

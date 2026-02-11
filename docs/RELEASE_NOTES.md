@@ -1,3 +1,32 @@
+## [v2.5.13-beta] - Sungrow Composite Entity Fixes - 2026-02-12
+
+> [!IMPORTANT]
+> **SUNGROW COMPOSITE MODE & DYNAMIC UI**
+> This release fixes critical issues with Sungrow composite mode entities and introduces a dynamic, profile-driven Settings UI that adapts to your inverter's specific capabilities.
+
+**✨ Key Enhancements**
+
+- **Sungrow Composite Fixes (REV F56)**
+    - **Missing Entity Safety**: Missing composite entities (like Forced Charge/Discharge Command) are no longer silently skipped. They now produce a clear "Action Failed" result in the Execution History and a health warning.
+    - **Profile Cleanup**: Standardized Sungrow entity requirements, moving `ems_mode` and `forced_charge_discharge_cmd` to required status for reliable control.
+    - **Duplicate Removal**: Removed redundant `export_power_limit` logic in favor of unified `grid_max_export_power` control.
+
+- **Dynamic Settings UI (REV F56)**
+    - **Profile-Driven Forms**: The Settings UI now dynamically generates fields based on your Inverter Profile's metadata. No more Deye-specific fields appearing for Sungrow users.
+    - **Custom Entity Support**: Added native UI support for "Custom Entities" defined in profiles, ensuring they are mapped correctly in `executor.inverter.custom_entities`.
+
+- **Runtime Error Visibility**
+    - **Health Reporting**: The System Dashboard now reports missing profile-required entities as health warnings with clear guidance.
+    - **Initialization Validation**: The system now performs deeper validation of your inverter configuration on every startup and config save.
+
+### 📜 Full Changelog
+
+*   **REV // F56:** Sungrow Composite Entity Configuration & Dynamic UI
+*   **REV // F56:** Profile-driven Health Reporting for missing entities
+*   **REV // F56:** ActionResult implementation for failed composite mode auxiliary entities
+
+---
+
 ## [v2.5.12-beta] - UX Polish, Config Safety & Structure - 2026-02-01
 
 > [!IMPORTANT]

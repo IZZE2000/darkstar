@@ -24,15 +24,13 @@ entities:
     work_mode: "select.ems_mode"
     max_charge_power: "number.battery_max_charge_power"
     max_discharge_power: "number.battery_max_discharge_power"
-
-  optional:
     grid_max_export_power: "number.export_power_limit"
     grid_max_export_power_switch: "switch.export_power_limit"
-    forced_power: "number.battery_forced_charge_discharge_power"
     # Custom Entities
     ems_mode: "select.ems_mode"
     forced_charge_discharge_cmd: "select.battery_forced_charge_discharge"
-    export_power_limit: "number.export_power_limit"
+
+
 
 modes:
   # Export mode - Force discharge to grid
@@ -44,8 +42,7 @@ modes:
     set_entities:
       ems_mode: "Forced mode"
       forced_charge_discharge_cmd: "Forced discharge"
-      max_discharge_power: 9000
-      export_power_limit: 9000    # Ensure export is allowed
+
 
   # Zero export mode - Self consumption with explicit 0 limit?
   # User feedback: "Export limit switch buggy, easier to set limit to 0"
@@ -57,8 +54,7 @@ modes:
     set_entities:
       ems_mode: "Self-consumption mode (default)"
       forced_charge_discharge_cmd: "Stop (default)"
-      max_discharge_power: 9000
-      export_power_limit: 0        # Explicitly block export
+
 
   # Self-consumption mode - Normal operation
   self_consumption:
@@ -69,8 +65,7 @@ modes:
     set_entities:
       ems_mode: "Self-consumption mode (default)"
       forced_charge_discharge_cmd: "Stop (default)"
-      max_discharge_power: 9000
-      export_power_limit: 9000    # Ensure export is allowed for excess PV
+
 
   # Grid charging mode - Force charge from grid
   charge_from_grid:
@@ -81,8 +76,7 @@ modes:
     set_entities:
       ems_mode: "Forced mode"
       forced_charge_discharge_cmd: "Forced charge"
-      max_discharge_power: 9000
-      export_power_limit: 0        # Safety: Block export while forced charging
+
 
   # Idle/Standby mode - Stop forced commands
   idle:
@@ -92,7 +86,6 @@ modes:
     set_entities:
       ems_mode: "Self-consumption mode (default)"
       forced_charge_discharge_cmd: "Stop (default)"
-      export_power_limit: 0        # Safety: Block export while idle
       max_discharge_power: 10      # Idle fix: set low discharge power
 
 behavior:

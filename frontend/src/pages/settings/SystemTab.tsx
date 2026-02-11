@@ -4,7 +4,7 @@ import { Api } from '../../lib/api'
 import Card from '../../components/Card'
 import { useSettingsForm } from './hooks/useSettingsForm'
 import { SettingsField } from './components/SettingsField'
-import { systemFieldList, systemSections, InverterProfile } from './types'
+import { systemFieldList, systemSections, InverterProfile, BaseField } from './types'
 import { shouldRenderField } from './logic'
 import { motion, AnimatePresence } from 'framer-motion'
 import { AdditionalAdvancedNotice, GlobalAdvancedLockedNotice } from './components/AdvancedLockedNotice'
@@ -38,6 +38,21 @@ export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }
             .catch((err) => console.error('Failed to load profiles:', err))
     }, [])
 
+    // Standard keys that live directly in the inverter config (not in custom_entities)
+    const standardInverterKeys = new Set([
+        'work_mode',
+        'soc_target',
+        'grid_charging_enable',
+        'grid_charge_power',
+        'minimum_reserve',
+        'grid_max_export_power',
+        'grid_max_export_power_switch',
+        'max_charge_current',
+        'max_discharge_current',
+        'max_charge_power',
+        'max_discharge_power',
+    ])
+
     // Update systemSections dynamic options and conditional visibility
     const dynamicSections = systemSections.map((section) => {
         if (section.title === 'System Profile') {
@@ -58,8 +73,6 @@ export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }
                         const selectedProfile = profiles.find((p) => p.name === selectedProfileName)
 
                         // Hide control_unit if profile behavior defines it strongly
-                        // Or if it's Generic (Generic should allowed to be toggled)
-                        // Sungrow/Fronius/Deye profiles define it in 'behavior'
                         if (selectedProfile && selectedProfile.name !== 'generic') {
                             return { ...field, disabled: true }
                         }
@@ -68,6 +81,48 @@ export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }
                 }),
             }
         }
+
+        if (section.title === 'Required HA Control Entities' || section.title === 'Optional HA Input Sensors') {
+            const selectedProfileName = form['system.inverter_profile']
+            const selectedProfile = profiles.find((p) => p.name === selectedProfileName)
+
+            if (selectedProfile && selectedProfile.entities) {
+                const isRequiredSection = section.title === 'Required HA Control Entities'
+                const profileEntities = isRequiredSection
+                    ? selectedProfile.entities.required
+                    : selectedProfile.entities.optional
+
+                const profileFields: BaseField[] = Object.keys(profileEntities).map((key) => {
+                    const isStandard = standardInverterKeys.has(key)
+                    const label = key
+                        .split('_')
+                        .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+                        .join(' ')
+
+                    return {
+                        key: isStandard ? `executor.inverter.${key}` : `executor.inverter.custom_entities.${key}`,
+                        label: `${label} Entity`,
+                        path: isStandard
+                            ? ['executor', 'inverter', key]
+                            : ['executor', 'inverter', 'custom_entities', key],
+                        type: 'entity',
+                        required: isRequiredSection,
+                        subsection: 'Inverter Profile Entities',
+                        helper: `Profile suggested mapping: ${profileEntities[key]}`,
+                    }
+                })
+
+                // Filter out duplicates if already in section.fields
+                const existingKeys = new Set(section.fields.map((f) => f.key))
+                const uniqueProfileFields = profileFields.filter((f) => !existingKeys.has(f.key))
+
+                return {
+                    ...section,
+                    fields: [...section.fields, ...uniqueProfileFields],
+                }
+            }
+        }
+
         return section
     })
 
@@ -253,7 +308,7 @@ export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }
                                                                                                     field={field}
                                                                                                     value={
                                                                                                         form[
-                                                                                                            field.key
+                                                                                                        field.key
                                                                                                         ] ?? ''
                                                                                                     }
                                                                                                     onChange={
@@ -261,7 +316,7 @@ export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }
                                                                                                     }
                                                                                                     error={
                                                                                                         fieldErrors[
-                                                                                                            field.key
+                                                                                                        field.key
                                                                                                         ]
                                                                                                     }
                                                                                                     haEntities={
@@ -326,7 +381,7 @@ export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }
                                                                                                 onChange={handleChange}
                                                                                                 error={
                                                                                                     fieldErrors[
-                                                                                                        field.key
+                                                                                                    field.key
                                                                                                     ]
                                                                                                 }
                                                                                                 haEntities={haEntities}
@@ -403,13 +458,12 @@ export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }
                 </button>
                 {statusMessage && (
                     <div
-                        className={`rounded-lg p-3 text-sm ${
-                            statusMessage.startsWith('Please fix') ||
+                        className={`rounded-lg p-3 text-sm ${statusMessage.startsWith('Please fix') ||
                             statusMessage.startsWith('Save failed') ||
                             statusMessage.startsWith('Failed to load')
-                                ? 'bg-bad/10 border border-bad/30 text-bad'
-                                : 'bg-good/10 border border-good/30 text-good'
-                        }`}
+                            ? 'bg-bad/10 border border-bad/30 text-bad'
+                            : 'bg-good/10 border border-good/30 text-good'
+                            }`}
                     >
                         {statusMessage}
                     </div>

@@ -387,6 +387,42 @@ executor:
   shadow_mode: false     # If true, logs actions but doesn't execute
 ```
 
+### 7.2 Composite Inverter Profiles (Rev F56)
+
+Some inverters (like Sungrow) require setting multiple Home Assistant entities simultaneously to enter a specific logical work mode. Darkstar handles this via **Composite Profiles**.
+
+**Key Concepts:**
+1.  **Logical Mode**: The abstract mode Darkstar wants (e.g., `charge_from_grid`).
+2.  **Composite Mapping**: A single logical mode maps to multiple HA entity commands.
+3.  **Atomic Execution**: All entities in the mapping are set in sequence. If any fail, the action is marked as failed.
+
+**Example: Sungrow 'Force Charge'**
+To force charge a Sungrow inverter, two changes must happen:
+1.  `ems_mode` set to "Forced Mode"
+2.  `forced_charge_discharge_cmd` set to "Force Charge"
+
+**Profile Configuration:**
+```yaml
+entities:
+  required:
+    work_mode: "select.ems_mode"  # Primary entity (legacy)
+    # Composite entities required for the profile to work
+    ems_mode: "select.ems_mode"
+    forced_charge_discharge_cmd: "select.battery_forced_charge_discharge"
+
+modes:
+  charge_from_grid:
+    value: "Forced mode"  # Value for primary entity
+    set_entities:         # Composite values
+      ems_mode: "Forced mode"
+      forced_charge_discharge_cmd: "Force Charge"
+```
+
+**Validation & Error Handling:**
+- The Executor validates that all entities listed in `entities.required` are configured in `config.yaml`.
+- Missing entities trigger a **Fail-Fast** validation error on startup and save.
+- During execution, if a required entity is missing, an `ActionResult` with `success=False` is generated to alert the user via the Execution History.
+
 ---
 
 ## 8. Health Check System (Rev F4)

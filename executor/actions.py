@@ -536,10 +536,22 @@ class ActionDispatcher:
                 aux_start = time.time()
                 entity_id = self.config.inverter.custom_entities.get(key)
                 if not _is_entity_configured(entity_id):
-                    logger.warning(
-                        "Profile requires setting '%s' to '%s', but entity is not configured",
+                    logger.error(
+                        "Profile requires setting '%s' to '%s', but entity is not configured (add to executor.inverter)",
                         key,
                         val,
+                    )
+                    results.append(
+                        ActionResult(
+                            action_type="composite_mode",
+                            success=False,
+                            message=f"Entity '{key}' not configured in executor.inverter",
+                            previous_value=None,
+                            new_value=val,
+                            entity_id=None,
+                            error_details=f"Missing composite entity mapping for '{key}'",
+                            duration_ms=int((time.time() - aux_start) * 1000),
+                        )
                     )
                     continue
 

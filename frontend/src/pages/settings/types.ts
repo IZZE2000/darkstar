@@ -70,6 +70,10 @@ export interface InverterProfile {
     behavior: {
         control_unit: 'A' | 'W'
     }
+    entities: {
+        required: Record<string, string | null>
+        optional: Record<string, string | null>
+    }
 }
 
 export interface SettingsSection<T extends BaseField = BaseField> {
@@ -488,54 +492,6 @@ export const systemSections: SettingsSection[] = [
                     configKey: 'system.has_battery',
                     value: true,
                     disabledText: "Enable 'Home battery installed' in System Profile to configure",
-                },
-            },
-            {
-                key: 'executor.inverter.soc_target',
-                label: 'SoC Target Entity',
-                path: ['executor', 'inverter', 'soc_target'],
-                type: 'entity',
-                helper: 'Sets the target Battery SoC (0-100%). Required for Deye/Generic, optional for others.',
-                showIf: {
-                    configKey: 'system.inverter_profile',
-                    value: ['deye', 'generic'],
-                    disabledText: "Select 'Deye' or 'Generic' profile to configure",
-                },
-            },
-            {
-                key: 'executor.inverter.minimum_reserve',
-                label: 'Minimum Reserve',
-                path: ['executor', 'inverter', 'minimum_reserve'],
-                type: 'entity',
-                helper: 'Hard limit for battery discharge.',
-                showIf: {
-                    configKey: 'system.inverter_profile',
-                    value: 'fronius',
-                    disabledText: "Select 'Fronius' profile to configure",
-                },
-            },
-            {
-                key: 'executor.inverter.grid_charge_power',
-                label: 'Grid Charge Power',
-                path: ['executor', 'inverter', 'grid_charge_power'],
-                type: 'entity',
-                helper: 'Target power level when charging from grid.',
-                showIf: {
-                    configKey: 'system.inverter_profile',
-                    value: 'fronius',
-                    disabledText: "Select 'Fronius' profile to configure",
-                },
-            },
-            {
-                key: 'executor.inverter.grid_charging_enable',
-                label: 'Grid Charging Switch',
-                path: ['executor', 'inverter', 'grid_charging_enable'],
-                type: 'entity',
-                helper: 'Darkstar enables/disables grid→battery charging.',
-                showIf: {
-                    configKey: 'system.inverter_profile',
-                    value: ['deye', 'generic'],
-                    disabledText: 'Not required for selected profile',
                 },
             },
             {

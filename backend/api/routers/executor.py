@@ -570,15 +570,12 @@ async def get_health(executor: ExecutorDep) -> dict[str, Any]:
     if executor.config.enabled and not is_alive and not paused:
         warnings.append("Executor is enabled but background thread is not running")
 
-    # Check for missing critical entities
-    critical_entities = {
-        "work_mode": executor.config.inverter.work_mode_entity,
-        "grid_charging": executor.config.inverter.grid_charging_entity,
-        "soc_target": executor.config.inverter.soc_target_entity,
-    }
-    for name, entity in critical_entities.items():
-        if not entity:
-            warnings.append(f"Critical entity '{name}' not configured")
+    # Profile-driven missing entities (REV F56)
+    if executor.inverter_profile:
+        # Use existing full config from engine if available
+        config = getattr(executor, "_full_config", {})
+        for missing_key in executor.inverter_profile.get_missing_entities(config):
+            warnings.append(f"Required entity not configured: {missing_key}")
 
     return {
         "status": "healthy"
