@@ -721,7 +721,7 @@ class ActionDispatcher:
 
         duration = int((time.time() - start) * 1000)
 
-        if success:
+        if success and mode_changed:
             self._maybe_notify("work_mode", f"Work mode changed to {target_mode}")
 
         primary_msg = ""
