@@ -2,6 +2,7 @@ import contextlib
 import logging
 import shutil
 from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +17,118 @@ logger = logging.getLogger("darkstar.config_migration")
 # Type alias for migration functions
 # Returns: (modified_config, changed_bool)
 MigrationStep = Callable[[Any], tuple[Any, bool]]
+
+
+# =============================================================================
+# Centralized Deprecated Keys Registry
+# =============================================================================
+# These keys MUST be removed during migration to prevent corruption
+
+# Root-level deprecated keys
+DEPRECATED_KEYS = {
+    "deferrable_loads",  # ARC15: Replaced by water_heaters[] and ev_chargers[]
+    "ev_charger",  # ARC15: Replaced by ev_chargers[] array (plural)
+    "solar_array",  # Replaced by solar_arrays[] array (plural)
+    "version",  # Replaced by config_version
+    "schedule_future_only",  # REV F19: Removed
+}
+
+# Nested deprecated keys (path.to.key format)
+DEPRECATED_NESTED_KEYS = {
+    "executor.inverter": [
+        # IP4: Old _entity suffix keys replaced by standardized names
+        "work_mode_entity",
+        "soc_target_entity",
+        "grid_charging_entity",
+        "max_charging_current_entity",
+        "max_discharging_current_entity",
+        "max_charging_power_entity",
+        "max_discharging_power_entity",
+        "grid_max_export_power_entity",
+        "grid_charge_power_entity",
+        "minimum_reserve_entity",
+    ]
+}
+
+
+def remove_deprecated_keys(config: Any) -> tuple[Any, bool]:
+    """Remove all deprecated keys from config.
+
+    REV F57: Centralized cleanup to prevent corrupted configs with legacy keys.
+
+    Args:
+        config: Configuration dict to clean
+
+    Returns:
+        Tuple of (cleaned_config, changed_flag)
+    """
+    changed = False
+
+    if not isinstance(config, dict):
+        return config, False
+
+    # Root-level deprecated keys
+    for key in DEPRECATED_KEYS:
+        if key in config:
+            del config[key]
+            logger.info(f"✂️  Removed deprecated key: '{key}'")
+            changed = True
+
+    # Nested deprecated keys
+    for path, keys in DEPRECATED_NESTED_KEYS.items():
+        parts = path.split(".")
+        obj = config
+
+        # Navigate to nested object
+        for part in parts:
+            if isinstance(obj, dict) and part in obj:
+                obj = obj[part]
+            else:
+                break
+        else:
+            # Object exists, clean deprecated keys
+            if isinstance(obj, dict):
+                for key in keys:
+                    if key in obj:
+                        del obj[key]
+                        logger.info(f"✂️  Removed deprecated key: '{path}.{key}'")
+                        changed = True
+
+    return config, changed
+
+
+def migrate_version_key(config: Any) -> tuple[Any, bool]:
+    """Migration: Rename 'version' to 'config_version'.
+
+    REV F57: Old configs used 'version' (string like "2.4.21-beta").
+    New configs use 'config_version' (integer like 2 for format tracking).
+
+    Args:
+        config: Configuration dict
+
+    Returns:
+        Tuple of (migrated_config, changed_flag)
+    """
+    changed = False
+
+    if not isinstance(config, dict):
+        return config, False
+
+    if "version" in config:
+        old_version = config.pop("version")
+
+        # Only set config_version if not already present
+        if "config_version" not in config:
+            config["config_version"] = 2  # Current format version
+            logger.info(f"📝 Migrated 'version' ({old_version}) -> 'config_version' (2)")
+            changed = True
+        else:
+            logger.info(
+                f"📝 Removed old 'version' key ({old_version}), 'config_version' already set"
+            )
+            changed = True
+
+    return config, changed
 
 
 def migrate_battery_config(config: Any) -> tuple[Any, bool]:
@@ -177,6 +290,12 @@ def migrate_solar_arrays(config: Any) -> tuple[Any, bool]:
             changed = True
         else:
             logger.warning("Found legacy system.solar_array but it was not a dict.")
+
+    # REV F57: Verify solar_array is actually gone
+    if "solar_array" in system:
+        logger.warning("⚠️  'solar_array' still present after migration - forcing delete")
+        del system["solar_array"]
+        changed = True
 
     return config, changed
 
@@ -351,9 +470,16 @@ def migrate_arc15_entity_config(config: Any) -> tuple[Any, bool]:
         else:
             logger.warning("Unknown deferrable_load type: id=%s, type=%s", load_id, load_type)
 
-    # Mark deferrable_loads for removal (it's deprecated)
-    if changed and deferrable_loads:
-        logger.info("deferrable_loads array will be deprecated after migration")
+    # REV F57: ACTUALLY DELETE deprecated keys (not just log intent)
+    if "deferrable_loads" in config:
+        del config["deferrable_loads"]
+        logger.info("✂️  Deleted deprecated 'deferrable_loads' array")
+        changed = True
+
+    if "ev_charger" in config:
+        del config["ev_charger"]
+        logger.info("✂️  Deleted deprecated 'ev_charger' section")
+        changed = True
 
     # Update config version
     if changed or water_heaters or ev_chargers:
@@ -438,6 +564,43 @@ def _validate_config_structure(config: Any) -> bool:
         return False
 
     logger.debug("Config structure validation passed")
+    return True
+
+
+def validate_config_for_write(config: Any) -> bool:
+    """Enhanced validation before writing config to disk.
+
+    REV F57: Ensures no deprecated keys survive and structure is intact.
+
+    Returns:
+        True if config is safe to write, False otherwise.
+    """
+    if not isinstance(config, dict):
+        logger.error("❌ Validation failed: Config is not a dictionary")
+        return False
+
+    # 1. Critical Sections
+    required_sections = ["system", "battery", "executor", "input_sensors"]
+    for section in required_sections:
+        if section not in config:
+            logger.error(f"❌ Validation failed: Missing required section '{section}'")
+            return False
+
+    # 2. Deprecated Keys (MUST be gone)
+    for key in DEPRECATED_KEYS:
+        if key in config:
+            logger.error(f"❌ Validation failed: Deprecated key '{key}' still present")
+            return False
+
+    # 3. Version Position
+    # config_version should be near the top
+    keys = list(config.keys())
+    if "config_version" in keys:
+        idx = keys.index("config_version")
+        if idx > 10:
+            logger.error(f"❌ Validation failed: 'config_version' at index {idx} (too deep)")
+            return False
+
     return True
 
 
@@ -571,6 +734,7 @@ async def migrate_config(
 
     # List of legacy cleanup steps
     legacy_steps = [
+        migrate_version_key,  # REV F57: FIRST - Clean up old version key
         migrate_battery_config,
         cleanup_obsolete_keys,
         migrate_solar_arrays,
@@ -634,6 +798,11 @@ async def migrate_config(
 
         template_aware_merge(final_config, user_config)
 
+        # REV F57: Final cleanup - remove any deprecated keys that survived
+        final_config, cleanup_changed = remove_deprecated_keys(final_config)
+        if cleanup_changed:
+            logger.info("✅ Final deprecated keys cleanup successful")
+
         # VALIDATE CRITICAL VALUES AFTER MERGE
         critical_after = _extract_critical_values(final_config)
         logger.debug(f"Critical values after merge: {critical_after}")
@@ -654,22 +823,68 @@ async def migrate_config(
         logger.error(f"❌ Template merge failed: {e}", exc_info=True)
 
 
+def create_timestamped_backup(path: Path, max_backups: int = 30) -> Path | None:
+    """Create a timestamped backup of the file and cleanup old ones.
+
+    REV F57: Enhanced backup system for better recovery.
+
+    Args:
+        path: Path to the file to backup
+        max_backups: Maximum number of backups to retain
+
+    Returns:
+        Path to the backup file or None if failed
+    """
+    if not path.exists():
+        return None
+
+    try:
+        backup_dir = path.parent / "backups"
+        backup_dir.mkdir(exist_ok=True)
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_path = backup_dir / f"{path.name}_{timestamp}.bak"
+
+        shutil.copy2(path, backup_path)
+        logger.info(f"💾 Created timestamped backup: {backup_path.name}")
+
+        # Retention logic
+        backups = sorted(
+            backup_dir.glob(f"{path.name}_*.bak"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+
+        if len(backups) > max_backups:
+            for old_backup in backups[max_backups:]:
+                old_backup.unlink()
+                logger.info(f"🧹 Cleaned up old backup: {old_backup.name}")
+
+        return backup_path
+    except Exception as e:
+        logger.error(f"❌ Failed to create backup: {e}")
+        return None
+
+
 def _write_config(path: Path, config: Any, yaml_instance: Any) -> None:
     """Safely write config with backup."""
 
-    # SAFETY VALIDATION
-    if not isinstance(config, dict):
-        logger.error("❌ Invalid config structure. Aborting write.")
+    # SAFETY VALIDATION (REVISED Phase 4)
+    if not validate_config_for_write(config):
+        logger.error(f"❌ Aborting write to {path} - validation failed.")
         return
 
     temp_path = path.with_name(path.name + ".tmp")
-    backup_path = path.with_name(path.name + ".bak")
+    # REV F57: Legacy backup path (still used for atomic restore fallback)
+    legacy_backup_path = path.with_name(path.name + ".bak")
     log_prefix = "[CONTAINER]" if Path("/.dockerenv").exists() else "[HOST]"
 
     try:
-        # Create Backup
+        # Create Timestamped Backup (Phase 3)
         if path.exists():
-            shutil.copy2(path, backup_path)
+            create_timestamped_backup(path)
+            # Still keep legacy .bak for atomic fallback logic below
+            shutil.copy2(path, legacy_backup_path)
 
         logger.info(f"{log_prefix} Writing updated config to {temp_path}")
         with temp_path.open("w", encoding="utf-8") as f:
@@ -698,9 +913,9 @@ def _write_config(path: Path, config: Any, yaml_instance: Any) -> None:
     except Exception as e:
         logger.error(f"❌ Write failed: {e}")
         # Restore backup
-        if backup_path.exists():
-            logger.warning(f"🔄 Restoring {path} from backup...")
-            shutil.copy2(backup_path, path)
+        if legacy_backup_path.exists():
+            logger.warning(f"🔄 Restoring {path} from legacy backup...")
+            shutil.copy2(legacy_backup_path, path)
     finally:
         with contextlib.suppress(Exception):
             if temp_path.exists():

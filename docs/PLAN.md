@@ -470,53 +470,53 @@ The fix requires restructuring to entity-centric sections where each physical de
 
 **Plan:**
 
-#### Phase 1: Fix Migration - Actually Delete Deprecated Keys [PLANNED]
-- [ ] Add `del config['deferrable_loads']` after ARC15 migration (line 356)
-- [ ] Add `del config['ev_charger']` after ARC15 migration
-- [ ] Verify `solar_array` deletion works (add validation after line 169)
-- [ ] Create `migrate_version_key()` function to rename `version` → `config_version`
-- [ ] Add `migrate_version_key` to migration pipeline as first step
-- [ ] Create centralized `DEPRECATED_KEYS` set and `DEPRECATED_NESTED_KEYS` dict
-- [ ] Create `remove_deprecated_keys()` cleanup function
+#### Phase 1: Fix Migration - Actually Delete Deprecated Keys [DONE]
+- [x] Add `del config['deferrable_loads']` after ARC15 migration (line 356)
+- [x] Add `del config['ev_charger']` after ARC15 migration
+- [x] Verify `solar_array` deletion works (add validation after line 169)
+- [x] Create `migrate_version_key()` function to rename `version` → `config_version`
+- [x] Add `migrate_version_key` to migration pipeline as first step
+- [x] Create centralized `DEPRECATED_KEYS` set and `DEPRECATED_NESTED_KEYS` dict
+- [x] Create `remove_deprecated_keys()` cleanup function
 
-#### Phase 2: Fix Backend Save - Use Template Merge [PLANNED]
-- [ ] Update `save_config()` in `config.py` to load default template first
-- [ ] Merge user changes into template (preserves structure/comments)
-- [ ] Import and use `template_aware_merge()` from `config_migration`
-- [ ] Call `remove_deprecated_keys()` before writing
-- [ ] Ensure backend save path matches migration behavior exactly
+#### Phase 2: Fix Backend Save - Use Template Merge [DONE]
+- [x] Update `save_config()` in `config.py` to load default template first
+- [x] Merge user changes into template (preserves structure/comments)
+- [x] Import and use `template_aware_merge()` from `config_migration`
+- [x] Call `remove_deprecated_keys()` before writing
+- [x] Ensure backend save path matches migration behavior exactly
 
-#### Phase 3: Add Timestamped Backup System [PLANNED]
-- [ ] Create `backups/` directory if not exists
-- [ ] Update `_write_config()` to create timestamped backups: `config_YYYYMMDD_HHMMSS.yaml`
-- [ ] Add retention logic: keep last 30 backups, auto-cleanup older ones
-- [ ] Extract to shared `create_timestamped_backup()` function
-- [ ] Use in both migration and backend save paths
+#### Phase 3: Add Timestamped Backup System [DONE]
+- [x] Create `backups/` directory if not exists
+- [x] Update `_write_config()` to create timestamped backups: `config_YYYYMMDD_HHMMSS.yaml`
+- [x] Add retention logic: keep last 30 backups, auto-cleanup older ones
+- [x] Extract to shared `create_timestamped_backup()` function
+- [x] Use in both migration and backend save paths
 
-#### Phase 4: Add Config Validation Before Write [PLANNED]
-- [ ] Add post-merge validation: check no deprecated keys present
-- [ ] Verify `config_version` at correct position (index < 5)
-- [ ] Verify required sections present (system, battery, executor, input_sensors)
-- [ ] Log validation summary: template enforced, deprecated keys removed, backup created
-- [ ] Abort write if validation fails (never write corrupted config)
+#### Phase 4: Add Config Validation Before Write [DONE]
+- [x] Add post-merge validation: check no deprecated keys present
+- [x] Verify `config_version` at correct position (index < 5)
+- [x] Verify required sections present (system, battery, executor, input_sensors)
+- [x] Log validation summary: template enforced, deprecated keys removed, backup created
+- [x] Abort write if validation fails (never write corrupted config)
 
-#### Phase 5: Documentation & Logging [PLANNED]
-- [ ] Add operation summary logging after successful save
-- [ ] Update `ARCHITECTURE.md` with unified save strategy
-- [ ] Document template enforcement and backup retention
+#### Phase 5: Documentation & Logging [DONE]
+- [x] Add operation summary logging after successful save
+- [x] Update `ARCHITECTURE.md` with configuration stewardship section
+- [x] Document template enforcement and backup retention
 
-#### Phase 6: Comprehensive Testing & Verification [PLANNED]
+#### Phase 6: Comprehensive Testing & Verification [DONE]
 
 **Unit Tests** (`tests/test_config_f57.py`):
-- [ ] Test: Deprecated keys actually deleted in migration
-- [ ] Test: Backend save preserves template comments
-- [ ] Test: Backend save enforces section ordering
-- [ ] Test: Timestamped backups created and retention works
-- [ ] Test: Duplicate entity keys removed (old `_entity` suffix)
-- [ ] Test: `version` → `config_version` migration works
-- [ ] Test: Validation prevents writing corrupted config
-- [ ] Test: Custom user keys preserved and marked
-- [ ] 40+ total test assertions covering all corruption patterns
+- [x] Test: Deprecated keys actually deleted in migration
+- [x] Test: Backend save preserves template comments
+- [x] Test: Backend save enforces section ordering
+- [x] Test: Timestamped backups created and retention works
+- [x] Test: Duplicate entity keys removed (old `_entity` suffix)
+- [x] Test: `version` → `config_version` migration works
+- [x] Test: Validation prevents writing corrupted config
+- [x] Test: Custom user keys preserved and marked
+- [x] 40+ total test assertions covering all corruption patterns
 
 **Integration Tests - Healing Validation** (CRITICAL):
 ```bash

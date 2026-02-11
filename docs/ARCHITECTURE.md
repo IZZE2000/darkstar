@@ -979,3 +979,32 @@ Darkstar uses a **"Seed & Drift"** strategy to manage Machine Learning models, b
 1.  **Build Time**: `Dockerfile` copies `ml/models/defaults/` to the image.
 2.  **Startup**: `ml/bootstrap.py` checks persistent storage.
 3.  **Training**: `train.py` saves new models to `data/ml/models/`, overwriting the runtime files but **never** touching the `ml/models/defaults/` directory.
+---
+
+## 13. Configuration Stewardship (Rev F57)
+
+To prevent systematic configuration corruption, Darkstar employs a multi-layered stewardship strategy for `config.yaml`.
+
+### 13.1 Template-Aware Merging
+Instead of opaque dictionary updates, Darkstar uses the `config.default.yaml` as a **base template** for all save operations.
+- **Base Layer**: The system loads a fresh copy of the default template.
+- **User Layer**: Existing user values are merged into the template.
+- **Payload Layer**: Any incoming API changes are merged on top.
+- **Effect**: All official comments, formatting, and section ordering from the default template are preserved, while user values are maintained.
+
+### 13.2 Automated Healing (Migration)
+The migration pipeline (`backend/config_migration.py`) actively cleans historical corruption:
+- **Deprecated Key Removal**: A centralized registry tracks keys that are no longer used. These are deleted during every migration and every backend save.
+- **Schema Enforcement**: Inconsistent structures (like `solar_array` vs `solar_arrays`) are normalized to the latest format.
+- **Version Tracking**: `config_version` (integer) replaces the legacy `version` (string) for robust format tracking.
+
+### 13.3 Safety & Recovery
+Config persistence is protected by three safety mechanisms:
+1.  **Timestamped Backups**: Every write operation creates a timestamped backup in the `backups/` directory. The last **30 backups** are retained automatically.
+2.  **Pre-Write Validation**: Configs are validated for structural integrity (required sections, no deprecated keys, correct version positioning) before the file is touched.
+3.  **Atomic Writes**: Saves use temporary files and atomic replacement to prevent partial writes during power failures.
+
+### 13.4 Persistence Guards
+The system maintains the health of critical settings:
+- **Comment Preservation**: Ad-hoc user comments on standard keys are NOT preserved (to ensure official documentation stays accurate), but comments on custom user keys are respected.
+- **Constraint Enforcement**: Backend validation prevents saving "invalid" configurations that would cause startup crashes (e.g., missing inverter entities).

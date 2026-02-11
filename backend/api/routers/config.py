@@ -6,6 +6,10 @@ from fastapi import APIRouter, Body, HTTPException
 from ruamel.yaml import YAML
 
 from backend.api.routers.executor import get_executor_instance
+from backend.config_migration import (
+    remove_deprecated_keys,
+    template_aware_merge,
+)
 from executor.profiles import get_profile_from_config
 from inputs import load_home_assistant_config, load_notifications_config, load_yaml
 
@@ -149,19 +153,35 @@ async def save_config(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
         config_path = Path("config.yaml")
         default_path = Path("config.default.yaml")
 
-        # Load schema for type coercion
-        schema_data = {}
-        if default_path.exists():
-            with default_path.open(encoding="utf-8") as df:
-                schema_data = cast("dict[str, Any]", yaml_handler.load(df) or {})
+        # REV F57: ALWAYS start with fresh template (preserves structure/comments)
+        if not default_path.exists():
+            raise HTTPException(500, "config.default.yaml not found")
 
+        # Load template as base (has all comments and structure)
+        with default_path.open(encoding="utf-8") as df:
+            template_config = cast("dict[str, Any]", yaml_handler.load(df) or {})
+
+        # Load user config for current values
         with config_path.open(encoding="utf-8") as f:
-            data = cast("dict[str, Any]", yaml_handler.load(f) or {})  # type: ignore
+            user_data = cast("dict[str, Any]", yaml_handler.load(f) or {})
 
-            # Filter the incoming payload before merging
-            filter_secrets(payload, SECRET_KEYS)
+        # Filter secrets before merging
+        filter_secrets(payload, SECRET_KEYS)
 
-            deep_update(data, payload, schema_data)
+        # Merge payload into user data first
+        # We use template_config as schema for type coercion
+        deep_update(user_data, payload, template_config)
+
+        # Then merge user values into fresh template (preserves template structure)
+        template_aware_merge(template_config, user_data)
+
+        # Clean deprecated keys
+        template_config, cleanup_changed = remove_deprecated_keys(template_config)
+        if cleanup_changed:
+            logger.info("Backend save: Removed deprecated keys")
+
+        # template_config now has: template structure + comments + user values
+        data = template_config
 
         # REV LCL01: Validate config before saving and collect warnings/errors
         validation_issues = _validate_config_for_save(data)
