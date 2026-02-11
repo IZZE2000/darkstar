@@ -70,6 +70,7 @@ python3 << EOF
 import sys
 import os
 import json
+import asyncio
 from pathlib import Path
 
 # Try to import ruamel.yaml for comment preservation
@@ -87,6 +88,16 @@ except ImportError:
     print("[run.sh] Please ensure 'ruamel.yaml' is installed in the system environment.")
     # We exit here to force a fix rather than silently corrupting config
     sys.exit(1)
+
+# REV F58: Import proper config migration (Phase 1)
+sys.path.insert(0, '/app')
+try:
+    from backend.config_migration import migrate_config
+    HAS_MIGRATION = True
+except ImportError as e:
+    print(f"[run.sh] Warning: Could not import migrate_config: {e}")
+    print("[run.sh] Will fall back to legacy merge logic")
+    HAS_MIGRATION = False
 
 def safe_load_stream(stream):
     return yaml.load(stream)
@@ -120,24 +131,53 @@ except Exception as e:
     print(f"[run.sh] Warning: Could not load config.default.yaml for migration: {e}")
     default_config = {}
 
-def deep_merge_missing(target, source):
-    """Recursively add missing keys from source to target while preserving target values and comments."""
-    is_modified = False
-    if not isinstance(source, dict) or not isinstance(target, dict):
-        return False
+# REV F58: Replace deep_merge_missing with proper F57 migration (Phase 1)
+# This ensures deprecated keys are removed and config structure is normalized
+config_was_modified = False
+if HAS_MIGRATION:
+    try:
+        print("[run.sh] Running proper config migration (REV F58)...")
+        # Run the async migration function - it modifies the file directly
+        asyncio.run(migrate_config(
+            str(config_path),
+            str(default_config_path),
+            strict_validation=False
+        ))
+        # Migration succeeded, mark as modified and reload config
+        config_was_modified = True
+        print("[run.sh] ✓ Config migration completed successfully")
+        # Reload the migrated config for the rest of the script
+        try:
+            with open(config_path) as f:
+                config = safe_load_stream(f)
+            print("[run.sh] Reloaded migrated config")
+        except Exception as e:
+            print(f"[run.sh] Warning: Failed to reload migrated config: {e}")
+    except Exception as e:
+        print(f"[run.sh] Warning: Migration failed: {e}")
+        print("[run.sh] Will attempt legacy merge as fallback")
+        # Fallback: use the old logic as a safety net
+        HAS_MIGRATION = False
 
-    for key, value in source.items():
-        if key not in target:
-            print(f"[run.sh] Migration: Adding missing key '{key}' to config.yaml")
-            target[key] = value
-            is_modified = True
-        elif isinstance(value, dict) and isinstance(target.get(key), dict):
-            if deep_merge_missing(target[key], value):
+# Fallback for when migration is not available
+if not HAS_MIGRATION:
+    def deep_merge_missing(target, source):
+        """Recursively add missing keys from source to target while preserving target values and comments."""
+        is_modified = False
+        if not isinstance(source, dict) or not isinstance(target, dict):
+            return False
+
+        for key, value in source.items():
+            if key not in target:
+                print(f"[run.sh] Migration: Adding missing key '{key}' to config.yaml")
+                target[key] = value
                 is_modified = True
-    return is_modified
+            elif isinstance(value, dict) and isinstance(target.get(key), dict):
+                if deep_merge_missing(target[key], value):
+                    is_modified = True
+        return is_modified
 
-# Perform migration
-config_was_modified = deep_merge_missing(config, default_config)
+    config_was_modified = deep_merge_missing(config, default_config)
 
 try:
     if secrets_path.exists():

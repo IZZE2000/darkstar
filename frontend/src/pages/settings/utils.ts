@@ -118,6 +118,24 @@ export function areEqual(a: unknown, b: unknown, type: string): boolean {
     // Null/Undefined equivalence (covers missing keys vs explicitly null/empty)
     if ((a === null || a === undefined) && (b === null || b === undefined)) return true
 
+    // REV F58: Treat adding a new key (undefined -> value) as a change
+    // This fixes the bug where adding new entity fields shows "No changes detected"
+    if ((a === null || a === undefined) && b !== null && b !== undefined) {
+        // For text/entity fields, also check if the new value is non-empty
+        if (
+            type !== 'boolean' &&
+            type !== 'number' &&
+            type !== 'array' &&
+            type !== 'solar_arrays' &&
+            type !== 'penalty_levels'
+        ) {
+            const strB = String(b).trim()
+            if (strB !== '') return false // Adding a new non-empty value is a change
+        } else {
+            return false // Adding any new value for non-text types is a change
+        }
+    }
+
     // Normalize empty strings vs null for text/entity/select fields
     if (
         type !== 'boolean' &&

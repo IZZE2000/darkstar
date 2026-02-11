@@ -14,6 +14,24 @@ import yaml
 
 logger = logging.getLogger(__name__)
 
+# REV F58: Standard entity keys that live directly in executor.inverter (not in custom_entities)
+# Must match frontend's standardInverterKeys in SystemTab.tsx
+STANDARD_ENTITY_KEYS = frozenset(
+    [
+        "work_mode",
+        "soc_target",
+        "grid_charging_enable",
+        "grid_charge_power",
+        "minimum_reserve",
+        "grid_max_export_power",
+        "grid_max_export_power_switch",
+        "max_charge_current",
+        "max_discharge_current",
+        "max_charge_power",
+        "max_discharge_power",
+    ]
+)
+
 
 @dataclass
 class ProfileMetadata:
@@ -219,12 +237,19 @@ class InverterProfile:
         suggestions = {}
 
         # 1. Internal entities block suggestions (Rev IP4)
+        # REV F58: Distinguish standard vs custom entity paths
         for key, value in self.entities.required.items():
             if value:
-                suggestions[f"executor.inverter.{key}"] = value
+                if key in STANDARD_ENTITY_KEYS:
+                    suggestions[f"executor.inverter.{key}"] = value
+                else:
+                    suggestions[f"executor.inverter.custom_entities.{key}"] = value
         for key, value in self.entities.optional.items():
             if value:
-                suggestions[f"executor.inverter.{key}"] = value
+                if key in STANDARD_ENTITY_KEYS:
+                    suggestions[f"executor.inverter.{key}"] = value
+                else:
+                    suggestions[f"executor.inverter.custom_entities.{key}"] = value
 
         # 2. Legacy suggested_entities block (for compatibility)
         for key, value in self.defaults.suggested_entities.items():
@@ -252,7 +277,9 @@ class InverterProfile:
             config: Full configuration dictionary
 
         Returns:
-            List of missing configuration keys (e.g., 'executor.inverter.work_mode')
+            List of missing configuration keys with correct path:
+            - Standard keys: 'executor.inverter.{key}'
+            - Custom keys: 'executor.inverter.custom_entities.{key}'
         """
         missing = []
         inverter_config = config.get("executor", {}).get("inverter", {})
@@ -269,7 +296,11 @@ class InverterProfile:
                 val = inverter_config.get("custom_entities", {}).get(entity_key)
 
             if not val:
-                missing.append(f"executor.inverter.{entity_key}")
+                # REV F58: Distinguish standard vs custom entity paths
+                if entity_key in STANDARD_ENTITY_KEYS:
+                    missing.append(f"executor.inverter.{entity_key}")
+                else:
+                    missing.append(f"executor.inverter.custom_entities.{entity_key}")
 
         return missing
 

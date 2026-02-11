@@ -307,6 +307,9 @@ executor:
     max_charge_power: ""                                       # Entity for max charge power (W)
     max_discharge_power: ""                                    # Entity for max discharge power (W)
 
+    # Profile-specific composite entities (e.g., Sungrow ems_mode, forced_charge_discharge_cmd)
+    custom_entities: {}
+
   # Controller Parameters (electrical conversion constants)
   controller:
     inverter_ac_limit_kw: 8.8          # Max AC power output of inverter
