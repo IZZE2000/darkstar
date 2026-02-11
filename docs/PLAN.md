@@ -362,3 +362,87 @@ The fix requires restructuring to entity-centric sections where each physical de
 * [x] Update `backend/learning/engine.py` etl_power_to_slots to apply inversion flags.
 * [x] Created comprehensive test suite `tests/test_recorder_inversion.py` with 8 tests.
 * [x] All tests pass (8 new + 3 existing recorder tests).
+
+---
+
+
+### [DRAFT] REV // F56 — Sungrow Composite Entity Configuration Fix
+
+**Goal:** Fix silent failures when Sungrow composite mode entities are missing. Ensure profile-required entities are properly validated, fail-fast with clear errors, and expose configuration via existing ProfileSetupHelper.
+
+**Context:** Sungrow beta tester reports `forced_charge_discharge_cmd` never sets despite executor showing work_mode changes. Investigation reveals:
+1. Composite entities (`forced_charge_discharge_cmd`, `ems_mode`) marked as `optional` but REQUIRED for modes to work
+2. `export_power_limit` is a duplicate of the standard `grid_max_export_power` key (same HA entity) — remove from profile entirely
+3. Missing entities cause silent skip with backend-only warning (no ActionResult created)
+4. No execution history entry when entities missing → user sees nothing
+5. Hardcoded values in `set_entities` (e.g., `export_power_limit: 9000`) are wrong — planner must control these dynamically
+
+**Critical Issue:** Silent failure chain prevents user from knowing composite commands failed.
+
+**Plan:**
+
+#### Phase 1: Sungrow Profile Schema Cleanup
+* [ ] Move composite entities from `optional` to `required` in `profiles/sungrow.yaml`:
+  - `forced_charge_discharge_cmd: "select.battery_forced_charge_discharge"`
+  - `ems_mode: "select.ems_mode"`
+* [ ] Move standard entities from `optional` to `required`:
+  - `grid_max_export_power: "number.export_power_limit"`
+  - `grid_max_export_power_switch: "switch.export_power_limit"`
+* [ ] Delete duplicate entity: `export_power_limit` (same entity as `grid_max_export_power`, planner handles dynamically)
+* [ ] Delete unused entity: `forced_power`
+* [ ] Delete entire `optional` section (Sungrow has no optional entities)
+* [ ] Remove `export_power_limit` from ALL mode `set_entities` blocks (export, zero_export, self_consumption, charge_from_grid, idle)
+* [ ] Update `get_missing_entities()` in `profiles.py` to check `custom_entities` for composite keys
+
+#### Phase 2: ActionResult for Failed Composite Entities
+* [ ] Update `executor/actions.py:_apply_composite_entities()` line 538-544
+* [ ] When entity not configured, create ActionResult instead of silent skip:
+  - `action_type: "composite_mode"`
+  - `success: False`
+  - `error_details: "Entity 'forced_charge_discharge_cmd' not configured in settings"`
+* [ ] Append to results list so failure shows in execution history
+* [ ] User sees red/failed entry in Executor History UI
+
+#### Phase 3: Dynamic Profile-Driven UI
+* [ ] UI reads profile entities at runtime and generates fields dynamically per profile
+* [ ] No hardcoded profile-specific fields — works for any profile with custom entities
+* [ ] Add field metadata to distinguish standard vs composite entities
+* [ ] Label composite entities clearly (e.g., "Forced Charge/Discharge Command")
+* [ ] Update field rendering to show/hide based on active profile
+* [ ] Ensure HA entity picker works for composite entities
+
+#### Phase 4: Runtime Error Visibility
+* [ ] Add profile validation check to executor health endpoint (`backend/api/routers/executor.py`)
+* [ ] Return missing_entities array in health response
+* [ ] Frontend Executor page shows alert banner when entities missing
+* [ ] Dashboard shows warning indicator if executor has config issues
+
+#### Phase 5: Backend Validation Enhancement
+* [ ] Update `backend/api/routers/config.py:_validate_config_for_save()`
+* [ ] Load selected profile and check all required entities (standard + composite)
+* [ ] Return validation error if composite entities missing from config
+* [ ] Update executor engine startup to fail-fast if required entities missing
+
+#### Phase 6: Documentation & Testing
+* [ ] Document composite entity concept in `docs/architecture.md`
+* [ ] Add test: Sungrow with missing composite entities fails validation
+* [ ] Add test: ActionResult created when composite entity missing
+* [ ] Add test: UI dynamically shows fields based on profile selection
+* [ ] Add test: Health endpoint reports missing entities
+* [ ] Verify Fronius/Deye/Generic profiles unaffected
+
+**Acceptance Criteria:**
+- [ ] Sungrow profile has 6 required entities (4 standard + 2 composite)
+- [ ] Duplicate `export_power_limit` removed from profile and all modes
+- [ ] Missing composite entities create failed ActionResult (visible in history)
+- [ ] Config validation blocks save if required entities missing
+- [ ] Health endpoint reports configuration issues
+- [ ] UI dynamically generates fields from profile schema
+- [ ] ProfileSetupHelper can fix missing entities via "Apply Recommendations"
+- [ ] All tests pass with new validation
+
+**Migration Path:**
+- Existing Sungrow users will see ProfileSetupHelper banner on next Settings visit
+- "Missing Required Entities" shows in red with entity names
+- One-click "Apply Recommendations" populates all missing entities
+- No manual config.yaml editing required
