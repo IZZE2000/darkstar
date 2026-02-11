@@ -1448,6 +1448,105 @@ class ActionDispatcher:
             error_details=error_details,
         )
 
+    async def set_ev_charger_switch(
+        self, entity_id: str, turn_on: bool, charging_kw: float = 0.0
+    ) -> ActionResult:
+        """
+        Control EV charger switch with shadow mode support.
+
+        Args:
+            entity_id: The HA switch entity ID for the EV charger
+            turn_on: True to turn on, False to turn off
+            charging_kw: Planned charging power in kW (for logging/notifications)
+
+        Returns:
+            ActionResult with details of the action
+        """
+        start = time.time()
+        action_type = "ev_charge_start" if turn_on else "ev_charge_stop"
+        action_label = "ON" if turn_on else "OFF"
+
+        # Check current state
+        current_state = self.ha.get_state_value(entity_id)
+        is_currently_on = current_state == "on" if current_state else False
+
+        # Idempotent skip
+        if turn_on == is_currently_on:
+            return ActionResult(
+                action_type=action_type,
+                success=True,
+                message=f"EV charger already {action_label}",
+                previous_value=current_state,
+                new_value=turn_on,
+                entity_id=entity_id,
+                skipped=True,
+                duration_ms=int((time.time() - start) * 1000),
+                error_details=None,
+            )
+
+        # Shadow mode check
+        if self.shadow_mode:
+            logger.info(
+                "[SHADOW] EV Charger: Would turn %s %s (current: %s)",
+                action_label,
+                entity_id,
+                current_state,
+            )
+            return ActionResult(
+                action_type=action_type,
+                success=True,
+                message=f"[SHADOW] Would turn {action_label}",
+                previous_value=current_state,
+                new_value=turn_on,
+                entity_id=entity_id,
+                skipped=True,
+                duration_ms=int((time.time() - start) * 1000),
+                error_details=None,
+            )
+
+        # Execute action
+        error_details = None
+        try:
+            self.ha.set_switch(entity_id, turn_on)
+            success = True
+        except HACallError as e:
+            success = False
+            error_details = str(e)
+            logger.error("Failed to control EV charger %s: %s", entity_id, error_details)
+
+        # Verification
+        verified_value = None
+        verification_success = None
+        if success:
+            verified_value, verification_success = await self._verify_action(
+                entity_id, "on" if turn_on else "off"
+            )
+
+        duration = int((time.time() - start) * 1000)
+
+        # Notification (via _maybe_notify)
+        if turn_on:
+            self._maybe_notify("ev_charge_start", f"EV charging started ({charging_kw:.1f} kW)")
+        else:
+            self._maybe_notify("ev_charge_stop", "EV charging stopped")
+
+        return ActionResult(
+            action_type=action_type,
+            success=success,
+            message=f"EV charger turned {action_label}"
+            if success
+            else f"Failed: {error_details}"
+            if error_details
+            else f"Failed to turn {action_label} EV charger",
+            previous_value=current_state,
+            new_value=turn_on,
+            entity_id=entity_id,
+            verified_value=verified_value,
+            verification_success=verification_success,
+            duration_ms=duration,
+            error_details=error_details,
+        )
+
     async def _verify_action(
         self, entity_id: str, expected_value: Any, timeout: float = 2.0
     ) -> tuple[Any, bool]:

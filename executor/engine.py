@@ -1628,72 +1628,53 @@ class ExecutorEngine:
 
             # Determine action
             if should_charge and not is_currently_on:
-                # Start charging
-                logger.info(
-                    "EV Charging: Turning ON %s (planned %.1f kW)", switch_entity, charging_kw
-                )
-                self.ha_client.call_service("switch", "turn_on", switch_entity)
-                self._ev_charging_active = True
-                self._ev_charging_started_at = now
-                self._ev_charging_slot_end = now + timedelta(minutes=15)
-
-                # Log charging event
-                self.history.log_execution(
-                    ExecutionRecord(
-                        executed_at=now.isoformat(),
-                        slot_start=now.isoformat(),
-                        commanded_work_mode="ev_charge_start",
-                        before_soc_percent=0,  # Not applicable
-                        success=1,
-                        source="ev_charger",
-                        duration_ms=0,
-                        action_results=[
-                            {
-                                "type": "ev_charge_start",
-                                "entity_id": switch_entity,
-                                "planned_kw": charging_kw,
-                            }
-                        ],
-                    )
+                # Start charging via dispatcher (respects shadow mode)
+                result = await self.dispatcher.set_ev_charger_switch(
+                    switch_entity, turn_on=True, charging_kw=charging_kw
                 )
 
-                # Notification
-                if self.config.notifications.on_charge_start:
-                    self.dispatcher._send_notification(
-                        f"EV charging started ({charging_kw:.1f} kW)", title="Darkstar EV Charger"
+                if result.success:
+                    self._ev_charging_active = True
+                    self._ev_charging_started_at = now
+                    self._ev_charging_slot_end = now + timedelta(minutes=15)
+
+                    # Log charging event
+                    self.history.log_execution(
+                        ExecutionRecord(
+                            executed_at=now.isoformat(),
+                            slot_start=now.isoformat(),
+                            commanded_work_mode="ev_charge_start",
+                            before_soc_percent=0,  # Not applicable
+                            success=1 if not result.skipped else 0,
+                            source="ev_charger",
+                            duration_ms=result.duration_ms,
+                            action_results=[result],
+                        )
                     )
 
             elif not should_charge and is_currently_on:
-                # Stop charging
-                logger.info("EV Charging: Turning OFF %s", switch_entity)
-                self.ha_client.call_service("switch", "turn_off", switch_entity)
-                self._ev_charging_active = False
-                self._ev_charging_started_at = None
-                self._ev_charging_slot_end = None
-
-                # Log charging event
-                self.history.log_execution(
-                    ExecutionRecord(
-                        executed_at=now.isoformat(),
-                        slot_start=now.isoformat(),
-                        commanded_work_mode="ev_charge_stop",
-                        before_soc_percent=0,
-                        success=1,
-                        source="ev_charger",
-                        duration_ms=0,
-                        action_results=[
-                            {
-                                "type": "ev_charge_stop",
-                                "entity_id": switch_entity,
-                            }
-                        ],
-                    )
+                # Stop charging via dispatcher (respects shadow mode)
+                result = await self.dispatcher.set_ev_charger_switch(
+                    switch_entity, turn_on=False, charging_kw=0.0
                 )
 
-                # Notification
-                if self.config.notifications.on_charge_stop:
-                    self.dispatcher._send_notification(
-                        "EV charging stopped", title="Darkstar EV Charger"
+                if result.success:
+                    self._ev_charging_active = False
+                    self._ev_charging_started_at = None
+                    self._ev_charging_slot_end = None
+
+                    # Log charging event
+                    self.history.log_execution(
+                        ExecutionRecord(
+                            executed_at=now.isoformat(),
+                            slot_start=now.isoformat(),
+                            commanded_work_mode="ev_charge_stop",
+                            before_soc_percent=0,
+                            success=1 if not result.skipped else 0,
+                            source="ev_charger",
+                            duration_ms=result.duration_ms,
+                            action_results=[result],
+                        )
                     )
 
             elif should_charge and is_currently_on:
