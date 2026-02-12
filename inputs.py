@@ -12,6 +12,7 @@ from nordpool.elspot import Prices
 from open_meteo_solar_forecast import OpenMeteoSolarForecast
 
 from backend.core.cache import cache_sync
+from backend.exceptions import PVForecastError
 from ml.api import get_forecast_slots
 from ml.weather import get_weather_volatility
 
@@ -594,18 +595,19 @@ async def _get_forecast_data_async(
                         break
                 pv_kwh_forecast.append(power_watts * 0.25 / 1000.0)
     except Exception as exc:
-        print(f"Warning: Open-Meteo Solar Forecast library call failed: {exc}")
-        print("Falling back to dummy PV forecast")
-        daily_pv_forecast = {}
-        for slot in price_slots:
-            start_time = slot["start_time"].astimezone(local_tz)
-            hour = start_time.hour + start_time.minute / 60.0
-            pv_kwh = max(0, math.sin(math.pi * (hour - 6) / 12)) * 1.25
-            pv_kwh_forecast.append(pv_kwh)
-            daily_iso = start_time.date().isoformat()
-            daily_pv_forecast[daily_iso] = daily_pv_forecast.get(daily_iso, 0.0) + pv_kwh
-
-    # Ensure we have at least four daily PV entries by extending with last known value
+        # REV F60: Removed dangerous dummy fallback. PV forecast failure is critical.
+        # Using fake solar data would cause the planner to make incorrect decisions.
+        raise PVForecastError(
+            "Open-Meteo Solar Forecast failed - cannot generate valid PV forecast",
+            original_exception=exc,
+            solar_arrays=len(kwp_list),
+            details={
+                "latitude": latitude,
+                "longitude": longitude,
+                "arrays": len(kwp_list),
+                "total_kwp": sum(kwp_list),
+            },
+        ) from exc
     if price_slots:
         first_date = price_slots[0]["start_time"].astimezone(local_tz).date()
         last_value = None
@@ -1046,7 +1048,6 @@ async def get_load_profile_from_ha(config: dict[str, Any]) -> list[float]:
 
 def get_dummy_load_profile(config: dict[str, Any]) -> list[float]:
     """Create a dummy load profile (sine wave pattern)."""
-    import math
 
     return [0.5 + 0.3 * math.sin(2 * math.pi * i / 96 + math.pi) for i in range(96)]
 
