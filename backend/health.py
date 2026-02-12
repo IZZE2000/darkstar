@@ -344,6 +344,19 @@ class HealthChecker:
                     )
                 )
 
+        # REV F61: Check for deprecated executor.ev_charger.penalty_levels
+        executor_cfg = self._config.get("executor", {})
+        ev_cfg = executor_cfg.get("ev_charger", {})
+        if ev_cfg.get("penalty_levels"):
+            issues.append(
+                HealthIssue(
+                    category="config",
+                    severity="warning",
+                    message="Deprecated setting: executor.ev_charger.penalty_levels",
+                    guidance="This setting is deprecated and ignored. Use per-charger penalty levels in the EV Chargers section instead (accessible in Settings > Parameters).",
+                )
+            )
+
         return issues
 
     async def check_ha_connection(self) -> list[HealthIssue]:
