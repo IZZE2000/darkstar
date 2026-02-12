@@ -416,7 +416,7 @@ class HAWebSocketClient:
         try:
             # Check if replan_on_plugin is enabled in config
             cfg = load_yaml("config.yaml")
-            ev_cfg = cfg.get("ev_charger", {})
+            ev_cfg = cfg.get("executor", {}).get("ev_charger", {})
             if not ev_cfg.get("replan_on_plugin", True):
                 logger.debug("EV replan on plugin disabled in config")
                 return
