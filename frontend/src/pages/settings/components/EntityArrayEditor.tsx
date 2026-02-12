@@ -476,6 +476,161 @@ export const EntityArrayEditor: React.FC<EntityArrayEditorProps> = ({
                                                         max={100}
                                                     />
                                                 </div>
+
+                                                {/* Penalty Levels Section */}
+                                                <div className="sm:col-span-2">
+                                                    <div className="bg-surface2/30 rounded-lg p-4 border border-line/20">
+                                                        <div className="flex items-center justify-between mb-3">
+                                                            <label className="text-[10px] uppercase font-bold text-muted">
+                                                                Penalty Levels
+                                                            </label>
+                                                            {!disabled && (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                        const currentLevels =
+                                                                            (entity as EVChargerEntity)
+                                                                                .penalty_levels || []
+                                                                        const newLevel = {
+                                                                            max_soc:
+                                                                                currentLevels.length > 0
+                                                                                    ? Math.min(
+                                                                                          100,
+                                                                                          currentLevels[
+                                                                                              currentLevels.length - 1
+                                                                                          ].max_soc + 10,
+                                                                                      )
+                                                                                    : 50,
+                                                                            penalty_sek: 0.5,
+                                                                        }
+                                                                        updateEntity(index, {
+                                                                            penalty_levels: [
+                                                                                ...currentLevels,
+                                                                                newLevel,
+                                                                            ],
+                                                                        } as Partial<EVChargerEntity>)
+                                                                    }}
+                                                                    disabled={
+                                                                        (
+                                                                            (entity as EVChargerEntity)
+                                                                                .penalty_levels || []
+                                                                        ).length >= 5
+                                                                    }
+                                                                    className="text-[10px] px-2 py-1 rounded bg-accent/10 text-accent hover:bg-accent/20 disabled:opacity-50 transition-colors"
+                                                                >
+                                                                    + Add Level
+                                                                </button>
+                                                            )}
+                                                        </div>
+
+                                                        <p className="text-[10px] text-muted mb-3">
+                                                            Define willingness to pay for charging at different battery
+                                                            levels. Higher penalties encourage charging sooner (at lower
+                                                            SoC).
+                                                        </p>
+
+                                                        {((entity as EVChargerEntity).penalty_levels || []).length ===
+                                                        0 ? (
+                                                            <div className="text-center py-4 text-[10px] text-muted">
+                                                                No penalty levels configured. Using defaults.
+                                                            </div>
+                                                        ) : (
+                                                            <div className="space-y-2">
+                                                                {((entity as EVChargerEntity).penalty_levels || []).map(
+                                                                    (level, levelIndex) => (
+                                                                        <div
+                                                                            key={levelIndex}
+                                                                            className="flex items-center gap-3 bg-surface-elevated p-2 rounded-lg"
+                                                                        >
+                                                                            <div className="flex-1">
+                                                                                <label className="text-[10px] text-muted block mb-1">
+                                                                                    Max SoC (%)
+                                                                                </label>
+                                                                                <NumberInput
+                                                                                    value={level.max_soc}
+                                                                                    onChange={(val) => {
+                                                                                        const newLevels = [
+                                                                                            ...((
+                                                                                                entity as EVChargerEntity
+                                                                                            ).penalty_levels || []),
+                                                                                        ]
+                                                                                        newLevels[levelIndex] = {
+                                                                                            ...level,
+                                                                                            max_soc: Math.max(
+                                                                                                0,
+                                                                                                Math.min(
+                                                                                                    100,
+                                                                                                    Number(val),
+                                                                                                ),
+                                                                                            ),
+                                                                                        }
+                                                                                        updateEntity(index, {
+                                                                                            penalty_levels: newLevels,
+                                                                                        } as Partial<EVChargerEntity>)
+                                                                                    }}
+                                                                                    disabled={disabled}
+                                                                                    step={1}
+                                                                                    min={0}
+                                                                                    max={100}
+                                                                                    className="text-sm"
+                                                                                />
+                                                                            </div>
+                                                                            <div className="flex-1">
+                                                                                <label className="text-[10px] text-muted block mb-1">
+                                                                                    Penalty (SEK/kWh)
+                                                                                </label>
+                                                                                <NumberInput
+                                                                                    value={level.penalty_sek}
+                                                                                    onChange={(val) => {
+                                                                                        const newLevels = [
+                                                                                            ...((
+                                                                                                entity as EVChargerEntity
+                                                                                            ).penalty_levels || []),
+                                                                                        ]
+                                                                                        newLevels[levelIndex] = {
+                                                                                            ...level,
+                                                                                            penalty_sek: Math.max(
+                                                                                                0,
+                                                                                                Number(val),
+                                                                                            ),
+                                                                                        }
+                                                                                        updateEntity(index, {
+                                                                                            penalty_levels: newLevels,
+                                                                                        } as Partial<EVChargerEntity>)
+                                                                                    }}
+                                                                                    disabled={disabled}
+                                                                                    step={0.1}
+                                                                                    min={0}
+                                                                                    className="text-sm"
+                                                                                />
+                                                                            </div>
+                                                                            {!disabled && (
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => {
+                                                                                        const newLevels = (
+                                                                                            (entity as EVChargerEntity)
+                                                                                                .penalty_levels || []
+                                                                                        ).filter(
+                                                                                            (_, i) => i !== levelIndex,
+                                                                                        )
+                                                                                        updateEntity(index, {
+                                                                                            penalty_levels: newLevels,
+                                                                                        } as Partial<EVChargerEntity>)
+                                                                                    }}
+                                                                                    className="p-1.5 rounded-lg text-muted hover:text-bad hover:bg-bad/10 transition-colors mt-4"
+                                                                                    aria-label="Remove level"
+                                                                                >
+                                                                                    <Trash2 size={14} />
+                                                                                </button>
+                                                                            )}
+                                                                        </div>
+                                                                    ),
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
                                             </>
                                         )}
                                     </div>
