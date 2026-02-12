@@ -347,6 +347,27 @@ OpenMeteoSolarForecast(
 * [x] Add validation error messages with specific array index and field name
 * [x] Test: Verify validation catches malformed array configurations
 
+#### Phase 6: Fix Phase 1 Logic Bug [DONE]
+* [x] Always wrap lat/long in lists when `kwp_list` has items (not just for multi-array)
+* [x] OpenMeteo requires ALL params to be lists when ANY array param is a list
+* [x] Changed condition from `len(kwp_list) > 1` to `kwp_list` (truthy check)
+
+#### Phase 7: Clear Errors on Success [DONE]
+* [x] Add `clear_forecast_errors()` call after successful PV forecast
+* [x] Errors now properly clear instead of persisting indefinitely
+* [x] Status resets to "ok" after successful forecast
+
+#### Phase 8: Thread Safety Protection [DONE]
+* [x] Add `threading.Lock()` to protect global forecast state
+* [x] Protect `_forecast_errors` deque and `_forecast_status` string
+* [x] Lock acquired in `record_forecast_error()`, `clear_forecast_errors()`, `get_forecast_errors()`, `get_forecast_status()`
+
+#### Phase 9: Additional Config Validations [DONE]
+* [x] Validate location coordinates exist and are valid ranges (lat: -90 to 90, lon: -180 to 180)
+* [x] Check for duplicate solar array names
+* [x] Validate array names don't contain special characters (only letters, numbers, spaces, hyphens, periods)
+* [x] Add proper error messages for each validation failure
+
 ---
 
 ### [DRAFT] REV // F61 — EV Penalty Levels Architecture Cleanup
