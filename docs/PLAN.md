@@ -279,7 +279,7 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 
 ---
 
-### [DRAFT] REV // F60 — Fix Open-Meteo Multi-Array PV Forecast Failure
+### [DONE] REV // F60 — Fix Open-Meteo Multi-Array PV Forecast Failure
 
 **Goal:** Fix catastrophic PV forecast failure for multi-array configurations and remove dangerous fallback that generates fake solar data.
 
@@ -311,41 +311,41 @@ OpenMeteoSolarForecast(
 
 **Plan:**
 
-#### Phase 1: Fix OpenMeteo Multi-Array Call [DRAFT]
-* [ ] Update `inputs.py` line 556-561 to wrap latitude/longitude in lists when `solar_arrays` has multiple items
-* [ ] Keep backward compatibility: single array can still use float (library auto-converts to list)
-* [ ] Add debug logging showing the actual parameters passed to OpenMeteo
-* [ ] Test with beta tester's config (2 arrays: Öst + Väst)
-* [ ] Test with single array config (backward compatibility)
+#### Phase 1: Fix OpenMeteo Multi-Array Call [DONE]
+* [x] Update `inputs.py` line 556-561 to wrap latitude/longitude in lists when `solar_arrays` has multiple items
+* [x] Keep backward compatibility: single array can still use float (library auto-converts to list)
+* [x] Add debug logging showing the actual parameters passed to OpenMeteo
+* [x] Test with beta tester's config (2 arrays: Öst + Väst)
+* [x] Test with single array config (backward compatibility)
 
-#### Phase 2: Remove Dangerous Dummy PV Fallback [DRAFT]
-* [ ] Replace dummy sine wave fallback in `inputs.py` lines 593-603 with hard error
-* [ ] Create custom exception `PVForecastError` in backend/exceptions.py
-* [ ] Raise `PVForecastError` with detailed message including the original exception
-* [ ] Planner should catch this and abort with clear error message
-* [ ] Remove the `max(0, math.sin(...)) * 1.25` dummy forecast code entirely
-* [ ] Test: Verify planner aborts when Open-Meteo fails instead of using fake data
+#### Phase 2: Remove Dangerous Dummy PV Fallback [DONE]
+* [x] Replace dummy sine wave fallback in `inputs.py` lines 593-603 with hard error
+* [x] Create custom exception `PVForecastError` in backend/exceptions.py
+* [x] Raise `PVForecastError` with detailed message including the original exception
+* [x] Planner should catch this and abort with clear error message
+* [x] Remove the `max(0, math.sin(...)) * 1.25` dummy forecast code entirely
+* [x] Test: Verify planner aborts when Open-Meteo fails instead of using fake data
 
-#### Phase 3: Add Forecast Error Health Tracking [DRAFT]
-* [ ] Add `forecast_errors` deque to health tracking system (like executor's `recent_errors`)
-* [ ] Track PV forecast failures with timestamp and error message
-* [ ] Expose via `/api/health` endpoint under new `forecast` section
-* [ ] Add `forecast_status` field: "ok", "degraded", "error"
-* [ ] Test: Verify errors appear in health endpoint after forecast failure
+#### Phase 3: Add Forecast Error Health Tracking [DONE]
+* [x] Add `forecast_errors` deque to health tracking system (like executor's `recent_errors`)
+* [x] Track PV forecast failures with timestamp and error message
+* [x] Expose via `/api/health` endpoint under new `forecast` section
+* [x] Add `forecast_status` field: "ok", "degraded", "error"
+* [x] Test: Verify errors appear in health endpoint after forecast failure
 
-#### Phase 4: Add Persistent Error Banner [DRAFT]
-* [ ] Update `SystemAlert` component to show forecast errors as critical banner
-* [ ] Banner message: "PV Forecast Failed: Using invalid fallback data. Planning may be inaccurate."
-* [ ] Banner should be dismissible but reappear on next health check if error persists
-* [ ] Use existing `banner-error` style (red banner like shadow mode)
-* [ ] Update Dashboard.tsx to include forecast errors in health status check
-* [ ] Test: Verify banner appears when forecast fails and stays until dismissed
+#### Phase 4: Add Persistent Error Banner [DONE]
+* [x] Update `SystemAlert` component to show forecast errors as critical banner
+* [x] Banner message: "PV Forecast Failed: Using invalid fallback data. Planning may be inaccurate."
+* [x] Banner should be dismissible but reappear on next health check if error persists
+* [x] Use existing `banner-error` style (red banner like shadow mode)
+* [x] Update Dashboard.tsx to include forecast errors in health status check
+* [x] Test: Verify banner appears when forecast fails and stays until dismissed
 
-#### Phase 5: Add Config Validation [DRAFT]
-* [ ] Add validation in `backend/api/routers/config.py` to ensure all solar arrays have required fields
-* [ ] Check: kwp > 0, azimuth between 0-360, tilt between 0-90
-* [ ] Add validation error messages with specific array index and field name
-* [ ] Test: Verify validation catches malformed array configurations
+#### Phase 5: Add Config Validation [DONE]
+* [x] Add validation in `backend/api/routers/config.py` to ensure all solar arrays have required fields
+* [x] Check: kwp > 0, azimuth between 0-360, tilt between 0-90
+* [x] Add validation error messages with specific array index and field name
+* [x] Test: Verify validation catches malformed array configurations
 
 ---
 
