@@ -587,6 +587,32 @@ export const systemSections: SettingsSection[] = [
                     disabledText: "Enable 'EV charger installed' in System Profile to configure",
                 },
             },
+            {
+                key: 'executor.ev_charger.replan_on_plugin',
+                label: 'Re-plan on Plugin',
+                path: ['executor', 'ev_charger', 'replan_on_plugin'],
+                type: 'boolean',
+                helper: 'Immediately re-run the planner when an EV is plugged in. Useful for opportunistic charging on arrival.',
+                subsection: 'EV Charger',
+                showIf: {
+                    configKey: 'system.has_ev_charger',
+                    value: true,
+                    disabledText: "Enable 'EV charger installed' in System Profile to configure",
+                },
+            },
+            {
+                key: 'executor.ev_charger.replan_on_unplug',
+                label: 'Re-plan on Unplug',
+                path: ['executor', 'ev_charger', 'replan_on_unplug'],
+                type: 'boolean',
+                helper: 'Immediately re-run the planner when an EV is unplugged. Frees up capacity for other loads.',
+                subsection: 'EV Charger',
+                showIf: {
+                    configKey: 'system.has_ev_charger',
+                    value: true,
+                    disabledText: "Enable 'EV charger installed' in System Profile to configure",
+                },
+            },
         ],
     },
     {

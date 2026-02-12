@@ -157,6 +157,7 @@ class EVChargerConfig:
     max_power_kw: float = 7.4
     battery_capacity_kwh: float | None = None
     replan_on_plugin: bool = True
+    replan_on_unplug: bool = False
 
 
 @dataclass
@@ -379,6 +380,7 @@ def load_executor_config(config_path: str = "config.yaml") -> ExecutorConfig:
         max_power_kw=float(ev_data.get("max_power_kw", EVChargerConfig.max_power_kw)),
         battery_capacity_kwh=ev_data.get("battery_capacity_kwh"),
         replan_on_plugin=bool(ev_data.get("replan_on_plugin", EVChargerConfig.replan_on_plugin)),
+        replan_on_unplug=bool(ev_data.get("replan_on_unplug", EVChargerConfig.replan_on_unplug)),
     )
 
     notif_data: dict[str, Any] = (

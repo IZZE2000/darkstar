@@ -340,6 +340,8 @@ executor:
     control_mode: "current"  # "current" (A), "power" (W), or "switch" (on/off)
     max_current_a: 32.0      # Max charge current when control_mode=current
     enabled_entity: ""       # HA entity to enable/disable smart charging (read-only state)
+    replan_on_plugin: true   # Re-run planner immediately when EV plugs in
+    replan_on_unplug: false  # Re-run planner immediately when EV unplugs
 
   # Notifications (via Home Assistant notify service)
   notifications:
