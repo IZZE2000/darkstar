@@ -597,7 +597,9 @@ async def _get_forecast_data_async(
     except Exception as exc:
         # REV F60: Removed dangerous dummy fallback. PV forecast failure is critical.
         # Using fake solar data would cause the planner to make incorrect decisions.
-        raise PVForecastError(
+        from backend.health import record_forecast_error
+
+        error = PVForecastError(
             "Open-Meteo Solar Forecast failed - cannot generate valid PV forecast",
             original_exception=exc,
             solar_arrays=len(kwp_list),
@@ -607,7 +609,9 @@ async def _get_forecast_data_async(
                 "arrays": len(kwp_list),
                 "total_kwp": sum(kwp_list),
             },
-        ) from exc
+        )
+        record_forecast_error(error, context={"arrays": len(kwp_list)})
+        raise error from exc
     if price_slots:
         first_date = price_slots[0]["start_time"].astimezone(local_tz).date()
         last_value = None

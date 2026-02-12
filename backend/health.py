@@ -6,6 +6,7 @@ Validates HA connection, entity availability, config validity, and planner metri
 """
 
 import logging
+from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -15,7 +16,61 @@ import httpx
 import pytz
 import yaml
 
+from backend.exceptions import PVForecastError
+
 logger = logging.getLogger(__name__)
+
+# REV F60: Forecast error tracking (like executor's recent_errors)
+_forecast_errors: deque[dict[str, Any]] = deque(maxlen=10)
+_forecast_status: str = "ok"  # "ok", "degraded", "error"
+
+
+def record_forecast_error(error: Exception, context: dict[str, Any] | None = None) -> None:
+    """Record a forecast error for health monitoring.
+
+    Args:
+        error: The exception that occurred
+        context: Additional context about the forecast attempt
+    """
+    global _forecast_status
+
+    error_entry = {
+        "timestamp": datetime.now(pytz.UTC).isoformat(),
+        "type": type(error).__name__,
+        "message": str(error),
+        "context": context or {},
+    }
+
+    if isinstance(error, PVForecastError):
+        error_entry["solar_arrays"] = getattr(error, "solar_arrays", 0)
+        error_entry["details"] = getattr(error, "details", {})
+        _forecast_status = "error"
+    else:
+        _forecast_status = "degraded"
+
+    _forecast_errors.append(error_entry)
+    logger.error("Forecast error recorded: %s", error_entry["message"])
+
+
+def clear_forecast_errors() -> None:
+    """Clear forecast errors (called after successful forecast)."""
+    global _forecast_status
+    _forecast_errors.clear()
+    _forecast_status = "ok"
+
+
+def get_forecast_errors(limit: int = 5) -> list[dict[str, Any]]:
+    """Get recent forecast errors (newest first)."""
+    return list(_forecast_errors)[-limit:]
+
+
+def get_forecast_status() -> dict[str, Any]:
+    """Get current forecast health status."""
+    return {
+        "status": _forecast_status,
+        "last_errors": get_forecast_errors(),
+        "error_count": len(_forecast_errors),
+    }
 
 
 @dataclass
@@ -96,6 +151,9 @@ class HealthChecker:
 
         # Check recorder health (REV // Complete Cost Reality Fix)
         issues.extend(self.check_recorder())
+
+        # Check forecast health (REV F60)
+        issues.extend(self.check_forecast())
 
         # Determine overall health
         has_critical = any(i.severity == "critical" for i in issues)
@@ -608,6 +666,44 @@ class HealthChecker:
                     )
         except Exception as e:
             logger.debug("Could not check recorder health: %s", e)
+
+        return issues
+
+    def check_forecast(self) -> list[HealthIssue]:
+        """Check PV forecast health status."""
+        issues: list[HealthIssue] = []
+
+        forecast_info = get_forecast_status()
+        status = forecast_info.get("status", "ok")
+
+        if status == "error":
+            # Get the most recent error
+            recent_errors = forecast_info.get("last_errors", [])
+            if recent_errors:
+                latest = recent_errors[-1]
+                error_msg = latest.get("message", "Unknown forecast error")
+
+                issues.append(
+                    HealthIssue(
+                        category="forecast",
+                        severity="critical",
+                        message=f"PV Forecast Failed: {error_msg}",
+                        guidance=(
+                            "The PV forecast system is unable to generate accurate solar predictions. "
+                            "Planning may be using outdated or invalid data. "
+                            "Check your solar array configuration and Open-Meteo service availability."
+                        ),
+                    )
+                )
+        elif status == "degraded":
+            issues.append(
+                HealthIssue(
+                    category="forecast",
+                    severity="warning",
+                    message="PV forecast experiencing issues",
+                    guidance="Some forecast requests have failed but the system is still operational.",
+                )
+            )
 
         return issues
 
