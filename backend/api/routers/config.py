@@ -500,6 +500,17 @@ def _validate_config_for_save(config: dict[str, Any]) -> list[dict[str, str]]:
                         }
                     )
 
+                # REV F60: Add azimuth validation
+                azimuth = float(array.get("azimuth", 0) or 0)
+                if azimuth < 0 or azimuth > 360:
+                    issues.append(
+                        {
+                            "severity": "error",
+                            "message": f"Array {i + 1} azimuth must be 0-360°",
+                            "guidance": "0° = North, 90° = East, 180° = South, 270° = West.",
+                        }
+                    )
+
             if total_kwp > 500:
                 issues.append(
                     {
