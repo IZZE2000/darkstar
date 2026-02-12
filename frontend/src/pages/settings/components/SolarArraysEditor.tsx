@@ -106,16 +106,24 @@ export const SolarArraysEditor: React.FC<SolarArraysEditorProps> = ({ arrays, on
                             </div>
                             <div className="flex items-center gap-2">
                                 {!disabled && arrays.length > 1 && (
-                                    <button
-                                        type="button"
+                                    <span
                                         onClick={(e) => {
                                             e.stopPropagation()
                                             removeArray(index)
                                         }}
-                                        className="p-1.5 rounded-lg text-muted hover:text-bad hover:bg-bad/10 transition-colors"
+                                        className="p-1.5 rounded-lg text-muted hover:text-bad hover:bg-bad/10 transition-colors cursor-pointer"
+                                        role="button"
+                                        aria-label="Delete"
+                                        tabIndex={0}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter' || e.key === ' ') {
+                                                e.stopPropagation()
+                                                removeArray(index)
+                                            }
+                                        }}
                                     >
                                         <Trash2 size={14} />
-                                    </button>
+                                    </span>
                                 )}
                                 {expandedIndex === index ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
                             </div>

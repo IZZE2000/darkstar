@@ -857,49 +857,6 @@ export const parameterSections: SettingsSection[] = [
             },
         ],
     },
-
-    // EV Charger Settings (Legacy - global settings)
-    {
-        title: 'EV Charger',
-        description: 'Global EV charging settings: penalty levels, replanning triggers, and charging behavior.',
-        showIf: {
-            configKey: 'system.has_ev_charger',
-            value: true,
-        },
-        fields: [
-            {
-                key: 'ev_charger.penalty_levels',
-                label: 'Penalty Levels (Urgency)',
-                path: ['ev_charger', 'penalty_levels'],
-                type: 'penalty_levels',
-                className: 'col-span-1 sm:row-span-3',
-                helper: 'Define willingness to pay at different SoC levels. Higher penalties force charging regardless of price.',
-            },
-            {
-                key: 'ev_charger.replan_on_plugin',
-                label: 'Re-plan on plug-in',
-                path: ['ev_charger', 'replan_on_plugin'],
-                type: 'boolean',
-                helper: 'Trigger immediate re-planning when the EV is plugged in.',
-                className: 'col-span-1',
-            },
-            {
-                key: 'ev_charger.replan_on_unplug',
-                label: 'Re-plan on unplug',
-                path: ['ev_charger', 'replan_on_unplug'],
-                type: 'boolean',
-                helper: 'Trigger re-planning when the EV is unplugged.',
-                className: 'col-span-1',
-            },
-            {
-                key: 'ev_charger.info_box',
-                label: 'Willingness to Pay',
-                path: [], // Virtual field for UI only
-                type: 'info',
-                className: 'col-span-1',
-            },
-        ],
-    },
     // ARC15: Entity-Centric EV Chargers (replaces ev_charger section)
     {
         title: 'EV Chargers',

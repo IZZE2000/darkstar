@@ -253,13 +253,13 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 - Removed unused `allFields` import from `useSettingsForm.ts`
 - All lint checks pass (`pnpm lint` in frontend, `ruff check .` in backend)
 
-#### Phase 2: Parameters Tab Legacy EV Charger Cleanup [IN PROGRESS]
-* [ ] Remove legacy EV Charger section from `parameterSections` (lines 861-902 in types.ts)
-* [ ] Fields to remove: `ev_charger.penalty_levels`, `ev_charger.replan_on_plugin`, `ev_charger.replan_on_unplug`, `ev_charger.info_box`
-* [ ] These fields expect `ev_charger.*` paths but config only has new `ev_chargers: []` array format
-* [ ] This causes false positives in dirty detection (form has default values, config has undefined)
+#### Phase 2: Parameters Tab Legacy EV Charger Cleanup [DONE]
+* [x] Remove legacy EV Charger section from `parameterSections` (lines 861-902 in types.ts)
+* [x] Fields removed: `ev_charger.penalty_levels`, `ev_charger.replan_on_plugin`, `ev_charger.replan_on_unplug`, `ev_charger.info_box`
+* [x] These fields expected `ev_charger.*` paths but config only has new `ev_chargers: []` array format
+* [x] This caused false positives in dirty detection (form has default values, config has undefined)
 
-**Root Cause:** Parameters tab has legacy EV Charger section that doesn't match current config structure. The fields `ev_charger.penalty_levels`, `ev_charger.replan_on_plugin`, etc. don't exist in config, causing `buildPatch` to detect them as "changes" when comparing form (which has default values) against config (which has undefined).
+**Root Cause:** Parameters tab had legacy EV Charger section that didn't match current config structure. The fields `ev_charger.penalty_levels`, `ev_charger.replan_on_plugin`, etc. didn't exist in config anymore (they moved to per-charger entities), causing `buildPatch` to detect them as "changes" when comparing form (which has default values) against config (which has undefined).
 
 #### Phase 3: Virtual Field Patch Detection Fix [DONE]
 * [x] Add check in `buildPatch` to skip virtual/UI-only fields with empty paths
@@ -274,5 +274,28 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 // In buildPatch function, after visibilityOnlyFields check:
 if (field.path.length === 0) return  // Skip virtual/UI-only fields
 ```
+
+#### Phase 4: Nested Button Hydration Error Fix [DONE]
+* [x] Fix nested `<button>` elements in `SolarArraysEditor.tsx` causing React hydration error
+* [x] Error: "In HTML, `<button>` cannot be a descendant of `<button>`"
+* [x] Location: `SolarArraysEditor.tsx:91-122` (accordion header button containing delete button)
+* [x] Solution: Changed delete `<button>` to `<span role="button">` with keyboard handlers
+
+**Implementation:**
+```typescript
+// Before: Nested button (invalid HTML)
+<button onClick={toggle}>
+  ...
+  <button onClick={delete}>Delete</button>  // INVALID
+</button>
+
+// After: Span with role="button" (valid HTML)
+<button onClick={toggle}>
+  ...
+  <span role="button" onClick={delete} tabIndex={0} onKeyDown={...}>Delete</span>
+</button>
+```
+
+**Root Cause:** The accordion header is a `<button>` element, but it contained a delete `<button>` child. HTML specification prohibits nested buttons. This caused React hydration warnings and potential accessibility issues.
 
 ---
