@@ -269,32 +269,11 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] This caused infinite `[CONFIG_PATCH]` console warnings on every render
 * [x] **Fix:** Added `if (field.path.length === 0) return` in `utils.ts:200`
 
-**Implementation:**
-```typescript
-// In buildPatch function, after visibilityOnlyFields check:
-if (field.path.length === 0) return  // Skip virtual/UI-only fields
-```
-
 #### Phase 4: Nested Button Hydration Error Fix [DONE]
 * [x] Fix nested `<button>` elements in `SolarArraysEditor.tsx` causing React hydration error
 * [x] Error: "In HTML, `<button>` cannot be a descendant of `<button>`"
 * [x] Location: `SolarArraysEditor.tsx:91-122` (accordion header button containing delete button)
 * [x] Solution: Changed delete `<button>` to `<span role="button">` with keyboard handlers
-
-**Implementation:**
-```typescript
-// Before: Nested button (invalid HTML)
-<button onClick={toggle}>
-  ...
-  <button onClick={delete}>Delete</button>  // INVALID
-</button>
-
-// After: Span with role="button" (valid HTML)
-<button onClick={toggle}>
-  ...
-  <span role="button" onClick={delete} tabIndex={0} onKeyDown={...}>Delete</span>
-</button>
-```
 
 **Root Cause:** The accordion header is a `<button>` element, but it contained a delete `<button>` child. HTML specification prohibits nested buttons. This caused React hydration warnings and potential accessibility issues.
 
@@ -367,5 +346,70 @@ OpenMeteoSolarForecast(
 * [ ] Check: kwp > 0, azimuth between 0-360, tilt between 0-90
 * [ ] Add validation error messages with specific array index and field name
 * [ ] Test: Verify validation catches malformed array configurations
+
+---
+
+### [DRAFT] REV // F61 — EV Penalty Levels Architecture Cleanup
+
+**Goal:** Fix the architectural mess with EV penalty levels being defined in multiple places inconsistently, and restore missing UI for editing per-charger penalty levels.
+
+**Context:** Investigation revealed a clusterfuck in EV configuration:
+1. **Planner** uses `ev_chargers[].penalty_levels` (per-charger array) for MILP optimization
+2. **Executor** has `executor.ev_charger.penalty_levels` that is **NEVER USED** (dead code)
+3. **HA Socket** bug at line 419 looks for `replan_on_plugin` at wrong path (root `ev_charger` instead of `executor.ev_charger`)
+4. **UI** has NO way to edit penalty levels per EV charger (data model exists but no UI)
+5. **Legacy section removed** in F59 Phase 2 broke the only UI that showed these settings
+
+The penalty levels should be SINGLE SOURCE OF TRUTH in the `ev_chargers[]` array where the planner uses them. The executor just follows the optimized schedule and doesn't need its own penalty config.
+
+**Architecture Decision:**
+- `ev_chargers[].penalty_levels` → Planning optimization (willingness to pay at different SoC)
+- `executor.ev_charger.replan_on_plugin` → Control trigger (when to re-run planner on plug events)
+- `executor.ev_charger.penalty_levels` → **REMOVE** (dead code, never used)
+
+**Plan:**
+
+#### Phase 1: Fix HA Socket Config Path Bug [DRAFT]
+* [ ] Update `backend/ha_socket.py:419` to read from correct path `executor.ev_charger`
+* [ ] Change: `cfg.get("ev_charger", {})` → `cfg.get("executor", {}).get("ev_charger", {})`
+* [ ] Test: Verify replan trigger works when EV plugs in with `replan_on_plugin: true`
+* [ ] Test: Verify no replan when `replan_on_plugin: false`
+
+#### Phase 2: Remove Dead Code from Executor Config [DRAFT]
+* [ ] Remove `penalty_levels` field from `EVChargerConfig` dataclass (`executor/config.py:160`)
+* [ ] Remove penalty_levels loading from executor config builder (`executor/config.py:383`)
+* [ ] Verify no other code references `executor.ev_charger.penalty_levels`
+* [ ] Test: Executor still loads config correctly without penalty_levels field
+
+#### Phase 3: Add Per-Charger Penalty Levels UI to EntityArrayEditor [DRAFT]
+* [ ] Add `penalty_levels` editor component inside each EV charger card in `EntityArrayEditor.tsx`
+* [ ] UI should allow editing array of `{max_soc: number, penalty_sek: number}` objects
+* [ ] Add "Add Level" and "Remove Level" buttons
+* [ ] Validate: max_soc between 0-100, penalty_sek >= 0
+* [ ] Show default levels if none set (copy from `createDefaultEVCharger`)
+* [ ] Test: Add EV charger, edit penalty levels, save, verify config updated correctly
+
+#### Phase 4: Add Global Replan Triggers UI Section [DRAFT]
+* [ ] Create new UI section for `executor.ev_charger` settings
+* [ ] Fields: `replan_on_plugin` (boolean), `replan_on_unplug` (boolean)
+* [ ] Place in Settings > Executor tab (not Parameters, since it's control-related)
+* [ ] Helper text explaining these trigger immediate re-planning on EV state changes
+* [ ] Test: Toggle settings, save, verify config updated at `executor.ev_charger.*`
+
+#### Phase 5: Add Config Validation and Documentation [DRAFT]
+* [ ] Add validation warning if user has `executor.ev_charger.penalty_levels` set (legacy)
+* [ ] Warning message: "This setting is deprecated. Use per-charger penalty levels in EV Chargers section instead"
+* [ ] Update `config.default.yaml` comments to clarify:
+  - `ev_chargers[].penalty_levels` = For planner optimization
+  - `executor.ev_charger.replan_on_*` = For control triggers
+* [ ] Add inline help text in UI explaining what penalty levels do
+
+#### Phase 6: Integration Testing [DRAFT]
+* [ ] **Test 1:** HA Socket replan trigger with correct config path
+* [ ] **Test 2:** EV charger with custom penalty levels saves and loads correctly
+* [ ] **Test 3:** Planner receives correct aggregated penalty levels from multiple EVs
+* [ ] **Test 4:** Executor ignores deprecated penalty_levels field without error
+* [ ] **Test 5:** UI shows penalty levels editor, can add/remove/edit levels
+* [ ] **Test 6:** Config validation warns about deprecated executor.ev_charger.penalty_levels
 
 ---
