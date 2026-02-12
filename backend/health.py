@@ -6,6 +6,7 @@ Validates HA connection, entity availability, config validity, and planner metri
 """
 
 import logging
+import threading
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -21,8 +22,10 @@ from backend.exceptions import PVForecastError
 logger = logging.getLogger(__name__)
 
 # REV F60: Forecast error tracking (like executor's recent_errors)
+# Phase 8: Thread-safe access with lock
 _forecast_errors: deque[dict[str, Any]] = deque(maxlen=10)
 _forecast_status: str = "ok"  # "ok", "degraded", "error"
+_forecast_lock: threading.Lock = threading.Lock()
 
 
 def record_forecast_error(error: Exception, context: dict[str, Any] | None = None) -> None:
@@ -44,33 +47,36 @@ def record_forecast_error(error: Exception, context: dict[str, Any] | None = Non
     if isinstance(error, PVForecastError):
         error_entry["solar_arrays"] = getattr(error, "solar_arrays", 0)
         error_entry["details"] = getattr(error, "details", {})
-        _forecast_status = "error"
-    else:
-        _forecast_status = "degraded"
 
-    _forecast_errors.append(error_entry)
+    with _forecast_lock:
+        _forecast_status = "error" if isinstance(error, PVForecastError) else "degraded"
+        _forecast_errors.append(error_entry)
+
     logger.error("Forecast error recorded: %s", error_entry["message"])
 
 
 def clear_forecast_errors() -> None:
     """Clear forecast errors (called after successful forecast)."""
     global _forecast_status
-    _forecast_errors.clear()
-    _forecast_status = "ok"
+    with _forecast_lock:
+        _forecast_errors.clear()
+        _forecast_status = "ok"
 
 
 def get_forecast_errors(limit: int = 5) -> list[dict[str, Any]]:
     """Get recent forecast errors (newest first)."""
-    return list(_forecast_errors)[-limit:]
+    with _forecast_lock:
+        return list(_forecast_errors)[-limit:]
 
 
 def get_forecast_status() -> dict[str, Any]:
     """Get current forecast health status."""
-    return {
-        "status": _forecast_status,
-        "last_errors": get_forecast_errors(),
-        "error_count": len(_forecast_errors),
-    }
+    with _forecast_lock:
+        return {
+            "status": _forecast_status,
+            "last_errors": list(_forecast_errors)[-5:],
+            "error_count": len(_forecast_errors),
+        }
 
 
 @dataclass

@@ -1,4 +1,5 @@
 import logging
+import re
 from pathlib import Path
 from typing import Any, cast
 
@@ -441,6 +442,48 @@ def _validate_config_for_save(config: dict[str, Any]) -> list[dict[str, str]]:
 
     # Solar: WARNING (PV forecasts will be zero)
     if system_cfg.get("has_solar", True):
+        # REV F60 Phase 9: Validate location coordinates
+        location = system_cfg.get("location", {})
+        latitude = location.get("latitude")
+        longitude = location.get("longitude")
+
+        if latitude is None or longitude is None:
+            issues.append(
+                {
+                    "severity": "error",
+                    "message": "Solar enabled but location not configured",
+                    "guidance": "Set system.location.latitude and system.location.longitude for PV forecasting.",
+                }
+            )
+        else:
+            try:
+                lat_val = float(latitude)
+                lon_val = float(longitude)
+                if not (-90 <= lat_val <= 90):
+                    issues.append(
+                        {
+                            "severity": "error",
+                            "message": f"Invalid latitude: {latitude}",
+                            "guidance": "Latitude must be between -90 and 90 degrees.",
+                        }
+                    )
+                if not (-180 <= lon_val <= 180):
+                    issues.append(
+                        {
+                            "severity": "error",
+                            "message": f"Invalid longitude: {longitude}",
+                            "guidance": "Longitude must be between -180 and 180 degrees.",
+                        }
+                    )
+            except (ValueError, TypeError):
+                issues.append(
+                    {
+                        "severity": "error",
+                        "message": "Location coordinates must be numeric",
+                        "guidance": "Check system.location.latitude and system.location.longitude values.",
+                    }
+                )
+
         solar_arrays = system_cfg.get("solar_arrays", [])
         if not isinstance(solar_arrays, list):
             issues.append(
@@ -469,14 +512,40 @@ def _validate_config_for_save(config: dict[str, Any]) -> list[dict[str, str]]:
             )
         else:
             total_kwp = 0.0
+            # REV F60 Phase 9: Track duplicate array names
+            array_names: set[str] = set()
+
             for i, array in enumerate(solar_arrays):
+                # Check for duplicate names
+                array_name = array.get("name", f"Array {i + 1}")
+                if array_name in array_names:
+                    issues.append(
+                        {
+                            "severity": "error",
+                            "message": f"Duplicate solar array name: '{array_name}'",
+                            "guidance": "Each solar array must have a unique name.",
+                        }
+                    )
+                else:
+                    array_names.add(array_name)
+
+                # Check for invalid characters in name
+                if not re.match(r"^[\w\s\-\.]", array_name):
+                    issues.append(
+                        {
+                            "severity": "warning",
+                            "message": f"Array {i + 1} name contains special characters: '{array_name}'",
+                            "guidance": "Use only letters, numbers, spaces, hyphens, and periods in array names.",
+                        }
+                    )
+
                 kwp = float(array.get("kwp", 0) or 0)
                 total_kwp += kwp
                 if kwp <= 0:
                     issues.append(
                         {
                             "severity": "warning",
-                            "message": f"Solar array {i + 1} ('{array.get('name', i)}') has no capacity",
+                            "message": f"Solar array {i + 1} ('{array_name}') has no capacity",
                             "guidance": "Set kwp for each PV array.",
                         }
                     )

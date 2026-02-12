@@ -552,14 +552,12 @@ async def _get_forecast_data_async(
     resolution_hours = 0.25
 
     try:
-        # When using multiple arrays, lat/long must also be lists (same length as kwp_list)
-        # See REV F60 - OpenMeteo requires ALL parameters to be lists when ANY is a list
-        is_multi_array = len(kwp_list) > 1
-
+        # REV F60 Phase 6: OpenMeteo requires ALL parameters to be lists when ANY array param is a list
+        # Always wrap lat/long in lists when we have any solar arrays configured
         async def _fetch_forecast():
             async with OpenMeteoSolarForecast(
-                latitude=[latitude] * len(kwp_list) if is_multi_array else latitude,
-                longitude=[longitude] * len(kwp_list) if is_multi_array else longitude,
+                latitude=[latitude] * len(kwp_list) if kwp_list else latitude,
+                longitude=[longitude] * len(kwp_list) if kwp_list else latitude,
                 declination=tilt_list,
                 azimuth=azimuth_list,
                 dc_kwp=kwp_list,
@@ -594,6 +592,12 @@ async def _get_forecast_data_async(
                         power_watts = solar_power
                         break
                 pv_kwh_forecast.append(power_watts * 0.25 / 1000.0)
+
+        # REV F60 Phase 7: Clear forecast errors after successful forecast
+        from backend.health import clear_forecast_errors
+
+        clear_forecast_errors()
+
     except Exception as exc:
         # REV F60: Removed dangerous dummy fallback. PV forecast failure is critical.
         # Using fake solar data would cause the planner to make incorrect decisions.
