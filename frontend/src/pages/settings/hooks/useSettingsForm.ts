@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Api, ConfigResponse } from '../../../lib/api'
 import { useToast } from '../../../lib/useToast'
-import { BaseField, allFields } from '../types'
+import { BaseField } from '../types'
 import { buildFormState, buildPatch } from '../utils'
 
 export interface UseSettingsFormReturn {
@@ -38,7 +38,7 @@ export function useSettingsForm(fields: BaseField[]): UseSettingsFormReturn {
         try {
             const cfg = await Api.config()
             setConfig(cfg)
-            setForm(buildFormState(cfg as unknown as Record<string, unknown>, allFields))
+            setForm(buildFormState(cfg as unknown as Record<string, unknown>, fields))
             setFieldErrors({})
         } catch (err: unknown) {
             console.error('Failed to load configuration', err)
@@ -46,7 +46,7 @@ export function useSettingsForm(fields: BaseField[]): UseSettingsFormReturn {
         } finally {
             setLoading(false)
         }
-    }, [])
+    }, [fields])
 
     const reloadEntities = useCallback(async () => {
         setHaLoading(true)
@@ -64,6 +64,13 @@ export function useSettingsForm(fields: BaseField[]): UseSettingsFormReturn {
         reload()
         reloadEntities()
     }, [reload, reloadEntities])
+
+    // Rebuild form state when fields change (for dynamic profile fields)
+    useEffect(() => {
+        if (config && fields.length > 0) {
+            setForm(buildFormState(config, fields))
+        }
+    }, [fields, config])
 
     const validateField = useCallback(
         (key: string, value: string, currentForm: Record<string, string>) => {
@@ -173,7 +180,7 @@ export function useSettingsForm(fields: BaseField[]): UseSettingsFormReturn {
                 return false
             }
 
-            const patch = { ...buildPatch(config as unknown as Record<string, unknown>, form, allFields), ...extraPatch }
+            const patch = { ...buildPatch(config as unknown as Record<string, unknown>, form, fields), ...extraPatch }
             console.warn('[CONFIG_SAVE] Generated patch:', patch)
 
             if (Object.keys(patch).length === 0) {
@@ -229,9 +236,9 @@ export function useSettingsForm(fields: BaseField[]): UseSettingsFormReturn {
 
     const isDirty = useMemo(() => {
         if (!config) return false
-        const patch = buildPatch(config as unknown as Record<string, unknown>, form, allFields)
+        const patch = buildPatch(config as unknown as Record<string, unknown>, form, fields)
         return Object.keys(patch).length > 0
-    }, [config, form])
+    }, [config, form, fields])
 
     return {
         config,

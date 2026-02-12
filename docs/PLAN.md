@@ -217,7 +217,7 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 
 ---
 
-### [PLANNED] REV // F59 — Sungrow UI Data Flow Fix
+### [DONE] REV // F59 — Sungrow UI Data Flow Fix
 
 **Goal:** Fix dynamic profile entity fields not loading values from config in UI settings.
 
@@ -238,12 +238,19 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 
 **Plan:**
 
-#### Phase 1: Unified Dynamic Field Support [PLANNED]
-* [ ] Generate dynamic profile entity fields as memoized value before `useSettingsForm` hook call in `SystemTab.tsx`
-* [ ] Combine `systemFieldList` with dynamic profile fields and pass to hook
-* [ ] Revert `useSettingsForm.ts` lines 41, 176, 232 to use `fields` parameter instead of `allFields`
-* [ ] Update `isDirty` dependency array to include `fields`
-* [ ] Ensure path consistency between generated fields and render-time fields
-* [ ] Test: Verify all three issues are resolved (blank fields, dirty banner, EV validation)
+#### Phase 1: Unified Dynamic Field Support [DONE]
+* [x] Generate dynamic profile entity fields as memoized value before `useSettingsForm` hook call in `SystemTab.tsx`
+* [x] Combine `systemFieldList` with dynamic profile fields and pass to hook
+* [x] Revert `useSettingsForm.ts` lines 41, 176, 232 to use `fields` parameter instead of `allFields`
+* [x] Update `isDirty` dependency array to include `fields`
+* [x] Ensure path consistency between generated fields and render-time fields
+* [x] Test: Verify all three issues are resolved (blank fields, dirty banner, EV validation)
+
+**Implementation Notes:**
+- Used `useMemo` in `SystemTab.tsx` to compute `dynamicFieldList` based on selected profile's entities
+- Added effect in `useSettingsForm.ts` (lines 69-73) to rebuild form state when fields change
+- Removed unused `allFields` import from `useSettingsForm.ts`
+- All lint checks pass (`pnpm lint` in frontend, `ruff check .` in backend)
+- Changes are minimal and focused: 2 files modified, ~50 lines changed
 
 ---

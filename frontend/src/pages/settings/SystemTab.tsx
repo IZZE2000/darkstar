@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Api } from '../../lib/api'
 import Card from '../../components/Card'
@@ -16,6 +16,93 @@ import { ProfileSetupHelper } from './components/ProfileSetupHelper'
 export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }) => {
     const navigate = useNavigate()
     const [profiles, setProfiles] = useState<InverterProfile[]>([])
+
+    // Load profiles on mount
+    useEffect(() => {
+        Api.listProfiles()
+            .then((data) => setProfiles(data))
+            .catch((err) => console.error('Failed to load profiles:', err))
+    }, [])
+
+    // Standard keys that live directly in the inverter config (not in custom_entities)
+    const standardInverterKeys = useMemo(
+        () =>
+            new Set([
+                'work_mode',
+                'soc_target',
+                'grid_charging_enable',
+                'grid_charge_power',
+                'minimum_reserve',
+                'grid_max_export_power',
+                'grid_max_export_power_switch',
+                'max_charge_current',
+                'max_discharge_current',
+                'max_charge_power',
+                'max_discharge_power',
+            ]),
+        [],
+    )
+
+    // Compute dynamic field list including profile-specific entity fields
+    // This uses the form data (once loaded) to determine which profile fields to include
+    const profileName = form['system.inverter_profile']
+    const dynamicFieldList = useMemo(() => {
+        const selectedProfile = profiles.find((p) => p.name === profileName)
+
+        if (!selectedProfile || !selectedProfile.entities) {
+            return systemFieldList
+        }
+
+        const fields = [...systemFieldList]
+
+        // Add required entity fields
+        const requiredFields: BaseField[] = Object.keys(selectedProfile.entities.required || {}).map((key) => {
+            const isStandard = standardInverterKeys.has(key)
+            const label = key
+                .split('_')
+                .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+                .join(' ')
+
+            return {
+                key: isStandard ? `executor.inverter.${key}` : `executor.inverter.custom_entities.${key}`,
+                label: `${label} Entity`,
+                path: isStandard ? ['executor', 'inverter', key] : ['executor', 'inverter', 'custom_entities', key],
+                type: 'entity',
+                required: true,
+                subsection: 'Inverter Profile Entities',
+                helper: `Profile suggested mapping: ${selectedProfile.entities.required![key]}`,
+            }
+        })
+
+        // Add optional entity fields
+        const optionalFields: BaseField[] = Object.keys(selectedProfile.entities.optional || {}).map((key) => {
+            const isStandard = standardInverterKeys.has(key)
+            const label = key
+                .split('_')
+                .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+                .join(' ')
+
+            return {
+                key: isStandard ? `executor.inverter.${key}` : `executor.inverter.custom_entities.${key}`,
+                label: `${label} Entity`,
+                path: isStandard ? ['executor', 'inverter', key] : ['executor', 'inverter', 'custom_entities', key],
+                type: 'entity',
+                required: false,
+                subsection: 'Inverter Profile Entities',
+                helper: `Profile suggested mapping: ${selectedProfile.entities.optional![key]}`,
+            }
+        })
+
+        // Filter out duplicates
+        const existingKeys = new Set(fields.map((f) => f.key))
+        const uniqueRequired = requiredFields.filter((f) => !existingKeys.has(f.key))
+        const uniqueOptional = optionalFields.filter((f) => !existingKeys.has(f.key))
+
+        fields.push(...uniqueRequired, ...uniqueOptional)
+
+        return fields
+    }, [profileName, profiles, standardInverterKeys])
+
     const {
         form,
         fieldErrors,
@@ -28,103 +115,74 @@ export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }
         save,
         reloadEntities,
         isDirty,
-    } = useSettingsForm(systemFieldList)
+    } = useSettingsForm(dynamicFieldList)
 
     const loading = settingsLoading || profiles.length === 0
 
-    useEffect(() => {
-        Api.listProfiles()
-            .then((data) => setProfiles(data))
-            .catch((err) => console.error('Failed to load profiles:', err))
-    }, [])
-
-    // Standard keys that live directly in the inverter config (not in custom_entities)
-    const standardInverterKeys = new Set([
-        'work_mode',
-        'soc_target',
-        'grid_charging_enable',
-        'grid_charge_power',
-        'minimum_reserve',
-        'grid_max_export_power',
-        'grid_max_export_power_switch',
-        'max_charge_current',
-        'max_discharge_current',
-        'max_charge_power',
-        'max_discharge_power',
-    ])
-
     // Update systemSections dynamic options and conditional visibility
-    const dynamicSections = systemSections.map((section) => {
-        if (section.title === 'System Profile') {
-            return {
-                ...section,
-                fields: section.fields.map((field) => {
-                    if (field.key === 'system.inverter_profile') {
-                        return {
-                            ...field,
-                            options: profiles.map((p) => ({
-                                label: p.name.charAt(0).toUpperCase() + p.name.slice(1),
-                                value: p.name,
-                            })),
-                        }
-                    }
-                    if (field.key === 'executor.inverter.control_unit') {
-                        const selectedProfileName = form['system.inverter_profile']
-                        const selectedProfile = profiles.find((p) => p.name === selectedProfileName)
-
-                        // Hide control_unit if profile behavior defines it strongly
-                        if (selectedProfile && selectedProfile.name !== 'generic') {
-                            return { ...field, disabled: true }
-                        }
-                    }
-                    return field
-                }),
-            }
-        }
-
-        if (section.title === 'Required HA Control Entities' || section.title === 'Optional HA Input Sensors') {
-            const selectedProfileName = form['system.inverter_profile']
-            const selectedProfile = profiles.find((p) => p.name === selectedProfileName)
-
-            if (selectedProfile && selectedProfile.entities) {
-                const isRequiredSection = section.title === 'Required HA Control Entities'
-                const profileEntities = isRequiredSection
-                    ? selectedProfile.entities.required
-                    : selectedProfile.entities.optional
-
-                const profileFields: BaseField[] = Object.keys(profileEntities).map((key) => {
-                    const isStandard = standardInverterKeys.has(key)
-                    const label = key
-                        .split('_')
-                        .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-                        .join(' ')
-
-                    return {
-                        key: isStandard ? `executor.inverter.${key}` : `executor.inverter.custom_entities.${key}`,
-                        label: `${label} Entity`,
-                        path: isStandard
-                            ? ['executor', 'inverter', key]
-                            : ['executor', 'inverter', 'custom_entities', key],
-                        type: 'entity',
-                        required: isRequiredSection,
-                        subsection: 'Inverter Profile Entities',
-                        helper: `Profile suggested mapping: ${profileEntities[key]}`,
-                    }
-                })
-
-                // Filter out duplicates if already in section.fields
-                const existingKeys = new Set(section.fields.map((f) => f.key))
-                const uniqueProfileFields = profileFields.filter((f) => !existingKeys.has(f.key))
-
+    const dynamicSections = useMemo(() => {
+        return systemSections.map((section) => {
+            if (section.title === 'System Profile') {
                 return {
                     ...section,
-                    fields: [...section.fields, ...uniqueProfileFields],
+                    fields: section.fields.map((field) => {
+                        if (field.key === 'system.inverter_profile') {
+                            return {
+                                ...field,
+                                options: profiles.map((p) => ({
+                                    label: p.name.charAt(0).toUpperCase() + p.name.slice(1),
+                                    value: p.name,
+                                })),
+                            }
+                        }
+                        if (field.key === 'executor.inverter.control_unit') {
+                            const selectedProfileName = form['system.inverter_profile']
+                            const selectedProfile = profiles.find((p) => p.name === selectedProfileName)
+
+                            // Hide control_unit if profile behavior defines it strongly
+                            if (selectedProfile && selectedProfile.name !== 'generic') {
+                                return { ...field, disabled: true }
+                            }
+                        }
+                        return field
+                    }),
                 }
             }
-        }
 
-        return section
-    })
+            // Profile entity fields are now in dynamicFieldList, so they will render automatically
+            // We just need to ensure they're grouped in the right sections
+            if (section.title === 'Required HA Control Entities' || section.title === 'Optional HA Input Sensors') {
+                const selectedProfileName = form['system.inverter_profile']
+                const selectedProfile = profiles.find((p) => p.name === selectedProfileName)
+
+                if (selectedProfile && selectedProfile.entities) {
+                    const isRequiredSection = section.title === 'Required HA Control Entities'
+                    const profileEntities = isRequiredSection
+                        ? selectedProfile.entities.required
+                        : selectedProfile.entities.optional
+
+                    const profileFieldKeys = Object.keys(profileEntities || {}).map((key) => {
+                        const isStandard = standardInverterKeys.has(key)
+                        return isStandard ? `executor.inverter.${key}` : `executor.inverter.custom_entities.${key}`
+                    })
+
+                    // Include profile entity fields that are in dynamicFieldList
+                    const profileFieldsFromDynamic = dynamicFieldList.filter((f) => profileFieldKeys.includes(f.key))
+
+                    // Filter out duplicates if already in section.fields
+                    const existingKeys = new Set(section.fields.map((f) => f.key))
+                    const uniqueProfileFields = profileFieldsFromDynamic.filter((f) => !existingKeys.has(f.key))
+
+                    return {
+                        ...section,
+                        fields: [...section.fields, ...uniqueProfileFields],
+                    }
+                }
+            }
+
+            return section
+        })
+    }, [profiles, form, standardInverterKeys, dynamicFieldList])
 
     const blocker = useUnsavedChangesGuard(isDirty)
 
