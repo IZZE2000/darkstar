@@ -24,25 +24,6 @@ export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }
             .catch((err) => console.error('Failed to load profiles:', err))
     }, [])
 
-    // Standard keys that live directly in the inverter config (not in custom_entities)
-    const standardInverterKeys = useMemo(
-        () =>
-            new Set([
-                'work_mode',
-                'soc_target',
-                'grid_charging_enable',
-                'grid_charge_power',
-                'minimum_reserve',
-                'grid_max_export_power',
-                'grid_max_export_power_switch',
-                'max_charge_current',
-                'max_discharge_current',
-                'max_charge_power',
-                'max_discharge_power',
-            ]),
-        [],
-    )
-
     const {
         form,
         fieldErrors,
@@ -89,40 +70,9 @@ export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }
                 }
             }
 
-            // Profile entity fields are now in dynamicFieldList, so they will render automatically
-            // We just need to ensure they're grouped in the right sections
-            if (section.title === 'Required HA Control Entities' || section.title === 'Optional HA Input Sensors') {
-                const selectedProfileName = form['system.inverter_profile']
-                const selectedProfile = profiles.find((p) => p.name === selectedProfileName)
-
-                if (selectedProfile && selectedProfile.entities) {
-                    const isRequiredSection = section.title === 'Required HA Control Entities'
-                    const profileEntities = isRequiredSection
-                        ? selectedProfile.entities.required
-                        : selectedProfile.entities.optional
-
-                    const profileFieldKeys = Object.keys(profileEntities || {}).map((key) => {
-                        const isStandard = standardInverterKeys.has(key)
-                        return isStandard ? `executor.inverter.${key}` : `executor.inverter.custom_entities.${key}`
-                    })
-
-                    // Include profile entity fields that are in dynamicFieldList
-                    const profileFieldsFromDynamic = dynamicFieldList.filter((f) => profileFieldKeys.includes(f.key))
-
-                    // Filter out duplicates if already in section.fields
-                    const existingKeys = new Set(section.fields.map((f) => f.key))
-                    const uniqueProfileFields = profileFieldsFromDynamic.filter((f) => !existingKeys.has(f.key))
-
-                    return {
-                        ...section,
-                        fields: [...section.fields, ...uniqueProfileFields],
-                    }
-                }
-            }
-
             return section
         })
-    }, [profiles, form, standardInverterKeys])
+    }, [profiles, form])
 
     const blocker = useUnsavedChangesGuard(isDirty)
 
