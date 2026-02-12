@@ -370,7 +370,7 @@ OpenMeteoSolarForecast(
 
 ---
 
-### [DRAFT] REV // F61 — EV Penalty Levels Architecture Cleanup
+### [DONE] REV // F61 — EV Penalty Levels Architecture Cleanup
 
 **Goal:** Fix the architectural mess with EV penalty levels being defined in multiple places inconsistently, and restore missing UI for editing per-charger penalty levels.
 
@@ -390,47 +390,47 @@ The penalty levels should be SINGLE SOURCE OF TRUTH in the `ev_chargers[]` array
 
 **Plan:**
 
-#### Phase 1: Fix HA Socket Config Path Bug [DRAFT]
-* [ ] Update `backend/ha_socket.py:419` to read from correct path `executor.ev_charger`
-* [ ] Change: `cfg.get("ev_charger", {})` → `cfg.get("executor", {}).get("ev_charger", {})`
-* [ ] Test: Verify replan trigger works when EV plugs in with `replan_on_plugin: true`
-* [ ] Test: Verify no replan when `replan_on_plugin: false`
+#### Phase 1: Fix HA Socket Config Path Bug [DONE]
+* [x] Update `backend/ha_socket.py:419` to read from correct path `executor.ev_charger`
+* [x] Change: `cfg.get("ev_charger", {})` → `cfg.get("executor", {}).get("ev_charger", {})`
+* [x] Test: Verify replan trigger works when EV plugs in with `replan_on_plugin: true`
+* [x] Test: Verify no replan when `replan_on_plugin: false`
 
-#### Phase 2: Remove Dead Code from Executor Config [DRAFT]
-* [ ] Remove `penalty_levels` field from `EVChargerConfig` dataclass (`executor/config.py:160`)
-* [ ] Remove penalty_levels loading from executor config builder (`executor/config.py:383`)
-* [ ] Verify no other code references `executor.ev_charger.penalty_levels`
-* [ ] Test: Executor still loads config correctly without penalty_levels field
+#### Phase 2: Remove Dead Code from Executor Config [DONE]
+* [x] Remove `penalty_levels` field from `EVChargerConfig` dataclass (`executor/config.py:160`)
+* [x] Remove penalty_levels loading from executor config builder (`executor/config.py:383`)
+* [x] Verify no other code references `executor.ev_charger.penalty_levels`
+* [x] Test: Executor still loads config correctly without penalty_levels field
 
-#### Phase 3: Add Per-Charger Penalty Levels UI to EntityArrayEditor [DRAFT]
-* [ ] Add `penalty_levels` editor component inside each EV charger card in `EntityArrayEditor.tsx`
-* [ ] UI should allow editing array of `{max_soc: number, penalty_sek: number}` objects
-* [ ] Add "Add Level" and "Remove Level" buttons
-* [ ] Validate: max_soc between 0-100, penalty_sek >= 0
-* [ ] Show default levels if none set (copy from `createDefaultEVCharger`)
-* [ ] Test: Add EV charger, edit penalty levels, save, verify config updated correctly
+#### Phase 3: Add Per-Charger Penalty Levels UI to EntityArrayEditor [DONE]
+* [x] Add `penalty_levels` editor component inside each EV charger card in `EntityArrayEditor.tsx`
+* [x] UI should allow editing array of `{max_soc: number, penalty_sek: number}` objects
+* [x] Add "Add Level" and "Remove Level" buttons
+* [x] Validate: max_soc between 0-100, penalty_sek >= 0
+* [x] Show default levels if none set (copy from `createDefaultEVCharger`)
+* [x] Test: Add EV charger, edit penalty levels, save, verify config updated correctly
 
-#### Phase 4: Add Global Replan Triggers UI Section [DRAFT]
-* [ ] Create new UI section for `executor.ev_charger` settings
-* [ ] Fields: `replan_on_plugin` (boolean), `replan_on_unplug` (boolean)
-* [ ] Place in Settings > Executor tab (not Parameters, since it's control-related)
-* [ ] Helper text explaining these trigger immediate re-planning on EV state changes
-* [ ] Test: Toggle settings, save, verify config updated at `executor.ev_charger.*`
+#### Phase 4: Add Global Replan Triggers UI Section [DONE]
+* [x] Create new UI section for `executor.ev_charger` settings
+* [x] Fields: `replan_on_plugin` (boolean), `replan_on_unplug` (boolean)
+* [x] Place in Settings > Executor tab (not Parameters, since it's control-related)
+* [x] Helper text explaining these trigger immediate re-planning on EV state changes
+* [x] Test: Toggle settings, save, verify config updated at `executor.ev_charger.*`
 
-#### Phase 5: Add Config Validation and Documentation [DRAFT]
-* [ ] Add validation warning if user has `executor.ev_charger.penalty_levels` set (legacy)
-* [ ] Warning message: "This setting is deprecated. Use per-charger penalty levels in EV Chargers section instead"
-* [ ] Update `config.default.yaml` comments to clarify:
-  - `ev_chargers[].penalty_levels` = For planner optimization
-  - `executor.ev_charger.replan_on_*` = For control triggers
-* [ ] Add inline help text in UI explaining what penalty levels do
+#### Phase 5: Add Config Validation and Documentation [DONE]
+* [x] Add validation warning if user has `executor.ev_charger.penalty_levels` set (legacy)
+* [x] Warning message: "This setting is deprecated. Use per-charger penalty levels in EV Chargers section instead"
+* [x] Update `config.default.yaml` comments to clarify:
+   - `ev_chargers[].penalty_levels` = For planner optimization
+   - `executor.ev_charger.replan_on_*` = For control triggers
+* [x] Add inline help text in UI explaining what penalty levels do
 
-#### Phase 6: Integration Testing [DRAFT]
-* [ ] **Test 1:** HA Socket replan trigger with correct config path
-* [ ] **Test 2:** EV charger with custom penalty levels saves and loads correctly
-* [ ] **Test 3:** Planner receives correct aggregated penalty levels from multiple EVs
-* [ ] **Test 4:** Executor ignores deprecated penalty_levels field without error
-* [ ] **Test 5:** UI shows penalty levels editor, can add/remove/edit levels
-* [ ] **Test 6:** Config validation warns about deprecated executor.ev_charger.penalty_levels
+#### Phase 6: Integration Testing [DONE]
+* [x] **Test 1:** HA Socket replan trigger with correct config path
+* [x] **Test 2:** EV charger with custom penalty levels saves and loads correctly
+* [x] **Test 3:** Planner receives correct aggregated penalty levels from multiple EVs
+* [x] **Test 4:** Executor ignores deprecated penalty_levels field without error
+* [x] **Test 5:** UI shows penalty levels editor, can add/remove/edit levels
+* [x] **Test 6:** Config validation warns about deprecated executor.ev_charger.penalty_levels
 
 ---
