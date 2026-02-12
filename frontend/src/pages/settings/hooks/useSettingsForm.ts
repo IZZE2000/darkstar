@@ -42,6 +42,7 @@ export function useSettingsForm(baseFields: BaseField[], profiles: InverterProfi
     const [form, setForm] = useState<Record<string, string>>({})
     const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
     const [loading, setLoading] = useState(true)
+    const [formInitialized, setFormInitialized] = useState(false)
     const [saving, setSaving] = useState(false)
     const [statusMessage, setStatusMessage] = useState<string | null>(null)
     const [haEntities, setHaEntities] = useState<{ entity_id: string; friendly_name: string; domain: string }[]>([])
@@ -149,6 +150,7 @@ export function useSettingsForm(baseFields: BaseField[], profiles: InverterProfi
         if (config && fields.length > 0) {
             setForm(buildFormState(config as unknown as Record<string, unknown>, fields))
             setFieldErrors({})
+            setFormInitialized(true)
         }
     }, [fields, config])
 
@@ -249,6 +251,7 @@ export function useSettingsForm(baseFields: BaseField[], profiles: InverterProfi
             setForm(buildFormState(config as unknown as Record<string, unknown>, fields))
             setFieldErrors({})
             setStatusMessage(null)
+            setFormInitialized(true)
         }
     }, [config, fields])
 
@@ -318,10 +321,10 @@ export function useSettingsForm(baseFields: BaseField[], profiles: InverterProfi
     )
 
     const isDirty = useMemo(() => {
-        if (!config) return false
+        if (!config || !formInitialized) return false
         const patch = buildPatch(config as unknown as Record<string, unknown>, form, fields)
         return Object.keys(patch).length > 0
-    }, [config, form, fields])
+    }, [config, form, fields, formInitialized])
 
     return {
         config,

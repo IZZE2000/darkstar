@@ -101,8 +101,15 @@ export function buildFormState(config: Record<string, unknown> | null, fields: B
             state[field.key] = value === true ? 'true' : 'false'
         } else if (field.type === 'array' && Array.isArray(value)) {
             state[field.key] = value.join(', ')
+        } else if (field.type === 'solar_arrays' || field.type === 'penalty_levels' || field.type === 'entity_array') {
+            // Handle complex array/object types - stringify if array/object, default to empty array
+            if (Array.isArray(value) || (value !== null && typeof value === 'object')) {
+                state[field.key] = JSON.stringify(value)
+            } else {
+                state[field.key] = JSON.stringify([])
+            }
         } else if (value !== null && typeof value === 'object') {
-            // Handle objects (like dashboard.overlay_defaults) by stringifying them as JSON
+            // Handle other objects (like dashboard.overlay_defaults) by stringifying them as JSON
             state[field.key] = JSON.stringify(value)
         } else {
             state[field.key] = value !== undefined && value !== null ? String(value) : ''
@@ -161,7 +168,12 @@ export function areEqual(a: unknown, b: unknown, type: string): boolean {
     }
 
     if (type === 'solar_arrays' || type === 'penalty_levels' || type === 'entity_array') {
-        return JSON.stringify(a) === JSON.stringify(b)
+        // Treat undefined as equivalent to empty array for array/object types
+        const normalize = (v: unknown) => {
+            if (v === undefined || v === null) return '[]'
+            return JSON.stringify(v)
+        }
+        return normalize(a) === normalize(b)
     }
 
     // Strict equality for others (handles numbers correctly)
@@ -179,7 +191,14 @@ export function buildPatch(
     let patch: Record<string, unknown> = {}
     const debug = true
 
+    // System toggle fields that are only for section visibility (not editable in this tab)
+    const visibilityOnlyFields = new Set(['system.has_ev_charger', 'system.has_water_heater'])
+
     fields.forEach((field) => {
+        // Skip visibility-only fields - they're not meant to be edited in this tab
+        if (visibilityOnlyFields.has(field.key)) return
+        // Skip virtual/UI-only fields that don't correspond to actual config paths
+        if (field.path.length === 0) return
         if (field.companionKey) {
             const rawCompanion = form[field.companionKey]
             if (rawCompanion !== undefined) {

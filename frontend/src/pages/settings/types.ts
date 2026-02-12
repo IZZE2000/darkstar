@@ -1444,7 +1444,13 @@ export const advancedSections: SettingsSection[] = [
 ]
 
 export const systemFieldList = systemSections.flatMap((section) => section.fields)
-export const parameterFieldList = parameterSections.flatMap((section) => section.fields)
+
+// Include system toggles that control Parameters tab section visibility
+const systemToggleFields = systemFieldList.filter(
+    (f) => f.key === 'system.has_ev_charger' || f.key === 'system.has_water_heater',
+)
+
+export const parameterFieldList = [...systemToggleFields, ...parameterSections.flatMap((section) => section.fields)]
 export const uiFieldList = uiSections.flatMap((section) => section.fields)
 export const advancedFieldList = advancedSections.flatMap((section) => section.fields)
 

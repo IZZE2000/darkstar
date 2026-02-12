@@ -261,4 +261,18 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 
 **Root Cause:** Parameters tab has legacy EV Charger section that doesn't match current config structure. The fields `ev_charger.penalty_levels`, `ev_charger.replan_on_plugin`, etc. don't exist in config, causing `buildPatch` to detect them as "changes" when comparing form (which has default values) against config (which has undefined).
 
+#### Phase 3: Virtual Field Patch Detection Fix [DONE]
+* [x] Add check in `buildPatch` to skip virtual/UI-only fields with empty paths
+* [x] The `ev_charger.info_box` field has `path: []` (empty array) because it's display-only
+* [x] `buildFormState` was storing entire config object for this field
+* [x] `buildPatch` compared `'[object Object]'` string against config object → always different
+* [x] This caused infinite `[CONFIG_PATCH]` console warnings on every render
+* [x] **Fix:** Added `if (field.path.length === 0) return` in `utils.ts:200`
+
+**Implementation:**
+```typescript
+// In buildPatch function, after visibilityOnlyFields check:
+if (field.path.length === 0) return  // Skip virtual/UI-only fields
+```
+
 ---

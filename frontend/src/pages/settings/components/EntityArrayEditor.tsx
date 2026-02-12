@@ -222,16 +222,24 @@ export const EntityArrayEditor: React.FC<EntityArrayEditorProps> = ({
                                                 onCheckedChange={() => toggleEnabled(index)}
                                             />
                                         </span>
-                                        <button
-                                            type="button"
+                                        <span
                                             onClick={(e) => {
                                                 e.stopPropagation()
                                                 removeEntity(index)
                                             }}
-                                            className="p-1.5 rounded-lg text-muted hover:text-bad hover:bg-bad/10 transition-colors ml-2"
+                                            className="p-1.5 rounded-lg text-muted hover:text-bad hover:bg-bad/10 transition-colors ml-2 cursor-pointer"
+                                            role="button"
+                                            aria-label="Delete"
+                                            tabIndex={0}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter' || e.key === ' ') {
+                                                    e.stopPropagation()
+                                                    removeEntity(index)
+                                                }
+                                            }}
                                         >
                                             <Trash2 size={14} />
-                                        </button>
+                                        </span>
                                     </>
                                 )}
                                 {expandedIndex === index ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
