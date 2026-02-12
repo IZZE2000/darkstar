@@ -551,11 +551,14 @@ async def _get_forecast_data_async(
     resolution_hours = 0.25
 
     try:
+        # When using multiple arrays, lat/long must also be lists (same length as kwp_list)
+        # See REV F60 - OpenMeteo requires ALL parameters to be lists when ANY is a list
+        is_multi_array = len(kwp_list) > 1
 
         async def _fetch_forecast():
             async with OpenMeteoSolarForecast(
-                latitude=latitude,
-                longitude=longitude,
+                latitude=[latitude] * len(kwp_list) if is_multi_array else latitude,
+                longitude=[longitude] * len(kwp_list) if is_multi_array else longitude,
                 declination=tilt_list,
                 azimuth=azimuth_list,
                 dc_kwp=kwp_list,
