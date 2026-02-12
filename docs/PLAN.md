@@ -299,3 +299,73 @@ if (field.path.length === 0) return  // Skip virtual/UI-only fields
 **Root Cause:** The accordion header is a `<button>` element, but it contained a delete `<button>` child. HTML specification prohibits nested buttons. This caused React hydration warnings and potential accessibility issues.
 
 ---
+
+### [DRAFT] REV // F60 — Fix Open-Meteo Multi-Array PV Forecast Failure
+
+**Goal:** Fix catastrophic PV forecast failure for multi-array configurations and remove dangerous fallback that generates fake solar data.
+
+**Context:** A Fronius beta tester reported that PV forecasting "doesn't work." Investigation revealed that the Open-Meteo Solar Forecast library fails with "parameters must be of the same length" when using multiple solar arrays. The code then silently falls back to a dummy sine wave forecast (1.25 kWh per slot peak) which is completely unrealistic and causes the planner to make terrible decisions.
+
+**Root Cause:** The OpenMeteoSolarForecast library validates that ALL parameters (latitude, longitude, azimuth, declination, dc_kwp) are lists of the same length when ANY parameter is a list (multi-array mode). Our code passes latitude/longitude as floats while passing azimuth/tilt/kwp as lists, triggering the validation error.
+
+**Current buggy code (inputs.py:556-561):**
+```python
+OpenMeteoSolarForecast(
+    latitude=latitude,          # ← FLOAT (single value) ❌
+    longitude=longitude,        # ← FLOAT (single value) ❌
+    declination=tilt_list,      # ← LIST with N items
+    azimuth=azimuth_list,       # ← LIST with N items
+    dc_kwp=kwp_list,            # ← LIST with N items
+)
+```
+
+**Required format:**
+```python
+OpenMeteoSolarForecast(
+    latitude=[latitude] * len(kwp_list),      # ← Must be list [lat, lat, ...]
+    longitude=[longitude] * len(kwp_list),    # ← Must be list [lon, lon, ...]
+    declination=tilt_list,
+    azimuth=azimuth_list,
+    dc_kwp=kwp_list,
+)
+```
+
+**Plan:**
+
+#### Phase 1: Fix OpenMeteo Multi-Array Call [DRAFT]
+* [ ] Update `inputs.py` line 556-561 to wrap latitude/longitude in lists when `solar_arrays` has multiple items
+* [ ] Keep backward compatibility: single array can still use float (library auto-converts to list)
+* [ ] Add debug logging showing the actual parameters passed to OpenMeteo
+* [ ] Test with beta tester's config (2 arrays: Öst + Väst)
+* [ ] Test with single array config (backward compatibility)
+
+#### Phase 2: Remove Dangerous Dummy PV Fallback [DRAFT]
+* [ ] Replace dummy sine wave fallback in `inputs.py` lines 593-603 with hard error
+* [ ] Create custom exception `PVForecastError` in backend/exceptions.py
+* [ ] Raise `PVForecastError` with detailed message including the original exception
+* [ ] Planner should catch this and abort with clear error message
+* [ ] Remove the `max(0, math.sin(...)) * 1.25` dummy forecast code entirely
+* [ ] Test: Verify planner aborts when Open-Meteo fails instead of using fake data
+
+#### Phase 3: Add Forecast Error Health Tracking [DRAFT]
+* [ ] Add `forecast_errors` deque to health tracking system (like executor's `recent_errors`)
+* [ ] Track PV forecast failures with timestamp and error message
+* [ ] Expose via `/api/health` endpoint under new `forecast` section
+* [ ] Add `forecast_status` field: "ok", "degraded", "error"
+* [ ] Test: Verify errors appear in health endpoint after forecast failure
+
+#### Phase 4: Add Persistent Error Banner [DRAFT]
+* [ ] Update `SystemAlert` component to show forecast errors as critical banner
+* [ ] Banner message: "PV Forecast Failed: Using invalid fallback data. Planning may be inaccurate."
+* [ ] Banner should be dismissible but reappear on next health check if error persists
+* [ ] Use existing `banner-error` style (red banner like shadow mode)
+* [ ] Update Dashboard.tsx to include forecast errors in health status check
+* [ ] Test: Verify banner appears when forecast fails and stays until dismissed
+
+#### Phase 5: Add Config Validation [DRAFT]
+* [ ] Add validation in `backend/api/routers/config.py` to ensure all solar arrays have required fields
+* [ ] Check: kwp > 0, azimuth between 0-360, tilt between 0-90
+* [ ] Add validation error messages with specific array index and field name
+* [ ] Test: Verify validation catches malformed array configurations
+
+---
