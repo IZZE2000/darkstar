@@ -216,3 +216,34 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 **Implementation Complete!**
 
 ---
+
+### [PLANNED] REV // F59 — Sungrow UI Data Flow Fix
+
+**Goal:** Fix dynamic profile entity fields not loading values from config in UI settings.
+
+**Context:** Three related issues reported by Sungrow beta testers (and reproducible):
+1. **Blank entity fields** - `ems_mode`, `forced_charge_discharge_cmd` appear empty in UI but exist in config
+2. **"Unsaved changes" banner** - Shows immediately on page load, blocks navigation
+3. **"All EV chargers are disabled" error** - Validation fails when saving
+
+**Root Cause (Commit 09d903e):** Yesterday's commit changed `useSettingsForm` to use static `allFields` instead of the `fields` parameter to "detect dynamic profile field changes". This broke everything:
+- `buildFormState(cfg, allFields)` → dynamic fields initialized to `""`
+- `buildPatch(config, form, allFields)` → empty form vs real config = always dirty
+- Form values never load for dynamic profile/EV charger fields
+
+**Fix Strategy:**
+- Generate dynamic profile entity fields as memoized array in `SystemTab.tsx` BEFORE `useSettingsForm` hook
+- Combine with `systemFieldList` and pass complete list to hook
+- Revert `useSettingsForm.ts` to use `fields` parameter consistently (not hardcoded `allFields`)
+
+**Plan:**
+
+#### Phase 1: Unified Dynamic Field Support [PLANNED]
+* [ ] Generate dynamic profile entity fields as memoized value before `useSettingsForm` hook call in `SystemTab.tsx`
+* [ ] Combine `systemFieldList` with dynamic profile fields and pass to hook
+* [ ] Revert `useSettingsForm.ts` lines 41, 176, 232 to use `fields` parameter instead of `allFields`
+* [ ] Update `isDirty` dependency array to include `fields`
+* [ ] Ensure path consistency between generated fields and render-time fields
+* [ ] Test: Verify all three issues are resolved (blank fields, dirty banner, EV validation)
+
+---
