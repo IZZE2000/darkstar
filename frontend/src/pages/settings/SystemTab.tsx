@@ -4,7 +4,7 @@ import { Api } from '../../lib/api'
 import Card from '../../components/Card'
 import { useSettingsForm } from './hooks/useSettingsForm'
 import { SettingsField } from './components/SettingsField'
-import { systemFieldList, systemSections, InverterProfile, BaseField } from './types'
+import { systemFieldList, systemSections, InverterProfile } from './types'
 import { shouldRenderField } from './logic'
 import { motion, AnimatePresence } from 'framer-motion'
 import { AdditionalAdvancedNotice, GlobalAdvancedLockedNotice } from './components/AdvancedLockedNotice'
@@ -43,66 +43,6 @@ export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }
         [],
     )
 
-    // Compute dynamic field list including profile-specific entity fields
-    // This uses the form data (once loaded) to determine which profile fields to include
-    const profileName = form['system.inverter_profile']
-    const dynamicFieldList = useMemo(() => {
-        const selectedProfile = profiles.find((p) => p.name === profileName)
-
-        if (!selectedProfile || !selectedProfile.entities) {
-            return systemFieldList
-        }
-
-        const fields = [...systemFieldList]
-
-        // Add required entity fields
-        const requiredFields: BaseField[] = Object.keys(selectedProfile.entities.required || {}).map((key) => {
-            const isStandard = standardInverterKeys.has(key)
-            const label = key
-                .split('_')
-                .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-                .join(' ')
-
-            return {
-                key: isStandard ? `executor.inverter.${key}` : `executor.inverter.custom_entities.${key}`,
-                label: `${label} Entity`,
-                path: isStandard ? ['executor', 'inverter', key] : ['executor', 'inverter', 'custom_entities', key],
-                type: 'entity',
-                required: true,
-                subsection: 'Inverter Profile Entities',
-                helper: `Profile suggested mapping: ${selectedProfile.entities.required![key]}`,
-            }
-        })
-
-        // Add optional entity fields
-        const optionalFields: BaseField[] = Object.keys(selectedProfile.entities.optional || {}).map((key) => {
-            const isStandard = standardInverterKeys.has(key)
-            const label = key
-                .split('_')
-                .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-                .join(' ')
-
-            return {
-                key: isStandard ? `executor.inverter.${key}` : `executor.inverter.custom_entities.${key}`,
-                label: `${label} Entity`,
-                path: isStandard ? ['executor', 'inverter', key] : ['executor', 'inverter', 'custom_entities', key],
-                type: 'entity',
-                required: false,
-                subsection: 'Inverter Profile Entities',
-                helper: `Profile suggested mapping: ${selectedProfile.entities.optional![key]}`,
-            }
-        })
-
-        // Filter out duplicates
-        const existingKeys = new Set(fields.map((f) => f.key))
-        const uniqueRequired = requiredFields.filter((f) => !existingKeys.has(f.key))
-        const uniqueOptional = optionalFields.filter((f) => !existingKeys.has(f.key))
-
-        fields.push(...uniqueRequired, ...uniqueOptional)
-
-        return fields
-    }, [profileName, profiles, standardInverterKeys])
-
     const {
         form,
         fieldErrors,
@@ -115,7 +55,7 @@ export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }
         save,
         reloadEntities,
         isDirty,
-    } = useSettingsForm(dynamicFieldList)
+    } = useSettingsForm(systemFieldList, profiles)
 
     const loading = settingsLoading || profiles.length === 0
 
@@ -182,24 +122,23 @@ export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }
 
             return section
         })
-    }, [profiles, form, standardInverterKeys, dynamicFieldList])
+    }, [profiles, form, standardInverterKeys])
 
     const blocker = useUnsavedChangesGuard(isDirty)
 
     const [haTestStatus, setHaTestStatus] = useState<string | null>(null)
 
-    const profileName = form['system.inverter_profile']
     const unit = form['executor.inverter.control_unit']
 
     // Sync unit based on profile behavior
     useEffect(() => {
-        const selectedProfile = profiles.find((p) => p.name === profileName)
+        const selectedProfile = profiles.find((p) => p.name === form['system.inverter_profile'])
         if (selectedProfile && selectedProfile.behavior?.control_unit) {
             if (unit !== selectedProfile.behavior.control_unit) {
                 handleChange('executor.inverter.control_unit', selectedProfile.behavior.control_unit)
             }
         }
-    }, [profileName, unit, handleChange, profiles])
+    }, [form, unit, handleChange, profiles])
 
     const handleApplySuggestions = (suggestions: Record<string, unknown>) => {
         Object.entries(suggestions).forEach(([key, value]) => {
@@ -241,7 +180,11 @@ export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }
         <div className="space-y-4">
             <UnsavedChangesBanner visible={isDirty} onSave={() => save()} saving={saving} />
 
-            <ProfileSetupHelper profileName={profileName} currentForm={form} onApply={handleApplySuggestions} />
+            <ProfileSetupHelper
+                profileName={form['system.inverter_profile']}
+                currentForm={form}
+                onApply={handleApplySuggestions}
+            />
 
             {/* HA Add-on Guidance Banner */}
 

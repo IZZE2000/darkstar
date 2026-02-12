@@ -1,8 +1,23 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Api, ConfigResponse } from '../../../lib/api'
 import { useToast } from '../../../lib/useToast'
-import { BaseField } from '../types'
+import { BaseField, InverterProfile } from '../types'
 import { buildFormState, buildPatch } from '../utils'
+
+// Standard keys that live directly in the inverter config (not in custom_entities)
+const standardInverterKeys = new Set([
+    'work_mode',
+    'soc_target',
+    'grid_charging_enable',
+    'grid_charge_power',
+    'minimum_reserve',
+    'grid_max_export_power',
+    'grid_max_export_power_switch',
+    'max_charge_current',
+    'max_discharge_current',
+    'max_charge_power',
+    'max_discharge_power',
+])
 
 export interface UseSettingsFormReturn {
     config: ConfigResponse | null
@@ -21,7 +36,7 @@ export interface UseSettingsFormReturn {
     reloadEntities: () => Promise<void>
 }
 
-export function useSettingsForm(fields: BaseField[]): UseSettingsFormReturn {
+export function useSettingsForm(baseFields: BaseField[], profiles: InverterProfile[] = []): UseSettingsFormReturn {
     const { toast } = useToast()
     const [config, setConfig] = useState<ConfigResponse | null>(null)
     const [form, setForm] = useState<Record<string, string>>({})
@@ -32,21 +47,85 @@ export function useSettingsForm(fields: BaseField[]): UseSettingsFormReturn {
     const [haEntities, setHaEntities] = useState<{ entity_id: string; friendly_name: string; domain: string }[]>([])
     const [haLoading, setHaLoading] = useState(false)
 
+    // Compute dynamic field list including profile-specific entity fields
+    // This uses the config data to determine which profile fields to include
+    const fields = useMemo(() => {
+        if (!config || profiles.length === 0) {
+            return baseFields
+        }
+
+        // Get profile name from config
+        const profileName = (config as unknown as Record<string, unknown>).system?.inverter_profile
+        const selectedProfile = profiles.find((p) => p.name === profileName)
+
+        if (!selectedProfile || !selectedProfile.entities) {
+            return baseFields
+        }
+
+        const dynamicFields = [...baseFields]
+
+        // Add required entity fields
+        const requiredFields: BaseField[] = Object.keys(selectedProfile.entities.required || {}).map((key) => {
+            const isStandard = standardInverterKeys.has(key)
+            const label = key
+                .split('_')
+                .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+                .join(' ')
+
+            return {
+                key: isStandard ? `executor.inverter.${key}` : `executor.inverter.custom_entities.${key}`,
+                label: `${label} Entity`,
+                path: isStandard ? ['executor', 'inverter', key] : ['executor', 'inverter', 'custom_entities', key],
+                type: 'entity',
+                required: true,
+                subsection: 'Inverter Profile Entities',
+                helper: `Profile suggested mapping: ${selectedProfile.entities.required![key]}`,
+            }
+        })
+
+        // Add optional entity fields
+        const optionalFields: BaseField[] = Object.keys(selectedProfile.entities.optional || {}).map((key) => {
+            const isStandard = standardInverterKeys.has(key)
+            const label = key
+                .split('_')
+                .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+                .join(' ')
+
+            return {
+                key: isStandard ? `executor.inverter.${key}` : `executor.inverter.custom_entities.${key}`,
+                label: `${label} Entity`,
+                path: isStandard ? ['executor', 'inverter', key] : ['executor', 'inverter', 'custom_entities', key],
+                type: 'entity',
+                required: false,
+                subsection: 'Inverter Profile Entities',
+                helper: `Profile suggested mapping: ${selectedProfile.entities.optional![key]}`,
+            }
+        })
+
+        // Filter out duplicates
+        const existingKeys = new Set(dynamicFields.map((f) => f.key))
+        const uniqueRequired = requiredFields.filter((f) => !existingKeys.has(f.key))
+        const uniqueOptional = optionalFields.filter((f) => !existingKeys.has(f.key))
+
+        dynamicFields.push(...uniqueRequired, ...uniqueOptional)
+
+        return dynamicFields
+    }, [config, profiles, baseFields])
+
     const reload = useCallback(async () => {
         setLoading(true)
         setStatusMessage(null)
         try {
             const cfg = await Api.config()
             setConfig(cfg)
-            setForm(buildFormState(cfg as unknown as Record<string, unknown>, fields))
-            setFieldErrors({})
+            // Form will be rebuilt by the fields useMemo effect below
         } catch (err: unknown) {
             console.error('Failed to load configuration', err)
             setStatusMessage('Failed to load configuration: ' + (err instanceof Error ? err.message : 'Unknown error'))
         } finally {
             setLoading(false)
         }
-    }, [fields])
+    }, [])
 
     const reloadEntities = useCallback(async () => {
         setHaLoading(true)
@@ -68,7 +147,8 @@ export function useSettingsForm(fields: BaseField[]): UseSettingsFormReturn {
     // Rebuild form state when fields change (for dynamic profile fields)
     useEffect(() => {
         if (config && fields.length > 0) {
-            setForm(buildFormState(config, fields))
+            setForm(buildFormState(config as unknown as Record<string, unknown>, fields))
+            setFieldErrors({})
         }
     }, [fields, config])
 
@@ -166,7 +246,7 @@ export function useSettingsForm(fields: BaseField[]): UseSettingsFormReturn {
 
     const reset = useCallback(() => {
         if (config) {
-            setForm(buildFormState(config, fields))
+            setForm(buildFormState(config as unknown as Record<string, unknown>, fields))
             setFieldErrors({})
             setStatusMessage(null)
         }
@@ -180,7 +260,10 @@ export function useSettingsForm(fields: BaseField[]): UseSettingsFormReturn {
                 return false
             }
 
-            const patch = { ...buildPatch(config as unknown as Record<string, unknown>, form, fields), ...extraPatch }
+            const patch = {
+                ...buildPatch(config as unknown as Record<string, unknown>, form, fields),
+                ...extraPatch,
+            }
             console.warn('[CONFIG_SAVE] Generated patch:', patch)
 
             if (Object.keys(patch).length === 0) {

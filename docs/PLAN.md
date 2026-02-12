@@ -247,10 +247,18 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] Test: Verify all three issues are resolved (blank fields, dirty banner, EV validation)
 
 **Implementation Notes:**
-- Used `useMemo` in `SystemTab.tsx` to compute `dynamicFieldList` based on selected profile's entities
-- Added effect in `useSettingsForm.ts` (lines 69-73) to rebuild form state when fields change
+- Moved dynamic field generation into `useSettingsForm` hook where it can access config directly
+- Hook now accepts `profiles` parameter and computes dynamic fields based on config's `system.inverter_profile`
+- Reverted all `allFields` references to use `fields` parameter consistently
 - Removed unused `allFields` import from `useSettingsForm.ts`
 - All lint checks pass (`pnpm lint` in frontend, `ruff check .` in backend)
-- Changes are minimal and focused: 2 files modified, ~50 lines changed
+
+#### Phase 2: Parameters Tab Legacy EV Charger Cleanup [IN PROGRESS]
+* [ ] Remove legacy EV Charger section from `parameterSections` (lines 861-902 in types.ts)
+* [ ] Fields to remove: `ev_charger.penalty_levels`, `ev_charger.replan_on_plugin`, `ev_charger.replan_on_unplug`, `ev_charger.info_box`
+* [ ] These fields expect `ev_charger.*` paths but config only has new `ev_chargers: []` array format
+* [ ] This causes false positives in dirty detection (form has default values, config has undefined)
+
+**Root Cause:** Parameters tab has legacy EV Charger section that doesn't match current config structure. The fields `ev_charger.penalty_levels`, `ev_charger.replan_on_plugin`, etc. don't exist in config, causing `buildPatch` to detect them as "changes" when comparing form (which has default values) against config (which has undefined).
 
 ---
