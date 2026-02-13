@@ -459,6 +459,15 @@ The penalty levels should be SINGLE SOURCE OF TRUTH in the `ev_chargers[]` array
   ```
 * [ ] **Test**: Create config with BOTH solar_arrays (2 arrays) AND solar_array, verify ALL 3 survive migration
 * [ ] **USER VERIFICATION**: Stop and let the user verify the fix approach before implementing
+* [ ] **Duplicate Name Prevention**: Add check to skip appending if legacy array name already exists in solar_arrays
+  ```python
+  legacy_name = legacy_array.get("name", "default")
+  existing_names = [a.get("name", "") for a in system["solar_arrays"]]
+  if legacy_name not in existing_names:
+      system["solar_arrays"].append(legacy_array)
+  else:
+      logger.warning(f"Skipping duplicate array name: {legacy_name}")
+  ```
 
 #### Phase 3: Add system.solar_array to Deprecated Keys [DRAFT]
 * [ ] **Issue**: `system.solar_array` persists after migration because it's not in DEPRECATED_NESTED_KEYS
@@ -475,8 +484,8 @@ The penalty levels should be SINGLE SOURCE OF TRUTH in the `ev_chargers[]` array
 * [ ] **USER VERIFICATION**: Stop and let the user verify the fix approach before implementing
 
 #### Phase 5: Fix F60 Open-Meteo Type Mismatch [DRAFT]
-* [ ] **Issue**: Code at inputs.py:559-560 uses `kwp_list` as truthy check, but kwp_list could be empty list []
-* [ ] **Fix**: Change condition from `if kwp_list` to `if solar_arrays` (the source array list)
+* [ ] **Issue**: Code at inputs.py:559-560 uses `kwp_list` as truthy check. Note: empty list [] IS falsy, so that's not the bug. The real edge case is `kwp_list = [0.0]` (one array with kwp=0) - it's truthy but invalid, causing Open-Meteo to receive invalid parameters.
+* [ ] **Fix**: Check `solar_arrays` (source list) instead of derived `kwp_list` for robustness
 * [ ] **Additional**: Add validation to FILTER OUT arrays with kwp <= 0 before calling Open-Meteo
 * [ ] **Logic**:
   ```python
@@ -484,6 +493,12 @@ The penalty levels should be SINGLE SOURCE OF TRUTH in the `ev_chargers[]` array
   valid_arrays = [a for a in solar_arrays if float(a.get("kwp", 0) or 0) > 0]
   if not valid_arrays:
       raise PVForecastError("No valid solar arrays with kwp > 0")
+
+  # Log warnings for filtered arrays to help users debug misconfigurations
+  for a in solar_arrays:
+      kwp = float(a.get("kwp", 0) or 0)
+      if kwp <= 0:
+          logger.warning(f"Filtering out invalid array '{a.get('name')}': kwp={kwp}")
 
   # Use len(valid_arrays) for list wrapping, not len(kwp_list)
   latitude=[latitude] * len(valid_arrays),  # Always wrap when ANY arrays exist
