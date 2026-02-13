@@ -119,8 +119,8 @@ water_heaters:
 # Note: penalty_levels are configured per-EV in the UI (Settings > Parameters)
 # They define willingness to pay for charging at different battery levels
 ev_chargers:
-  - id: tesla_model_3                # Unique identifier (slug format)
-    name: "Tesla Model 3"            # Display name in UI
+  - id: ev_charger_1                # Unique identifier (slug format)
+    name: "Generic EV"            # Display name in UI
     enabled: false                   # Master toggle for this EV (set true to enable)
     max_power_kw: 11.0               # Maximum charging power (kW)
     battery_capacity_kwh: 82.0       # Battery capacity for SoC calculations (kWh)
@@ -131,7 +131,7 @@ ev_chargers:
     nominal_power_kw: 11.0           # Nominal power for load calculations
 
   # Example: Second EV (disabled by default)
-  # - id: fiat_500e
+  # - id: ev_charger_2
   #   name: "Fiat 500e"
   #   enabled: false
   #   max_power_kw: 7.4
@@ -225,7 +225,7 @@ pricing:
 
 # Forecasting Adjustments (Aurora ML tuning)
 forecasting:
-  active_forecast_version: "2.5.4-beta"
+  active_forecast_version: "aurora"
   pv_confidence_percent: 83.0          # PV forecast scaling (100 = trust forecast fully)
   load_safety_margin_percent: 117.0    # Load forecast scaling (>100 = expect more load)
 

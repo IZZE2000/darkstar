@@ -557,7 +557,7 @@ async def _get_forecast_data_async(
         async def _fetch_forecast():
             async with OpenMeteoSolarForecast(
                 latitude=[latitude] * len(kwp_list) if kwp_list else latitude,
-                longitude=[longitude] * len(kwp_list) if kwp_list else latitude,
+                longitude=[longitude] * len(kwp_list) if kwp_list else longitude,
                 declination=tilt_list,
                 azimuth=azimuth_list,
                 dc_kwp=kwp_list,

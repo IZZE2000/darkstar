@@ -13,7 +13,7 @@ export interface PowerFlowData {
     battery: { kw: number; soc: number } // +charge, -discharge
     grid: { kw: number; importKwh?: number; exportKwh?: number } // +import, -export
     house: { kw: number; todayKwh?: number }
-    water: { kw: number }
+    water: { kw: number; todayKwh?: number }
     ev?: { kw: number }
     evPluggedIn?: boolean // Rev UI18: Streamed from backend
     evSoc?: number // Rev F50 Phase 5: EV battery SoC percentage
@@ -76,8 +76,8 @@ export const NODE_REGISTRY: FlowNodeConfig[] = [
         lucideIconCharging: BatteryCharging,
         color: 'rgb(var(--color-good))',
         label: (data) => (data.battery.kw <= 0 ? 'Charging' : 'Discharging'),
-        valueAccessor: (data) => `${data.battery.soc.toFixed(0)}%`,
-        subValueAccessor: (data) => fmtKw(data.battery.kw),
+        valueAccessor: (data) => fmtKw(data.battery.kw),
+        subValueAccessor: (data) => `${data.battery.soc.toFixed(0)}%`,
         glowIntensityAccessor: (data) => Math.min(Math.abs(data.battery.kw) / 6, 1),
         isChargingAccessor: (data) => data.battery.kw < 0,
     },
@@ -97,6 +97,7 @@ export const NODE_REGISTRY: FlowNodeConfig[] = [
         color: 'rgb(var(--color-water))',
         label: 'Water',
         valueAccessor: (data) => fmtKw(data.water.kw),
+        subValueAccessor: (data) => fmtKwh(data.water.todayKwh),
         glowIntensityAccessor: (data) => Math.min(data.water.kw / 6, 1),
     },
     {

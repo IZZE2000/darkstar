@@ -774,6 +774,7 @@ export default function Dashboard() {
                                 },
                                 water: {
                                     kw: livePower.water_kw ?? 0,
+                                    todayKwh: waterToday?.kwh,
                                 },
                                 ev: {
                                     kw: livePower.ev_kw ?? 0,
