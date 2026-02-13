@@ -192,7 +192,9 @@ export function buildPatch(
     const debug = true
 
     // System toggle fields that are only for section visibility (not editable in this tab)
-    const visibilityOnlyFields = new Set(['system.has_ev_charger', 'system.has_water_heater'])
+    // NOTE: system.has_ev_charger and system.has_water_heater were previously excluded but they ARE editable toggles
+    // and must be saved - they control visibility of EV/Water Heater sections
+    const visibilityOnlyFields = new Set<string>()
 
     fields.forEach((field) => {
         // Skip visibility-only fields - they're not meant to be edited in this tab
