@@ -47,7 +47,11 @@ DEPRECATED_NESTED_KEYS = {
         "grid_max_export_power_entity",
         "grid_charge_power_entity",
         "minimum_reserve_entity",
-    ]
+    ],
+    "system": [
+        # ARC14: Replaced by solar_arrays[] array (plural)
+        "solar_array",
+    ],
 }
 
 
@@ -284,9 +288,25 @@ def migrate_solar_arrays(config: Any) -> tuple[Any, bool]:
             if "name" not in legacy_array:
                 legacy_array["name"] = "Main Array"
 
-            system["solar_arrays"] = [legacy_array]
-            logger.info("Migrated system.solar_array -> system.solar_arrays (list)")
-            changed = True
+            # Check for duplicate name before appending
+            existing_arrays = system.get("solar_arrays", [])
+            existing_names = {arr.get("name") for arr in existing_arrays if isinstance(arr, dict)}
+            if legacy_array["name"] in existing_names:
+                logger.warning(
+                    "Skipping legacy solar_array migration: name '%s' already exists",
+                    legacy_array["name"],
+                )
+            else:
+                # Append instead of overwrite to preserve user arrays
+                if "solar_arrays" not in system:
+                    system["solar_arrays"] = []
+                system["solar_arrays"].append(legacy_array)
+                logger.info(
+                    "Migrated system.solar_array -> appended to system.solar_arrays "
+                    "(total arrays: %d)",
+                    len(system["solar_arrays"]),
+                )
+                changed = True
         else:
             logger.warning("Found legacy system.solar_array but it was not a dict.")
 
@@ -597,13 +617,33 @@ def validate_config_for_write(config: Any, strict: bool = True) -> bool:
         logger.error("❌ Validation failed: Config is not a dictionary")
         return False
 
-    # Lenient mode: only check for deprecated keys, allow minimal configs
+    # Lenient mode: check for deprecated keys at all levels, allow minimal configs
     if not strict:
-        # Just check deprecated keys are gone
+        # Check root-level deprecated keys
         for key in DEPRECATED_KEYS:
             if key in config:
                 logger.error(f"❌ Validation failed: Deprecated key '{key}' still present")
                 return False
+
+        # Check nested deprecated keys (REV F62: Critical for solar_array cleanup)
+        for path, keys in DEPRECATED_NESTED_KEYS.items():
+            parts = path.split(".")
+            obj = config
+            # Navigate to nested object
+            for part in parts:
+                if isinstance(obj, dict) and part in obj:
+                    obj = obj[part]
+                else:
+                    break
+            else:
+                # Object exists, check deprecated keys
+                if isinstance(obj, dict):
+                    for key in keys:
+                        if key in obj:
+                            logger.error(
+                                f"❌ Validation failed: Deprecated nested key '{path}.{key}' still present"
+                            )
+                            return False
         return True
 
     # Strict mode: full production validation

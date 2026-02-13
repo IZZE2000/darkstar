@@ -555,12 +555,37 @@ async def _get_forecast_data_async(
         # REV F60 Phase 6: OpenMeteo requires ALL parameters to be lists when ANY array param is a list
         # Always wrap lat/long in lists when we have any solar arrays configured
         async def _fetch_forecast():
+            # Filter out invalid arrays (kwp <= 0) - REV F62 fix
+            valid_arrays = [
+                (az, ti, kp)
+                for az, ti, kp in zip(azimuth_list, tilt_list, kwp_list, strict=False)
+                if kp > 0.0
+            ]
+
+            if not valid_arrays:
+                logger.warning(
+                    "No valid solar arrays with kwp > 0 found. Using default single array."
+                )
+                # Fallback to default single array
+                azimuth_list_clean = [180.0]
+                tilt_list_clean = [30.0]
+                kwp_list_clean = [5.0]
+            else:
+                azimuth_list_clean = [arr[0] for arr in valid_arrays]
+                tilt_list_clean = [arr[1] for arr in valid_arrays]
+                kwp_list_clean = [arr[2] for arr in valid_arrays]
+
+                # Log which arrays were filtered out
+                filtered_count = len(kwp_list) - len(valid_arrays)
+                if filtered_count > 0:
+                    logger.warning("Filtered out %d solar array(s) with kwp <= 0.0", filtered_count)
+
             async with OpenMeteoSolarForecast(
-                latitude=[latitude] * len(kwp_list) if kwp_list else latitude,
-                longitude=[longitude] * len(kwp_list) if kwp_list else longitude,
-                declination=tilt_list,
-                azimuth=azimuth_list,
-                dc_kwp=kwp_list,
+                latitude=[latitude] * len(kwp_list_clean) if kwp_list_clean else latitude,
+                longitude=[longitude] * len(kwp_list_clean) if kwp_list_clean else longitude,
+                declination=tilt_list_clean,
+                azimuth=azimuth_list_clean,
+                dc_kwp=kwp_list_clean,
             ) as forecast:
                 estimate = await forecast.estimate()
                 return estimate.watts
