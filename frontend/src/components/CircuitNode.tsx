@@ -25,7 +25,7 @@ export function CircuitNode({
 }: CircuitNodeProps) {
     // Circle variant (House)
     if (variant === 'circle') {
-        const r = 32 // Reduced diameter as requested
+        const r = 30 // Reduced diameter as requested
         return (
             <g transform={`translate(${x}, ${y})`}>
                 {isActive && (
@@ -61,13 +61,13 @@ export function CircuitNode({
 
     // Bracket variant (Peripheral Nodes)
     // SVG Brackets to cover the whole node (Label + Value + SubValue)
-    const bW = 42 // Bracket Width (half) ALSO CHANGE IN POWERFLOWCARD.TSX L116-117
-    const bH = 30 // Bracket Height (half)
+    const bW = 43 // Bracket Width (half) ALSO CHANGE IN POWERFLOWCARD.TSX L116-117
+    const bH = 22 // Bracket Height (half)
 
     // Brackets: Vertical line with rounded corners
     // Path: M (start) A (corner) L (vertical) A (corner) L (end)
-    const r = 3 // Corner radius (adjustable)
-    const bracketSize = 10 // Horizontal span
+    const r = 4 // Corner radius (adjustable)
+    const bracketSize = 12 // Horizontal span
 
     // Left Bracket: [-bW+s, -bH] -> [-bW+r, -bH] arc -> [-bW, -bH+r] -> [-bW, bH-r] arc -> [-bW+r, bH] -> [-bW+s, bH]
     const bracketPathLeft = `
@@ -105,7 +105,7 @@ export function CircuitNode({
                 y={-18}
                 textAnchor="middle"
                 fill="#94a3b8"
-                fontSize="9"
+                fontSize="10"
                 fontFamily="JetBrains Mono, monospace"
                 className="uppercase tracking-wider"
             >
@@ -132,7 +132,7 @@ export function CircuitNode({
                     y={22}
                     textAnchor="middle"
                     fill={isActive ? '#f1f5f9' : '#64748b'}
-                    fontSize="9"
+                    fontSize="11"
                     fontFamily="JetBrains Mono, monospace"
                 >
                     {subValue}

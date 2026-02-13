@@ -21,10 +21,16 @@ export function CircuitPath({
     isActive = false,
     flowRate = 1,
 }: CircuitPathProps) {
+    // Controls the "sharpness" of the turn.
+    // 0.5 = Smooth S-Curve (Control points at 50% midpoint)
+    // 0.2 = Straighter (Diagonal-ish)
+    // 0.8 = Sharper/Steener (Control points at 80%)
+    const curvature = 1
+
     // Calculate Bezier Control Points once for reuse
     const dx = to.x - from.x
-    const cp1 = { x: from.x + dx * 0.5, y: from.y }
-    const cp2 = { x: to.x - dx * 0.5, y: to.y }
+    const cp1 = { x: from.x + dx * curvature, y: from.y }
+    const cp2 = { x: to.x - dx * curvature, y: to.y }
 
     // 1. Calculate Bezier Path 'd' attribute for "Circuit-like" routing
     // Force Horizontal Bias for this layout (Sources Left -> House -> Loads Right)
@@ -49,7 +55,7 @@ export function CircuitPath({
                     fill="none"
                     stroke={color}
                     strokeWidth="2"
-                    strokeDasharray="6 6"
+                    strokeDasharray="3 3"
                     initial={{ strokeDashoffset: 12 }}
                     animate={{ strokeDashoffset: 0 }}
                     transition={{
@@ -58,7 +64,7 @@ export function CircuitPath({
                         ease: 'linear',
                     }}
                     style={{
-                        filter: `drop-shadow(0 0 2px ${color})`,
+                        filter: `drop-shadow(0 0 12px ${color})`,
                     }}
                 />
             )}

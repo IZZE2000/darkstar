@@ -114,7 +114,7 @@ export default function PowerFlowCard({ data, systemConfig, compact = false }: P
         // Bracket Nodes: bW=42 (CircuitNode.tsx). We use 42 + 2 padding = 44.
 
         // EDIT HERE: Sync these with CircuitNode.tsx if you change sizes there!
-        const HOUSE_R = 36 // 32 + 4 padding
+        const HOUSE_R = 32 // 32 + 4 padding
         const BRACKET_W_HALF = 44 // bW (42) + 2 padding
 
         // Defaults
