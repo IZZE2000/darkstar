@@ -287,28 +287,6 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 
 **Root Cause:** The OpenMeteoSolarForecast library validates that ALL parameters (latitude, longitude, azimuth, declination, dc_kwp) are lists of the same length when ANY parameter is a list (multi-array mode). Our code passes latitude/longitude as floats while passing azimuth/tilt/kwp as lists, triggering the validation error.
 
-**Current buggy code (inputs.py:556-561):**
-```python
-OpenMeteoSolarForecast(
-    latitude=latitude,          # ← FLOAT (single value) ❌
-    longitude=longitude,        # ← FLOAT (single value) ❌
-    declination=tilt_list,      # ← LIST with N items
-    azimuth=azimuth_list,       # ← LIST with N items
-    dc_kwp=kwp_list,            # ← LIST with N items
-)
-```
-
-**Required format:**
-```python
-OpenMeteoSolarForecast(
-    latitude=[latitude] * len(kwp_list),      # ← Must be list [lat, lat, ...]
-    longitude=[longitude] * len(kwp_list),    # ← Must be list [lon, lon, ...]
-    declination=tilt_list,
-    azimuth=azimuth_list,
-    dc_kwp=kwp_list,
-)
-```
-
 **Plan:**
 
 #### Phase 1: Fix OpenMeteo Multi-Array Call [DONE]
@@ -432,5 +410,100 @@ The penalty levels should be SINGLE SOURCE OF TRUTH in the `ev_chargers[]` array
 * [x] **Test 4:** Executor ignores deprecated penalty_levels field without error
 * [x] **Test 5:** UI shows penalty levels editor, can add/remove/edit levels
 * [x] **Test 6:** Config validation warns about deprecated executor.ev_charger.penalty_levels
+
+---
+
+### [PLANNED] REV // F62 — Multi-Array PV Forecast Failure & Migration Bugs
+
+**Goal:** Fix five critical bugs causing PV forecast failures for Fronius beta testers: (0) wrong default forecast version, (1) migration destroys user solar arrays, (2) legacy solar_array key persists, (3) validation misses nested deprecated keys, and (4) Open-Meteo type mismatch with empty arrays.
+
+**Context:** Investigation of Fronius beta tester PV forecast failure revealed five distinct bugs:
+
+0. **Config Default Bug**: `config.default.yaml:228` has `active_forecast_version: "2.5.4-beta"` instead of `"aurora"` - the APP VERSION was accidentally used as the forecast engine name. This causes ALL users to have broken Aurora dashboard (blank Forecast Horizon chart).
+
+1. **Migration Bug**: `migrate_solar_arrays()` OVERWRITES existing `solar_arrays` with legacy `solar_array` instead of merging
+
+2. **Legacy Key Persistence**: `system.solar_array` not in DEPRECATED_NESTED_KEYS, so it survives migration
+
+3. **Validation Gap**: With `strict_validation=False`, nested deprecated keys aren't checked, allowing invalid configs to persist
+
+4. **F60 Edge Case**: When `kwp_list` is empty/falsy, lat/long remain floats while other params are lists, triggering "parameters must be of the same length" error
+
+**Evidence:**
+- Beta tester's config shows both `solar_arrays` (with valid kwp) and legacy `solar_array` present
+- `config.default.yaml` line 228 has wrong value causing forecast dashboard to show "No slots for version 2.5.4-beta, falling back to 'aurora'"
+- Open-Meteo library validation fails when parameter types mismatch
+
+**Plan:**
+
+#### Phase 1: Fix Config Default Wrong Value [DRAFT]
+* [ ] **Issue**: `config.default.yaml:228` has `active_forecast_version: "2.5.4-beta"` instead of `"aurora"`
+* [ ] **Fix**: Change `active_forecast_version` from `"2.5.4-beta"` to `"aurora"` in config.default.yaml
+* [ ] **Impact**: This is the ROOT CAUSE of the blank Forecast Horizon chart - the wrong version is stored in DB, so dashboard can't find any slots
+* [ ] **Test**: Verify config.default.yaml has correct value, no other changes needed
+* [ ] **USER VERIFICATION**: Stop and let the user verify the fix before implementing
+
+#### Phase 2: Fix Migration Overwrite Bug [DRAFT]
+* [ ] **Issue**: Migration line 287 `system["solar_arrays"] = [legacy_array]` DESTROYS user's existing arrays
+* [ ] **Fix**: Change to APPEND legacy array to existing solar_arrays instead of overwriting
+* [ ] **Logic**:
+  ```python
+  if "solar_array" in system:
+      legacy_array = system.pop("solar_array")
+      if isinstance(legacy_array, dict):
+          if "solar_arrays" not in system or not isinstance(system["solar_arrays"], list):
+              system["solar_arrays"] = []
+          # APPEND, don't overwrite
+          system["solar_arrays"].append(legacy_array)
+          changed = True
+  ```
+* [ ] **Test**: Create config with BOTH solar_arrays (2 arrays) AND solar_array, verify ALL 3 survive migration
+* [ ] **USER VERIFICATION**: Stop and let the user verify the fix approach before implementing
+
+#### Phase 3: Add system.solar_array to Deprecated Keys [DRAFT]
+* [ ] **Issue**: `system.solar_array` persists after migration because it's not in DEPRECATED_NESTED_KEYS
+* [ ] **Fix**: Add `"system.solar_array": []` to DEPRECATED_NESTED_KEYS or create special handling
+* [ ] **Alternative**: Add explicit cleanup in `cleanup_obsolete_keys()` to handle nested deprecated keys under `system.*`
+* [ ] **Test**: Config with legacy solar_array key should have it removed after migration
+* [ ] **USER VERIFICATION**: Stop and let the user verify the fix approach before implementing
+
+#### Phase 4: Fix Validation Gap for Nested Keys [DRAFT]
+* [ ] **Issue**: With `strict_validation=False`, only ROOT deprecated keys checked, not nested ones
+* [ ] **Fix**: Update `validate_config_for_write()` to check DEPRECATED_NESTED_KEYS even in lenient mode
+* [ ] **Logic**: When leniency enabled, iterate through DEPRECATED_NESTED_KEYS and check each nested path
+* [ ] **Test**: Config with nested deprecated keys should fail validation even with strict=False
+* [ ] **USER VERIFICATION**: Stop and let the user verify the fix approach before implementing
+
+#### Phase 5: Fix F60 Open-Meteo Type Mismatch [DRAFT]
+* [ ] **Issue**: Code at inputs.py:559-560 uses `kwp_list` as truthy check, but kwp_list could be empty list []
+* [ ] **Fix**: Change condition from `if kwp_list` to `if solar_arrays` (the source array list)
+* [ ] **Additional**: Add validation to FILTER OUT arrays with kwp <= 0 before calling Open-Meteo
+* [ ] **Logic**:
+  ```python
+  # Filter valid arrays (kwp > 0)
+  valid_arrays = [a for a in solar_arrays if float(a.get("kwp", 0) or 0) > 0]
+  if not valid_arrays:
+      raise PVForecastError("No valid solar arrays with kwp > 0")
+
+  # Use len(valid_arrays) for list wrapping, not len(kwp_list)
+  latitude=[latitude] * len(valid_arrays),  # Always wrap when ANY arrays exist
+  ```
+* [ ] **Test**:
+  * Single array with valid kwp: works
+  * Multi-array (2+ arrays): works
+  * Array with kwp=0: filtered out, warning logged
+  * Array with missing kwp: filtered out, warning logged
+  * All arrays invalid: raises clear error
+* [ ] **USER VERIFICATION**: Stop and let the user verify the fix approach before implementing
+
+#### Phase 6: Integration Testing [DRAFT]
+* [ ] **Test 0**: Verify `active_forecast_version` is "aurora" in config.default.yaml
+* [ ] **Test 1**: Config with solar_arrays + legacy solar_array → all arrays preserved after migration
+* [ ] **Test 2**: Legacy solar_array removed after migration (not present in final config)
+* [ ] **Test 3**: Multi-array forecast works (Öst + Väst arrays)
+* [ ] **Test 4**: Single array forecast still works (backward compatibility)
+* [ ] **Test 5**: Invalid arrays (kwp=0, missing kwp) filtered with warning
+* [ ] **Test 6**: Empty arrays case handled gracefully (not passed to Open-Meteo)
+* [ ] **USER VERIFICATION**: Stop and let the user verify all tests pass
 
 ---
