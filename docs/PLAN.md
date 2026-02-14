@@ -660,6 +660,67 @@ After ARC15/UI20, ev_soc, ev_plug, and ev_power still live in input_sensors crea
 
 ---
 
+### [DRAFT] REV // K25 — EV Departure Time Constraint
+
+**Goal:** Add a simple recurring departure time constraint for EV charging, allowing users to specify when they need the car charged by each morning.
+
+**Context:** Current EV charging uses incentive buckets only, with no time pressure. Users plug in cars in the afternoon and need them charged by morning commute time. The system should optimize for cheap overnight slots while guaranteeing completion by the deadline.
+
+**Design Decisions:**
+- One universal departure time (e.g., "07:00") applies every day
+- Deadline calculation: Find next occurrence of departure time from current time
+  - If now=15:00 and departure=07:00 → deadline is tomorrow 07:00
+  - If now=06:00 and departure=07:00 → deadline is today 07:00
+- Keep existing incentive buckets (urgency increases as SoC drops)
+- Deadline creates hard boundary: only consider slots before deadline for EV charging
+- If deadline is impossible to meet: charge as much as possible (don't fail completely)
+- If car unplugged before deadline: tough luck, charging stops immediately
+
+**Plan:**
+
+#### Phase 1: Remove Legacy min_soc/target_soc Fields [DRAFT]
+* [ ] Remove `min_soc_percent` and `target_soc_percent` from `config.default.yaml` ev_chargers template
+* [ ] Remove these fields from `EVChargerEntity` interface in `EntityArrayEditor.tsx`
+* [ ] Remove validation for these fields in `backend/api/routers/config.py`
+* [ ] Remove from settings schema in `frontend/src/pages/settings/types.ts`
+* [ ] Update `backend/config_migration.py` to delete these fields during migration
+* [ ] Test: EV chargers save/load without these fields
+
+#### Phase 2: Add Departure Time Configuration [DRAFT]
+* [ ] Add `ev_departure_time: "07:00"` to EV section in `config.default.yaml`
+* [ ] Add time picker field in `frontend/src/pages/settings/EVTab.tsx`
+* [ ] Validate time format (HH:MM) in backend config validation
+* [ ] Store as string "HH:MM" in config
+* [ ] Test: Time picker saves and loads correctly
+
+#### Phase 3: Calculate Deadline in Pipeline [DRAFT]
+* [ ] Add `calculate_ev_deadline(departure_time: str, now: datetime) -> datetime` function in `planner/pipeline.py`
+* [ ] Logic: Parse "HH:MM", create datetime for today, if passed create for tomorrow
+* [ ] Pass calculated deadline to KeplerConfig as `ev_deadline: datetime | None`
+* [ ] Test: Various times of day calculate correct deadline
+
+#### Phase 4: Enforce Deadline in Kepler Solver [DRAFT]
+* [ ] Add `ev_deadline` field to `KeplerConfig` in `planner/solver/types.py`
+* [ ] In `kepler.py`, identify slot indices before deadline
+* [ ] Constrain EV charging variables: `ev_energy[t] = 0` for slots after deadline
+* [ ] Keep incentive bucket logic unchanged (works within deadline window)
+* [ ] Test: EV only charges in slots before deadline
+
+#### Phase 5: Handle Impossible Deadlines Gracefully [DRAFT]
+* [ ] If calculated deadline is < 1 hour away: set special flag
+* [ ] When flag is set, maximize EV charging power regardless of price (within grid limits)
+* [ ] Log warning: "EV deadline approaching, charging at maximum power"
+* [ ] Test: Late plugin still charges as much as possible
+
+#### Phase 6: Integration Testing [DRAFT]
+* [ ] Test 1: Car plugged in at 15:00, departure 07:00 → charges overnight before 07:00
+* [ ] Test 2: Car plugged in at 06:00, departure 07:00 → charges immediately for 1 hour
+* [ ] Test 3: Car plugged in at 09:00 (after deadline) → charges for next day's deadline
+* [ ] Test 4: Departure time config change triggers re-plan
+* [ ] Test 5: Multiple EVs use same departure time (aggregated)
+
+---
+
 ### [DRAFT] REV // F64 — EV Node Tooltip for Multiple EVs
 
 **Goal:** Add a tooltip to the PowerflowCard EV node that shows detailed information about all configured EVs when hovering.
