@@ -1,4 +1,5 @@
 import React from 'react'
+import { useNavigate } from 'react-router-dom'
 import Card from '../../components/Card'
 import { useSettingsForm } from './hooks/useSettingsForm'
 import { SettingsField } from './components/SettingsField'
@@ -11,6 +12,7 @@ import { NavigationBlockerDialog } from './components/NavigationBlockerDialog'
 import { useUnsavedChangesGuard } from './hooks/useUnsavedChangesGuard'
 
 export const SolarTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }) => {
+    const navigate = useNavigate()
     const { form, fieldErrors, loading, saving, handleChange, save, isDirty, haEntities, haLoading } =
         useSettingsForm(solarFieldList)
 
@@ -94,7 +96,17 @@ export const SolarTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode })
 
             <AdditionalAdvancedNotice visible={!advancedMode} />
 
-            <NavigationBlockerDialog blocker={blocker} />
+            <NavigationBlockerDialog
+                visible={blocker.state === 'blocked'}
+                onStay={() => blocker.reset?.()}
+                onLeave={() => {
+                    if (blocker.location) {
+                        navigate(blocker.location.pathname + blocker.location.search, {
+                            state: { ...blocker.location.state, ignoreUnsavedChangesGuard: true },
+                        })
+                    }
+                }}
+            />
 
             {!advancedMode && hasHiddenSections && <GlobalAdvancedLockedNotice />}
         </div>
