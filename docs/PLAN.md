@@ -761,3 +761,64 @@ After ARC15/UI20, ev_soc, ev_plug, and ev_power still live in input_sensors crea
 * [ ] Build succeeds
 
 ---
+
+### [DRAFT] REV // F65 — Cumulative Sensor Validation Gap
+
+**Goal:** Add validation for cumulative energy sensors (`total_*`) and improve warnings when forecasting may use inaccurate fallback data.
+
+**Context:** Investigation of Sungrow beta tester revealed:
+1. `total_load_consumption` was empty in config
+2. Planner forecasting silently fell back to dummy sine wave profile (~0.2-0.8 kWh/slot)
+3. No warning was shown in health checks
+4. "Today's Stats" worked (uses `today_*` sensors) but ChartCard forecast was wrong
+
+**Root Cause:** The `sensor_requirements` dict in `backend/health.py:468-481` only validates:
+- `load_power`, `pv_power`, `grid_power` (real-time power sensors)
+- Optional sensors for features (`water_power`, etc.)
+
+Missing from validation:
+- `total_load_consumption` (required for forecasting)
+- `total_pv_production` (required for ML/forecasting)
+- `total_grid_import`, `total_grid_export` (required for backfill)
+- `total_battery_charge`, `total_battery_discharge` (required for ML)
+
+**Sensor Types:**
+| Type | Examples | Used By | Currently Validated? |
+|------|----------|---------|---------------------|
+| Real-time Power | `load_power`, `pv_power` | Recorder, live metrics | ✅ Yes |
+| Today's Totals | `today_load_consumption` | Dashboard "Today's Stats" | ❌ No |
+| Cumulative/Lifetime | `total_load_consumption` | Forecasting, ML | ❌ No |
+
+**Plan:**
+
+#### Phase 1: Add Cumulative Sensors to Health Validation [DRAFT]
+* [ ] Add `total_load_consumption` to `sensor_requirements` dict in `backend/health.py`
+* [ ] Add `total_pv_production` to validation
+* [ ] Add `total_grid_import`, `total_grid_export` to validation
+* [ ] Add `total_battery_charge`, `total_battery_discharge` to validation
+* [ ] Mark as required when `learning.enable: true` (forecasting needs these)
+
+#### Phase 2: Add Today's Sensors to Health Validation [DRAFT]
+* [ ] Add `today_load_consumption` to validation
+* [ ] Add `today_pv_production` to validation
+* [ ] Add `today_grid_import`, `today_grid_export` to validation
+* [ ] These are used by Dashboard "Today's Stats" card
+
+#### Phase 3: Add Forecasting-Specific Warnings [DRAFT]
+* [ ] In health check, if `learning.enable: true` AND any `total_*` sensor is missing:
+    * Add warning: "Forecasting may use inaccurate fallback data"
+    * List which sensors are missing
+* [ ] Add similar warning for "Today's Stats" if `today_*` sensors missing
+
+#### Phase 4: Improve Fallback Behavior [DRAFT]
+* [ ] Log warning when forecasting falls back to HA profile due to missing `total_load_consumption`
+* [ ] Log warning when HA profile fallback is used (entity empty or fetch failed)
+* [ ] Add health status "degraded" when using fallback data
+
+#### Phase 5: Test & Verify [DRAFT]
+* [ ] Test: Empty `total_load_consumption` shows health warning
+* [ ] Test: Empty `today_load_consumption` shows health warning
+* [ ] Test: With all sensors configured, no warnings
+* [ ] Run `uv run ruff check .`
+
+---
