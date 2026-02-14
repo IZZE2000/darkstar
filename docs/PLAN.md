@@ -660,4 +660,45 @@ After ARC15/UI20, ev_soc, ev_plug, and ev_power still live in input_sensors crea
 
 ---
 
+### [DRAFT] REV // F64 — EV Node Tooltip for Multiple EVs
+
+**Goal:** Add a tooltip to the PowerflowCard EV node that shows detailed information about all configured EVs when hovering.
+
+**Context:** The PowerflowCard currently shows only the first enabled EV's data (power, SoC, plug status). When multiple EVs are configured, users can't see individual EV details. A tooltip on hover should display:
+- Total number of EVs
+- Individual EV names
+- Individual power draw (kW)
+- Individual SoC (%)
+- Plug status for each EV
+
+**Backend Status:** Already aggregates correctly in `planner/solver/adapter.py` (sums max power, etc.). The issue is frontend display only shows first EV.
+
+**Plan:**
+
+#### Phase 1: Backend - Pass All EV Data to Frontend [DRAFT]
+* [ ] Update `backend/ha_socket.py` to include all EV data in `emit_live_metrics` payload
+* [ ] Change from single `ev_kw`, `ev_soc`, `ev_plug_in` to array `ev_chargers: [{name, kw, soc, plugged_in}]`
+* [ ] Test: WebSocket payload contains all EV details
+
+#### Phase 2: Frontend - Update API Types [DRAFT]
+* [ ] Update `frontend/src/lib/api.ts` to reflect new EV charger array in `LiveMetrics`
+* [ ] Add proper TypeScript types for individual EV charger data
+
+#### Phase 3: Frontend - Update PowerflowCard EV Node [DRAFT]
+* [ ] Add tooltip component to EV node in `PowerFlowCard.tsx`
+* [ ] Tooltip shows on hover with:
+  - "X EVs" header
+  - List of each EV with name, power, SoC, plug status
+* [ ] Tooltip styling: dark background, rounded corners, max-height with scroll if many EVs
+
+#### Phase 4: Backend - Aggregation Fallback [DRAFT]
+* [ ] For backward compatibility: If frontend expects old format, provide aggregate values
+* [ ] Or: Version the WebSocket API with compatibility layer
+
+#### Phase 5: Test & Lint [DRAFT]
+* [ ] Test with single EV - tooltip shows single EV details
+* [ ] Test with multiple EVs - tooltip shows all EVs
+* [ ] Run `pnpm lint` - fix any errors
+* [ ] Build succeeds
+
 ---
