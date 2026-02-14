@@ -31,6 +31,8 @@ export interface EVChargerEntity {
     min_soc_percent: number
     target_soc_percent: number
     sensor: string
+    soc_sensor: string
+    plug_sensor: string
     type: 'variable' | 'constant'
     nominal_power_kw: number
     penalty_levels?: Array<{ max_soc: number; penalty_sek: number }>
@@ -69,6 +71,8 @@ const createDefaultEVCharger = (index: number): EVChargerEntity => ({
     min_soc_percent: 20.0,
     target_soc_percent: 80.0,
     sensor: '',
+    soc_sensor: '',
+    plug_sensor: '',
     type: 'variable',
     nominal_power_kw: 11.0,
     penalty_levels: [
@@ -209,7 +213,7 @@ export const EntityArrayEditor: React.FC<EntityArrayEditorProps> = ({
                                     <div className="text-[10px] text-muted uppercase tracking-tight">
                                         {isWaterHeater
                                             ? `${(entity as WaterHeaterEntity).power_kw} kW · ${(entity as WaterHeaterEntity).min_kwh_per_day} kWh/day · ${(entity as WaterHeaterEntity).sensor || 'No sensor'}`
-                                            : `${(entity as EVChargerEntity).max_power_kw} kW max · ${(entity as EVChargerEntity).battery_capacity_kwh} kWh battery · ${entity.sensor || 'No sensor'}`}
+                                            : `${(entity as EVChargerEntity).max_power_kw} kW max · ${(entity as EVChargerEntity).battery_capacity_kwh} kWh battery · ${entity.sensor || 'No sensor'}${(entity as EVChargerEntity).soc_sensor || (entity as EVChargerEntity).plug_sensor ? ` · SoC: ${(entity as EVChargerEntity).soc_sensor || '-'}${(entity as EVChargerEntity).plug_sensor ? ` · Plug: ${(entity as EVChargerEntity).plug_sensor}` : ''}` : ''}`}
                                     </div>
                                 </div>
                             </div>
@@ -349,6 +353,55 @@ export const EntityArrayEditor: React.FC<EntityArrayEditorProps> = ({
                                                 Used for load disaggregation and real-time monitoring
                                             </p>
                                         </div>
+
+                                        {/* SoC Sensor (EV only) */}
+                                        {!isWaterHeater && (
+                                            <div className="sm:col-span-2">
+                                                <label className="text-[10px] uppercase font-bold text-muted mb-1.5 block">
+                                                    SoC Sensor (HA Entity)
+                                                </label>
+                                                <EntitySelect
+                                                    entities={haEntities}
+                                                    value={(entity as EVChargerEntity).soc_sensor}
+                                                    onChange={(val) =>
+                                                        updateEntity(index, {
+                                                            soc_sensor: val,
+                                                        } as Partial<EVChargerEntity>)
+                                                    }
+                                                    loading={haLoading}
+                                                    placeholder="Select Home Assistant SoC sensor..."
+                                                    disabled={disabled}
+                                                />
+                                                <p className="text-[10px] text-muted mt-1">
+                                                    EV battery state of charge (%) - Required for smart charging
+                                                </p>
+                                            </div>
+                                        )}
+
+                                        {/* Plug Sensor (EV only) */}
+                                        {!isWaterHeater && (
+                                            <div className="sm:col-span-2">
+                                                <label className="text-[10px] uppercase font-bold text-muted mb-1.5 block">
+                                                    Plug Sensor (HA Entity)
+                                                </label>
+                                                <EntitySelect
+                                                    entities={haEntities}
+                                                    value={(entity as EVChargerEntity).plug_sensor}
+                                                    onChange={(val) =>
+                                                        updateEntity(index, {
+                                                            plug_sensor: val,
+                                                        } as Partial<EVChargerEntity>)
+                                                    }
+                                                    loading={haLoading}
+                                                    placeholder="Select Home Assistant plug sensor..."
+                                                    disabled={disabled}
+                                                />
+                                                <p className="text-[10px] text-muted mt-1">
+                                                    EV plug status (on/off or connected/disconnected) - Required for
+                                                    smart charging
+                                                </p>
+                                            </div>
+                                        )}
 
                                         {/* Type Selection */}
                                         <div>

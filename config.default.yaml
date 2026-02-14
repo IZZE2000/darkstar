@@ -127,6 +127,8 @@ ev_chargers:
     min_soc_percent: 20.0            # Minimum SoC constraint (%)
     target_soc_percent: 80.0         # Target SoC for charging (%)
     sensor: sensor.tesla_power       # Home Assistant entity for power reading
+    soc_sensor: ""                   # EV battery state of charge (%) - Required for smart charging
+    plug_sensor: ""                  # EV plug status sensor - Required for smart charging
     type: variable                   # Load type: variable (EV) or constant
     nominal_power_kw: 11.0           # Nominal power for load calculations
 
@@ -256,9 +258,6 @@ input_sensors:
   load_power: ""         # Current load consumption (W or kW)
   battery_power: ""   # Current battery power (+ discharge, - charge)
   water_power: ""                  # Current water heater power (W or kW)
-  ev_power: ""              # Current EV charging power (W or kW)
-  ev_soc: ""                # EV battery state of charge (%) - Required for smart charging
-  ev_plug: ""               # EV plug status (on/off or connected/disconnected) - Required for smart charging
   grid_power: ""         # Current grid power (+ import, - export) (Used if meter_type=net)
   grid_import_power: ""    # Current grid import power (W/kW) (Used if meter_type=dual)
   grid_export_power: ""    # Current grid export power (W/kW) (Used if meter_type=dual)

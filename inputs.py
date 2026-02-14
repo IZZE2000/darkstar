@@ -749,7 +749,19 @@ async def get_initial_state(config_path: str = "config.yaml") -> dict[str, Any]:
     ev_plugged_in = False
 
     if has_ev_charger:
-        ev_soc_entity = input_sensors.get("ev_soc")
+        # Rev F63: EV sensors are now only in ev_chargers[] array
+        ev_soc_entity = None
+        ev_plug_entity = None
+
+        ev_chargers = config.get("ev_chargers", [])
+        for ev in ev_chargers:
+            if ev.get("enabled", True):
+                if ev.get("soc_sensor"):
+                    ev_soc_entity = ev["soc_sensor"]
+                if ev.get("plug_sensor"):
+                    ev_plug_entity = ev["plug_sensor"]
+                break  # Only use first enabled EV charger
+
         if ev_soc_entity:
             ha_ev_soc = await get_ha_sensor_float(ev_soc_entity)
             if ha_ev_soc is not None:
@@ -759,7 +771,6 @@ async def get_initial_state(config_path: str = "config.yaml") -> dict[str, Any]:
         else:
             logger.warning("has_ev_charger is true but ev_soc sensor is not configured")
 
-        ev_plug_entity = input_sensors.get("ev_plug")
         if ev_plug_entity:
             ev_plugged_in = await get_ha_bool(ev_plug_entity)
         else:

@@ -472,6 +472,8 @@ def migrate_arc15_entity_config(config: Any) -> tuple[Any, bool]:
                 "min_soc_percent": 20.0,
                 "target_soc_percent": 80.0,
                 "sensor": sensor_entity,
+                "soc_sensor": input_sensors.get("ev_soc", ""),
+                "plug_sensor": input_sensors.get("ev_plug", ""),
                 "type": load_type or "variable",
                 "nominal_power_kw": load.get("nominal_power_kw", 7.4),
             }
@@ -499,6 +501,14 @@ def migrate_arc15_entity_config(config: Any) -> tuple[Any, bool]:
         del config["ev_charger"]
         logger.info("✂️  Deleted deprecated 'ev_charger' section")
         changed = True
+
+    # REV F63: Delete migrated EV sensors from input_sensors (now in ev_chargers[])
+    if isinstance(input_sensors, dict):
+        for key in ["ev_soc", "ev_plug", "ev_power"]:
+            if key in input_sensors:
+                del input_sensors[key]
+                logger.info(f"✂️  Deleted migrated EV sensor from input_sensors: {key}")
+                changed = True
 
     # Update config version
     if changed or water_heaters or ev_chargers:

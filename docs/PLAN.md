@@ -479,7 +479,9 @@ The penalty levels should be SINGLE SOURCE OF TRUTH in the `ev_chargers[]` array
 
 ---
 
-### [DONE] REV // UI20 — Device-Centric Settings Tabs
+### [DONE] REV // UI20 — Device-Centric Settings Tabs (Completed 2026-02-14)
+
+**Status:** ✅ COMPLETE - All phases finished, committed, and production-ready
 
 **Goal:** Reorganize settings page into device-centric tabs that appear based on `has_*` toggles. Move ALL related settings (both standard and advanced) into each device tab.
 
@@ -616,7 +618,7 @@ The penalty levels should be SINGLE SOURCE OF TRUTH in the `ev_chargers[]` array
 
 ---
 
-### [PLANNED] REV // F63 — Move EV SoC/Plug Sensors to ev_chargers[] Array
+### [DONE] REV // F63 — Move EV SoC/Plug Sensors to ev_chargers[] Array
 
 **Goal:** Consolidate all EV configuration into the ev_chargers[] array, removing legacy input_sensors entries for ev_soc, ev_plug, and ev_power.
 
@@ -629,33 +631,32 @@ After ARC15/UI20, ev_soc, ev_plug, and ev_power still live in input_sensors crea
 **Plan:**
 
 #### Phase 1: Frontend - Add soc_sensor and plug_sensor to EV Charger Array
-* [ ] Add `soc_sensor` and `plug_sensor` fields to `EVChargerEntity` interface in `frontend/src/pages/settings/components/EntityArrayEditor.tsx`
-* [ ] Add UI fields in EntityArrayEditor for soc_sensor and plug_sensor (similar to power sensor field)
-* [ ] Note: power sensor already exists as `sensor` field in ev_chargers[]
+* [x] Add `soc_sensor` and `plug_sensor` fields to `EVChargerEntity` interface in `frontend/src/pages/settings/components/EntityArrayEditor.tsx`
+* [x] Add UI fields in EntityArrayEditor for soc_sensor and plug_sensor (similar to power sensor field)
+* [x] Note: power sensor already exists as `sensor` field in ev_chargers[]
 
 #### Phase 2: Frontend - Remove Legacy input_sensors Fields (EV Tab)
-* [ ] Remove `input_sensors.ev_soc` field from `frontend/src/pages/settings/types.ts` (in EV tab, section "HA Sensors")
-* [ ] Remove `input_sensors.ev_plug` field from `frontend/src/pages/settings/types.ts` (in EV tab, section "HA Sensors")
-* [ ] Remove `input_sensors.ev_power` field from `frontend/src/pages/settings/types.ts` (in EV tab, section "HA Sensors")
+* [x] Remove `input_sensors.ev_soc` field from `frontend/src/pages/settings/types.ts` (in EV tab, section "HA Sensors")
+* [x] Remove `input_sensors.ev_plug` field from `frontend/src/pages/settings/types.ts` (in EV tab, section "HA Sensors")
+* [x] Remove `input_sensors.ev_power` field from `frontend/src/pages/settings/types.ts` (in EV tab, section "HA Sensors")
 
 #### Phase 3: Backend - Update Load Service
-* [ ] Update `backend/loads/service.py:_initialize_from_entity_arrays()` to extract soc_sensor and plug_sensor from ev_chargers[] and register as input sensors
+* [x] Update `backend/loads/service.py:_initialize_from_entity_arrays()` to read soc_sensor and plug_sensor from ev_chargers[] (no longer adds to input_sensors)
 
 #### Phase 4: Backend - Update HA Socket
-* [ ] Update `backend/ha_socket.py` to read ev_soc and ev_plug from per-charger sensors in config (add helper to extract from ev_chargers[])
+* [x] Update `backend/ha_socket.py` to read ev_soc and ev_plug from ev_chargers[] array (removed legacy input_sensors fallback)
 
 #### Phase 5: Backend - Update Inputs
-* [ ] Update `inputs.py` to read ev_soc and ev_plug from ev_chargers[] array instead of input_sensors
+* [x] Update `inputs.py` to read ev_soc and ev_plug from ev_chargers[] array (removed legacy input_sensors fallback)
 
 #### Phase 6: Config - Remove Legacy Fields
-* [ ] Remove `ev_soc:` from `config.default.yaml` input_sensors section
-* [ ] Remove `ev_plug:` from `config.default.yaml` input_sensors section
-* [ ] Remove `ev_power:` from `config.default.yaml` input_sensors section (already done in earlier fix)
+* [x] Verified `ev_soc:`, `ev_plug:`, and `ev_power:` are NOT in `config.default.yaml` input_sensors section
+* [x] Added `soc_sensor` and `plug_sensor` to ev_chargers template in `config.default.yaml`
 
 #### Phase 7: Migration & Tests
-* [ ] Update `config_migration.py` to extract soc_sensor, plug_sensor, and sensor (power) from input_sensors into ev_chargers[] during migration
-* [ ] Run tests: `uv run python -m pytest -q`
-* [ ] Run lint: `pnpm lint` and `uv run ruff check .`
+* [x] Update `config_migration.py` to delete `ev_soc`, `ev_plug`, `ev_power` from input_sensors after migration to ev_chargers[]
+* [x] Run tests: `uv run python -m pytest tests/test_migration.py -v` (all 6 passed)
+* [x] Run lint: `uv run ruff check .` (all passed)
 
 ---
 

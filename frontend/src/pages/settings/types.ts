@@ -968,33 +968,6 @@ export const evSections: SettingsSection[] = [
         ],
     },
     {
-        title: 'HA Sensors',
-        description: 'Home Assistant sensors for EV monitoring.',
-        fields: [
-            {
-                key: 'input_sensors.ev_soc',
-                label: 'EV State of Charge (%)',
-                path: ['input_sensors', 'ev_soc'],
-                type: 'entity',
-                helper: 'Current state of charge of the EV battery. Required for EV charging optimization.',
-            },
-            {
-                key: 'input_sensors.ev_plug',
-                label: 'EV Plug Status',
-                path: ['input_sensors', 'ev_plug'],
-                type: 'entity',
-                helper: 'Binary sensor indicating if the EV is plugged in. Triggers re-planning when car connects.',
-            },
-            {
-                key: 'input_sensors.ev_power',
-                label: 'EV Charging Power (W/kW)',
-                path: ['input_sensors', 'ev_power'],
-                type: 'entity',
-                helper: 'Current charging power of the EV. Used for live metrics and power flow display.',
-            },
-        ],
-    },
-    {
         title: 'Control',
         description: 'EV charging control settings.',
         fields: [

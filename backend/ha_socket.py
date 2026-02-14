@@ -105,12 +105,16 @@ class HAWebSocketClient:
             if "vacation_mode" in sensors:
                 mapping[sensors["vacation_mode"]] = "vacation_mode"
 
-            # Rev K25: EV Charging sensors
+            # Rev F63: EV Charging sensors - read only from ev_chargers[]
             if system.get("has_ev_charger", False):
-                if "ev_soc" in sensors:
-                    mapping[sensors["ev_soc"]] = "ev_soc"
-                if "ev_plug" in sensors:
-                    mapping[sensors["ev_plug"]] = "ev_plug"
+                ev_chargers = cfg.get("ev_chargers", [])
+                for ev in ev_chargers:
+                    if ev.get("enabled", True):
+                        if ev.get("soc_sensor"):
+                            mapping[ev["soc_sensor"]] = "ev_soc"
+                        if ev.get("plug_sensor"):
+                            mapping[ev["plug_sensor"]] = "ev_plug"
+                        break  # Only use first enabled EV charger
 
             # Store inversion flags for efficient lookup in _handle_state_change
             self.inversion_flags = {

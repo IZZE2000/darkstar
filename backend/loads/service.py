@@ -45,6 +45,10 @@ class LoadDisaggregator:
 
     def _initialize_from_entity_arrays(self, water_heaters: list[dict], ev_chargers: list[dict]):
         """Initialize loads from new entity-centric arrays (ARC15)."""
+        # Ensure input_sensors dict exists in config
+        if "input_sensors" not in self.config:
+            self.config["input_sensors"] = {}
+
         # Process water heaters
         for wh in water_heaters:
             if not wh.get("enabled", True):
@@ -122,6 +126,9 @@ class LoadDisaggregator:
             )
             self.register_load(load)
             logger.info(f"Registered EV charger from ARC15 config: {load_id}")
+
+            # REV F63: soc_sensor and plug_sensor are read directly from ev_chargers[]
+            # in ha_socket.py and inputs.py - no need to add to input_sensors
 
     def _initialize_from_deferrable_loads(self, input_sensors: dict):
         """Initialize loads from legacy deferrable_loads format."""
