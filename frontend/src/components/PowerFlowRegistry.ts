@@ -75,7 +75,7 @@ export const NODE_REGISTRY: FlowNodeConfig[] = [
         lucideIcon: Battery,
         lucideIconCharging: BatteryCharging,
         color: 'rgb(var(--color-good))',
-        label: (data) => (data.battery.kw <= 0 ? 'Charging' : 'Discharging'),
+        label: (data) => (data.battery.kw <= 0 ? 'Charge' : 'Discharge'),
         valueAccessor: (data) => fmtKw(data.battery.kw),
         subValueAccessor: (data) => `${data.battery.soc.toFixed(0)}%`,
         glowIntensityAccessor: (data) => Math.min(Math.abs(data.battery.kw) / 6, 1),

@@ -61,7 +61,7 @@ export function CircuitNode({
 
     // Bracket variant (Peripheral Nodes)
     // SVG Brackets to cover the whole node (Label + Value + SubValue)
-    const bW = 43 // Bracket Width (half) ALSO CHANGE IN POWERFLOWCARD.TSX L116-117
+    const bW = 46 // Bracket Width (half) ALSO CHANGE IN POWERFLOWCARD.TSX L116-117
     const bH = 22 // Bracket Height (half)
 
     // Brackets: Vertical line with rounded corners

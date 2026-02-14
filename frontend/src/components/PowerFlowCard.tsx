@@ -115,7 +115,7 @@ export default function PowerFlowCard({ data, systemConfig, compact = false }: P
 
         // EDIT HERE: Sync these with CircuitNode.tsx if you change sizes there!
         const HOUSE_R = 32 // 32 + 4 padding
-        const BRACKET_W_HALF = 44 // bW (42) + 2 padding
+        const BRACKET_W_HALF = 46 // bW (42) + 2 padding
 
         // Defaults
         let start = { x: fromPos.x, y: fromPos.y }
