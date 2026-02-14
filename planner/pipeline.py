@@ -41,6 +41,65 @@ from planner.vacation_state import load_last_anti_legionella, save_last_anti_leg
 logger = logging.getLogger("darkstar.planner")
 
 
+def calculate_ev_deadline(departure_time: str, now: datetime, timezone: str) -> datetime | None:
+    """
+    Calculate the next occurrence of departure time from current time.
+
+    REV K25 Phase 3: Deadline calculation for EV charging constraint.
+
+    Args:
+        departure_time: Time string in "HH:MM" format (24-hour)
+        now: Current datetime (timezone-aware)
+        timezone: IANA timezone name (e.g., "Europe/Stockholm")
+
+    Returns:
+        Timezone-aware datetime of the next deadline, or None if departure_time is invalid/empty
+
+    Examples:
+        - now=15:00, departure="07:00" -> tomorrow 07:00 (next day)
+        - now=06:00, departure="07:00" -> today 07:00 (1 hour from now)
+        - now=09:00, departure="07:00" -> tomorrow 07:00 (next day, for following day)
+    """
+    if not departure_time:
+        return None
+
+    try:
+        # Parse the departure time
+        hour, minute = map(int, departure_time.split(":"))
+        if not (0 <= hour <= 23 and 0 <= minute <= 59):
+            logger.warning(f"Invalid departure time format: {departure_time}")
+            return None
+    except (ValueError, AttributeError):
+        logger.warning(f"Failed to parse departure time: {departure_time}")
+        return None
+
+    # Get timezone
+    try:
+        tz = pytz.timezone(timezone)
+    except pytz.UnknownTimeZoneError:
+        logger.warning(f"Unknown timezone: {timezone}, using UTC")
+        tz = pytz.UTC
+
+    # Ensure 'now' is timezone-aware
+    if now.tzinfo is None:
+        now = tz.localize(now)
+
+    # Create deadline for today
+    today_deadline = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+
+    # If today's deadline has passed, use tomorrow
+    if today_deadline <= now:
+        from datetime import timedelta
+
+        deadline = today_deadline + timedelta(days=1)
+        logger.debug(f"EV deadline: {departure_time} has passed today, using tomorrow: {deadline}")
+    else:
+        deadline = today_deadline
+        logger.debug(f"EV deadline: {departure_time} is today: {deadline}")
+
+    return deadline
+
+
 class PlannerPipeline:
     """
     Orchestrator for the modular planner pipeline.
@@ -399,11 +458,51 @@ class PlannerPipeline:
             ev_plugged = bool(initial_state.get("ev_plugged_in", False))
             kepler_config.ev_current_soc_percent = ev_soc
             kepler_config.ev_plugged_in = ev_plugged
-            logger.info(
-                "EV Charger: SoC=%.1f%%, Plugged=%s",
-                ev_soc,
-                ev_plugged,
-            )
+
+            # REV K25 Phase 3: Calculate departure deadline
+            departure_time = active_config.get("ev_departure_time", "")
+            if departure_time and ev_plugged:
+                ev_deadline = calculate_ev_deadline(
+                    departure_time,
+                    now_slot.to_pydatetime(),
+                    active_config.get("timezone", "Europe/Stockholm"),
+                )
+                kepler_config.ev_deadline = ev_deadline
+
+                # REV K25 Phase 5: Check if deadline is urgent (< 1 hour away)
+                if ev_deadline:
+                    hours_to_deadline = (
+                        ev_deadline - now_slot.to_pydatetime()
+                    ).total_seconds() / 3600
+                    if hours_to_deadline < 1.0:
+                        kepler_config.ev_deadline_urgent = True
+                        logger.warning(
+                            "REV K25: EV deadline approaching (%.1f hours) - maximizing charging power",
+                            hours_to_deadline,
+                        )
+                    else:
+                        kepler_config.ev_deadline_urgent = False
+
+                    logger.info(
+                        "EV Charger: SoC=%.1f%%, Plugged=%s, Departure=%s, Deadline=%s, Urgent=%s",
+                        ev_soc,
+                        ev_plugged,
+                        departure_time,
+                        ev_deadline.strftime("%Y-%m-%d %H:%M"),
+                        kepler_config.ev_deadline_urgent,
+                    )
+                else:
+                    logger.info(
+                        "EV Charger: SoC=%.1f%%, Plugged=%s",
+                        ev_soc,
+                        ev_plugged,
+                    )
+            else:
+                logger.info(
+                    "EV Charger: SoC=%.1f%%, Plugged=%s",
+                    ev_soc,
+                    ev_plugged,
+                )
 
         # Rev K19: Vacation Mode Anti-Legionella
         vacation_cfg = water_cfg.get("vacation_mode", {})

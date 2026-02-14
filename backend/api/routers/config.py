@@ -398,26 +398,8 @@ def _validate_config_for_save(config: dict[str, Any]) -> list[dict[str, str]]:
                         }
                     )
 
-                # Validate SoC percentages
-                min_soc = ev.get("min_soc_percent", 0)
-                if not isinstance(min_soc, int | float) or min_soc < 0 or min_soc > 100:
-                    issues.append(
-                        {
-                            "severity": "warning",
-                            "message": f"EV charger '{ev.get('id', i + 1)}' has invalid min_soc_percent: {min_soc}",
-                            "guidance": "min_soc_percent must be between 0 and 100.",
-                        }
-                    )
-
-                target_soc = ev.get("target_soc_percent", 0)
-                if not isinstance(target_soc, int | float) or target_soc < 0 or target_soc > 100:
-                    issues.append(
-                        {
-                            "severity": "warning",
-                            "message": f"EV charger '{ev.get('id', i + 1)}' has invalid target_soc_percent: {target_soc}",
-                            "guidance": "target_soc_percent must be between 0 and 100.",
-                        }
-                    )
+                # REV K25 Phase 1: Legacy min_soc_percent and target_soc_percent fields removed
+                # EV charging is now controlled via penalty_levels only
 
                 # Validate sensor format
                 sensor = ev.get("sensor", "")
@@ -437,6 +419,19 @@ def _validate_config_for_save(config: dict[str, Any]) -> list[dict[str, str]]:
                         "severity": "warning",
                         "message": "All EV chargers are disabled",
                         "guidance": "Enable at least one EV charger or set system.has_ev_charger to false.",
+                    }
+                )
+
+            # REV K25 Phase 2: Validate departure time format
+            departure_time = config.get("ev_departure_time", "")
+            if departure_time and not re.match(
+                r"^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$", departure_time
+            ):
+                issues.append(
+                    {
+                        "severity": "error",
+                        "message": f"Invalid departure time format: '{departure_time}'",
+                        "guidance": "ev_departure_time must be in 24-hour HH:MM format (e.g., '07:00' or '23:30').",
                     }
                 )
 

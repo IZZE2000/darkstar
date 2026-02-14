@@ -124,8 +124,6 @@ ev_chargers:
     enabled: false                   # Master toggle for this EV (set true to enable)
     max_power_kw: 11.0               # Maximum charging power (kW)
     battery_capacity_kwh: 82.0       # Battery capacity for SoC calculations (kWh)
-    min_soc_percent: 20.0            # Minimum SoC constraint (%)
-    target_soc_percent: 80.0         # Target SoC for charging (%)
     sensor: sensor.tesla_power       # Home Assistant entity for power reading
     soc_sensor: ""                   # EV battery state of charge (%) - Required for smart charging
     plug_sensor: ""                  # EV plug status sensor - Required for smart charging
@@ -138,12 +136,15 @@ ev_chargers:
   #   enabled: false
   #   max_power_kw: 7.4
   #   battery_capacity_kwh: 42.0
-  #   min_soc_percent: 20.0
-  #   target_soc_percent: 80.0
   #   sensor: sensor.fiat_power
   #   type: variable
   #   nominal_power_kw: 7.4
 
+# EV Departure Time (REV K25)
+# Universal departure time that applies to all EVs. The system will optimize
+# charging to complete by this time each day. Format: "HH:MM" (24-hour)
+# Example: "07:00" means car must be ready by 7:00 AM daily
+ev_departure_time: "07:00"
 
 # S-Index Configuration (Risk & Safety Strategy)
 s_index:

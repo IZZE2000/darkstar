@@ -28,8 +28,6 @@ export interface EVChargerEntity {
     enabled: boolean
     max_power_kw: number
     battery_capacity_kwh: number
-    min_soc_percent: number
-    target_soc_percent: number
     sensor: string
     soc_sensor: string
     plug_sensor: string
@@ -68,8 +66,6 @@ const createDefaultEVCharger = (index: number): EVChargerEntity => ({
     enabled: true,
     max_power_kw: 11.0,
     battery_capacity_kwh: 82.0,
-    min_soc_percent: 20.0,
-    target_soc_percent: 80.0,
     sensor: '',
     soc_sensor: '',
     plug_sensor: '',
@@ -495,41 +491,6 @@ export const EntityArrayEditor: React.FC<EntityArrayEditorProps> = ({
                                         {/* EV Charger Specific Fields */}
                                         {!isWaterHeater && (
                                             <>
-                                                <div>
-                                                    <label className="text-[10px] uppercase font-bold text-muted mb-1.5 block">
-                                                        Min SoC (%)
-                                                    </label>
-                                                    <NumberInput
-                                                        value={(entity as EVChargerEntity).min_soc_percent}
-                                                        onChange={(val) =>
-                                                            updateEntity(index, {
-                                                                min_soc_percent: Number(val),
-                                                            } as Partial<EVChargerEntity>)
-                                                        }
-                                                        disabled={disabled}
-                                                        step={1}
-                                                        min={0}
-                                                        max={100}
-                                                    />
-                                                </div>
-                                                <div>
-                                                    <label className="text-[10px] uppercase font-bold text-muted mb-1.5 block">
-                                                        Target SoC (%)
-                                                    </label>
-                                                    <NumberInput
-                                                        value={(entity as EVChargerEntity).target_soc_percent}
-                                                        onChange={(val) =>
-                                                            updateEntity(index, {
-                                                                target_soc_percent: Number(val),
-                                                            } as Partial<EVChargerEntity>)
-                                                        }
-                                                        disabled={disabled}
-                                                        step={1}
-                                                        min={0}
-                                                        max={100}
-                                                    />
-                                                </div>
-
                                                 {/* Penalty Levels Section */}
                                                 <div className="sm:col-span-2">
                                                     <div className="bg-surface2/30 rounded-lg p-4 border border-line/20">

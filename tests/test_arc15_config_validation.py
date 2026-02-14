@@ -120,8 +120,6 @@ class TestEVChargerValidation:
                     "enabled": True,
                     "max_power_kw": 11.0,
                     "battery_capacity_kwh": 82.0,
-                    "min_soc_percent": 20.0,
-                    "target_soc_percent": 80.0,
                     "sensor": "sensor.tesla_power",
                     "type": "variable",
                     "nominal_power_kw": 11.0,
@@ -191,24 +189,53 @@ class TestEVChargerValidation:
         errors = [i for i in issues if i["severity"] == "error"]
         assert any("invalid battery_capacity_kwh" in e["message"] for e in errors)
 
-    def test_ev_charger_invalid_soc(self):
-        """Test EV charger with invalid SoC percentages."""
-        config = {
-            "config_version": 2,
-            "system": {"has_ev_charger": True, "has_battery": False, "has_water_heater": False},
-            "ev_chargers": [
-                {
-                    "id": "tesla",
-                    "name": "Tesla",
-                    "max_power_kw": 11.0,
-                    "battery_capacity_kwh": 82.0,
-                    "min_soc_percent": 150,  # Invalid
-                }
-            ],
-        }
-        issues = _validate_config_for_save(config)
-        warnings = [i for i in issues if i["severity"] == "warning"]
-        assert any("invalid min_soc_percent" in w["message"] for w in warnings)
+    def test_ev_departure_time_valid(self):
+        """Test valid departure time formats."""
+        for time_str in ["07:00", "23:30", "00:00", "12:59", "7:00"]:
+            config = {
+                "config_version": 2,
+                "system": {"has_ev_charger": True, "has_battery": False, "has_water_heater": False},
+                "ev_chargers": [
+                    {
+                        "id": "tesla",
+                        "name": "Tesla",
+                        "max_power_kw": 11.0,
+                        "battery_capacity_kwh": 82.0,
+                    }
+                ],
+                "ev_departure_time": time_str,
+            }
+            issues = _validate_config_for_save(config)
+            errors = [
+                i
+                for i in issues
+                if i["severity"] == "error" and "departure time" in i["message"].lower()
+            ]
+            assert len(errors) == 0, f"Time '{time_str}' should be valid"
+
+    def test_ev_departure_time_invalid(self):
+        """Test invalid departure time formats."""
+        for time_str in ["25:00", "12:60", "7:00 AM", "invalid", "25:30"]:
+            config = {
+                "config_version": 2,
+                "system": {"has_ev_charger": True, "has_battery": False, "has_water_heater": False},
+                "ev_chargers": [
+                    {
+                        "id": "tesla",
+                        "name": "Tesla",
+                        "max_power_kw": 11.0,
+                        "battery_capacity_kwh": 82.0,
+                    }
+                ],
+                "ev_departure_time": time_str,
+            }
+            issues = _validate_config_for_save(config)
+            errors = [
+                i
+                for i in issues
+                if i["severity"] == "error" and "departure time" in i["message"].lower()
+            ]
+            assert len(errors) == 1, f"Time '{time_str}' should be invalid"
 
 
 class TestBackwardCompatibility:

@@ -968,6 +968,19 @@ export const evSections: SettingsSection[] = [
         ],
     },
     {
+        title: 'Departure Time',
+        description: 'Set your daily departure time. The system will optimize charging to complete by this time.',
+        fields: [
+            {
+                key: 'ev_departure_time',
+                label: 'Departure Time',
+                path: ['ev_departure_time'],
+                type: 'text',
+                helper: 'Time you need the car ready by (24-hour format, e.g., "07:00"). Charging will be scheduled to complete before this time.',
+            },
+        ],
+    },
+    {
         title: 'Control',
         description: 'EV charging control settings.',
         fields: [

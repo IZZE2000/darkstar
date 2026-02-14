@@ -469,8 +469,6 @@ def migrate_arc15_entity_config(config: Any) -> tuple[Any, bool]:
                 "enabled": has_ev,
                 "max_power_kw": load.get("nominal_power_kw", 7.4),
                 "battery_capacity_kwh": ev_charger.get("battery_capacity_kwh", 77.0),
-                "min_soc_percent": 20.0,
-                "target_soc_percent": 80.0,
                 "sensor": sensor_entity,
                 "soc_sensor": input_sensors.get("ev_soc", ""),
                 "plug_sensor": input_sensors.get("ev_plug", ""),
@@ -762,6 +760,43 @@ def _validate_critical_values_preserved(before: dict, after: dict) -> bool:
     return True
 
 
+def migrate_ev_charger_legacy_fields(config: Any) -> tuple[Any, bool]:
+    """
+    Migration for REV K25 Phase 1: Remove legacy min_soc/target_soc fields from EV chargers.
+
+    These fields are no longer used - EV charging is now controlled entirely via
+    penalty_levels. This migration removes them from all ev_chargers[] entries.
+
+    Args:
+        config: Configuration dict
+
+    Returns:
+        Tuple of (migrated_config, changed_flag)
+    """
+    changed = False
+
+    if not isinstance(config, dict):
+        return config, False
+
+    ev_chargers = config.get("ev_chargers", [])
+    if not isinstance(ev_chargers, list):
+        return config, False
+
+    legacy_fields = ["min_soc_percent", "target_soc_percent"]
+
+    for i, ev in enumerate(ev_chargers):
+        if not isinstance(ev, dict):
+            continue
+
+        for field in legacy_fields:
+            if field in ev:
+                del ev[field]
+                logger.info(f"✂️  REV K25: Removed legacy field '{field}' from ev_chargers[{i}]")
+                changed = True
+
+    return config, changed
+
+
 async def migrate_config(
     config_path: str = "config.yaml",
     default_path: str = "config.default.yaml",
@@ -829,6 +864,7 @@ async def migrate_config(
         migrate_inverter_profile_keys,
         migrate_arc15_entity_config,  # ARC15: Entity-centric config restructure
         cleanup_water_heating_duplicates,  # Cleanup: Remove duplicate keys from water_heating
+        migrate_ev_charger_legacy_fields,  # REV K25 Phase 1: Remove legacy EV SoC fields
     ]
 
     for step in legacy_steps:

@@ -13,6 +13,8 @@ import pulp
 
 from .types import KeplerConfig, KeplerInput, KeplerResult, KeplerResultSlot
 
+logger = logging.getLogger("darkstar.kepler")
+
 
 class KeplerSolver:
     def solve(self, input_data: KeplerInput, config: KeplerConfig) -> KeplerResult:
@@ -68,6 +70,15 @@ class KeplerSolver:
         # modulation and incentive buckets (REV // F51)
         ev_enabled = config.ev_charging_enabled and config.ev_plugged_in
         if ev_enabled:
+            # Log deadline constraint status
+            if config.ev_deadline:
+                logger.info(
+                    "REV K25: EV deadline constraint active - deadline at %s",
+                    config.ev_deadline.strftime("%Y-%m-%d %H:%M"),
+                )
+            else:
+                logger.info("REV K25: EV charging enabled, no deadline constraint")
+
             # EV energy tracking variable (kWh charged in each slot) - Continuous modulation!
             ev_energy = pulp.LpVariable.dicts("ev_energy_kwh", range(T), lowBound=0.0)
 
@@ -169,6 +180,11 @@ class KeplerSolver:
             if ev_enabled:
                 # Modulating power: Bound by max_power, not binary
                 prob += ev_energy[t] <= config.ev_max_power_kw * h
+
+                # REV K25 Phase 4: Enforce deadline constraint
+                # If slot end time is after deadline, no EV charging allowed
+                if config.ev_deadline is not None and s.end_time > config.ev_deadline:
+                    prob += ev_energy[t] == 0.0
             else:
                 ev_energy[t] = 0.0
 
@@ -431,6 +447,13 @@ class KeplerSolver:
             - (
                 pulp.lpSum(ev_bucket_charged[i] * buckets[i].value_sek for i in range(num_buckets))
                 if ev_enabled and num_buckets > 0
+                else 0.0
+            )
+            # REV K25 Phase 5: Urgent deadline - maximize charging with large negative penalty
+            # When deadline < 1 hour away, we strongly incentivize charging regardless of price
+            - (
+                pulp.lpSum(ev_energy[t] for t in range(T)) * 100.0
+                if ev_enabled and config.ev_deadline_urgent
                 else 0.0
             )
         )

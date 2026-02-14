@@ -75,6 +75,10 @@ class KeplerConfig:
     ev_plugged_in: bool = False  # Whether car is currently plugged in
     # Incentive buckets for piecewise linear objective (Rev // F51)
     ev_incentive_buckets: list[IncentiveBucket] | None = None
+    # REV K25 Phase 3: Departure time constraint
+    ev_deadline: datetime | None = None  # Deadline for EV charging (None = no deadline)
+    # REV K25 Phase 5: Deadline urgency flag
+    ev_deadline_urgent: bool = False  # True if deadline < 1 hour away (maximize charging)
 
     def __post_init__(self):
         """Validate configuration after initialization."""
