@@ -110,6 +110,8 @@ class HAWebSocketClient:
                 ev_chargers = cfg.get("ev_chargers", [])
                 for ev in ev_chargers:
                     if ev.get("enabled", True):
+                        if ev.get("sensor"):
+                            mapping[ev["sensor"]] = "ev_kw"
                         if ev.get("soc_sensor"):
                             mapping[ev["soc_sensor"]] = "ev_soc"
                         if ev.get("plug_sensor"):
