@@ -1,16 +1,43 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Settings as SettingsIcon, Sliders, Palette, Zap, ShieldAlert, Bug } from 'lucide-react'
+import {
+    Settings as SettingsIcon,
+    Sliders,
+    Palette,
+    Zap,
+    ShieldAlert,
+    Bug,
+    Sun,
+    Battery,
+    Zap as EvIcon,
+    Droplets,
+} from 'lucide-react'
 
 import { SystemTab } from './SystemTab'
 import { ParametersTab } from './ParametersTab'
+import { SolarTab } from './SolarTab'
+import { BatteryTab } from './BatteryTab'
+import { EVTab } from './EVTab'
+import { WaterTab } from './WaterTab'
 import { UITab } from './UITab'
 import { AdvancedTab } from './AdvancedTab'
 import { DebugContent } from '../Debug'
+import { Api } from '../../lib/api'
+
+interface SystemFlags {
+    has_solar?: boolean
+    has_battery?: boolean
+    has_water_heater?: boolean
+    has_ev_charger?: boolean
+}
 
 const ALL_TABS = [
     { id: 'system', label: 'System', icon: <SettingsIcon size={16} /> },
     { id: 'parameters', label: 'Parameters', icon: <Sliders size={16} /> },
+    { id: 'solar', label: 'Solar', icon: <Sun size={16} />, showIf: 'system.has_solar' },
+    { id: 'battery', label: 'Battery', icon: <Battery size={16} />, showIf: 'system.has_battery' },
+    { id: 'ev', label: 'EV', icon: <EvIcon size={16} />, showIf: 'system.has_ev_charger' },
+    { id: 'water', label: 'Water', icon: <Droplets size={16} />, showIf: 'system.has_water_heater' },
     { id: 'ui', label: 'UI', icon: <Palette size={16} /> },
     { id: 'advanced', label: 'Advanced', icon: <Zap size={16} />, advancedOnly: true },
     { id: 'debug', label: 'Debug', icon: <Bug size={16} />, advancedOnly: true },
@@ -27,9 +54,27 @@ export default function Settings() {
         return saved === 'true'
     })
 
+    const [systemFlags, setSystemFlags] = useState<SystemFlags>({})
+    const [configLoading, setConfigLoading] = useState(true)
+
     useEffect(() => {
         localStorage.setItem(STORAGE_KEY, String(advancedMode))
     }, [advancedMode])
+
+    useEffect(() => {
+        Api.config()
+            .then((config) => {
+                const system = ((config as Record<string, unknown>).system as Record<string, unknown>) || {}
+                setSystemFlags({
+                    has_solar: Boolean(system.has_solar),
+                    has_battery: Boolean(system.has_battery),
+                    has_water_heater: Boolean(system.has_water_heater),
+                    has_ev_charger: Boolean(system.has_ev_charger),
+                })
+            })
+            .catch((err) => console.error('Failed to load config for tab visibility:', err))
+            .finally(() => setConfigLoading(false))
+    }, [])
 
     const setActiveTab = React.useCallback(
         (tab: string) => {
@@ -45,22 +90,51 @@ export default function Settings() {
         }
     }, [activeTab, advancedMode, setActiveTab])
 
-    const tabs = ALL_TABS.filter((t) => !t.advancedOnly || advancedMode)
+    // Filter tabs based on system flags
+    const tabs = useMemo(() => {
+        return ALL_TABS.filter((t) => {
+            if (t.advancedOnly && !advancedMode) return false
+            if (!t.showIf) return true
+            const flagKey = t.showIf.replace('system.', '') as keyof SystemFlags
+            return systemFlags[flagKey] === true
+        })
+    }, [advancedMode, systemFlags])
 
     const renderTabContent = () => {
         switch (activeTab) {
             case 'parameters':
                 return <ParametersTab advancedMode={advancedMode} />
+            case 'solar':
+                return <SolarTab advancedMode={advancedMode} />
+            case 'battery':
+                return <BatteryTab advancedMode={advancedMode} />
+            case 'ev':
+                return <EVTab advancedMode={advancedMode} />
+            case 'water':
+                return <WaterTab advancedMode={advancedMode} />
             case 'ui':
                 return <UITab advancedMode={advancedMode} />
             case 'advanced':
                 return <AdvancedTab advancedMode={advancedMode} />
             case 'debug':
-                return <DebugContent className="" /> // Remove default padding
+                return <DebugContent className="" />
             case 'system':
             default:
                 return <SystemTab advancedMode={advancedMode} />
         }
+    }
+
+    // Show loading while fetching system flags
+    if (configLoading) {
+        return (
+            <main className="p-4 lg:p-8">
+                <div className="mx-auto max-w-5xl">
+                    <div className="flex items-center justify-center p-8">
+                        <div className="animate-pulse text-muted">Loading...</div>
+                    </div>
+                </div>
+            </main>
+        )
     }
 
     return (

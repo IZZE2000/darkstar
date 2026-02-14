@@ -16,12 +16,15 @@ export const AdvancedLockedNotice: React.FC = () => (
     </div>
 )
 
-export const AdditionalAdvancedNotice: React.FC = () => (
-    <div className="col-span-2 pt-2 border-t border-line/5 mt-1 flex items-center gap-2 text-[9px] text-muted/60 font-bold uppercase tracking-[0.15em]">
-        <ShieldAlert size={10} className="text-bad/50" />
-        <span>Additional tuning available in Advanced Mode</span>
-    </div>
-)
+export const AdditionalAdvancedNotice: React.FC<{ visible?: boolean }> = ({ visible = true }) => {
+    if (!visible) return null
+    return (
+        <div className="col-span-2 pt-2 border-t border-line/5 mt-1 flex items-center gap-2 text-[9px] text-muted/60 font-bold uppercase tracking-[0.15em]">
+            <ShieldAlert size={10} className="text-bad/50" />
+            <span>Additional tuning available in Advanced Mode</span>
+        </div>
+    )
+}
 
 export const GlobalAdvancedLockedNotice: React.FC = () => (
     <div className="flex items-center gap-4 py-8 px-8 border-2 border-dashed border-line/20 rounded-2xl bg-surface2/10 mt-4 animate-in fade-in slide-in-from-bottom-4 duration-700">

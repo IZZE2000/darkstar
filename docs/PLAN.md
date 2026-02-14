@@ -5,8 +5,6 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 
 ---
 
-## Revision Naming Conventions
-
 | Prefix  | Area                 | Examples |
 | ------- | -------------------- | -------- |
 | **K**   | Kepler (MILP solver) | F41      |
@@ -478,5 +476,187 @@ The penalty levels should be SINGLE SOURCE OF TRUTH in the `ev_chargers[]` array
 * [x] **Test 5**: Invalid arrays (kwp <= 0) filtered with warning logged
 * [x] **Test 6**: Empty/invalid arrays case handled with fallback to default array
 * [x] **All Tests Pass**: `test_migration.py`, `test_multi_array_config.py`, `test_config_merge.py` all passing
+
+---
+
+### [DONE] REV // UI20 — Device-Centric Settings Tabs
+
+**Goal:** Reorganize settings page into device-centric tabs that appear based on `has_*` toggles. Move ALL related settings (both standard and advanced) into each device tab.
+
+**Context:** The Parameters tab is overloaded with 9 sections including EV and Water Heater settings that are conditionally shown. The System tab is overloaded when all devices are enabled. Each device (Solar, Battery, EV, Water) should have its own contained tab that appears only when that device is enabled.
+
+**Proposed Tab Structure:**
+```
+[System] [Parameters] [Solar] [Battery] [EV] [Water] [UI] [Advanced*] [Debug*]
+(* = only when advanced mode enabled)
+```
+
+**Tab Breakdown:**
+
+| Tab | Shown When | Contains |
+|-----|-----------|----------|
+| **System** | Always | has_* toggles, grid config, pricing, timezone, universal HA entities |
+| **Parameters** | Always | Forecasting, Arbitrage, Learning, S-Index (unchanged - stays here!) |
+| **Solar** | has_solar=true | Location, solar array config |
+| **Battery** | has_battery=true | Battery specs, sensors, controls |
+| **EV** | has_ev_charger=true | EV chargers, sensors, controls |
+| **Water** | has_water_heater=true | Water heaters, sensors, scheduling, temps, vacation |
+| **UI** | Always | Notifications, theme, dashboard |
+| **Advanced** | advancedMode=true | Debug features |
+| **Debug** | advancedMode=true | Debug content |
+
+**Plan:**
+
+#### Phase 1: Tab Infrastructure [DONE]
+* [x] Update `frontend/src/pages/settings/index.tsx` ALL_TABS array to include new device tabs
+* [x] Add conditional visibility logic: tabs only appear when corresponding `has_*` config is true
+* [x] Add icons for new tabs (Sun for Solar, Battery for Battery, Zap for EV, Droplets for Water)
+* [x] Update tab rendering switch statement to handle new tab IDs
+
+#### Phase 2: Create SolarTab [DONE]
+* [x] Create `frontend/src/pages/settings/SolarTab.tsx` component
+* [x] Move from `systemSections`:
+  - "Location & Solar Array" section → latitude, longitude, solar_arrays
+* [x] Create sections: "Location", "Solar Arrays"
+
+#### Phase 3: Create BatteryTab [DONE]
+* [x] Create `frontend/src/pages/settings/BatteryTab.tsx` component
+* [x] Move from `systemSections`:
+  - "Battery Specifications" entire section
+  - Battery SoC input sensor (from "Required HA Input Sensors")
+  - Battery Power input sensor (from "Optional HA Input Sensors")
+  - Battery lifetime stats (from "Optional HA Input Sensors")
+* [x] Create sections: "Specifications", "HA Sensors"
+
+#### Phase 4: Create EVTab [DONE]
+* [x] Create `frontend/src/pages/settings/EVTab.tsx` component
+* [x] Move from `systemSections`:
+  - EV input sensors (ev_soc, ev_plug, ev_power)
+  - EV control entities (switch_entity, replan_on_plugin, replan_on_unplug)
+* [x] Move from `parameterSections`:
+  - "EV Chargers" section (entity_array)
+* [x] Create sections: "EV Chargers", "HA Sensors", "Control"
+
+#### Phase 5: Create WaterTab [DONE]
+* [x] Create `frontend/src/pages/settings/WaterTab.tsx` component
+* [x] Move from `systemSections`:
+  - Water input sensors (water_power, water_heater_consumption)
+  - Water control entity (target_entity)
+* [x] Move from `parameterSections`:
+  - "Water Heating" section
+  - "Water Heater Vacation Mode" section
+  - "Water Heaters" section (entity_array)
+* [x] Move from `uiSections`:
+  - Water notification toggles (on_water_heat_start, on_water_heat_stop)
+* [x] Create sections: "Water Heaters", "HA Sensors", "Scheduling", "Temperatures", "Vacation Mode"
+
+#### Phase 6: Simplify SystemTab [DONE]
+* [x] Created new device tabs with device-specific sections
+* [x] Removed Location & Solar Array section from systemSections
+* [x] Removed Battery Specifications section from systemSections
+* [x] Removed EV Chargers, Water Heating sections from parameterSections
+* [x] Removed device-specific sensors from systemSections (PV, Battery sensors moved to device tabs in Phase 9)
+* [x] Device-specific control entities moved to device tabs
+
+#### Phase 7: Update Type Definitions [DONE]
+* [x] Added new section arrays: solarSections, batterySections, evSections, waterSections
+* [x] Exported new field lists: solarFieldList, batteryFieldList, evFieldList, waterFieldList
+
+#### Phase 8: Lint & Test [DONE]
+* [x] Run `pnpm lint` - fix any errors
+* [x] Run `pnpm format` - ensure consistent formatting
+* [x] Build succeeds
+
+#### Phase 9: Bug Fixes & Production Polish [DONE]
+
+##### Phase 9.1: Fix Broken Entity Selectors in Device Tabs [DONE]
+* [x] Fix prop names in all 4 device tabs:
+  - Changed `entities={haEntities}` to `haEntities={haEntities}`
+  - Changed `entitiesLoading={haLoading}` to `haLoading={haLoading}`
+  - Files: BatteryTab.tsx, EVTab.tsx, WaterTab.tsx, SolarTab.tsx
+
+##### Phase 9.2: Remove Unwanted White Lines from Cards [DONE]
+* [x] Removed `border-b border-border` from card headers in all device tabs
+* [x] Files: BatteryTab.tsx, EVTab.tsx, WaterTab.tsx, SolarTab.tsx
+
+##### Phase 9.3: Fix "Advanced Tuning Mode Required" Always Showing [DONE]
+* [x] Updated `AdditionalAdvancedNotice` component to accept `visible` prop
+* [x] Fixed `GlobalAdvancedLockedNotice` usage in device tabs (removed incorrect props)
+* [x] Added proper conditional rendering logic to device tabs
+* [x] Files: AdvancedLockedNotice.tsx, all device tab files
+
+##### Phase 9.4: Move Device-Specific Sensors to Device Tabs [DONE]
+* [x] Moved from systemSections to solarSections:
+  - `input_sensors.pv_power`
+  - `input_sensors.today_pv_production`
+  - `input_sensors.total_pv_production`
+* [x] Moved from systemSections to batterySections:
+  - `input_sensors.battery_soc`
+  - `input_sensors.battery_power`
+  - `input_sensors.today_battery_charge`
+  - `input_sensors.today_battery_discharge`
+  - `input_sensors.total_battery_charge`
+  - `input_sensors.total_battery_discharge`
+  - `executor.inverter.work_mode`
+* [x] Files: types.ts (solarSections, batterySections, systemSections)
+
+##### Phase 9.5: Remove Duplicate Notifications Section from Water Tab [DONE]
+* [x] Removed "Notifications" section from waterSections
+* [x] Notifications already exist in executor page
+* [x] Files: types.ts
+
+##### Phase 9.6: Lint & Verify Build [DONE]
+* [x] Run `pnpm lint` - 0 errors, 0 warnings
+* [x] Build succeeds
+* [x] Entity selectors now work correctly in device tabs
+* [x] Tab visibility works with has_* toggles
+
+#### Phase 10: Documentation Update [DONE]
+* [x] Updated docs/ARCHITECTURE.md with new tab structure (Section 16: Settings UI Architecture)
+
+---
+
+### [PLANNED] REV // F63 — Move EV SoC/Plug Sensors to ev_chargers[] Array
+
+**Goal:** Consolidate all EV configuration into the ev_chargers[] array, removing legacy input_sensors entries for ev_soc, ev_plug, and ev_power.
+
+**Context:** Following UI20, EV settings are in the EV tab with:
+- "EV Chargers" section: has `ev_chargers[]` array with `sensor` (power) field
+- "HA Sensors" section: has `input_sensors.ev_soc`, `input_sensors.ev_plug`, `input_sensors.ev_power` (legacy)
+
+After ARC15/UI20, ev_soc, ev_plug, and ev_power still live in input_sensors creating duplicate config paths. All EV config should be in one place (the ev_chargers[] array).
+
+**Plan:**
+
+#### Phase 1: Frontend - Add soc_sensor and plug_sensor to EV Charger Array
+* [ ] Add `soc_sensor` and `plug_sensor` fields to `EVChargerEntity` interface in `frontend/src/pages/settings/components/EntityArrayEditor.tsx`
+* [ ] Add UI fields in EntityArrayEditor for soc_sensor and plug_sensor (similar to power sensor field)
+* [ ] Note: power sensor already exists as `sensor` field in ev_chargers[]
+
+#### Phase 2: Frontend - Remove Legacy input_sensors Fields (EV Tab)
+* [ ] Remove `input_sensors.ev_soc` field from `frontend/src/pages/settings/types.ts` (in EV tab, section "HA Sensors")
+* [ ] Remove `input_sensors.ev_plug` field from `frontend/src/pages/settings/types.ts` (in EV tab, section "HA Sensors")
+* [ ] Remove `input_sensors.ev_power` field from `frontend/src/pages/settings/types.ts` (in EV tab, section "HA Sensors")
+
+#### Phase 3: Backend - Update Load Service
+* [ ] Update `backend/loads/service.py:_initialize_from_entity_arrays()` to extract soc_sensor and plug_sensor from ev_chargers[] and register as input sensors
+
+#### Phase 4: Backend - Update HA Socket
+* [ ] Update `backend/ha_socket.py` to read ev_soc and ev_plug from per-charger sensors in config (add helper to extract from ev_chargers[])
+
+#### Phase 5: Backend - Update Inputs
+* [ ] Update `inputs.py` to read ev_soc and ev_plug from ev_chargers[] array instead of input_sensors
+
+#### Phase 6: Config - Remove Legacy Fields
+* [ ] Remove `ev_soc:` from `config.default.yaml` input_sensors section
+* [ ] Remove `ev_plug:` from `config.default.yaml` input_sensors section
+* [ ] Remove `ev_power:` from `config.default.yaml` input_sensors section (already done in earlier fix)
+
+#### Phase 7: Migration & Tests
+* [ ] Update `config_migration.py` to extract soc_sensor, plug_sensor, and sensor (power) from input_sensors into ev_chargers[] during migration
+* [ ] Run tests: `uv run python -m pytest -q`
+* [ ] Run lint: `pnpm lint` and `uv run ruff check .`
+
+---
 
 ---

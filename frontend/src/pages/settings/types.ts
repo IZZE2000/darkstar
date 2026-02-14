@@ -164,160 +164,6 @@ export const systemSections: SettingsSection[] = [
         ],
     },
     {
-        title: 'Location & Solar Array',
-        description: 'Geolocation and PV array parameters used by the forecasting engine.',
-        fields: [
-            {
-                key: 'system.location.latitude',
-                label: 'Latitude',
-                helper: 'Decimal degrees, positive north. Example: 55.4932',
-                path: ['system', 'location', 'latitude'],
-                type: 'number',
-            },
-            {
-                key: 'system.location.longitude',
-                label: 'Longitude',
-                helper: 'Decimal degrees, positive east. Example: 13.1112',
-                path: ['system', 'location', 'longitude'],
-                type: 'number',
-            },
-            {
-                key: 'system.solar_arrays',
-                label: 'Solar Arrays',
-                path: ['system', 'solar_arrays'],
-                type: 'solar_arrays',
-                helper: 'Configure up to 6 solar arrays with different orientations.',
-                showIf: {
-                    configKey: 'system.has_solar',
-                    value: true,
-                    disabledText: "Enable 'Solar panels installed' in System Profile to configure",
-                },
-            },
-        ],
-    },
-    {
-        title: 'Battery Specifications',
-        description: 'Capacity, max power, and SoC limits define safe operating bands.',
-        fields: [
-            {
-                key: 'battery.capacity_kwh',
-                label: 'Battery capacity (kWh)',
-                helper: 'Total usable capacity of your battery bank.',
-                path: ['battery', 'capacity_kwh'],
-                type: 'number',
-            },
-            {
-                key: 'battery.max_charge_a',
-                label: 'Max charge current (A)',
-                helper: 'Maximum charging current allowed from grid.',
-                path: ['battery', 'max_charge_a'],
-                type: 'number',
-                showIf: {
-                    configKey: 'executor.inverter.control_unit',
-                    value: 'A',
-                },
-            },
-            {
-                key: 'battery.max_charge_w',
-                label: 'Max charge power (W)',
-                helper: 'Maximum charging power allowed from grid.',
-                path: ['battery', 'max_charge_w'],
-                type: 'number',
-                showIf: {
-                    configKey: 'executor.inverter.control_unit',
-                    value: 'W',
-                },
-            },
-            {
-                key: 'battery.max_discharge_a',
-                label: 'Max discharge current (A)',
-                helper: 'Maximum discharge current for load following.',
-                path: ['battery', 'max_discharge_a'],
-                type: 'number',
-                showIf: {
-                    configKey: 'executor.inverter.control_unit',
-                    value: 'A',
-                },
-            },
-            {
-                key: 'battery.max_discharge_w',
-                label: 'Max discharge power (W)',
-                helper: 'Maximum discharge power for load following.',
-                path: ['battery', 'max_discharge_w'],
-                type: 'number',
-                showIf: {
-                    configKey: 'executor.inverter.control_unit',
-                    value: 'W',
-                },
-            },
-            {
-                key: 'battery.nominal_voltage_v',
-                label: 'Nominal Voltage (V)',
-                helper: 'Used for Ampere-to-kW calculations in the Planner.',
-                path: ['battery', 'nominal_voltage_v'],
-                type: 'number',
-                showIf: {
-                    configKey: 'executor.inverter.control_unit',
-                    value: 'A',
-                },
-            },
-            {
-                key: 'battery.min_voltage_v',
-                label: 'Worst-case Voltage (V)',
-                helper: 'Min safe voltage used by Executor for amperage safety.',
-                path: ['battery', 'min_voltage_v'],
-                type: 'number',
-                showIf: {
-                    configKey: 'executor.inverter.control_unit',
-                    value: 'A',
-                },
-            },
-            {
-                key: 'battery.min_soc_percent',
-                label: 'Min SoC (%)',
-                path: ['battery', 'min_soc_percent'],
-                type: 'number',
-            },
-            {
-                key: 'executor.override.low_soc_export_floor',
-                label: 'Export Prevention Floor (%)',
-                helper: 'Minimum SoC to allow battery export. Prevents discharging to grid when battery is low.',
-                path: ['executor', 'override', 'low_soc_export_floor'],
-                type: 'number',
-            },
-            {
-                key: 'battery.max_soc_percent',
-                label: 'Max SoC (%)',
-                path: ['battery', 'max_soc_percent'],
-                type: 'number',
-            },
-            {
-                key: 'battery_economics.battery_cycle_cost_kwh',
-                label: 'Battery cycle cost (SEK/kWh)',
-                helper: 'Estimated degradation cost for every kWh cycled. Affects arbitrage profitability.',
-                path: ['battery_economics', 'battery_cycle_cost_kwh'],
-                type: 'number',
-                showIf: {
-                    configKey: 'system.has_battery',
-                    value: true,
-                    disabledText: "Enable 'Home battery installed' in System Profile to configure",
-                },
-            },
-            {
-                key: 'system.grid.max_power_kw',
-                label: 'HARD Grid max power (kW)',
-                path: ['system', 'grid', 'max_power_kw'],
-                type: 'number',
-            },
-            {
-                key: 'grid.import_limit_kw',
-                label: 'Soft import limit (kW) [NOT IMPLEMENTED]',
-                path: ['grid', 'import_limit_kw'],
-                type: 'number',
-            },
-        ],
-    },
-    {
         title: 'Pricing & Timezone',
         description: 'Nordpool zone and local timezone for planner calculations.',
         fields: [
@@ -378,102 +224,11 @@ export const systemSections: SettingsSection[] = [
         description: 'Core sensors Darkstar reads from Home Assistant.',
         fields: [
             {
-                key: 'input_sensors.battery_soc',
-                label: 'Battery SoC (%)',
-                path: ['input_sensors', 'battery_soc'],
-                type: 'entity',
-                helper: 'Core sensor. Required for planner SoC targeting.',
-                required: true,
-                showIf: {
-                    configKey: 'system.has_battery',
-                    value: true,
-                    disabledText: "Enable 'Home battery installed' in System Profile to configure",
-                },
-            },
-            {
-                key: 'input_sensors.pv_power',
-                label: 'PV Power (W/kW)',
-                path: ['input_sensors', 'pv_power'],
-                type: 'entity',
-                helper: 'Used by executor for PV dump detection and recorder for history.',
-                showIf: {
-                    configKey: 'system.has_solar',
-                    value: true,
-                    disabledText: "Enable 'Solar panels installed' in System Profile to configure",
-                },
-            },
-            {
                 key: 'input_sensors.load_power',
                 label: 'Load Power (W/kW)',
                 path: ['input_sensors', 'load_power'],
                 type: 'entity',
                 helper: 'Used by executor for system state and Aurora training.',
-            },
-            {
-                key: 'input_sensors.water_power',
-                label: 'Water Heater Power (W/kW)',
-                path: ['input_sensors', 'water_power'],
-                type: 'entity',
-                helper: 'Power sensor of the water heater element. Used for live metrics and history.',
-                subsection: 'Water Heater',
-                showIf: {
-                    configKey: 'system.has_water_heater',
-                    value: true,
-                    disabledText: "Enable 'Smart water heater' in System Profile to configure",
-                },
-            },
-            {
-                key: 'input_sensors.water_heater_consumption',
-                label: 'Water Heater Daily Energy',
-                path: ['input_sensors', 'water_heater_consumption'],
-                type: 'entity',
-                helper: 'Total energy consumed by the water heater today. Used for quota tracking.',
-                subsection: 'Water Heater',
-                showIf: {
-                    configKey: 'system.has_water_heater',
-                    value: true,
-                    disabledText: "Enable 'Smart water heater' in System Profile to configure",
-                },
-            },
-            // EV Charger Input Sensors
-            {
-                key: 'input_sensors.ev_soc',
-                label: 'EV State of Charge (%)',
-                path: ['input_sensors', 'ev_soc'],
-                type: 'entity',
-                helper: 'Current state of charge of the EV battery. Required for EV charging optimization.',
-                subsection: 'EV Charger',
-                showIf: {
-                    configKey: 'system.has_ev_charger',
-                    value: true,
-                    disabledText: "Enable 'EV charger installed' in System Profile to configure",
-                },
-            },
-            {
-                key: 'input_sensors.ev_plug',
-                label: 'EV Plug Status',
-                path: ['input_sensors', 'ev_plug'],
-                type: 'entity',
-                helper: 'Binary sensor indicating if the EV is plugged in. Triggers re-planning when car connects.',
-                subsection: 'EV Charger',
-                showIf: {
-                    configKey: 'system.has_ev_charger',
-                    value: true,
-                    disabledText: "Enable 'EV charger installed' in System Profile to configure",
-                },
-            },
-            {
-                key: 'input_sensors.ev_power',
-                label: 'EV Charging Power (W/kW)',
-                path: ['input_sensors', 'ev_power'],
-                type: 'entity',
-                helper: 'Current charging power of the EV. Used for live metrics and power flow display.',
-                subsection: 'EV Charger',
-                showIf: {
-                    configKey: 'system.has_ev_charger',
-                    value: true,
-                    disabledText: "Enable 'EV charger installed' in System Profile to configure",
-                },
             },
         ],
     },
@@ -482,18 +237,6 @@ export const systemSections: SettingsSection[] = [
         isHA: true,
         description: 'Entities Darkstar writes to for control.',
         fields: [
-            {
-                key: 'executor.inverter.work_mode',
-                label: 'Work Mode Selector',
-                path: ['executor', 'inverter', 'work_mode'],
-                type: 'entity',
-                helper: 'Darkstar sets inverter mode (Export/Zero-Export).',
-                showIf: {
-                    configKey: 'system.has_battery',
-                    value: true,
-                    disabledText: "Enable 'Home battery installed' in System Profile to configure",
-                },
-            },
             {
                 key: 'executor.inverter.max_charge_current',
                 label: 'Max Charge Current',
@@ -560,59 +303,6 @@ export const systemSections: SettingsSection[] = [
                     disabledText: 'Enable "Grid Export" in System Profile to configure',
                 },
             },
-            {
-                key: 'executor.water_heater.target_entity',
-                label: 'Water Heater Setpoint',
-                path: ['executor', 'water_heater', 'target_entity'],
-                type: 'entity',
-                helper: 'Thermostat entity that controls the water heater target temperature.',
-                subsection: 'Water Heater',
-                showIf: {
-                    configKey: 'system.has_water_heater',
-                    value: true,
-                    disabledText: "Enable 'Smart water heater' in System Profile to configure",
-                },
-            },
-            // EV Charger Control Entities
-            {
-                key: 'executor.ev_charger.switch_entity',
-                label: 'EV Charger Switch',
-                path: ['executor', 'ev_charger', 'switch_entity'],
-                type: 'entity',
-                helper: 'Switch entity to enable/disable EV charging. Darkstar will turn this on when scheduled to charge.',
-                subsection: 'EV Charger',
-                showIf: {
-                    configKey: 'system.has_ev_charger',
-                    value: true,
-                    disabledText: "Enable 'EV charger installed' in System Profile to configure",
-                },
-            },
-            {
-                key: 'executor.ev_charger.replan_on_plugin',
-                label: 'Re-plan on Plugin',
-                path: ['executor', 'ev_charger', 'replan_on_plugin'],
-                type: 'boolean',
-                helper: 'Immediately re-run the planner when an EV is plugged in. Useful for opportunistic charging on arrival.',
-                subsection: 'EV Charger',
-                showIf: {
-                    configKey: 'system.has_ev_charger',
-                    value: true,
-                    disabledText: "Enable 'EV charger installed' in System Profile to configure",
-                },
-            },
-            {
-                key: 'executor.ev_charger.replan_on_unplug',
-                label: 'Re-plan on Unplug',
-                path: ['executor', 'ev_charger', 'replan_on_unplug'],
-                type: 'boolean',
-                helper: 'Immediately re-run the planner when an EV is unplugged. Frees up capacity for other loads.',
-                subsection: 'EV Charger',
-                showIf: {
-                    configKey: 'system.has_ev_charger',
-                    value: true,
-                    disabledText: "Enable 'EV charger installed' in System Profile to configure",
-                },
-            },
         ],
     },
     {
@@ -621,20 +311,6 @@ export const systemSections: SettingsSection[] = [
         description: 'Optional sensors for monitoring, Smart Home integration, and statistics.',
         fields: [
             // Power Flow & Dashboard
-            {
-                key: 'input_sensors.battery_power',
-                label: 'Battery Power (W/kW)',
-                helper: 'Positive = charging, negative = discharging',
-                path: ['input_sensors', 'battery_power'],
-                type: 'entity',
-                companionKey: 'input_sensors.battery_power_inverted',
-                subsection: 'Power Flow & Dashboard',
-                showIf: {
-                    configKey: 'system.has_battery',
-                    value: true,
-                    disabledText: "Enable 'Home battery installed' in System Profile to configure",
-                },
-            },
             {
                 key: 'input_sensors.grid_power',
                 label: 'Net Grid Power (W/kW)',
@@ -713,30 +389,6 @@ export const systemSections: SettingsSection[] = [
 
             // Today's Energy Stats
             {
-                key: 'input_sensors.today_battery_charge',
-                label: "Today's Battery Charge (kWh)",
-                path: ['input_sensors', 'today_battery_charge'],
-                type: 'entity',
-                subsection: "Today's Energy Stats",
-                showIf: {
-                    configKey: 'system.has_battery',
-                    value: true,
-                    disabledText: "Enable 'Home battery installed' in System Profile to configure",
-                },
-            },
-            {
-                key: 'input_sensors.today_pv_production',
-                label: "Today's PV Production (kWh)",
-                path: ['input_sensors', 'today_pv_production'],
-                type: 'entity',
-                subsection: "Today's Energy Stats",
-                showIf: {
-                    configKey: 'system.has_solar',
-                    value: true,
-                    disabledText: "Enable 'Solar panels installed' in System Profile to configure",
-                },
-            },
-            {
                 key: 'input_sensors.today_load_consumption',
                 label: "Today's Load Consumption (kWh)",
                 path: ['input_sensors', 'today_load_consumption'],
@@ -771,30 +423,6 @@ export const systemSections: SettingsSection[] = [
 
             // Lifetime Energy Totals
             {
-                key: 'input_sensors.total_battery_charge',
-                label: 'Total Battery Charge (kWh)',
-                path: ['input_sensors', 'total_battery_charge'],
-                type: 'entity',
-                subsection: 'Lifetime Energy Totals',
-                showIf: {
-                    configKey: 'system.has_battery',
-                    value: true,
-                    disabledText: "Enable 'Home battery installed' in System Profile to configure",
-                },
-            },
-            {
-                key: 'input_sensors.total_battery_discharge',
-                label: 'Total Battery Discharge (kWh)',
-                path: ['input_sensors', 'total_battery_discharge'],
-                type: 'entity',
-                subsection: 'Lifetime Energy Totals',
-                showIf: {
-                    configKey: 'system.has_battery',
-                    value: true,
-                    disabledText: "Enable 'Home battery installed' in System Profile to configure",
-                },
-            },
-            {
                 key: 'input_sensors.total_grid_export',
                 label: 'Total Grid Export (kWh)',
                 path: ['input_sensors', 'total_grid_export'],
@@ -818,18 +446,6 @@ export const systemSections: SettingsSection[] = [
                 path: ['input_sensors', 'total_load_consumption'],
                 type: 'entity',
                 subsection: 'Lifetime Energy Totals',
-            },
-            {
-                key: 'input_sensors.total_pv_production',
-                label: 'Total PV Production (kWh)',
-                path: ['input_sensors', 'total_pv_production'],
-                type: 'entity',
-                subsection: 'Lifetime Energy Totals',
-                showIf: {
-                    configKey: 'system.has_solar',
-                    value: true,
-                    disabledText: "Enable 'Solar panels installed' in System Profile to configure",
-                },
             },
         ],
     },
@@ -880,219 +496,6 @@ export const parameterSections: SettingsSection[] = [
                 type: 'number',
                 subsection: 'Advanced Tuning',
                 isAdvanced: true,
-            },
-        ],
-    },
-    // ARC15: Entity-Centric EV Chargers (replaces ev_charger section)
-    {
-        title: 'EV Chargers',
-        description: 'Configure multiple EV chargers for optimization and load disaggregation.',
-        showIf: {
-            configKey: 'system.has_ev_charger',
-            value: true,
-        },
-        fields: [
-            {
-                key: 'ev_chargers',
-                label: 'EV Chargers',
-                path: ['ev_chargers'],
-                type: 'entity_array',
-                entityType: 'ev_charger',
-                className: 'col-span-2',
-                helper: 'Add and configure EV chargers for optimization. Each charger needs a unique ID, name, power rating, and sensor.',
-            },
-        ],
-    },
-    {
-        title: 'Water Heating',
-        description: 'Quota, deferral, and sizing controls for the water heater scheduler.',
-        fields: [
-            {
-                key: 'water_heating.defer_up_to_hours',
-                label: 'Max defer hours',
-                path: ['water_heating', 'defer_up_to_hours'],
-                type: 'number',
-                isAdvanced: true,
-                showIf: {
-                    configKey: 'system.has_water_heater',
-                    value: true,
-                    disabledText: "Enable 'Smart water heater' in System Profile to configure",
-                },
-            },
-            {
-                key: 'water_heating.spacing_penalty_sek',
-                label: 'Spacing penalty (SEK)',
-                path: ['water_heating', 'spacing_penalty_sek'],
-                type: 'number',
-                isAdvanced: true,
-                helper: 'Penalty applied when heating sessions are too close.',
-                showIf: {
-                    configKey: 'system.has_water_heater',
-                    value: true,
-                    disabledText: "Enable 'Smart water heater' in System Profile to configure",
-                },
-            },
-            {
-                key: 'water_heating.enable_top_ups',
-                label: 'Enable spaced top-ups',
-                path: ['water_heating', 'enable_top_ups'],
-                type: 'boolean',
-                helper: 'Enable small top-up heating blocks to maintain temperature. Disable for bulk heating only.',
-                showIf: {
-                    configKey: 'system.has_water_heater',
-                    value: true,
-                    disabledText: "Enable 'Smart water heater' in System Profile to configure",
-                },
-            },
-
-            {
-                key: 'water_heating.block_start_penalty_sek',
-                label: 'Block start penalty (SEK)',
-                helper: 'Penalty per heating start (higher = more consolidated bulk heating).',
-                path: ['water_heating', 'block_start_penalty_sek'],
-                type: 'number',
-                subsection: 'Advanced Tuning',
-                isAdvanced: true,
-                showIf: {
-                    configKey: 'system.has_water_heater',
-                    value: true,
-                    disabledText: "Enable 'Smart water heater' in System Profile to configure",
-                },
-            },
-            {
-                key: 'water_heating.reliability_penalty_sek',
-                label: 'Reliability Penalty (SEK)',
-                helper: 'Heavy penalty for failing to meet the daily min kWh quota (higher = stricter quota enforcement).',
-                path: ['water_heating', 'reliability_penalty_sek'],
-                type: 'number',
-                subsection: 'Advanced Tuning',
-                isAdvanced: true,
-                showIf: {
-                    configKey: 'system.has_water_heater',
-                    value: true,
-                    disabledText: "Enable 'Smart water heater' in System Profile to configure",
-                },
-            },
-            {
-                key: 'water_heating.block_penalty_sek',
-                label: 'Block Penalty (SEK)',
-                helper: 'Small penalty per active heating slot (higher = encourages shorter, more efficient heat blocks).',
-                path: ['water_heating', 'block_penalty_sek'],
-                type: 'number',
-                subsection: 'Advanced Tuning',
-                isAdvanced: true,
-                showIf: {
-                    configKey: 'system.has_water_heater',
-                    value: true,
-                    disabledText: "Enable 'Smart water heater' in System Profile to configure",
-                },
-            },
-            {
-                key: 'executor.water_heater.temp_off',
-                label: 'Temp: Off/Idle (°C)',
-                helper: 'Target temperature when not heating (legionella safety min).',
-                path: ['executor', 'water_heater', 'temp_off'],
-                type: 'number',
-            },
-            {
-                key: 'executor.water_heater.temp_normal',
-                label: 'Temp: Normal (°C)',
-                helper: 'Target temperature for regular scheduled heating.',
-                path: ['executor', 'water_heater', 'temp_normal'],
-                type: 'number',
-            },
-            {
-                key: 'executor.water_heater.temp_boost',
-                label: 'Temp: Boost (°C)',
-                helper: 'Target temperature for manual boost / spa mode.',
-                path: ['executor', 'water_heater', 'temp_boost'],
-                type: 'number',
-            },
-            {
-                key: 'executor.water_heater.temp_max',
-                label: 'Temp: Max/PV Dump (°C)',
-                helper: 'Max safe temperature for dumping excess solar PV.',
-                path: ['executor', 'water_heater', 'temp_max'],
-                type: 'number',
-            },
-            {
-                key: 'executor.override.excess_pv_threshold_kw',
-                label: 'PV Dump Threshold (kW)',
-                helper: 'Surplus PV power required to trigger water heating as a PV dump.',
-                path: ['executor', 'override', 'excess_pv_threshold_kw'],
-                type: 'number',
-                subsection: 'PV Dump Control',
-                showIfAll: ['system.has_solar', 'system.has_water_heater'],
-            },
-        ],
-    },
-    {
-        title: 'Water Heater Vacation Mode',
-        description: 'Anti-legionella safety cycle when vacation mode is active.',
-        fields: [
-            {
-                key: 'water_heating.vacation_mode.enabled',
-                label: 'Enable Vacation Mode',
-                path: ['water_heating', 'vacation_mode', 'enabled'],
-                type: 'boolean',
-                showIf: {
-                    configKey: 'system.has_water_heater',
-                    value: true,
-                    disabledText: "Enable 'Smart water heater' in System Profile to configure",
-                },
-            },
-            {
-                key: 'water_heating.vacation_mode.anti_legionella_temp_c',
-                label: 'Safety Cycle Temp (°C)',
-                path: ['water_heating', 'vacation_mode', 'anti_legionella_temp_c'],
-                type: 'number',
-                showIf: {
-                    configKey: 'system.has_water_heater',
-                    value: true,
-                    disabledText: "Enable 'Smart water heater' in System Profile to configure",
-                },
-            },
-            {
-                key: 'water_heating.vacation_mode.anti_legionella_interval_days',
-                label: 'Safety Cycle Interval (days)',
-                path: ['water_heating', 'vacation_mode', 'anti_legionella_interval_days'],
-                type: 'number',
-                showIf: {
-                    configKey: 'system.has_water_heater',
-                    value: true,
-                    disabledText: "Enable 'Smart water heater' in System Profile to configure",
-                },
-            },
-            {
-                key: 'water_heating.vacation_mode.anti_legionella_duration_hours',
-                label: 'Safety Cycle Duration (hours)',
-                path: ['water_heating', 'vacation_mode', 'anti_legionella_duration_hours'],
-                type: 'number',
-                showIf: {
-                    configKey: 'system.has_water_heater',
-                    value: true,
-                    disabledText: "Enable 'Smart water heater' in System Profile to configure",
-                },
-            },
-        ],
-    },
-    // ARC15: Entity-Centric Water Heaters (replaces water_heating section)
-    {
-        title: 'Water Heaters',
-        description: 'Configure multiple water heaters for optimization and load disaggregation.',
-        showIf: {
-            configKey: 'system.has_water_heater',
-            value: true,
-        },
-        fields: [
-            {
-                key: 'water_heaters',
-                label: 'Water Heaters',
-                path: ['water_heaters'],
-                type: 'entity_array',
-                entityType: 'water_heater',
-                className: 'col-span-2',
-                helper: 'Add and configure water heaters for optimization. Each heater needs a unique ID, name, power rating, and sensor.',
             },
         ],
     },
@@ -1315,6 +718,490 @@ export const uiSections: SettingsSection[] = [
     },
 ]
 
+// UI20: Device-centric tab sections
+export const solarSections: SettingsSection[] = [
+    {
+        title: 'Location',
+        description: 'Geographic coordinates for the forecasting engine.',
+        fields: [
+            {
+                key: 'system.location.latitude',
+                label: 'Latitude',
+                helper: 'Decimal degrees, positive north. Example: 55.4932',
+                path: ['system', 'location', 'latitude'],
+                type: 'number',
+            },
+            {
+                key: 'system.location.longitude',
+                label: 'Longitude',
+                helper: 'Decimal degrees, positive east. Example: 13.1112',
+                path: ['system', 'location', 'longitude'],
+                type: 'number',
+            },
+        ],
+    },
+    {
+        title: 'Solar Arrays',
+        description: 'Configure up to 6 solar arrays with different orientations.',
+        fields: [
+            {
+                key: 'system.solar_arrays',
+                label: 'Solar Arrays',
+                path: ['system', 'solar_arrays'],
+                type: 'solar_arrays',
+                helper: 'Configure up to 6 solar arrays with different orientations.',
+            },
+        ],
+    },
+    {
+        title: 'HA Input Sensors',
+        description: 'Solar-related Home Assistant sensors.',
+        isHA: true,
+        fields: [
+            {
+                key: 'input_sensors.pv_power',
+                label: 'PV Power (W/kW)',
+                path: ['input_sensors', 'pv_power'],
+                type: 'entity',
+                helper: 'Used by executor for PV dump detection and recorder for history.',
+            },
+            {
+                key: 'input_sensors.today_pv_production',
+                label: "Today's PV Production (kWh)",
+                path: ['input_sensors', 'today_pv_production'],
+                type: 'entity',
+                helper: "Today's solar energy production.",
+            },
+            {
+                key: 'input_sensors.total_pv_production',
+                label: 'Total PV Production (kWh)',
+                path: ['input_sensors', 'total_pv_production'],
+                type: 'entity',
+                helper: 'Lifetime total solar energy production.',
+            },
+        ],
+    },
+]
+
+export const batterySections: SettingsSection[] = [
+    {
+        title: 'Specifications',
+        description: 'Capacity, max power, and SoC limits define safe operating bands.',
+        fields: [
+            {
+                key: 'battery.capacity_kwh',
+                label: 'Battery capacity (kWh)',
+                helper: 'Total usable capacity of your battery bank.',
+                path: ['battery', 'capacity_kwh'],
+                type: 'number',
+            },
+            {
+                key: 'battery.max_charge_a',
+                label: 'Max charge current (A)',
+                helper: 'Maximum charging current allowed from grid.',
+                path: ['battery', 'max_charge_a'],
+                type: 'number',
+                showIf: {
+                    configKey: 'executor.inverter.control_unit',
+                    value: 'A',
+                },
+            },
+            {
+                key: 'battery.max_charge_w',
+                label: 'Max charge power (W)',
+                helper: 'Maximum charging power allowed from grid.',
+                path: ['battery', 'max_charge_w'],
+                type: 'number',
+                showIf: {
+                    configKey: 'executor.inverter.control_unit',
+                    value: 'W',
+                },
+            },
+            {
+                key: 'battery.max_discharge_a',
+                label: 'Max discharge current (A)',
+                helper: 'Maximum discharge current for load following.',
+                path: ['battery', 'max_discharge_a'],
+                type: 'number',
+                showIf: {
+                    configKey: 'executor.inverter.control_unit',
+                    value: 'A',
+                },
+            },
+            {
+                key: 'battery.max_discharge_w',
+                label: 'Max discharge power (W)',
+                helper: 'Maximum discharge power for load following.',
+                path: ['battery', 'max_discharge_w'],
+                type: 'number',
+                showIf: {
+                    configKey: 'executor.inverter.control_unit',
+                    value: 'W',
+                },
+            },
+            {
+                key: 'battery.nominal_voltage_v',
+                label: 'Nominal Voltage (V)',
+                helper: 'Used for Ampere-to-kW calculations in the Planner.',
+                path: ['battery', 'nominal_voltage_v'],
+                type: 'number',
+                showIf: {
+                    configKey: 'executor.inverter.control_unit',
+                    value: 'A',
+                },
+            },
+            {
+                key: 'battery.min_voltage_v',
+                label: 'Worst-case Voltage (V)',
+                helper: 'Min safe voltage used by Executor for amperage safety.',
+                path: ['battery', 'min_voltage_v'],
+                type: 'number',
+                showIf: {
+                    configKey: 'executor.inverter.control_unit',
+                    value: 'A',
+                },
+            },
+            {
+                key: 'battery.min_soc_percent',
+                label: 'Min SoC (%)',
+                path: ['battery', 'min_soc_percent'],
+                type: 'number',
+            },
+            {
+                key: 'battery.max_soc_percent',
+                label: 'Max SoC (%)',
+                path: ['battery', 'max_soc_percent'],
+                type: 'number',
+            },
+            {
+                key: 'executor.override.low_soc_export_floor',
+                label: 'Export Prevention Floor (%)',
+                helper: 'Minimum SoC to allow battery export. Prevents discharging to grid when battery is low.',
+                path: ['executor', 'override', 'low_soc_export_floor'],
+                type: 'number',
+            },
+            {
+                key: 'battery_economics.battery_cycle_cost_kwh',
+                label: 'Battery cycle cost (SEK/kWh)',
+                helper: 'Estimated degradation cost for every kWh cycled. Affects arbitrage profitability.',
+                path: ['battery_economics', 'battery_cycle_cost_kwh'],
+                type: 'number',
+            },
+        ],
+    },
+    {
+        title: 'HA Sensors',
+        description: 'Home Assistant sensors for battery monitoring.',
+        fields: [
+            {
+                key: 'input_sensors.battery_soc',
+                label: 'Battery SoC (%)',
+                path: ['input_sensors', 'battery_soc'],
+                type: 'entity',
+                helper: 'Core sensor. Required for planner SoC targeting.',
+                required: true,
+            },
+            {
+                key: 'input_sensors.battery_power',
+                label: 'Battery Power (W/kW)',
+                helper: 'Positive = charging, negative = discharging',
+                path: ['input_sensors', 'battery_power'],
+                type: 'entity',
+                companionKey: 'input_sensors.battery_power_inverted',
+            },
+            {
+                key: 'input_sensors.today_battery_charge',
+                label: "Today's Battery Charge (kWh)",
+                path: ['input_sensors', 'today_battery_charge'],
+                type: 'entity',
+            },
+            {
+                key: 'input_sensors.today_battery_discharge',
+                label: "Today's Battery Discharge (kWh)",
+                path: ['input_sensors', 'today_battery_discharge'],
+                type: 'entity',
+            },
+            {
+                key: 'input_sensors.total_battery_charge',
+                label: 'Total Battery Charge (kWh)',
+                path: ['input_sensors', 'total_battery_charge'],
+                type: 'entity',
+            },
+            {
+                key: 'input_sensors.total_battery_discharge',
+                label: 'Total Battery Discharge (kWh)',
+                path: ['input_sensors', 'total_battery_discharge'],
+                type: 'entity',
+            },
+        ],
+    },
+    {
+        title: 'HA Control Entities',
+        description: 'Home Assistant entities for battery control.',
+        isHA: true,
+        fields: [
+            {
+                key: 'executor.inverter.work_mode',
+                label: 'Work Mode Selector',
+                path: ['executor', 'inverter', 'work_mode'],
+                type: 'entity',
+                helper: 'Darkstar sets inverter mode (Export/Zero-Export).',
+            },
+        ],
+    },
+]
+
+export const evSections: SettingsSection[] = [
+    {
+        title: 'EV Chargers',
+        description: 'Configure multiple EV chargers for optimization and load disaggregation.',
+        fields: [
+            {
+                key: 'ev_chargers',
+                label: 'EV Chargers',
+                path: ['ev_chargers'],
+                type: 'entity_array',
+                entityType: 'ev_charger',
+                className: 'col-span-2',
+                helper: 'Add and configure EV chargers for optimization. Each charger needs a unique ID, name, power rating, and sensor.',
+            },
+        ],
+    },
+    {
+        title: 'HA Sensors',
+        description: 'Home Assistant sensors for EV monitoring.',
+        fields: [
+            {
+                key: 'input_sensors.ev_soc',
+                label: 'EV State of Charge (%)',
+                path: ['input_sensors', 'ev_soc'],
+                type: 'entity',
+                helper: 'Current state of charge of the EV battery. Required for EV charging optimization.',
+            },
+            {
+                key: 'input_sensors.ev_plug',
+                label: 'EV Plug Status',
+                path: ['input_sensors', 'ev_plug'],
+                type: 'entity',
+                helper: 'Binary sensor indicating if the EV is plugged in. Triggers re-planning when car connects.',
+            },
+            {
+                key: 'input_sensors.ev_power',
+                label: 'EV Charging Power (W/kW)',
+                path: ['input_sensors', 'ev_power'],
+                type: 'entity',
+                helper: 'Current charging power of the EV. Used for live metrics and power flow display.',
+            },
+        ],
+    },
+    {
+        title: 'Control',
+        description: 'EV charging control settings.',
+        fields: [
+            {
+                key: 'executor.ev_charger.switch_entity',
+                label: 'EV Charger Switch',
+                path: ['executor', 'ev_charger', 'switch_entity'],
+                type: 'entity',
+                helper: 'Switch entity to enable/disable EV charging. Darkstar will turn this on when scheduled to charge.',
+            },
+            {
+                key: 'executor.ev_charger.replan_on_plugin',
+                label: 'Re-plan on Plugin',
+                path: ['executor', 'ev_charger', 'replan_on_plugin'],
+                type: 'boolean',
+                helper: 'Immediately re-run the planner when an EV is plugged in. Useful for opportunistic charging on arrival.',
+            },
+            {
+                key: 'executor.ev_charger.replan_on_unplug',
+                label: 'Re-plan on Unplug',
+                path: ['executor', 'ev_charger', 'replan_on_unplug'],
+                type: 'boolean',
+                helper: 'Immediately re-run the planner when an EV is unplugged. Frees up capacity for other loads.',
+            },
+        ],
+    },
+]
+
+export const waterSections: SettingsSection[] = [
+    {
+        title: 'Water Heaters',
+        description: 'Configure multiple water heaters for optimization and load disaggregation.',
+        fields: [
+            {
+                key: 'water_heaters',
+                label: 'Water Heaters',
+                path: ['water_heaters'],
+                type: 'entity_array',
+                entityType: 'water_heater',
+                className: 'col-span-2',
+                helper: 'Add and configure water heaters for optimization. Each heater needs a unique ID, name, power rating, and sensor.',
+            },
+        ],
+    },
+    {
+        title: 'HA Sensors',
+        description: 'Home Assistant sensors for water heating monitoring.',
+        fields: [
+            {
+                key: 'input_sensors.water_power',
+                label: 'Water Heater Power (W/kW)',
+                path: ['input_sensors', 'water_power'],
+                type: 'entity',
+                helper: 'Power sensor of the water heater element. Used for live metrics and history.',
+            },
+            {
+                key: 'input_sensors.water_heater_consumption',
+                label: 'Water Heater Daily Energy',
+                path: ['input_sensors', 'water_heater_consumption'],
+                type: 'entity',
+                helper: 'Total energy consumed by the water heater today. Used for quota tracking.',
+            },
+        ],
+    },
+    {
+        title: 'Control',
+        description: 'Water heater control entity.',
+        fields: [
+            {
+                key: 'executor.water_heater.target_entity',
+                label: 'Water Heater Setpoint',
+                path: ['executor', 'water_heater', 'target_entity'],
+                type: 'entity',
+                helper: 'Thermostat entity that controls the water heater target temperature.',
+            },
+        ],
+    },
+    {
+        title: 'Scheduling',
+        description: 'Quota, deferral, and sizing controls for the water heater scheduler.',
+        fields: [
+            {
+                key: 'water_heating.defer_up_to_hours',
+                label: 'Max defer hours',
+                path: ['water_heating', 'defer_up_to_hours'],
+                type: 'number',
+                isAdvanced: true,
+            },
+            {
+                key: 'water_heating.spacing_penalty_sek',
+                label: 'Spacing penalty (SEK)',
+                path: ['water_heating', 'spacing_penalty_sek'],
+                type: 'number',
+                isAdvanced: true,
+                helper: 'Penalty applied when heating sessions are too close.',
+            },
+            {
+                key: 'water_heating.enable_top_ups',
+                label: 'Enable spaced top-ups',
+                path: ['water_heating', 'enable_top_ups'],
+                type: 'boolean',
+                helper: 'Enable small top-up heating blocks to maintain temperature. Disable for bulk heating only.',
+            },
+            {
+                key: 'water_heating.block_start_penalty_sek',
+                label: 'Block start penalty (SEK)',
+                helper: 'Penalty per heating start (higher = more consolidated bulk heating).',
+                path: ['water_heating', 'block_start_penalty_sek'],
+                type: 'number',
+                subsection: 'Advanced Tuning',
+                isAdvanced: true,
+            },
+            {
+                key: 'water_heating.reliability_penalty_sek',
+                label: 'Reliability Penalty (SEK)',
+                helper: 'Heavy penalty for failing to meet the daily min kWh quota (higher = stricter quota enforcement).',
+                path: ['water_heating', 'reliability_penalty_sek'],
+                type: 'number',
+                subsection: 'Advanced Tuning',
+                isAdvanced: true,
+            },
+            {
+                key: 'water_heating.block_penalty_sek',
+                label: 'Block Penalty (SEK)',
+                helper: 'Small penalty per active heating slot (higher = encourages shorter, more efficient heat blocks).',
+                path: ['water_heating', 'block_penalty_sek'],
+                type: 'number',
+                subsection: 'Advanced Tuning',
+                isAdvanced: true,
+            },
+        ],
+    },
+    {
+        title: 'Temperatures',
+        description: 'Temperature setpoints for different operating modes.',
+        fields: [
+            {
+                key: 'executor.water_heater.temp_off',
+                label: 'Temp: Off/Idle (°C)',
+                helper: 'Target temperature when not heating (legionella safety min).',
+                path: ['executor', 'water_heater', 'temp_off'],
+                type: 'number',
+            },
+            {
+                key: 'executor.water_heater.temp_normal',
+                label: 'Temp: Normal (°C)',
+                helper: 'Target temperature for regular scheduled heating.',
+                path: ['executor', 'water_heater', 'temp_normal'],
+                type: 'number',
+            },
+            {
+                key: 'executor.water_heater.temp_boost',
+                label: 'Temp: Boost (°C)',
+                helper: 'Target temperature for manual boost / spa mode.',
+                path: ['executor', 'water_heater', 'temp_boost'],
+                type: 'number',
+            },
+            {
+                key: 'executor.water_heater.temp_max',
+                label: 'Temp: Max/PV Dump (°C)',
+                helper: 'Max safe temperature for dumping excess solar PV.',
+                path: ['executor', 'water_heater', 'temp_max'],
+                type: 'number',
+            },
+            {
+                key: 'executor.override.excess_pv_threshold_kw',
+                label: 'PV Dump Threshold (kW)',
+                helper: 'Surplus PV power required to trigger water heating as a PV dump.',
+                path: ['executor', 'override', 'excess_pv_threshold_kw'],
+                type: 'number',
+                subsection: 'PV Dump Control',
+                showIfAll: ['system.has_solar', 'system.has_water_heater'],
+            },
+        ],
+    },
+    {
+        title: 'Vacation Mode',
+        description: 'Anti-legionella safety cycle when vacation mode is active.',
+        fields: [
+            {
+                key: 'water_heating.vacation_mode.enabled',
+                label: 'Enable Vacation Mode',
+                path: ['water_heating', 'vacation_mode', 'enabled'],
+                type: 'boolean',
+            },
+            {
+                key: 'water_heating.vacation_mode.anti_legionella_temp_c',
+                label: 'Safety Cycle Temp (°C)',
+                path: ['water_heating', 'vacation_mode', 'anti_legionella_temp_c'],
+                type: 'number',
+            },
+            {
+                key: 'water_heating.vacation_mode.anti_legionella_interval_days',
+                label: 'Safety Cycle Interval (days)',
+                path: ['water_heating', 'vacation_mode', 'anti_legionella_interval_days'],
+                type: 'number',
+            },
+            {
+                key: 'water_heating.vacation_mode.anti_legionella_duration_hours',
+                label: 'Safety Cycle Duration (hours)',
+                path: ['water_heating', 'vacation_mode', 'anti_legionella_duration_hours'],
+                type: 'number',
+            },
+        ],
+    },
+]
+
 export const advancedSections: SettingsSection[] = [
     {
         title: 'Experimental Features',
@@ -1434,6 +1321,10 @@ const systemToggleFields = systemFieldList.filter(
 )
 
 export const parameterFieldList = [...systemToggleFields, ...parameterSections.flatMap((section) => section.fields)]
+export const solarFieldList = solarSections.flatMap((section) => section.fields)
+export const batteryFieldList = batterySections.flatMap((section) => section.fields)
+export const evFieldList = evSections.flatMap((section) => section.fields)
+export const waterFieldList = waterSections.flatMap((section) => section.fields)
 export const uiFieldList = uiSections.flatMap((section) => section.fields)
 export const advancedFieldList = advancedSections.flatMap((section) => section.fields)
 
@@ -1453,6 +1344,10 @@ if (batterySocField) {
 export const allFields = [
     ...systemFieldList,
     ...parameterFieldList,
+    ...solarFieldList,
+    ...batteryFieldList,
+    ...evFieldList,
+    ...waterFieldList,
     ...uiFieldList,
     ...advancedFieldList,
     {

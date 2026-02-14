@@ -1008,3 +1008,87 @@ Config persistence is protected by three safety mechanisms:
 The system maintains the health of critical settings:
 - **Comment Preservation**: Ad-hoc user comments on standard keys are NOT preserved (to ensure official documentation stays accurate), but comments on custom user keys are respected.
 - **Constraint Enforcement**: Backend validation prevents saving "invalid" configurations that would cause startup crashes (e.g., missing inverter entities).
+
+---
+
+## 16. Settings UI Architecture (Rev UI20)
+
+### 16.1 Device-Centric Tab Organization
+
+As of **REV UI20**, the settings page has been reorganized into **device-centric tabs** to improve usability and reduce cognitive load. Each hardware device (Solar, Battery, EV, Water) has its own dedicated tab that appears only when that device is enabled.
+
+#### Tab Structure
+
+```
+[System] [Parameters] [Solar*] [Battery*] [EV*] [Water*] [UI] [Advanced**] [Debug**]
+
+*  = Only visible when corresponding has_* toggle is enabled
+** = Only visible when Advanced Mode is enabled
+```
+
+#### Tab Responsibilities
+
+| Tab | Visibility | Contents |
+|-----|------------|----------|
+| **System** | Always | System profile toggles (has_solar, has_battery, etc.), Grid config, Pricing, Timezone, HA Connection, Inverter control entities, Non-device sensors (load_power, grid_power) |
+| **Parameters** | Always | Forecasting & Strategy, Arbitrage & Economics, Battery Economics, Learning, S-Index, Charging Strategy |
+| **Solar** | has_solar=true | Location coordinates, Solar arrays configuration, PV sensors (pv_power, today_pv_production, total_pv_production) |
+| **Battery** | has_battery=true | Battery specifications (capacity, SoC limits, max power), Battery sensors (battery_soc, battery_power, charge/discharge totals), Work mode selector |
+| **EV** | has_ev_charger=true | EV chargers array, EV sensors (ev_soc, ev_plug, ev_power), Charger controls (switch, replan triggers) |
+| **Water** | has_water_heater=true | Water heaters array, Water sensors (water_power, consumption), Scheduling params, Temperature setpoints, Vacation mode |
+| **UI** | Always | Theme settings, Dashboard options, Notification preferences |
+| **Advanced** | advancedMode=true | Experimental features, Debug controls |
+| **Debug** | advancedMode=true | System debug information, Logs |
+
+### 16.2 Implementation Details
+
+#### Conditional Tab Visibility
+Tabs are filtered based on `system.has_*` configuration values fetched from the backend:
+
+```typescript
+// frontend/src/pages/settings/index.tsx
+const tabs = useMemo(() => {
+    return ALL_TABS.filter((t) => {
+        if (t.advancedOnly && !advancedMode) return false
+        if (!t.showIf) return true
+        const flagKey = t.showIf.replace('system.', '') as keyof SystemFlags
+        return systemFlags[flagKey] === true
+    })
+}, [advancedMode, systemFlags])
+```
+
+#### Section Organization
+Each device tab imports its own sections from `types.ts`:
+
+- **SolarTab**: `solarSections` - Location, Solar Arrays, HA Input Sensors
+- **BatteryTab**: `batterySections` - Specifications, HA Sensors, HA Control Entities
+- **EVTab**: `evSections` - EV Chargers, HA Sensors, Control
+- **WaterTab**: `waterSections` - Water Heaters, HA Sensors, Control, Scheduling, Temperatures, Vacation Mode
+
+#### Field Lists
+Each tab uses a dedicated field list for form state management:
+
+```typescript
+// frontend/src/pages/settings/types.ts
+export const solarFieldList = solarSections.flatMap((section) => section.fields)
+export const batteryFieldList = batterySections.flatMap((section) => section.fields)
+export const evFieldList = evSections.flatMap((section) => section.fields)
+export const waterFieldList = waterSections.flatMap((section) => section.fields)
+```
+
+### 16.3 Design Principles
+
+1. **Progressive Disclosure**: Simple users see only relevant tabs; advanced users enable Advanced Mode for deep tuning
+2. **Contextual Grouping**: All configuration for a device lives in one place (sensors, controls, scheduling)
+3. **Conditional Rendering**: Empty/unused device sections don't clutter the UI
+4. **Consistent Patterns**: All device tabs follow the same structure (Sections → Cards → Fields)
+
+### 16.4 Migration from Monolithic Structure
+
+**Before UI20**: All settings were crammed into System and Parameters tabs with conditional `showIf` logic making the UI feel cluttered.
+
+**After UI20**:
+- System tab contains only universal settings
+- Each device has its own tab with all related configuration
+- Users with only Solar + Battery don't see EV/Water tabs
+- Advanced Mode gates experimental features

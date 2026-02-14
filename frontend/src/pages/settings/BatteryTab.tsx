@@ -1,0 +1,102 @@
+import React from 'react'
+import Card from '../../components/Card'
+import { useSettingsForm } from './hooks/useSettingsForm'
+import { SettingsField } from './components/SettingsField'
+import { batteryFieldList, batterySections } from './types'
+import { shouldRenderField } from './logic'
+import { motion, AnimatePresence } from 'framer-motion'
+import { AdditionalAdvancedNotice, GlobalAdvancedLockedNotice } from './components/AdvancedLockedNotice'
+import { UnsavedChangesBanner } from './components/UnsavedChangesBanner'
+import { NavigationBlockerDialog } from './components/NavigationBlockerDialog'
+import { useUnsavedChangesGuard } from './hooks/useUnsavedChangesGuard'
+
+export const BatteryTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }) => {
+    const { form, fieldErrors, loading, saving, handleChange, save, isDirty, haEntities, haLoading } =
+        useSettingsForm(batteryFieldList)
+
+    const blocker = useUnsavedChangesGuard(isDirty)
+    const hasHiddenSections = batterySections.some((s) => s.fields.every((f) => f.isAdvanced))
+
+    if (loading) {
+        return <Card className="p-6 text-sm text-muted">Loading battery configuration…</Card>
+    }
+
+    const fieldVariants = {
+        initial: { opacity: 0, y: -10, height: 0 },
+        animate: { opacity: 1, y: 0, height: 'auto' },
+        exit: { opacity: 0, y: -10, height: 0 },
+    }
+
+    return (
+        <div className="space-y-4">
+            <UnsavedChangesBanner visible={isDirty} onSave={() => save()} saving={saving} />
+
+            {batterySections.map((section) => {
+                // Check section-level showIf
+                let sectionEnabled = true
+                if (section.showIf) {
+                    const configValue = form[section.showIf.configKey]
+                    if (section.showIf.value !== undefined) {
+                        if (Array.isArray(section.showIf.value)) {
+                            sectionEnabled = section.showIf.value.includes(configValue as string | boolean | number)
+                        } else {
+                            sectionEnabled = configValue === String(section.showIf.value)
+                        }
+                    } else {
+                        sectionEnabled = Boolean(configValue)
+                    }
+                }
+
+                if (!sectionEnabled) return null
+
+                const isEntirelyAdvanced = section.fields.every((f) => f.isAdvanced)
+                const shouldShowCard = advancedMode || !isEntirelyAdvanced
+
+                if (!shouldShowCard) return null
+
+                return (
+                    <AnimatePresence key={section.title} initial={false}>
+                        <motion.div
+                            variants={fieldVariants}
+                            initial="initial"
+                            animate="animate"
+                            exit="exit"
+                            transition={{ duration: 0.2 }}
+                        >
+                            <Card className="overflow-hidden">
+                                <div className="px-6 py-4">
+                                    <h2 className="text-lg font-semibold text-foreground">{section.title}</h2>
+                                    {section.description && (
+                                        <p className="mt-1 text-sm text-muted">{section.description}</p>
+                                    )}
+                                </div>
+                                <div className="grid grid-cols-1 gap-4 p-6 md:grid-cols-2">
+                                    {section.fields.map((field) => {
+                                        if (!shouldRenderField(field, form)) return null
+                                        return (
+                                            <SettingsField
+                                                key={field.key}
+                                                field={field}
+                                                value={form[field.key]}
+                                                onChange={handleChange}
+                                                error={fieldErrors[field.key]}
+                                                haEntities={haEntities}
+                                                haLoading={haLoading}
+                                            />
+                                        )
+                                    })}
+                                </div>
+                            </Card>
+                        </motion.div>
+                    </AnimatePresence>
+                )
+            })}
+
+            <AdditionalAdvancedNotice visible={!advancedMode} />
+
+            <NavigationBlockerDialog blocker={blocker} />
+
+            {!advancedMode && hasHiddenSections && <GlobalAdvancedLockedNotice />}
+        </div>
+    )
+}
