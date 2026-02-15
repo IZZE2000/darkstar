@@ -103,6 +103,16 @@ DEPRECATED_NESTED_KEYS = {
         # ARC14: Replaced by solar_arrays[] array (plural)
         "solar_array",
     ],
+    "water_heating": [
+        # F66b: These keys should be in water_heaters[] array items, not flat under water_heating
+        "power_kw",
+        "min_kwh_per_day",
+        "target_temp_c",
+        "heating_element_entity",
+        "temperature_sensor_entity",
+        "daily_consumption_entity",
+        "max_price_per_kwh",
+    ],
 }
 
 
@@ -148,6 +158,73 @@ def remove_deprecated_keys(config: Any) -> tuple[Any, bool]:
                         del obj[key]
                         logger.info(f"✂️  Removed deprecated key: '{path}.{key}'")
                         changed = True
+
+    return config, changed
+
+
+def heal_orphaned_array_keys(config: Any) -> tuple[Any, bool]:
+    """Heal keys that ended up at wrong indentation levels after merge.
+
+    REV F66b: Fixes malformed YAML where keys like `name:` appear between
+    array sections and nested sections (e.g., after solar_arrays[] but before battery).
+
+    Common patterns:
+    - `name: Main Array` appearing after solar_arrays[] closing bracket
+    - `power_kw`, `min_kwh_per_day` appearing under water_heating instead of water_heaters[]
+
+    Args:
+        config: Configuration dict
+
+    Returns:
+        Tuple of (healed_config, changed_flag)
+    """
+    changed = False
+
+    if not isinstance(config, dict):
+        return config, False
+
+    # Pattern 1: Fix solar_arrays[].name appearing at root level
+    # If there's a 'name' key at root that looks like a solar array name, move it
+    if "name" in config and "solar_arrays" in config:
+        name_val = config.get("name")
+        if isinstance(name_val, str) and name_val in ["Main Array", "Secondary Array"]:
+            solar_arrays = config.get("solar_arrays", [])
+            if solar_arrays and isinstance(solar_arrays, list):
+                first_array = solar_arrays[0]
+                if isinstance(first_array, dict) and "name" not in first_array:
+                    first_array["name"] = name_val
+                    del config["name"]
+                    logger.info(f"Healed orphaned 'name' into solar_arrays[0]: {name_val}")
+                    changed = True
+
+    # Pattern 2: Fix water_heating flat keys that should be in water_heaters[]
+    water_heating = config.get("water_heating", {})
+    if isinstance(water_heating, dict):
+        water_heater_keys = [
+            "power_kw",
+            "min_kwh_per_day",
+            "target_temp_c",
+            "heating_element_entity",
+            "temperature_sensor_entity",
+            "daily_consumption_entity",
+            "max_price_per_kwh",
+        ]
+
+        orphaned_keys = [k for k in water_heater_keys if k in water_heating]
+
+        if orphaned_keys:
+            water_heaters = config.get("water_heaters", [])
+            if water_heaters and isinstance(water_heaters, list):
+                first_heater = water_heaters[0]
+                if isinstance(first_heater, dict):
+                    for key in orphaned_keys:
+                        val = water_heating.pop(key)
+                        if key not in first_heater:
+                            first_heater[key] = val
+                            logger.info(
+                                f"Healed orphaned key '{key}' from water_heating to water_heaters[0]"
+                            )
+                            changed = True
 
     return config, changed
 
@@ -605,6 +682,39 @@ def cleanup_water_heating_duplicates(config: Any) -> tuple[Any, bool]:
     return config, changed
 
 
+def fix_s_index_horizon_days_type(config: Any) -> tuple[Any, bool]:
+    """Fix s_index_horizon_days type from string to integer.
+
+    REV F66b: Fixes configs where s_index_horizon_days was saved as string '4' instead of integer 4.
+
+    Args:
+        config: Configuration dict
+
+    Returns:
+        Tuple of (modified_config, changed_flag)
+    """
+    changed = False
+
+    if not isinstance(config, dict):
+        return config, False
+
+    s_index = config.get("s_index", {})
+    if not isinstance(s_index, dict):
+        s_index = {}
+        config["s_index"] = s_index
+
+    horizon = s_index.get("s_index_horizon_days")
+    if horizon is not None and not isinstance(horizon, int):
+        try:
+            s_index["s_index_horizon_days"] = int(horizon)
+            logger.info(f"Fixed s_index_horizon_days type: {horizon!r} -> {int(horizon)}")
+            changed = True
+        except (ValueError, TypeError):
+            logger.warning(f"Could not convert s_index_horizon_days: {horizon!r}")
+
+    return config, changed
+
+
 def _validate_config_structure(config: Any, strict: bool = True) -> bool:
     """
     Validates that the config has minimum expected structure.
@@ -755,22 +865,54 @@ def template_aware_merge(default_cfg: dict, user_cfg: dict) -> None:
     def merge_arrays(target_arr: list, source_arr: list, unique_key: str) -> None:
         """Merge source array into target array by matching unique key.
 
-        Strategy: If source (user) has ANY entries, use ONLY source entries.
-        Only append from target (default) if source has no matching entry.
-        This prevents template placeholders from being added alongside user data.
+        Strategy: Use user entries as base, merge in default fields for matched entries.
+        - If user has entries: use user entries, but fill missing fields from defaults
+        - If user has no entries: keep default entries
         """
         if not isinstance(target_arr, list) or not isinstance(source_arr, list):
             target_arr[:] = source_arr
             return
 
-        # If user has entries, replace entirely with user's entries
-        # (legacy migration already created proper entries from old format)
-        if source_arr:
+        if not source_arr:
+            # User has no entries, keep defaults
+            return
+
+        if not target_arr:
+            # No defaults, use user's entries directly
             target_arr[:] = source_arr
             return
 
-        # If user has no entries, keep target (default) entries
-        # (this happens when user hasn't configured any entries yet)
+        # Build index of target items by unique_key (for default field lookup)
+        target_by_key: dict[str, dict] = {}
+        for item in target_arr:
+            if isinstance(item, dict):
+                key_val = item.get(unique_key)
+                if key_val is not None:
+                    target_by_key[str(key_val)] = item
+
+        # Merge: source entries override, but preserve default fields from target
+        result: list = []
+        for source_item in source_arr:
+            if not isinstance(source_item, dict):
+                result.append(source_item)
+                continue
+
+            key_val = source_item.get(unique_key)
+            key_str = str(key_val) if key_val is not None else None
+
+            if key_str and key_str in target_by_key:
+                # Merge: start with target's defaults, overlay source values
+                merged = dict(target_by_key[key_str])  # copy defaults
+                merged.update(source_item)  # source overrides
+                result.append(merged)
+            else:
+                # New entry from user, add as-is (no defaults to merge with)
+                result.append(source_item)
+
+        # DON'T add unmatched default entries - user entries replace entirely
+        # (legacy migrations already created proper entries from old format)
+
+        target_arr[:] = result
 
     def recursive_merge(target, source):
         for key, value in source.items():
@@ -963,6 +1105,8 @@ async def migrate_config(
         migrate_arc15_entity_config,  # ARC15: Entity-centric config restructure
         cleanup_water_heating_duplicates,  # Cleanup: Remove duplicate keys from water_heating
         migrate_ev_charger_legacy_fields,  # REV K25 Phase 1: Remove legacy EV SoC fields
+        fix_s_index_horizon_days_type,  # REV F66b: Fix string to int type coercion
+        heal_orphaned_array_keys,  # REV F66b: Heal keys at wrong indentation levels
     ]
 
     for step in legacy_steps:
@@ -1023,6 +1167,11 @@ async def migrate_config(
         final_config, cleanup_changed = remove_deprecated_keys(final_config)
         if cleanup_changed:
             logger.info("✅ Final deprecated keys cleanup successful")
+
+        # REV F66b: Heal any orphaned keys at wrong indentation levels
+        final_config, heal_changed = heal_orphaned_array_keys(final_config)
+        if heal_changed:
+            logger.info("✅ Orphaned keys healing successful")
 
         # VALIDATE CRITICAL VALUES AFTER MERGE
         critical_after = _extract_critical_values(final_config)
