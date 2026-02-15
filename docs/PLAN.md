@@ -915,3 +915,58 @@ Missing from validation:
 * [x] Test 6: Post-migration YAML is valid and parseable
 
 ---
+
+### [PLANNED] REV // F67 — Fix Post-Merge Config Corruption
+
+**Goal:** Fix critical bug where template_aware_merge re-introduces deprecated keys that were removed during legacy migrations, causing malformed YAML with orphaned keys.
+
+**Context:** After deploying F66 to production, user pulled the image and found the config had severe structural issues:
+- `name: Main Array` appearing between `solar_arrays` and `battery` sections (wrong indentation)
+- `power_kw`, `min_kwh_per_day`, `max_hours_between_heating` appearing under `water_heating` instead of `water_heaters[]`
+- `s_index_horizon_days: '4'` as string instead of integer
+
+**Root Cause:** The legacy migrations (like `cleanup_water_heating_duplicates`) remove duplicate keys from user config, but then `template_aware_merge()` uses the ORIGINAL user config (before migrations) and re-adds those deprecated keys. The post-merge `remove_deprecated_keys()` doesn't catch them because they're not in `DEPRECATED_NESTED_KEYS`.
+
+**Plan:**
+
+#### Phase 1: Add Deprecated Keys to Cleanup List [PLANNED]
+* [ ] Add `water_heating` section keys to `DEPRECATED_NESTED_KEYS` in `backend/config_migration.py`:
+  - `power_kw`
+  - `min_kwh_per_day`
+  - `max_hours_between_heating`
+  - `min_spacing_hours`
+* [ ] Add `solar_array` (singular) to `DEPRECATED_NESTED_KEYS["system"]` if not already present
+* [ ] Verify `remove_deprecated_keys()` now catches these keys AFTER merge
+
+#### Phase 2: Fix Array Merge Logic (Merge-by-Unique-Key) [PLANNED]
+* [ ] Rewrite `merge_arrays()` in `template_aware_merge()` to properly merge by unique key:
+* [ ] For each user array entry, find matching default entry by unique key (`name` for solar_arrays, `id` for water_heaters/ev_chargers)
+* [ ] Merge fields: user values override defaults, missing fields filled from defaults
+* [ ] Keep default entries that don't match any user entry (preserves default fields like `name`)
+* [ ] Test: Verify `solar_arrays[0].name: "Main Array"` stays inside the array after merge
+
+#### Phase 3: Add Type Coercion for Known Fields [PLANNED]
+* [ ] Add migration function `fix_s_index_horizon_days_type()` in `backend/config_migration.py`
+* [ ] Logic: Convert `s_index_horizon_days` from string to integer if needed
+* [ ] Add to legacy_steps list in `migrate_config()`
+* [ ] Test: Config with `s_index_horizon_days: '4'` becomes `4` (integer)
+
+#### Phase 4: Add Structural Validation (Orphaned Key Detection) [PLANNED]
+* [ ] Add `_detect_orphaned_keys()` function to find keys at wrong indentation levels
+* [ ] Check for common patterns:
+  - Keys that appear between array items and next section (e.g., `name:` after `solar_arrays:` closing bracket)
+  - Keys at root level that should only exist in nested sections
+* [ ] Add `_heal_orphaned_keys()` to automatically fix common patterns:
+  - If `name:` appears after `solar_arrays[]`, move it inside the first array item
+  - If `power_kw:` appears in `water_heating` section, move to `water_heaters[0]` or remove if already there
+* [ ] Run after template merge, before write
+* [ ] Test: Malformed config from F66 should be auto-healed
+
+#### Phase 5: Comprehensive Edge Case Testing [PLANNED]
+* [ ] Test: Old config with `deferrable_loads` (pre-ARC15) migrates cleanly
+* [ ] Test: Config with legacy `solar_array` (singular) converts properly
+* [ ] Test: Partial user config (missing some fields) gets defaults filled in
+* [ ] Test: Your corrupted config should be healed automatically
+* [ ] Test: Fresh default config should work normally
+
+---
