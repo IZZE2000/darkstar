@@ -47,6 +47,13 @@ class ControllerDecision:
     source: str = "plan"  # "plan" or "override"
     reason: str = ""
 
+    # Mode intent (ARC16): The actual mode definition key the controller selected,
+    # not just the value string. This allows the executor to look up the correct
+    # composite entities when multiple modes share the same value.
+    # Values: "export", "zero_export", "self_consumption", "charge_from_grid",
+    #         "force_discharge", "idle", or None for legacy flows
+    mode_intent: str | None = None
+
 
 class Controller:
     """
@@ -112,6 +119,9 @@ class Controller:
         soc_target = int(actions.get("soc_target", 10))
         water_temp = int(actions.get("water_temp", 40))
 
+        # ARC16: Track the mode intent for override decisions
+        mode_intent: str | None = None
+
         # Handle profile-specific mode mapping for overrides
         if self.profile:
             # If grid charging is requested, check if we should switch to charge_from_grid mode
@@ -128,11 +138,13 @@ class Controller:
                 )
             ):
                 work_mode = self.profile.modes.charge_from_grid.value
+                mode_intent = "charge_from_grid"
                 logger.debug("Override: Using profile charge_from_grid mode: %s", work_mode)
 
             # If force export is requested, check for export mode
             if override.override_type.value == "force_export" and self.profile.modes.export:
                 work_mode = self.profile.modes.export.value
+                mode_intent = "export"
                 logger.debug("Override: Using profile export mode: %s", work_mode)
 
         # For overrides, we typically don't actively charge/discharge
@@ -178,24 +190,30 @@ class Controller:
             else self.inverter_config.control_unit,
             source="override",
             reason=override.reason,
+            mode_intent=mode_intent,
         )
 
     def _follow_plan(self, slot: SlotPlan, state: SystemState) -> ControllerDecision:
         """Follow the slot plan for normal operation."""
         # Determine work mode and grid charging based on plan and profile
+        mode_intent: str | None = None  # ARC16: Track which mode definition was selected
+
         if self.profile:
             # Determine which mode definition to use
             if slot.export_kw > 0:
                 mode_def = self.profile.modes.export
+                mode_intent = "export"
             elif (
                 slot.charge_kw > 0
                 and self.profile.modes.charge_from_grid
                 and self.profile.modes.charge_from_grid.value
             ):
                 mode_def = self.profile.modes.charge_from_grid
+                mode_intent = "charge_from_grid"
             else:
                 # Default to Zero Export / Self Consumption
                 mode_def = self.profile.modes.zero_export
+                mode_intent = "zero_export"
 
                 # CHECK: If we are at or below SoC target, and we have an 'idle' mode,
                 # we should use it to "Block Discharge" (Hold).
@@ -207,6 +225,7 @@ class Controller:
                     and state.current_soc_percent <= slot.soc_target
                 ):
                     mode_def = self.profile.modes.idle
+                    mode_intent = "idle"
 
             # Get the mode value (string to write to HA)
             work_mode = mode_def.value or self.profile.modes.zero_export.value
@@ -261,6 +280,7 @@ class Controller:
             else self.inverter_config.control_unit,
             source="plan",
             reason=reason,
+            mode_intent=mode_intent,
         )
 
     def _calculate_charge_limit(self, slot: SlotPlan, state: SystemState) -> tuple[float, bool]:

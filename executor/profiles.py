@@ -215,6 +215,9 @@ class InverterProfile:
         if self.modes.force_discharge and not self.modes.force_discharge.value:
             errors.append("modes.force_discharge.value is required")
 
+        # ARC16: Check for shared mode values and warn if set_entities differ
+        self._validate_shared_mode_values()
+
         # Validate required entities (only log warnings, don't fail validation)
         # This is because entities are configured by the user in config.yaml
         is_entities_valid, missing = self.entities.validate_required()
@@ -226,6 +229,59 @@ class InverterProfile:
             )
 
         return len(errors) == 0, errors
+
+    def _validate_shared_mode_values(self) -> None:
+        """
+        ARC16: Check for modes sharing the same value string with different set_entities.
+
+        When multiple modes share the same value, they should have identical set_entities
+        (or use skip flags) to avoid ambiguity in composite entity application.
+
+        Logs warnings if potential issues are detected.
+        """
+        if not self.modes:
+            return
+
+        # Build map of value -> list of (mode_name, mode_obj, set_entities)
+        value_to_modes: dict[str, list[tuple[str, WorkMode, dict[str, Any]]]] = {}
+
+        mode_list = [
+            ("export", self.modes.export),
+            ("zero_export", self.modes.zero_export),
+            ("self_consumption", self.modes.self_consumption),
+            ("charge_from_grid", self.modes.charge_from_grid),
+            ("force_discharge", self.modes.force_discharge),
+            ("idle", self.modes.idle),
+        ]
+
+        for mode_name, mode_obj in mode_list:
+            if mode_obj and mode_obj.value:
+                value = mode_obj.value
+                if value not in value_to_modes:
+                    value_to_modes[value] = []
+                value_to_modes[value].append((mode_name, mode_obj, mode_obj.set_entities))
+
+        # Check for shared values with different set_entities
+        for value, modes in value_to_modes.items():
+            if len(modes) > 1:
+                # Multiple modes share this value
+                first_entities = modes[0][2]
+                differing_modes = []
+
+                for mode_name, _mode_obj, entities in modes[1:]:
+                    if entities != first_entities:
+                        differing_modes.append(mode_name)
+
+                if differing_modes:
+                    all_mode_names = [m[0] for m in modes]
+                    logger.warning(
+                        "Profile '%s': Modes %s share value '%s' but have different "
+                        "set_entities. This can cause incorrect composite entity application. "
+                        "ARC16 mode_intent will be used for disambiguation.",
+                        self.metadata.name,
+                        all_mode_names,
+                        value,
+                    )
 
     def get_suggested_config(self) -> dict[str, Any]:
         """

@@ -77,6 +77,9 @@ class ActionResult:
     skipped: bool = False  # True if action was skipped (already at target)
     duration_ms: int = 0
     error_details: str | None = None  # REV F52 Phase 5: HA API error details (status, body, etc.)
+    # ARC16: Track the controller's intended mode vs applied mode
+    requested_mode: str | None = None  # The mode_intent from controller (e.g., "idle")
+    applied_mode: str | None = None  # The actual mode whose entities were applied
 
 
 class HAClient:
@@ -367,7 +370,9 @@ class ActionDispatcher:
         # 1. Set work mode (Rev O1)
         if self.config.has_battery:
             mode_results = await self._set_work_mode(
-                target_mode, is_charging=decision.grid_charging
+                target_mode,
+                is_charging=decision.grid_charging,
+                mode_intent=decision.mode_intent,
             )
             results.extend(mode_results)
 
@@ -464,6 +469,7 @@ class ActionDispatcher:
         target_mode: str,
         is_charging: bool,
         mode_changed: bool,
+        mode_intent: str | None = None,
     ) -> list[ActionResult]:
         """Apply composite mode entities for inverters that require multiple entity changes.
 
@@ -475,6 +481,8 @@ class ActionDispatcher:
             target_mode: The target work mode string value
             is_charging: Whether we're in a charging intent context
             mode_changed: Whether the primary work_mode entity was actually changed
+            mode_intent: The controller's intended mode definition key (e.g., "idle", "export")
+                        Used to disambiguate when multiple modes share the same value string (ARC16)
 
         Returns:
             List of ActionResult objects for composite entity operations
@@ -486,42 +494,66 @@ class ActionDispatcher:
 
         # unique string value -> mode object lookup
         mode_obj = None
+        applied_mode_name = None
 
-        # Rev F52 Phase 4: Ambiguous Mode Resolution
-        # Determine which mode object matches the target string AND intent
-        # Priority:
-        # 1. If is_charging=True, check charge_from_grid first
-        # 2. Check all other modes
+        # ARC16: Use mode_intent for direct lookup when provided
+        # This fixes the bug where multiple modes share the same value string
+        if mode_intent:
+            mode_mapping = {
+                "export": self.profile.modes.export,
+                "zero_export": self.profile.modes.zero_export,
+                "self_consumption": self.profile.modes.self_consumption,
+                "charge_from_grid": self.profile.modes.charge_from_grid,
+                "force_discharge": self.profile.modes.force_discharge,
+                "idle": self.profile.modes.idle,
+            }
+            mode_obj = mode_mapping.get(mode_intent)
+            if mode_obj:
+                applied_mode_name = mode_intent
+                logger.debug(
+                    "ARC16: Using mode_intent '%s' for composite entity lookup", mode_intent
+                )
 
-        # Helper to find matching mode in a list
-        def find_mode(mode_list: list[WorkMode | None]) -> WorkMode | None:
-            for m in mode_list:
-                if m and m.value == target_mode:
-                    return m
-            return None
-
-        if is_charging:
-            mode_obj = find_mode([self.profile.modes.charge_from_grid])
-
+        # Fallback to legacy value-based lookup if mode_intent not provided or invalid
         if not mode_obj:
-            # Standard lookup order (Export/Zero/Self/ForceDischarge/Idle)
-            # Note: We exclude charge_from_grid here if is_charging is False to avoid accidental match
-            # if it shares a value with another mode (e.g. Sungrow Forced Mode)
-            candidates = [
-                self.profile.modes.export,
-                self.profile.modes.zero_export,
-                self.profile.modes.self_consumption,
-                self.profile.modes.force_discharge,
-                self.profile.modes.idle,
-            ]
-            # Only include charge_from_grid as fallback if we haven't checked it yet (unlikely path)
-            if not is_charging:
-                # If we are NOT charging, we explicitly prefer Export/ForceDischarge over GridCharge
-                pass
-            else:
-                candidates.append(self.profile.modes.charge_from_grid)
+            # Rev F52 Phase 4: Ambiguous Mode Resolution
+            # Determine which mode object matches the target string AND intent
+            # Priority:
+            # 1. If is_charging=True, check charge_from_grid first
+            # 2. Check all other modes
 
-            mode_obj = find_mode(candidates)
+            # Helper to find matching mode in a list
+            def find_mode(mode_list: list[WorkMode | None]) -> WorkMode | None:
+                for m in mode_list:
+                    if m and m.value == target_mode:
+                        return m
+                return None
+
+            if is_charging:
+                mode_obj = find_mode([self.profile.modes.charge_from_grid])
+                if mode_obj:
+                    applied_mode_name = "charge_from_grid"
+
+            if not mode_obj:
+                # Standard lookup order (Export/Zero/Self/ForceDischarge/Idle)
+                # Note: We exclude charge_from_grid here if is_charging is False to avoid accidental match
+                # if it shares a value with another mode (e.g. Sungrow Forced Mode)
+                candidates = [
+                    ("export", self.profile.modes.export),
+                    ("zero_export", self.profile.modes.zero_export),
+                    ("self_consumption", self.profile.modes.self_consumption),
+                    ("force_discharge", self.profile.modes.force_discharge),
+                    ("idle", self.profile.modes.idle),
+                ]
+                # Only include charge_from_grid as fallback if we haven't checked it yet (unlikely path)
+                if is_charging:
+                    candidates.append(("charge_from_grid", self.profile.modes.charge_from_grid))
+
+                for name, candidate in candidates:
+                    if candidate and candidate.value == target_mode:
+                        mode_obj = candidate
+                        applied_mode_name = name
+                        break
 
         if mode_obj and mode_obj.set_entities:
             logger.debug(
@@ -551,6 +583,8 @@ class ActionDispatcher:
                             entity_id=None,
                             error_details=f"Missing composite entity mapping for '{key}'",
                             duration_ms=int((time.time() - aux_start) * 1000),
+                            requested_mode=mode_intent,
+                            applied_mode=applied_mode_name,
                         )
                     )
                     continue
@@ -573,6 +607,8 @@ class ActionDispatcher:
                             skipped=True,
                             duration_ms=int((time.time() - aux_start) * 1000),
                             error_details=None,
+                            requested_mode=mode_intent,
+                            applied_mode=applied_mode_name,
                         )
                     )
                     continue
@@ -595,6 +631,8 @@ class ActionDispatcher:
                             skipped=True,
                             duration_ms=int((time.time() - aux_start) * 1000),
                             error_details=None,
+                            requested_mode=mode_intent,
+                            applied_mode=applied_mode_name,
                         )
                     )
                     continue
@@ -640,15 +678,27 @@ class ActionDispatcher:
                         verification_success=aux_verification_success,
                         duration_ms=int((time.time() - aux_start) * 1000),
                         error_details=aux_error_details,
+                        requested_mode=mode_intent,
+                        applied_mode=applied_mode_name,
                     )
                 )
 
         return results
 
     async def _set_work_mode(
-        self, target_mode: str, is_charging: bool = False
+        self,
+        target_mode: str,
+        is_charging: bool = False,
+        mode_intent: str | None = None,
     ) -> list[ActionResult]:
-        """Set inverter work mode if different from current."""
+        """Set inverter work mode if different from current.
+
+        Args:
+            target_mode: The target work mode string value to write to HA
+            is_charging: Whether we're in a charging context (for composite entity selection)
+            mode_intent: The controller's intended mode definition (e.g., "idle", "export")
+                        Used to disambiguate when multiple modes share the same value string (ARC16)
+        """
         start = time.time()
         results: list[ActionResult] = []
         entity = self.config.inverter.work_mode_entity
@@ -699,7 +749,7 @@ class ActionDispatcher:
         # (e.g., "Forced mode" for both export and charge), differing only in composite entities.
         if self.profile:
             composite_results = await self._apply_composite_entities(
-                target_mode, is_charging, mode_changed
+                target_mode, is_charging, mode_changed, mode_intent
             )
             results.extend(composite_results)
 
