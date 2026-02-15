@@ -142,22 +142,38 @@ class PlannerPipeline:
                 )
 
         # Water heater: WARNING only (doesn't break system, just disables feature)
+        # REV F66b: Check new ARC15 water_heaters[] array, fallback to legacy water_heating
         if system_cfg.get("has_water_heater", True):
-            power_kw = float(water_cfg.get("power_kw", 0.0))
+            water_heaters = self.config.get("water_heaters", [])
+            if water_heaters:
+                # New ARC15 structure - sum power from enabled heaters
+                enabled_heaters = [wh for wh in water_heaters if wh.get("enabled", True)]
+                power_kw = sum(float(wh.get("power_kw", 0.0)) for wh in enabled_heaters)
+            else:
+                # Legacy structure
+                power_kw = float(water_cfg.get("power_kw", 0.0))
+
             if power_kw <= 0:
                 logger.warning(
-                    "Config warning: has_water_heater=true but water_heating.power_kw=0. "
+                    "Config warning: has_water_heater=true but water heater power is 0. "
                     "Water heating optimization is disabled."
                 )
 
         # Solar: WARNING only (doesn't break system, just zeros PV forecasts)
+        # REV F66b: Check new solar_arrays[] array, fallback to legacy solar_array
         if system_cfg.get("has_solar", True):
-            solar_cfg = system_cfg.get("solar_array", {})
-            kwp = float(solar_cfg.get("kwp", 0.0))
+            solar_arrays = system_cfg.get("solar_arrays", [])
+            if solar_arrays:
+                # New structure - sum kwp from all arrays
+                kwp = sum(float(sa.get("kwp", 0.0)) for sa in solar_arrays)
+            else:
+                # Legacy structure
+                solar_cfg = system_cfg.get("solar_array", {})
+                kwp = float(solar_cfg.get("kwp", 0.0))
+
             if kwp <= 0:
                 logger.warning(
-                    "Config warning: has_solar=true but solar_array.kwp=0. "
-                    "PV forecasts will be zero."
+                    "Config warning: has_solar=true but solar kwp is 0. PV forecasts will be zero."
                 )
 
     def _apply_overrides(self, config: dict[str, Any], overrides: dict[str, Any]) -> dict[str, Any]:
@@ -549,7 +565,13 @@ class PlannerPipeline:
             # and when interval - 1 days have passed (allows scheduling in next 24h)
             if days_since >= (interval_days - 1) and now_slot.hour >= 14:
                 duration_hours = float(vacation_cfg.get("anti_legionella_duration_hours", 3.0))
-                power_kw = float(water_cfg.get("power_kw", 3.0))
+                # REV F66b: Check new ARC15 water_heaters[] array, fallback to legacy
+                water_heaters = active_config.get("water_heaters", [])
+                if water_heaters:
+                    enabled_heaters = [wh for wh in water_heaters if wh.get("enabled", True)]
+                    power_kw = sum(float(wh.get("power_kw", 0.0)) for wh in enabled_heaters)
+                else:
+                    power_kw = float(water_cfg.get("power_kw", 3.0))
                 al_kwh = duration_hours * power_kw
                 kepler_config.water_heating_min_kwh = al_kwh
                 schedule_anti_legionella = True
