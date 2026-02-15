@@ -764,13 +764,21 @@ After ARC15/UI20, ev_soc, ev_plug, and ev_power still live in input_sensors crea
 
 ### [DRAFT] REV // F65 — Cumulative Sensor Validation Gap
 
-**Goal:** Add validation for cumulative energy sensors (`total_*`) and improve warnings when forecasting may use inaccurate fallback data.
+**Goal:** Make cumulative energy sensors (`total_*`) and today's sensors (`today_*`) REQUIRED for proper operation. These are critical for forecasting, ML, and dashboard functionality - NOT optional.
 
 **Context:** Investigation of Sungrow beta tester revealed:
 1. `total_load_consumption` was empty in config
 2. Planner forecasting silently fell back to dummy sine wave profile (~0.2-0.8 kWh/slot)
 3. No warning was shown in health checks
 4. "Today's Stats" worked (uses `today_*` sensors) but ChartCard forecast was wrong
+
+**Critical Finding:** These sensors are NOT optional - they are essential for:
+- **Forecasting accuracy** (`total_*` sensors provide historical load patterns)
+- **ML model training** (`total_*` sensors required for Aurora learning)
+- **Dashboard "Today's Stats"** (`today_*` sensors for real-time daily totals)
+- **Backfill calculations** (`total_grid_import/export` for energy accounting)
+
+Without these sensors, Darkstar cannot function correctly.
 
 **Root Cause:** The `sensor_requirements` dict in `backend/health.py:468-481` only validates:
 - `load_power`, `pv_power`, `grid_power` (real-time power sensors)
@@ -815,11 +823,27 @@ Missing from validation:
 * [ ] Log warning when HA profile fallback is used (entity empty or fetch failed)
 * [ ] Add health status "degraded" when using fallback data
 
+#### Phase 4: Add Cumulative Sensors to Profile Required Entities [DRAFT]
+* [ ] Add cumulative sensors to `entities.required` in all inverter profiles:
+  - `total_load_consumption` (all profiles)
+  - `total_pv_production` (all profiles)
+  - `total_grid_import`, `total_grid_export` (all profiles)
+  - `total_battery_charge`, `total_battery_discharge` (all profiles)
+* [ ] Add today's sensors to `entities.required` in all profiles:
+  - `today_load_consumption`, `today_pv_production`
+  - `today_grid_import`, `today_grid_export`
+  - `today_battery_charge`, `today_battery_discharge`
+* [ ] Update frontend field definitions to map to profile entities
+* [ ] Verify ProfileSetupHelper shows missing required sensors correctly
+
 #### Phase 5: Test & Verify [DRAFT]
 * [ ] Test: Empty `total_load_consumption` shows health warning
 * [ ] Test: Empty `today_load_consumption` shows health warning
+* [ ] Test: UI shows required markers (red asterisk) on all cumulative/today sensors
+* [ ] Test: Form validation prevents save with empty required fields
 * [ ] Test: With all sensors configured, no warnings
 * [ ] Run `uv run ruff check .`
+* [ ] Run `pnpm lint` in frontend
 
 ---
 
