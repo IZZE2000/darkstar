@@ -822,3 +822,72 @@ Missing from validation:
 * [ ] Run `uv run ruff check .`
 
 ---
+
+### [DRAFT] REV // F66 — Critical Config Migration & Deployment Fixes
+
+**Goal:** Fix five critical bugs causing config corruption, missing profiles, and incorrect executor behavior.
+
+**Context:** Investigation of Proxmox LXC deployment revealed five critical bugs:
+
+1. **Backup Wrong Location**: Timestamped backups created in container's ephemeral `/app/backups/` instead of host-mounted directory. User lost ability to restore pre-migration config.
+
+2. **Array Merge Malformed YAML**: `template_aware_merge()` doesn't properly handle arrays by unique ID matching. Results in malformed YAML with keys floating between sections (e.g., `solar_arrays[0].name` appearing between array and battery section).
+
+3. **Inverter Profile Reset**: User had `inverter_profile: deye`, migration changed to `generic`. Template merge overwrote user value with default.
+
+4. **Grid Sensors for Single Meter**: Executor fetches `grid_import_power` and `grid_export_power` regardless of `grid_meter_type` setting, causing 404 errors for single-meter users.
+
+5. **Missing Profiles in Docker**: Production Dockerfile (`Dockerfile` at root) missing `COPY profiles/ ./profiles/` line. HA add-on Dockerfiles have it, but main release build doesn't.
+
+**Evidence:**
+- Docker log shows: `ERROR: executor.profiles - Profile file not found: profiles/generic.yaml`
+- Docker log shows: `ERROR: executor.actions - Failed to get state of sensor.grid_import_power: 404`
+- Migrated config shows malformed structure with keys at wrong indentation levels
+- Config backup directory `/opt/darkstar/backups/` does NOT exist in container
+
+**Plan:**
+
+#### Phase 1: Fix Backup Path to Use Host-Mounted Directory [DRAFT]
+* [ ] Modify `create_timestamped_backup()` in `backend/config_migration.py` to use absolute path or detect mount point
+* [ ] Logic: If running in container (detected via `/.dockerenv`), resolve backup path relative to config file's parent (assuming it's mounted from host)
+* [ ] Alternative: Add `backup_dir` config option, fallback to host-writable path `/data/backups`
+* [ ] Test: Verify backup created in persistent location after fix
+
+#### Phase 2: Fix Array Merge Logic [DRAFT]
+* [ ] Rewrite `template_aware_merge()` in `backend/config_migration.py` to handle arrays specially
+* [ ] Logic: For arrays, match items by unique key (`id` for water_heaters/ev_chargers, `name` for solar_arrays)
+* [ ] Preserve user array items that match, append new items from template
+* [ ] Add post-merge validation: dump to string and re-parse to catch malformed YAML
+* [ ] Test: Migrate config with arrays, verify structure is correct YAML
+
+#### Phase 3: Fix Inverter Profile Preservation [DRAFT]
+* [ ] Add explicit preservation of `system.inverter_profile` before template merge
+* [ ] Capture value before merge, restore after merge (like critical values check does)
+* [ ] Alternative: Add `inverter_profile` to critical values list in `_extract_critical_values()`
+* [ ] Test: Config with `inverter_profile: deye` should preserve it after migration
+
+#### Phase 4: Fix Grid Sensor Fetch by Meter Type [DRAFT]
+* [ ] Modify `executor/engine.py` around line 1397 to check `grid_meter_type` before fetching sensors
+* [ ] Logic: Get `grid_meter_type` from system config, only fetch dual-meter sensors if type is "dual"
+* [ ] Test: With `grid_meter_type: net`, executor should NOT fetch grid_import/export sensors
+
+#### Phase 5: Add Profiles to Production Dockerfile [DRAFT]
+* [ ] Add `COPY profiles/ ./profiles/` to root `Dockerfile` after line 53
+* [ ] Verify all three Dockerfiles have consistent profile copying
+* [ ] Test: Build container, verify profiles directory exists at `/app/profiles/`
+
+#### Phase 6: Add Post-Migration Validation [DRAFT]
+* [ ] Add YAML validity check after migration writes config
+* [ ] Check: Parse written config back and verify structure matches expected schema
+* [ ] Add critical value preservation check (already exists but verify it's working)
+* [ ] Test: Malformed config should abort migration with clear error
+
+#### Phase 7: Integration Testing [DRAFT]
+* [ ] Test 1: Backup created in persistent location (docker-compose volume mount verify)
+* [ ] Test 2: Config with multiple solar arrays migrates without corruption
+* [ ] Test 3: Config with `inverter_profile: deye` preserves value after migration
+* [ ] Test 4: Single-meter config doesn't trigger 404 errors in executor
+* [ ] Test 5: Container has profiles directory with all profile YAML files
+* [ ] Test 6: Post-migration YAML is valid and parseable
+
+---
