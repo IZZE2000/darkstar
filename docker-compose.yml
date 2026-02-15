@@ -13,6 +13,8 @@ services:
       - ./secrets.yaml:/app/secrets.yaml
       # Persistent data (learning DB, scheduler status, strategy history)
       - ./data:/app/data
+      # Persistent backups (REV F66: bind-mounted for container persistence)
+      - ./backups:/host_backups
     environment:
       - TZ=Europe/Stockholm
     restart: unless-stopped

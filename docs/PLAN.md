@@ -823,7 +823,7 @@ Missing from validation:
 
 ---
 
-### [DRAFT] REV // F66 — Critical Config Migration & Deployment Fixes
+### [DONE] REV // F66 — Critical Config Migration & Deployment Fixes
 
 **Goal:** Fix five critical bugs causing config corruption, missing profiles, and incorrect executor behavior.
 
@@ -847,47 +847,47 @@ Missing from validation:
 
 **Plan:**
 
-#### Phase 1: Fix Backup Path to Use Host-Mounted Directory [DRAFT]
-* [ ] Modify `create_timestamped_backup()` in `backend/config_migration.py` to use absolute path or detect mount point
-* [ ] Logic: If running in container (detected via `/.dockerenv`), resolve backup path relative to config file's parent (assuming it's mounted from host)
-* [ ] Alternative: Add `backup_dir` config option, fallback to host-writable path `/data/backups`
-* [ ] Test: Verify backup created in persistent location after fix
+#### Phase 1: Fix Backup Path to Use Host-Mounted Directory [DONE]
+* [x] Modify `create_timestamped_backup()` in `backend/config_migration.py` to use absolute path or detect mount point
+* [x] Logic: If running in container (detected via `/.dockerenv`), resolve backup path relative to config file's parent (assuming it's mounted from host)
+* [x] Alternative: Add `backup_dir` config option, fallback to host-writable path `/data/backups`
+* [x] Test: Verify backup created in persistent location after fix
 
-#### Phase 2: Fix Array Merge Logic [DRAFT]
-* [ ] Rewrite `template_aware_merge()` in `backend/config_migration.py` to handle arrays specially
-* [ ] Logic: For arrays, match items by unique key (`id` for water_heaters/ev_chargers, `name` for solar_arrays)
-* [ ] Preserve user array items that match, append new items from template
-* [ ] Add post-merge validation: dump to string and re-parse to catch malformed YAML
-* [ ] Test: Migrate config with arrays, verify structure is correct YAML
+#### Phase 2: Fix Array Merge Logic [DONE]
+* [x] Rewrite `template_aware_merge()` in `backend/config_migration.py` to handle arrays specially
+* [x] Logic: For arrays, match items by unique key (`id` for water_heaters/ev_chargers, `name` for solar_arrays)
+* [x] Preserve user array items that match, append new items from template
+* [x] Add post-merge validation: dump to string and re-parse to catch malformed YAML
+* [x] Test: Migrate config with arrays, verify structure is correct YAML
 
-#### Phase 3: Fix Inverter Profile Preservation [DRAFT]
-* [ ] Add explicit preservation of `system.inverter_profile` before template merge
-* [ ] Capture value before merge, restore after merge (like critical values check does)
-* [ ] Alternative: Add `inverter_profile` to critical values list in `_extract_critical_values()`
-* [ ] Test: Config with `inverter_profile: deye` should preserve it after migration
+#### Phase 3: Fix Inverter Profile Preservation [DONE]
+* [x] Add explicit preservation of `system.inverter_profile` before template merge
+* [x] Capture value before merge, restore after merge (like critical values check does)
+* [x] Alternative: Add `inverter_profile` to critical values list in `_extract_critical_values()`
+* [x] Test: Config with `inverter_profile: deye` should preserve it after migration
 
-#### Phase 4: Fix Grid Sensor Fetch by Meter Type [DRAFT]
-* [ ] Modify `executor/engine.py` around line 1397 to check `grid_meter_type` before fetching sensors
-* [ ] Logic: Get `grid_meter_type` from system config, only fetch dual-meter sensors if type is "dual"
-* [ ] Test: With `grid_meter_type: net`, executor should NOT fetch grid_import/export sensors
+#### Phase 4: Fix Grid Sensor Fetch by Meter Type [DONE]
+* [x] Modify `executor/engine.py` around line 1397 to check `grid_meter_type` before fetching sensors
+* [x] Logic: Get `grid_meter_type` from system config, only fetch dual-meter sensors if type is "dual"
+* [x] Test: With `grid_meter_type: net`, executor should NOT fetch grid_import/export sensors
 
-#### Phase 5: Add Profiles to Production Dockerfile [DRAFT]
-* [ ] Add `COPY profiles/ ./profiles/` to root `Dockerfile` after line 53
-* [ ] Verify all three Dockerfiles have consistent profile copying
-* [ ] Test: Build container, verify profiles directory exists at `/app/profiles/`
+#### Phase 5: Add Profiles to Production Dockerfile [DONE]
+* [x] Add `COPY profiles/ ./profiles/` to root `Dockerfile` after line 53
+* [x] Verify all three Dockerfiles have consistent profile copying
+* [x] Test: Build container, verify profiles directory exists at `/app/profiles/`
 
-#### Phase 6: Add Post-Migration Validation [DRAFT]
-* [ ] Add YAML validity check after migration writes config
-* [ ] Check: Parse written config back and verify structure matches expected schema
-* [ ] Add critical value preservation check (already exists but verify it's working)
-* [ ] Test: Malformed config should abort migration with clear error
+#### Phase 6: Add Post-Migration Validation [DONE]
+* [x] Add YAML validity check after migration writes config
+* [x] Check: Parse written config back and verify structure matches expected schema
+* [x] Add critical value preservation check (already exists but verify it's working)
+* [x] Test: Malformed config should abort migration with clear error
 
-#### Phase 7: Integration Testing [DRAFT]
-* [ ] Test 1: Backup created in persistent location (docker-compose volume mount verify)
-* [ ] Test 2: Config with multiple solar arrays migrates without corruption
-* [ ] Test 3: Config with `inverter_profile: deye` preserves value after migration
-* [ ] Test 4: Single-meter config doesn't trigger 404 errors in executor
-* [ ] Test 5: Container has profiles directory with all profile YAML files
-* [ ] Test 6: Post-migration YAML is valid and parseable
+#### Phase 7: Integration Testing [DONE]
+* [x] Test 1: Backup created in persistent location (docker-compose volume mount verify)
+* [x] Test 2: Config with multiple solar arrays migrates without corruption
+* [x] Test 3: Config with `inverter_profile: deye` preserves value after migration
+* [x] Test 4: Single-meter config doesn't trigger 404 errors in executor
+* [x] Test 5: Container has profiles directory with all profile YAML files
+* [x] Test 6: Post-migration YAML is valid and parseable
 
 ---

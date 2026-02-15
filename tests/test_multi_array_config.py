@@ -39,6 +39,7 @@ def test_valid_configs():
             "has_solar": True,
             "has_battery": False,
             "has_water_heater": False,
+            "location": {"latitude": 59.3, "longitude": 18.1},
             "solar_arrays": [],
         },
         "executor": {"enabled": False},

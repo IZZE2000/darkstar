@@ -51,6 +51,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY backend/ ./backend/
 COPY planner/ ./planner/
 COPY executor/ ./executor/
+COPY profiles/ ./profiles/
 COPY bin/ ./bin/
 COPY ml/*.py ./ml/
 # Models are generated at runtime (Clean Slate strategy)

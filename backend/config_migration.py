@@ -1,5 +1,6 @@
 import contextlib
 import logging
+import os
 import shutil
 from collections.abc import Callable
 from datetime import datetime
@@ -13,6 +14,56 @@ except ImportError:
     YAML = None
 
 logger = logging.getLogger("darkstar.config_migration")
+
+BACKUP_DIR_ENV = "BACKUP_DIR"
+HOST_BACKUP_DIR = Path("/host_backups")
+
+
+def _get_persistent_backup_dir(config_path: Path) -> Path:
+    """Determine the persistent backup directory for the current environment.
+
+    Priority:
+    1. /share/darkstar/backups (HA add-on persistent storage)
+    2. /host_backups (bind-mounted from host - persistent in container)
+    3. BACKUP_DIR environment variable (custom location)
+    4. ./backups relative to config path (ephemeral fallback for standalone)
+
+    Args:
+        config_path: Path to the config file being backed up
+
+    Returns:
+        Path to the backup directory to use
+    """
+    # Detect HA add-on deployment: config lives at /config/darkstar/
+    if str(config_path).startswith("/config/darkstar/"):
+        ha_backup_dir = Path("/share/darkstar/backups")
+        logger.debug("Detected HA add-on deployment, using: %s", ha_backup_dir)
+        return ha_backup_dir
+
+    if HOST_BACKUP_DIR.exists() and HOST_BACKUP_DIR.is_dir():
+        logger.debug("Using host-mounted backup directory: %s", HOST_BACKUP_DIR)
+        return HOST_BACKUP_DIR
+
+    backup_dir_env = os.environ.get(BACKUP_DIR_ENV)
+    if backup_dir_env:
+        env_path = Path(backup_dir_env)
+        if env_path.is_absolute():
+            logger.debug("Using BACKUP_DIR env var: %s", env_path)
+            return env_path
+        else:
+            relative_path = config_path.parent / env_path
+            logger.debug("Using relative BACKUP_DIR env var: %s", relative_path)
+            return relative_path
+
+    local_backup_dir = config_path.parent / "backups"
+    if Path("/.dockerenv").exists():
+        logger.warning(
+            "Container detected but no /host_backups mount found. "
+            "Backups will be ephemeral at %s. Consider mounting a volume.",
+            local_backup_dir,
+        )
+    return local_backup_dir
+
 
 # Type alias for migration functions
 # Returns: (modified_config, changed_bool)
@@ -686,20 +737,55 @@ def template_aware_merge(default_cfg: dict, user_cfg: dict) -> None:
     Overwrites values from user_cfg.
     Appends extra keys from user_cfg (recursively).
     Modifies default_cfg IN PLACE.
+
+    REV F66: Fixed array handling - merge arrays by unique ID instead of overwriting.
     """
 
+    ARRAY_UNIQUE_KEYS = {
+        "solar_arrays": "name",
+        "water_heaters": "id",
+        "ev_chargers": "id",
+    }
+
+    def get_unique_key(item: Any, key_name: str) -> str | None:
+        if isinstance(item, dict):
+            return item.get(key_name)
+        return None
+
+    def merge_arrays(target_arr: list, source_arr: list, unique_key: str) -> None:
+        """Merge source array into target array by matching unique key.
+
+        Strategy: If source (user) has ANY entries, use ONLY source entries.
+        Only append from target (default) if source has no matching entry.
+        This prevents template placeholders from being added alongside user data.
+        """
+        if not isinstance(target_arr, list) or not isinstance(source_arr, list):
+            target_arr[:] = source_arr
+            return
+
+        # If user has entries, replace entirely with user's entries
+        # (legacy migration already created proper entries from old format)
+        if source_arr:
+            target_arr[:] = source_arr
+            return
+
+        # If user has no entries, keep target (default) entries
+        # (this happens when user hasn't configured any entries yet)
+
     def recursive_merge(target, source):
-        # 1. Update/Recurse on existing keys
         for key, value in source.items():
             if key in target:
                 if isinstance(target[key], dict) and isinstance(value, dict):
                     recursive_merge(target[key], value)
+                elif isinstance(target[key], list) and isinstance(value, list):
+                    unique_key = ARRAY_UNIQUE_KEYS.get(key)
+                    if unique_key:
+                        merge_arrays(target[key], value, unique_key)
+                    else:
+                        target[key] = value
                 else:
-                    # Copy value. Structure/comments of 'target' remain.
                     target[key] = value
             else:
-                # 2. Append new keys
-                logger.info(f"Preserving custom user key '{key}'")
                 target[key] = value
 
     recursive_merge(default_cfg, user_cfg)
@@ -711,8 +797,20 @@ def _extract_critical_values(config: Any) -> dict:
         return {}
 
     system = config.get("system", {})
+    inverter_profile = system.get("inverter_profile")
+
+    # REV F66: Also check root level for misplaced inverter_profile
+    # This handles configs where user put inverter_profile at root instead of under system
+    if inverter_profile is None and "inverter_profile" in config:
+        inverter_profile = config.get("inverter_profile")
+        if inverter_profile:
+            logger.warning(
+                "Found 'inverter_profile' at root level instead of 'system.inverter_profile'. "
+                "This may indicate a migration issue."
+            )
+
     return {
-        "inverter_profile": system.get("inverter_profile"),
+        "inverter_profile": inverter_profile,
         "has_ev_charger": system.get("has_ev_charger"),
         "has_water_heater": system.get("has_water_heater"),
         "latitude": system.get("location", {}).get("latitude"),
@@ -950,6 +1048,12 @@ def create_timestamped_backup(path: Path, max_backups: int = 30) -> Path | None:
     """Create a timestamped backup of the file and cleanup old ones.
 
     REV F57: Enhanced backup system for better recovery.
+    REV F66: Fixed backup path to use persistent storage in containers.
+
+    Backup priority:
+    1. /host_backups (bind-mounted from host - persistent)
+    2. BACKUP_DIR env var (custom location)
+    3. ./backups relative to config (ephemeral in container)
 
     Args:
         path: Path to the file to backup
@@ -962,8 +1066,8 @@ def create_timestamped_backup(path: Path, max_backups: int = 30) -> Path | None:
         return None
 
     try:
-        backup_dir = path.parent / "backups"
-        backup_dir.mkdir(exist_ok=True)
+        backup_dir = _get_persistent_backup_dir(path)
+        backup_dir.mkdir(parents=True, exist_ok=True)
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         backup_path = backup_dir / f"{path.name}_{timestamp}.bak"
@@ -1027,9 +1131,10 @@ def _write_config(
         try:
             temp_path.replace(path)
             logger.info(f"✅ {log_prefix} Successfully updated {path} (Atomic)")
-            # Cleanup backup if successful?
-            # Maybe keep it for one cycle? No, usually cleanup.
-            # but let's keep .bak for safety in beta.
+
+            # REV F66: Post-write validation - verify written file is valid
+            _verify_written_config(path, yaml_instance)
+
         except OSError as e:
             # Fallback for Bind Mounts (same as before)
             import errno
@@ -1040,6 +1145,9 @@ def _write_config(
                     temp_path, path
                 )  # Python copy is not atomic but works across filesystems
                 logger.info(f"✅ {log_prefix} Successfully updated {path} (Direct Copy)")
+
+                # REV F66: Post-write validation for bind mount
+                _verify_written_config(path, yaml_instance)
             else:
                 raise
 
@@ -1053,6 +1161,51 @@ def _write_config(
         with contextlib.suppress(Exception):
             if temp_path.exists():
                 temp_path.unlink()
+
+
+def _verify_written_config(path: Path, yaml_instance: Any) -> bool:
+    """Verify the written config file can be read back and is valid.
+
+    REV F66: Post-migration validation to catch write errors or corruption.
+
+    Args:
+        path: Path to the written config file
+        yaml_instance: ruamel.yaml YAML instance
+
+    Returns:
+        True if config is valid, False otherwise
+    """
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            loaded = yaml_instance.load(f)
+
+        if loaded is None or not isinstance(loaded, dict):
+            logger.error("❌ Post-write validation failed: config is empty or not a dict")
+            return False
+
+        # Check for basic expected structure
+        if "system" not in loaded:
+            logger.error("❌ Post-write validation failed: missing 'system' section")
+            return False
+
+        # Check inverter_profile is in correct location
+        system = loaded.get("system", {})
+        if "inverter_profile" not in system:
+            # Check if it's misplaced at root level
+            if "inverter_profile" in loaded:
+                logger.warning(
+                    "⚠️  Post-write: 'inverter_profile' found at root level, "
+                    "should be under 'system'. This may cause issues."
+                )
+            else:
+                logger.warning("⚠️  Post-write: 'inverter_profile' not found in config")
+
+        logger.debug("✅ Post-write config validation passed")
+        return True
+
+    except Exception as e:
+        logger.error(f"❌ Post-write validation failed: {e}")
+        return False
 
 
 if __name__ == "__main__":

@@ -15,7 +15,11 @@ def test_validate_config_fronius_success():
                 "soc_target": "input_number.target",
             },
         },
-        "system": {"has_battery": True, "inverter_profile": "fronius"},
+        "system": {
+            "has_battery": True,
+            "inverter_profile": "fronius",
+            "location": {"latitude": 59.3, "longitude": 18.1},
+        },
         "input_sensors": {"battery_soc": "sensor.soc"},
         "battery": {"capacity_kwh": 10},
         "water_heating": {},

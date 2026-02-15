@@ -55,8 +55,8 @@ class TestForecastAggregation(unittest.IsolatedAsyncioTestCase):
 
             # 6. Verify constructor calls
             MockForecastClass.assert_called_with(
-                latitude=59.3,
-                longitude=18.1,
+                latitude=[59.3, 59.3],
+                longitude=[18.1, 18.1],
                 declination=[35.0, 35.0],  # From Array 1 & 2
                 azimuth=[180.0, 90.0],  # From Array 1 & 2
                 dc_kwp=[10.0, 5.0],  # From Array 1 & 2

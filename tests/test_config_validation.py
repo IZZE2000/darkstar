@@ -58,7 +58,7 @@ def test_validate_config_valid_config_no_issues():
                 "soc_target": "number.soc_target",
             },
         },
-        "system": {"has_battery": True},
+        "system": {"has_battery": True, "location": {"latitude": 59.3, "longitude": 18.1}},
         "battery": {"capacity_kwh": 10.0},
         "input_sensors": {"battery_soc": "sensor.battery_soc"},
     }

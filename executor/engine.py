@@ -1394,19 +1394,23 @@ class ExecutorEngine:
             if load_str and load_str not in ("unknown", "unavailable"):
                 state.current_load_kw = float(load_str) / 1000
 
-            # Get grid import/export (Rev E1)
-            import_entity = input_sensors.get("grid_import_power")
-            export_entity = input_sensors.get("grid_export_power")
+            # Get grid import/export (Rev E1) - only for dual metering
+            system_config = self._full_config.get("system", {})
+            meter_type = system_config.get("grid_meter_type", "net")
 
-            if import_entity:
-                imp_str = self.ha_client.get_state_value(import_entity)
-                if imp_str and imp_str not in ("unknown", "unavailable"):
-                    state.current_import_kw = float(imp_str) / 1000
+            if meter_type == "dual":
+                import_entity = input_sensors.get("grid_import_power")
+                export_entity = input_sensors.get("grid_export_power")
 
-            if export_entity:
-                exp_str = self.ha_client.get_state_value(export_entity)
-                if exp_str and exp_str not in ("unknown", "unavailable"):
-                    state.current_export_kw = float(exp_str) / 1000
+                if import_entity:
+                    imp_str = self.ha_client.get_state_value(import_entity)
+                    if imp_str and imp_str not in ("unknown", "unavailable"):
+                        state.current_import_kw = float(imp_str) / 1000
+
+                if export_entity:
+                    exp_str = self.ha_client.get_state_value(export_entity)
+                    if exp_str and exp_str not in ("unknown", "unavailable"):
+                        state.current_export_kw = float(exp_str) / 1000
 
             # Get current work mode (only if entity configured)
             if self.config.has_battery and self.config.inverter.work_mode_entity:
