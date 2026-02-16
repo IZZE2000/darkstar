@@ -291,7 +291,36 @@ async def schedule_today_with_history(
     except Exception as e:
         logger.warning(f"Failed to load planned map: {e}")
 
-    # 5. Merge
+    # 5. Observations Map (LearningStore Async) - Actual PV/Load data
+    obs_map: dict[datetime, dict[str, float]] = {}
+    try:
+        today_start_dt = tz.localize(datetime.combine(today_local, datetime.min.time()))
+        tomorrow_end_dt = today_start_dt + timedelta(days=2)
+
+        rows = await store.get_observations_range(today_start_dt, tomorrow_end_dt)
+
+        for row in rows:
+            try:
+                st = datetime.fromisoformat(str(row["slot_start"]))
+                st_local = st if st.tzinfo else tz.localize(st)
+                key = st_local.astimezone(tz).replace(tzinfo=None)
+
+                # Convert kWh to kW for water (15-min slots = 0.25h)
+                duration_hours = 0.25
+
+                obs_map[key] = {
+                    "actual_pv_kwh": float(row["pv_kwh"] or 0),
+                    "actual_load_kwh": float(row["load_kwh"] or 0),
+                    "actual_water_kw": float(row["water_kwh"] or 0) / duration_hours,
+                }
+            except Exception:
+                continue
+
+        logger.info(f"Loaded {len(obs_map)} observation slots for {today_local}")
+    except Exception as e:
+        logger.warning(f"Failed to load observations map: {e}")
+
+    # 6. Merge
     # [REV F36] Match Api.schedule() rounding for the starting slot (only return from now forward)
     # [REV F36] Match Api.schedule() rounding for the starting slot (only return from now forward)
     now = datetime.now(tz)
@@ -381,6 +410,13 @@ async def schedule_today_with_history(
                     slot["soc_target_percent"] = p["soc_target_percent"]
                 if "water_heating_kw" not in slot or slot.get("water_heating_kw") is None:
                     slot["water_heating_kw"] = p.get("water_heating_kw", 0.0)
+
+        # Attach actual observations (PV, Load, Water) from slot_observations
+        if key in obs_map and not is_future_check:
+            obs = obs_map[key]
+            slot["actual_pv_kwh"] = obs["actual_pv_kwh"]
+            slot["actual_load_kwh"] = obs["actual_load_kwh"]
+            slot["actual_water_kw"] = obs["actual_water_kw"]
 
         merged_slots.append(slot)
 

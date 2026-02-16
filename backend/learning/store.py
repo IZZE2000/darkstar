@@ -804,6 +804,29 @@ class LearningStore:
             result = await session.execute(stmt)
             return [row._asdict() for row in result.all()]
 
+    async def get_observations_range(self, start: datetime, end: datetime) -> list[dict[str, Any]]:
+        """Get actual observations (PV, Load, Water) from slot_observations for a date range."""
+        start_iso = start.isoformat()
+        end_iso = end.isoformat()
+
+        async with self.AsyncSession() as session:
+            stmt = (
+                select(
+                    SlotObservation.slot_start,
+                    SlotObservation.pv_kwh,
+                    SlotObservation.load_kwh,
+                    SlotObservation.water_kwh,
+                )
+                .where(
+                    SlotObservation.slot_start >= start_iso,
+                    SlotObservation.slot_start < end_iso,
+                )
+                .order_by(SlotObservation.slot_start.asc())
+            )
+
+            result = await session.execute(stmt)
+            return [row._asdict() for row in result.all()]
+
     async def get_executions_range(self, start: datetime) -> list[dict[str, Any]]:
         """Get execution history from execution_log table, grouped by slot_start."""
         start_iso = start.isoformat()

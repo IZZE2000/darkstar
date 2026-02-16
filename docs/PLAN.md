@@ -119,5 +119,23 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [ ] **Inputs:** Update `inputs.py` to optionally clip forecasts early (for heuristic simplicity) or pass through raw data.
 * [ ] **UI:** Show "Clipped Solar" in the dashboard forecast chart.
 
+---
+
+### [DONE] REV // UI21 — Add Actual PV/Load to Schedule Chart
+
+**Goal:** Display actual (observed) PV and load data in the ChartCard alongside forecasts when the "Actual" overlay is toggled.
+**Context:** The frontend already supports showing "Actual PV/Load" datasets with dashed lines, but the backend schedule endpoint doesn't provide the actual data from `SlotObservation`. Users want to compare forecast vs actual.
+
+**Plan:**
+
+#### Phase 1: Backend - Add Observations Query [DONE]
+* [x] Add method `get_observations_range()` to `backend/learning/store.py` that queries `SlotObservation` for `pv_kwh`, `load_kwh`, `water_kwh`, `slot_start` within a date range.
+* [x] Import and call this method in `backend/api/routers/schedule.py` in `schedule_today_with_history()`.
+* [x] Populate `actual_pv_kwh`, `actual_load_kwh`, `actual_water_kw` in the slot response for historical slots.
+
+#### Phase 2: Frontend Verification [DONE]
+* [x] Verify `buildLiveData()` in `frontend/src/components/ChartCard.tsx` correctly maps the new fields.
+* [x] Test that toggling "📊 Actual" button shows dashed lines for actual PV and load.
+* [x] Ensure actual data only appears for historical slots (where `is_executed=true`).
 
 ---
