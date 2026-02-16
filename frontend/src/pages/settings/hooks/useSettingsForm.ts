@@ -258,6 +258,30 @@ export function useSettingsForm(baseFields: BaseField[], profiles: InverterProfi
     const save = useCallback(
         async (extraPatch?: Record<string, unknown>) => {
             if (!config) return false
+
+            // Validate ALL required fields before saving (not just touched ones)
+            const allRequiredErrors: Record<string, string> = {}
+            fields.forEach((field) => {
+                if (field.required && !form[field.key]?.trim()) {
+                    allRequiredErrors[field.key] = 'Required'
+                }
+            })
+
+            if (Object.keys(allRequiredErrors).length > 0) {
+                setFieldErrors(allRequiredErrors)
+                const missingCount = Object.keys(allRequiredErrors).length
+                const missingFields = fields
+                    .filter((f) => allRequiredErrors[f.key])
+                    .map((f) => f.label)
+                    .join(', ')
+                toast({
+                    message: `${missingCount} required field${missingCount > 1 ? 's' : ''} missing`,
+                    description: missingFields,
+                    variant: 'error',
+                })
+                return false
+            }
+
             if (Object.keys(fieldErrors).length > 0) {
                 setStatusMessage('Please fix validation errors before saving.')
                 return false

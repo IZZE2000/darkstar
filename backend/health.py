@@ -27,6 +27,11 @@ _forecast_errors: deque[dict[str, Any]] = deque(maxlen=10)
 _forecast_status: str = "ok"  # "ok", "degraded", "error"
 _forecast_lock: threading.Lock = threading.Lock()
 
+# REV F65 Phase 5b: Load forecast status tracking
+_load_forecast_status: str = "ok"  # "ok", "degraded"
+_load_forecast_reason: str = ""  # "ml", "baseline", "demo", ""
+_load_forecast_lock: threading.Lock = threading.Lock()
+
 
 def record_forecast_error(error: Exception, context: dict[str, Any] | None = None) -> None:
     """Record a forecast error for health monitoring.
@@ -77,6 +82,40 @@ def get_forecast_status() -> dict[str, Any]:
             "last_errors": list(_forecast_errors)[-5:],
             "error_count": len(_forecast_errors),
         }
+
+
+def set_load_forecast_status(status: str, reason: str = "") -> None:
+    """Set load forecast status for health monitoring.
+
+    Args:
+        status: "ok" or "degraded"
+        reason: "ml" (ML models working), "baseline" (using baseline avg),
+                "demo" (using demo data), "no_ml" (ML unavailable but data exists)
+    """
+    global _load_forecast_status, _load_forecast_reason
+    with _load_forecast_lock:
+        _load_forecast_status = status
+        _load_forecast_reason = reason
+
+    if status == "degraded":
+        logger.warning(f"⚠️ Load forecast degraded: {reason}")
+
+
+def get_load_forecast_status() -> dict[str, Any]:
+    """Get current load forecast health status."""
+    with _load_forecast_lock:
+        return {
+            "status": _load_forecast_status,
+            "reason": _load_forecast_reason,
+        }
+
+
+def clear_load_forecast_status() -> None:
+    """Clear load forecast degraded status (called after successful ML forecast)."""
+    global _load_forecast_status, _load_forecast_reason
+    with _load_forecast_lock:
+        _load_forecast_status = "ok"
+        _load_forecast_reason = ""
 
 
 @dataclass
@@ -160,6 +199,9 @@ class HealthChecker:
 
         # Check forecast health (REV F60)
         issues.extend(self.check_forecast())
+
+        # Check load forecast health (REV F65 Phase 5c)
+        issues.extend(self.check_load_forecast())
 
         # Determine overall health
         has_critical = any(i.severity == "critical" for i in issues)
@@ -465,6 +507,10 @@ class HealthChecker:
 
         # Define which sensors are HARD requirements for core functionality
         # If False, a missing entity is a WARNING, not a CRITICAL error.
+        # REV F65: Cumulative and today sensors are REQUIRED for forecasting/ML
+        learning_cfg = self._config.get("learning", {})
+        is_learning_enabled = learning_cfg.get("enable", False)
+
         sensor_requirements = {
             # Core energy sensors (CRITICAL)
             "battery_soc": has_battery,
@@ -473,6 +519,20 @@ class HealthChecker:
             "grid_power": is_net_metering,
             "grid_import_power": not is_net_metering,
             "grid_export_power": not is_net_metering,
+            # Cumulative sensors (REQUIRED for forecasting/ML - F65)
+            "total_load_consumption": is_learning_enabled,
+            "total_pv_production": is_learning_enabled,
+            "total_grid_import": is_learning_enabled,
+            "total_grid_export": is_learning_enabled,
+            "total_battery_charge": is_learning_enabled,
+            "total_battery_discharge": is_learning_enabled,
+            # Today's sensors (REQUIRED for dashboard - F65)
+            "today_load_consumption": True,
+            "today_pv_production": True,
+            "today_grid_import": True,
+            "today_grid_export": True,
+            "today_battery_charge": True,
+            "today_battery_discharge": True,
             # Features (WARNING if missing but enabled)
             "water_power": has_water_heater,
             "water_heater_consumption": has_water_heater,
@@ -552,6 +612,60 @@ class HealthChecker:
                         ),
                     )
                 )
+
+        # REV F65: Add forecasting-specific warnings when learning is enabled
+        if is_learning_enabled:
+            cumulative_sensors = [
+                "total_load_consumption",
+                "total_pv_production",
+                "total_grid_import",
+                "total_grid_export",
+                "total_battery_charge",
+                "total_battery_discharge",
+            ]
+            missing_cumulative = [
+                s for s in cumulative_sensors if s not in input_sensors or not input_sensors.get(s)
+            ]
+            if missing_cumulative:
+                issues.append(
+                    HealthIssue(
+                        category="config",
+                        severity="warning",
+                        message="Forecasting may use inaccurate fallback data",
+                        guidance=(
+                            f"Learning/forecasting is enabled but missing cumulative sensors: "
+                            f"{', '.join(missing_cumulative)}. "
+                            f"Forecasting will fall back to dummy sine wave profiles. "
+                            f"Add these sensors to input_sensors for accurate forecasts."
+                        ),
+                    )
+                )
+
+        # REV F65: Add Today's Stats warning
+        today_sensors = [
+            "today_load_consumption",
+            "today_pv_production",
+            "today_grid_import",
+            "today_grid_export",
+            "today_battery_charge",
+            "today_battery_discharge",
+        ]
+        missing_today = [
+            s for s in today_sensors if s not in input_sensors or not input_sensors.get(s)
+        ]
+        if missing_today:
+            issues.append(
+                HealthIssue(
+                    category="config",
+                    severity="warning",
+                    message="Dashboard 'Today's Stats' will show incomplete data",
+                    guidance=(
+                        f"Missing today's sensors: {', '.join(missing_today)}. "
+                        f"The dashboard 'Today's Stats' card will not display correctly. "
+                        f"Add these sensors to input_sensors for complete daily statistics."
+                    ),
+                )
+            )
 
         # Check each entity
         headers = {"Authorization": f"Bearer {token}"}
@@ -723,6 +837,56 @@ class HealthChecker:
                     guidance="Some forecast requests have failed but the system is still operational.",
                 )
             )
+
+        return issues
+
+    def check_load_forecast(self) -> list[HealthIssue]:
+        """Check Load forecast health status (REV F65 Phase 5c)."""
+        issues: list[HealthIssue] = []
+
+        load_info = get_load_forecast_status()
+        status = load_info.get("status", "ok")
+        reason = load_info.get("reason", "")
+
+        if status == "degraded":
+            if reason == "demo":
+                issues.append(
+                    HealthIssue(
+                        category="forecast",
+                        severity="warning",
+                        message="Load forecast using demo data (0.5 kWh flat)",
+                        guidance=(
+                            "No historical load data available. The system is using a flat demo profile. "
+                            "Configure 'total_load_consumption' sensor in input_sensors to enable accurate load forecasting."
+                        ),
+                    )
+                )
+            elif reason == "baseline":
+                issues.append(
+                    HealthIssue(
+                        category="forecast",
+                        severity="info",
+                        message="Load forecast using baseline average (insufficient training data)",
+                        guidance=(
+                            "Not enough historical data to train ML models. The system is using baseline average (0.5 kWh/slot). "
+                            "After 4+ days of data collection, statistical corrections will be applied. "
+                            "After 14+ days, ML models will be trained for accurate predictions."
+                        ),
+                    )
+                )
+            elif reason == "no_ml":
+                issues.append(
+                    HealthIssue(
+                        category="forecast",
+                        severity="warning",
+                        message="Load forecast ML models unavailable",
+                        guidance=(
+                            "Historical data exists but ML models are not trained. "
+                            "Run the ML training pipeline to enable accurate load predictions. "
+                            "Current forecast uses HA historical profile."
+                        ),
+                    )
+                )
 
         return issues
 

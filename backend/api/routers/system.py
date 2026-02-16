@@ -208,11 +208,13 @@ async def get_system_health() -> SystemHealthResponse:
     """Get comprehensive system health metrics."""
     from backend.api.models.system import (
         DatabaseHealth,
+        ForecastHealth,
         LearningHealth,
         PlannerHealth,
         SystemHealthResponse,
         SystemMetrics,
     )
+    from backend.health import get_forecast_status, get_load_forecast_status
 
     # 1. Learning Stats
     try:
@@ -276,9 +278,19 @@ async def get_system_health() -> SystemHealthResponse:
         errors_24h=errors_24h, uptime_hours=uptime_hours, version=_get_git_version()
     )
 
+    # 5. Forecast Health (REV F65 Phase 5d)
+    pv_info = get_forecast_status()
+    load_info = get_load_forecast_status()
+    forecast_health = ForecastHealth(
+        pv_status=pv_info.get("status", "ok"),
+        load_status=load_info.get("status", "ok"),
+        load_reason=load_info.get("reason", ""),
+    )
+
     return SystemHealthResponse(
         learning=learning_health,
         database=database_health,
         planner=planner_health,
+        forecast=forecast_health,
         system=system_metrics,
     )

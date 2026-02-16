@@ -11,8 +11,10 @@ from typing import Any
 import lightgbm as lgb
 import pandas as pd
 
+from backend.health import clear_load_forecast_status, set_load_forecast_status
 from backend.learning import LearningEngine, get_learning_engine
 from ml.context_features import get_alarm_armed_series, get_vacation_mode_series
+from ml.corrector import _determine_graduation_level
 from ml.train import _build_time_features
 from ml.weather import get_weather_series
 
@@ -194,10 +196,25 @@ async def generate_forward_slots(
                 # Floor at 0.01, Ceiling at 16kW
                 cleaned = [max(0.01, min(float(x), 16.0)) for x in raw_pred]
                 predictions[model_key] = pd.Series(cleaned, index=df.index)
+        # REV F65 Phase 5b: Clear degraded status when ML models working
+        clear_load_forecast_status()
     else:
-        # Fallback: Use baseline average load (0.5 kWh per 15-min slot = 2 kW avg)
-        logger.warning("⚠️ Load models not available, using baseline average (0.5 kWh/slot)")
-        baseline_load = 0.5  # kWh per 15-min slot
+        # Fallback: Write 0.0 to DB so inputs.py applies HA 7-day profile fallback
+        # Only use 0.5 flat as last resort when even HA fetch fails
+        logger.warning(
+            "⚠️ Load models not available, using 0.0 (inputs.py will apply HA profile fallback)"
+        )
+
+        # REV F65 Phase 5e: Distinguish new setup vs ML failure
+        level = _determine_graduation_level(engine)
+        if level.level == 0:
+            # New setup (< 4 days) - expected state, info level
+            set_load_forecast_status("degraded", "baseline")
+        else:
+            # Level 1+ but no ML models - warning, should have models
+            set_load_forecast_status("degraded", "no_ml")
+
+        baseline_load = 0.0  # Let inputs.py apply HA profile fallback
         for q in quantiles:
             if q == "p10":
                 predictions[f"load_{q}"] = pd.Series(baseline_load * 0.7, index=df.index)

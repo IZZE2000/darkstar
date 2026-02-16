@@ -55,6 +55,14 @@ class PlannerHealth(BaseModel):
     next_scheduled: str | None
 
 
+class ForecastHealth(BaseModel):
+    """Health metrics for forecasting (REV F65 Phase 5d)."""
+
+    pv_status: str  # ok, degraded, error
+    load_status: str  # ok, degraded
+    load_reason: str  # ml, baseline, demo, no_ml, ""
+
+
 class SystemMetrics(BaseModel):
     """General system metrics."""
 
@@ -69,4 +77,5 @@ class SystemHealthResponse(BaseModel):
     learning: LearningHealth
     database: DatabaseHealth
     planner: PlannerHealth
+    forecast: ForecastHealth
     system: SystemMetrics

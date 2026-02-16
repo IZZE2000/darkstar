@@ -91,6 +91,37 @@ export default function SystemHealthCard() {
                     <StatusIcon status={health.database.health} />
                 </div>
 
+                {/* Forecast Stats (REV F65 Phase 5d) */}
+                <div className="flex items-center justify-between p-2 rounded bg-surface2/30 border border-line/30">
+                    <div className="flex items-center gap-2">
+                        <div className="h-6 w-6 rounded-full bg-amber-500/10 flex items-center justify-center">
+                            <Activity className="h-3.5 w-3.5 text-amber-400" />
+                        </div>
+                        <div>
+                            <div className="text-[11px] font-medium text-text">Forecasting</div>
+                            <div className="text-[9px] text-muted">
+                                PV: {health.forecast.pv_status === 'ok' ? 'ML' : health.forecast.pv_status} • Load:{' '}
+                                {health.forecast.load_status === 'ok'
+                                    ? 'ML'
+                                    : health.forecast.load_reason === 'baseline'
+                                      ? 'Baseline'
+                                      : health.forecast.load_reason === 'demo'
+                                        ? 'Demo'
+                                        : health.forecast.load_reason === 'no_ml'
+                                          ? 'No ML'
+                                          : health.forecast.load_status}
+                            </div>
+                        </div>
+                    </div>
+                    <StatusIcon
+                        status={
+                            health.forecast.load_status === 'ok' && health.forecast.pv_status === 'ok'
+                                ? 'good'
+                                : 'warning'
+                        }
+                    />
+                </div>
+
                 {/* System Stats */}
                 <div className="flex items-center justify-between p-2 rounded bg-surface2/30 border border-line/30">
                     <div className="flex items-center gap-2">

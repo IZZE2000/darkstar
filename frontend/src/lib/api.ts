@@ -442,6 +442,11 @@ export type SystemHealthResponse = {
         status: string
         next_scheduled: string | null
     }
+    forecast: {
+        pv_status: string
+        load_status: string
+        load_reason: string
+    }
     system: {
         errors_24h: number
         uptime_hours: number

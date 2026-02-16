@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import math
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
@@ -13,6 +12,7 @@ from open_meteo_solar_forecast import OpenMeteoSolarForecast
 
 from backend.core.cache import cache_sync
 from backend.exceptions import PVForecastError
+from backend.health import set_load_forecast_status
 from ml.api import get_forecast_slots
 from ml.weather import get_weather_volatility
 
@@ -1091,9 +1091,27 @@ async def get_load_profile_from_ha(config: dict[str, Any]) -> list[float]:
 
 
 def get_dummy_load_profile(config: dict[str, Any]) -> list[float]:
-    """Create a dummy load profile (sine wave pattern)."""
+    """Create a dummy load profile for DEMO/NO_DATA scenarios.
 
-    return [0.5 + 0.3 * math.sin(2 * math.pi * i / 96 + math.pi) for i in range(96)]
+    WARNING: This is a flat fallback when NO historical data is available.
+    Should only be used when:
+    - Fresh installation with no cumulative sensor configured
+    - Home Assistant fetch failed completely
+    - total_load_consumption sensor is missing
+
+    For production, ensure total_load_consumption sensor is configured.
+    """
+    import logging
+
+    logger = logging.getLogger(__name__)
+    logger.warning(
+        "⚠️ Using DEMO load profile (0.5 kWh flat) - no historical data available. Configure total_load_consumption sensor for accurate forecasts."
+    )
+
+    # REV F65 Phase 5b: Set degraded status when using demo data
+    set_load_forecast_status("degraded", "demo")
+
+    return [0.5] * 96
 
 
 if __name__ == "__main__":
