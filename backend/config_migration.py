@@ -1030,6 +1030,68 @@ def _validate_critical_values_preserved(before: dict, after: dict) -> bool:
     return True
 
 
+def migrate_inverter_custom_entities(config: Any) -> tuple[Any, bool]:
+    """
+    Migration for REV F69: Move profile-specific entity keys to custom_entities.
+
+    Profile-specific keys (ems_mode, forced_charge_discharge_cmd) should live in
+    executor.inverter.custom_entities, not directly in executor.inverter.
+
+    Also handles the case where STANDARD_ENTITY_KEYS (like max_discharge_power)
+    are used in set_entities but entity_id is stored in custom_entities.
+
+    Args:
+        config: Configuration dict
+
+    Returns:
+        Tuple of (migrated_config, changed_flag)
+    """
+    changed = False
+
+    if not isinstance(config, dict):
+        return config, False
+
+    executor = config.get("executor", {})
+    if not isinstance(executor, dict):
+        return config, False
+
+    inverter = executor.get("inverter", {})
+    if not isinstance(inverter, dict):
+        return config, False
+
+    # Profile-specific keys that should be in custom_entities
+    profile_keys = [
+        "ems_mode",
+        "ems_mode_entity",
+        "forced_charge_discharge_cmd",
+        "forced_charge_discharge_cmd_entity",
+    ]
+
+    # Ensure custom_entities exists
+    if "custom_entities" not in inverter:
+        inverter["custom_entities"] = {}
+
+    custom_entities = inverter["custom_entities"]
+
+    for key in profile_keys:
+        if key in inverter:
+            val = inverter.pop(key)
+            # Strip _entity suffix for the new key
+            new_key = key.replace("_entity", "") if key.endswith("_entity") else key
+
+            if new_key not in custom_entities:
+                custom_entities[new_key] = val
+                logger.info(
+                    f"Migrated executor.inverter.{key} -> executor.inverter.custom_entities.{new_key}"
+                )
+                changed = True
+            else:
+                logger.info(f"Skipped legacy {key} (already exists in custom_entities.{new_key})")
+                changed = True
+
+    return config, changed
+
+
 def migrate_ev_charger_legacy_fields(config: Any) -> tuple[Any, bool]:
     """
     Migration for REV K25 Phase 1: Remove legacy min_soc/target_soc fields from EV chargers.
@@ -1133,6 +1195,7 @@ async def migrate_config(
         migrate_soc_target_entity,
         migrate_inverter_profile_keys,
         migrate_root_inverter_profile,  # REV F68: Move inverter_profile from root to system
+        migrate_inverter_custom_entities,  # REV F69: Move profile keys to custom_entities
         migrate_arc15_entity_config,  # ARC15: Entity-centric config restructure
         cleanup_water_heating_duplicates,  # Cleanup: Remove duplicate keys from water_heating
         migrate_ev_charger_legacy_fields,  # REV K25 Phase 1: Remove legacy EV SoC fields

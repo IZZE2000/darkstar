@@ -16,7 +16,7 @@ import requests
 
 from .config import ExecutorConfig
 from .controller import ControllerDecision
-from .profiles import InverterProfile, WorkMode
+from .profiles import STANDARD_ENTITY_KEYS, InverterProfile, WorkMode
 
 logger = logging.getLogger(__name__)
 
@@ -564,9 +564,11 @@ class ActionDispatcher:
             )
             for key, val in mode_obj.set_entities.items():
                 # Look up entity ID from custom_entities config
-                # Fallback to standard entities checks if needed, but custom_entities is preferred for profile-specifics
+                # Fallback to standard entities for STANDARD_ENTITY_KEYS (REV F69)
                 aux_start = time.time()
                 entity_id = self.config.inverter.custom_entities.get(key)
+                if not _is_entity_configured(entity_id) and key in STANDARD_ENTITY_KEYS:
+                    entity_id = getattr(self.config.inverter, key, None)
                 if not _is_entity_configured(entity_id):
                     logger.error(
                         "Profile requires setting '%s' to '%s', but entity is not configured (add to executor.inverter)",

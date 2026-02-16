@@ -139,3 +139,34 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [x] Ensure actual data only appears for historical slots (where `is_executed=true`).
 
 ---
+
+### [DONE] REV // F69 — Sungrow Beta Config Regression Fix
+
+**Goal:** Fix two regressions affecting Sungrow beta testers: executor errors about missing max_discharge_power, and settings save failures for profile-specific entity keys.
+
+**Context:**
+- Issue 1: Executor error: "Profile requires setting 'max_discharge_power' to '10', but entity is not configured" - This happens because executor/actions.py only checks `custom_entities` but max_discharge_power is a standard key in `executor.inverter`.
+- Issue 2: Settings save fails because profile-specific keys (ems_mode, forced_charge_discharge_cmd) are in wrong location (directly in executor.inverter instead of executor.inverter.custom_entities).
+- Root cause: User's config has keys in legacy locations that worked before stricter validation was added. No migration exists to move them to correct location.
+
+**Plan:**
+
+#### Phase 1: Config Migration [COMPLETED]
+* [x] Add `migrate_inverter_custom_entities()` function to `backend/config_migration.py`.
+* [x] Detect profile-specific keys in wrong location: `ems_mode`, `ems_mode_entity`, `forced_charge_discharge_cmd`, `forced_charge_discharge_cmd_entity`.
+* [x] Move these from `executor.inverter` → `executor.inverter.custom_entities`, stripping `_entity` suffix.
+* [x] Register migration in `MIGRATION_STEPS` after existing inverter migrations.
+* [ ] Test migration with user's config snippet to verify correct move.
+
+#### Phase 2: Executor Actions Fix [COMPLETED]
+* [x] In `executor/actions.py` line ~569, add fallback lookup for composite entity handling.
+* [x] Check `custom_entities` FIRST.
+* [x] If not found AND key is in STANDARD_ENTITY_KEYS, fall back to checking standard `executor.inverter` location.
+* [x] Run ruff/format and verify no lint errors.
+
+#### Phase 3: Validation & Testing [COMPLETED]
+* [ ] Verify validation now passes with user's config after migration runs.
+* [x] Run full test suite: `uv run python -m pytest -q`.
+* [ ] Test that executor no longer errors on Sungrow idle mode.
+
+---
