@@ -9,13 +9,6 @@
 config_version: 2                     # Config format version (for migration tracking)
 timezone: "Europe/Stockholm"          # IANA timezone for all schedule calculations
 
-# AI Advisor (Smart Assistant on Dashboard)
-advisor:
-  enable_llm: true                     # Enable LLM-powered advice on Dashboard
-  model: gpt-5-nano                    # OpenRouter model identifier (requires API key in secrets.yaml)
-  personality: friendly                # Advice style: concise | friendly | technical
-  auto_fetch: false                    # Automatically fetch advice when Dashboard loads
-
 # System Parameters
 system:
   system_id: prod
@@ -390,16 +383,3 @@ dashboard:
 ui:
   theme: "Material Design Colors"      # Color theme name
   theme_accent_index: 3                # Accent color index (0-based)
-
-# Appliances (for manual scheduling UI)
-# Define appliances that can be scheduled in the Planning tab
-appliances:
-  dishwasher:
-    label: Dishwasher                  # Display name in UI
-    duration_hours: 1.0                # Typical run duration
-  dryer:
-    label: Dryer
-    duration_hours: 2.0
-  washing_machine:
-    label: "Washing Machine"
-    duration_hours: 2.0

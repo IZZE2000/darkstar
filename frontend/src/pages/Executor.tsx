@@ -534,7 +534,7 @@ export default function Executor() {
     }
 
     return (
-        <div className="px-4 pt-16 pb-4 lg:px-8 lg:pt-8 min-h-screen lg:h-[calc(100vh-20px)] flex flex-col gap-6 overflow-y-auto lg:overflow-hidden bg-surface">
+        <div className="px-4 pt-16 pb-4 lg:px-8 lg:pt-8 min-h-screen flex flex-col gap-6 overflow-y-auto">
             {/* Header */}
             <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
                 <div>

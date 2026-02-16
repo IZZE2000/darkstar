@@ -255,13 +255,13 @@ export default function PowerFlowCard({ data, systemConfig, compact = false }: P
     return (
         <svg viewBox={viewBox} className="w-full h-full" preserveAspectRatio="xMidYMid meet">
             <defs>
-                {/* Grid Pattern for that "Blueprint" feel */}
-                <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
-                    <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#1e293b" strokeWidth="0.5" />
+                {/* Grid Pattern - centered and adaptive */}
+                <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse" x="-10" y="-10">
+                    <path d="M 20 0 L 0 0 0 20" fill="none" stroke="rgb(var(--color-line))" strokeWidth="0.5" />
                 </pattern>
             </defs>
-            {/* Increased opacity for visibility per user request */}
-            <rect width="100%" height="100%" fill="url(#grid)" opacity="0.8" />
+            {/* Grid background - visible in both modes */}
+            <rect width="100%" height="100%" fill="url(#grid)" opacity="0.7" />
 
             {/* 1. PATHS (Traces) - Render first so they are behind nodes */}
             {enabledNodes.map((node) => {

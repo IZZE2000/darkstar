@@ -1,8 +1,19 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Bot, Sparkles, Zap, SunMedium, Activity, Brain } from 'lucide-react'
+import {
+    Bot,
+    Zap,
+    SunMedium,
+    Activity,
+    Brain,
+    Cloud,
+    Thermometer,
+    TrendingUp,
+    Target,
+    BarChart3,
+    AlertCircle,
+} from 'lucide-react'
 import Card from '../components/Card'
 import DecompositionChart from '../components/DecompositionChart'
-import ContextRadar from '../components/ContextRadar'
 import ActivityLog from '../components/ActivityLog'
 import KPIStrip from '../components/KPIStrip'
 import ProbabilisticChart from '../components/ProbabilisticChart'
@@ -32,9 +43,7 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarEleme
 export default function Aurora() {
     const [dashboard, setDashboard] = useState<AuroraDashboardResponse | null>(null)
     const [schedulerStatus, setSchedulerStatus] = useState<SchedulerStatusResponse | null>(null)
-    const [briefing, setBriefing] = useState<string>('')
     const [loading, setLoading] = useState(false)
-    const [briefingLoading, setBriefingLoading] = useState(false)
     const [riskAppetite, setRiskAppetite] = useState<number>(3)
     const [chartMode, setChartMode] = useState<'load' | 'pv'>('load')
     const [viewMode, setViewMode] = useState<'forecast' | 'soc'>('forecast')
@@ -96,20 +105,6 @@ export default function Aurora() {
         }
         fetchPerf()
     }, [])
-
-    const handleBriefing = async () => {
-        if (!dashboard) return
-        setBriefingLoading(true)
-        try {
-            const res = await Api.aurora.briefing(dashboard)
-            setBriefing(res.briefing)
-        } catch (err) {
-            console.error('Failed to fetch Aurora briefing:', err)
-            setBriefing('Failed to fetch Aurora briefing.')
-        } finally {
-            setBriefingLoading(false)
-        }
-    }
 
     const handleAutoTuneToggle = async () => {
         const newValue = !autoTuneEnabled
@@ -289,26 +284,6 @@ export default function Aurora() {
                                 </div>
                             </div>
                         </div>
-
-                        {/* Briefing */}
-                        <div className="flex-1 bg-surface/40 rounded-xl p-3 border border-white/5 backdrop-blur-sm">
-                            <div className="flex items-center justify-between mb-2">
-                                <div className="flex items-center gap-2 text-[11px] text-text font-medium">
-                                    <Sparkles className="h-3 w-3 text-accent" />
-                                    Daily Briefing
-                                </div>
-                                <button
-                                    onClick={handleBriefing}
-                                    disabled={!dashboard || briefingLoading}
-                                    className="text-[10px] text-muted hover:text-accent disabled:opacity-50 transition-colors"
-                                >
-                                    {briefingLoading ? 'Thinking...' : 'Refresh'}
-                                </button>
-                            </div>
-                            <div className="text-[11px] leading-relaxed text-muted/90 font-mono">
-                                {briefing || 'Aurora is analyzing current market and weather conditions...'}
-                            </div>
-                        </div>
                     </div>
                 </Card>
 
@@ -418,30 +393,111 @@ export default function Aurora() {
 
             {/* 2. THE DASHBOARD (Middle Section) */}
             <div className="grid gap-4 lg:grid-cols-12 lg:h-[450px]">
-                {/* Context Radar */}
+                {/* Context Metrics - Simple Cards (Option B) */}
                 <Card className="lg:col-span-4 p-4 flex flex-col h-full min-h-0 overflow-hidden">
                     <div className="mb-4 flex items-center justify-between shrink-0">
                         <div className="flex items-center gap-2">
                             <Activity className="h-4 w-4 text-accent" />
-                            <span className="text-xs font-medium text-text">Context Radar</span>
+                            <span className="text-xs font-medium text-text">Context</span>
                         </div>
                     </div>
-                    <div className="flex-1 min-h-0 relative">
-                        <ContextRadar
-                            weatherVolatility={{
-                                cloud: volatility?.cloud_volatility ?? 0,
-                                temp: volatility?.temp_volatility ?? 0,
-                                overall: overallVol,
-                            }}
-                            riskFactor={riskAppetite ?? 3}
-                            forecastAccuracy={
-                                dashboard?.metrics?.mae_pv_aurora != null
-                                    ? Math.max(0, 100 - dashboard.metrics.mae_pv_aurora * 20)
-                                    : 85
-                            }
-                            priceSpread={dashboard?.metrics?.max_price_spread}
-                            forecastBias={dashboard?.metrics?.forecast_bias}
-                        />
+                    <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar">
+                        <div className="grid grid-cols-2 gap-2">
+                            {/* Cloud Volatility */}
+                            <div className="p-3 rounded-lg bg-surface2/50 border border-line/50">
+                                <div className="flex items-center gap-2 mb-1">
+                                    <Cloud className="h-3 w-3 text-sky-400" />
+                                    <span className="text-[10px] text-muted">Cloud Vol</span>
+                                </div>
+                                <div className="text-lg font-semibold text-text">
+                                    {Math.round((volatility?.cloud_volatility ?? 0) * 100)}%
+                                </div>
+                                <div className="text-[9px] text-muted/70">
+                                    {(volatility?.cloud_volatility ?? 0) < 0.3
+                                        ? 'Stable'
+                                        : (volatility?.cloud_volatility ?? 0) < 0.7
+                                          ? 'Variable'
+                                          : 'Volatile'}
+                                </div>
+                            </div>
+
+                            {/* Temp Volatility */}
+                            <div className="p-3 rounded-lg bg-surface2/50 border border-line/50">
+                                <div className="flex items-center gap-2 mb-1">
+                                    <Thermometer className="h-3 w-3 text-pink-400" />
+                                    <span className="text-[10px] text-muted">Temp Vol</span>
+                                </div>
+                                <div className="text-lg font-semibold text-text">
+                                    {Math.round((volatility?.temp_volatility ?? 0) * 100)}%
+                                </div>
+                                <div className="text-[9px] text-muted/70">
+                                    {(volatility?.temp_volatility ?? 0) < 0.3
+                                        ? 'Stable'
+                                        : (volatility?.temp_volatility ?? 0) < 0.7
+                                          ? 'Variable'
+                                          : 'Volatile'}
+                                </div>
+                            </div>
+
+                            {/* Risk Appetite */}
+                            <div className="p-3 rounded-lg bg-surface2/50 border border-line/50">
+                                <div className="flex items-center gap-2 mb-1">
+                                    <TrendingUp className="h-3 w-3 text-amber-400" />
+                                    <span className="text-[10px] text-muted">Aggression</span>
+                                </div>
+                                <div className="text-lg font-semibold text-text">{riskAppetite ?? 3}/5</div>
+                                <div className="text-[9px] text-muted/70">
+                                    {(riskAppetite ?? 3) <= 2
+                                        ? 'Conservative'
+                                        : (riskAppetite ?? 3) >= 4
+                                          ? 'Aggressive'
+                                          : 'Balanced'}
+                                </div>
+                            </div>
+
+                            {/* Forecast Accuracy */}
+                            <div className="p-3 rounded-lg bg-surface2/50 border border-line/50">
+                                <div className="flex items-center gap-2 mb-1">
+                                    <Target className="h-3 w-3 text-emerald-400" />
+                                    <span className="text-[10px] text-muted">Accuracy</span>
+                                </div>
+                                <div className="text-lg font-semibold text-text">
+                                    {Math.max(0, 100 - (dashboard?.metrics?.mae_pv_aurora ?? 0) * 20)}%
+                                </div>
+                                <div className="text-[9px] text-muted/70">PV forecast quality</div>
+                            </div>
+
+                            {/* Price Spread */}
+                            <div className="p-3 rounded-lg bg-surface2/50 border border-line/50">
+                                <div className="flex items-center gap-2 mb-1">
+                                    <BarChart3 className="h-3 w-3 text-violet-400" />
+                                    <span className="text-[10px] text-muted">Spread</span>
+                                </div>
+                                <div className="text-lg font-semibold text-text">
+                                    {(dashboard?.metrics?.max_price_spread ?? 0).toFixed(2)}
+                                </div>
+                                <div className="text-[9px] text-muted/70">SEK/kWh range</div>
+                            </div>
+
+                            {/* Forecast Bias */}
+                            <div className="p-3 rounded-lg bg-surface2/50 border border-line/50">
+                                <div className="flex items-center gap-2 mb-1">
+                                    <AlertCircle className="h-3 w-3 text-orange-400" />
+                                    <span className="text-[10px] text-muted">Bias</span>
+                                </div>
+                                <div className="text-lg font-semibold text-text">
+                                    {(dashboard?.metrics?.forecast_bias ?? 0) > 0 ? '+' : ''}
+                                    {(dashboard?.metrics?.forecast_bias ?? 0).toFixed(1)}
+                                </div>
+                                <div className="text-[9px] text-muted/70">
+                                    {(dashboard?.metrics?.forecast_bias ?? 0) > 0.5
+                                        ? 'Over-predicting'
+                                        : (dashboard?.metrics?.forecast_bias ?? 0) < -0.5
+                                          ? 'Under-predicting'
+                                          : 'Centered'}
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </Card>
 
