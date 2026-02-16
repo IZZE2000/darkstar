@@ -174,6 +174,8 @@ def _train_error_models(
             "feature_fraction": 0.9,
             "bagging_fraction": 0.8,
             "bagging_freq": 1,
+            "seed": 42,  # REV F70: Fixed seed for deterministic training
+            "bagging_seed": 42,  # REV F70: Fixed seed for bagging reproducibility
         }
         booster = lgb.train(params, train_data, num_boost_round=200)
         booster.save_model(f"{models_dir}/{model_name}")

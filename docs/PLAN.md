@@ -170,3 +170,29 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 * [ ] Test that executor no longer errors on Sungrow idle mode.
 
 ---
+
+### [PLANNED] REV // F70 — Fix Non-Deterministic PV Forecast Corrector
+
+**Goal:** Make Aurora corrector model training deterministic by adding fixed random seeds, ensuring repeatable PV forecasts across planner runs.
+
+**Context:**
+The Aurora ML pipeline uses corrector models (`pv_error.lgb`, `load_error.lgb`) to adjust base forecasts based on historical errors. These models are trained using LightGBM with `feature_fraction: 0.9` and `bagging_fraction: 0.8` for robustness, but lack a fixed `seed` parameter. This causes:
+- Slightly different corrector models every training run
+- Different PV forecast corrections between planner executions
+- Inconsistent scheduling decisions even with identical weather/pricing data
+
+**Root Cause:** In `ml/corrector.py:167-178`, the `lgb.train()` call uses random sampling without a seed, making training non-deterministic.
+
+**Plan:**
+
+#### Phase 1: Add Fixed Seeds to Corrector Training [DONE]
+* [x] Add `seed=42` and `bagging_seed=42` to LightGBM params in `_train_error_models()` function
+* [x] Verify the change is minimal (2 lines) and consistent with existing `random_state=42` in `ml/train.py`
+* [x] Run `uv run ruff check .` to ensure no lint errors
+* [x] Run `uv run python -m pytest tests/test_corrector_clamp.py -v` to verify existing tests pass
+
+#### Phase 2: Verification [DONE]
+* [x] Run planner twice in succession and compare PV forecast curves
+* [x] Verify forecasts are now identical between runs (with same Open-Meteo data)
+* [x] Confirm corrector models produce consistent corrections at Graduate level (14+ days data)
+* [x] Document the fix in code comments explaining the seed choice
