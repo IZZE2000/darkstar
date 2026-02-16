@@ -3,6 +3,160 @@
 This document contains the archive of all completed revisions. It serves as the historical record of technical decisions and implemented features.
 
 ---
+
+### [DONE] REV // F65 — Cumulative Sensor Validation Gap
+
+**Goal:** Make cumulative energy sensors (`total_*`) and today's sensors (`today_*`) REQUIRED for proper operation. These are critical for forecasting, ML, and dashboard functionality - NOT optional.
+
+**Context:** Investigation of Sungrow beta tester revealed:
+1. `total_load_consumption` was empty in config
+2. Planner forecasting silently fell back to dummy sine wave profile (~0.2-0.8 kWh/slot)
+3. No warning was shown in health checks
+4. "Today's Stats" worked (uses `today_*` sensors) but ChartCard forecast was wrong
+
+**Critical Finding:** These sensors are NOT optional - they are essential for:
+- **Forecasting accuracy** (`total_*` sensors provide historical load patterns)
+- **ML model training** (`total_*` sensors required for Aurora learning)
+- **Dashboard "Today's Stats"** (`today_*` sensors for real-time daily totals)
+- **Backfill calculations** (`total_grid_import/export` for energy accounting)
+
+Without these sensors, Darkstar cannot function correctly.
+
+**Root Cause:** The `sensor_requirements` dict in `backend/health.py:468-481` only validates:
+- `load_power`, `pv_power`, `grid_power` (real-time power sensors)
+- Optional sensors for features (`water_power`, etc.)
+
+Missing from validation:
+- `total_load_consumption` (required for forecasting)
+- `total_pv_production` (required for ML/forecasting)
+- `total_grid_import`, `total_grid_export` (required for backfill)
+- `total_battery_charge`, `total_battery_discharge` (required for ML)
+
+**Sensor Types:**
+| Type | Examples | Used By | Currently Validated? |
+|------|----------|---------|---------------------|
+| Real-time Power | `load_power`, `pv_power` | Recorder, live metrics | ✅ Yes |
+| Today's Totals | `today_load_consumption` | Dashboard "Today's Stats" | ❌ No |
+| Cumulative/Lifetime | `total_load_consumption` | Forecasting, ML | ❌ No |
+
+**Plan:**
+
+#### Phase 1: Add Cumulative Sensors to Health Validation [DONE]
+* [x] Add `total_load_consumption` to `sensor_requirements` dict in `backend/health.py`
+* [x] Add `total_pv_production` to validation
+* [x] Add `total_grid_import`, `total_grid_export` to validation
+* [x] Add `total_battery_charge`, `total_battery_discharge` to validation
+* [x] Mark as required when `learning.enable: true` (forecasting needs these)
+
+#### Phase 2: Add Today's Sensors to Health Validation [DONE]
+* [x] Add `today_load_consumption` to validation
+* [x] Add `today_pv_production` to validation
+* [x] Add `today_grid_import`, `today_grid_export` to validation
+* [x] These are used by Dashboard "Today's Stats" card
+
+#### Phase 3: Add Forecasting-Specific Warnings [DONE]
+* [x] In health check, if `learning.enable: true` AND any `total_*` sensor is missing:
+    * Add warning: "Forecasting may use inaccurate fallback data"
+    * List which sensors are missing
+* [x] Add similar warning for "Today's Stats" if `today_*` sensors missing
+
+#### Phase 4: Profile Entities Cleanup [DONE]
+* [x] **CORRECTION**: Removed cumulative/today sensors from `entities.required` in all inverter profiles
+  - These sensors live in `input_sensors.*` NOT `executor.inverter.*` or `executor.inverter.custom_entities.*`
+  - Profile `entities.required` is for executor control entities only
+  - Updated profiles: sungrow.yaml, deye.yaml, fronius.yaml, generic.yaml, schema.yaml
+
+#### Phase 5: Improve Fallback Behavior [DONE]
+
+**Goal:** Make forecast fallback behavior visible to users via health checks and UI warnings.
+
+##### Phase 5a: Remove Dangerous Sine Wave, Keep Flat Baseline [DONE]
+* [x] In `inputs.py:get_dummy_load_profile()`:
+  - Change from sine wave `[0.5 + 0.3 * sin(...)]` to flat `[0.5] * 96`
+  - Add clear docstring warning this is DEMO/NO_DATA fallback
+* [x] Add explicit warning log when dummy profile is used: "⚠️ Using DEMO load profile (0.5 kWh flat) - no historical data available"
+
+##### Phase 5b: Track Load Forecast Fallback in Health [DONE]
+* [x] In `ml/forward.py`: Add function to record load forecast status
+* [x] Create `_load_forecast_status` similar to `_forecast_status` in `backend/health.py`
+* [x] When ML load models unavailable, set status to "degraded" with reason "no_ml_models"
+* [x] When using baseline average (0.5 kWh), set status to "degraded" with reason "baseline_fallback"
+* [x] When using dummy profile (HA fetch failed), set status to "degraded" with reason "no_historical_data"
+* [x] Create `check_load_forecast()` in health.py similar to `check_forecast()` for PV
+
+##### Phase 5c: Add Load Forecast to Health Check API [DONE]
+* [x] In `HealthChecker.check_all()`: Add call to `check_load_forecast()`
+* [x] Add health issue when load forecast is degraded:
+  - "Load forecast using baseline data" - warning severity
+  - Guidance: "ML models not trained or unavailable. Add total_load_consumption sensor for accurate forecasts."
+* [x] Add health issue when using dummy profile:
+  - "Load forecast using demo data" - warning severity
+  - Guidance: "No historical load data available. Configure total_load_consumption sensor."
+
+##### Phase 5d: Frontend - Show Forecast Quality Banner [DONE]
+* [x] In `SystemHealthCard.tsx`: Display load forecast status alongside PV forecast
+* [x] Show "Load: ML" vs "Load: Baseline" vs "Load: Demo" status
+* [x] Use warning badge/color when not using ML
+
+##### Phase 5e: Distinguish New Setup vs ML Failure [DONE]
+* [x] Check learning engine graduation level in fallback logic
+* [x] Level 0 (< 4 days): "info" severity - expected state for new setup
+* [x] Level 1+ but ML models missing: "warning" severity - ML models should exist
+* [x] Level 2+ (was working): "warning" severity - existing ML models failed
+
+##### Phase 5f: Test & Verify [DONE]
+* [x] Test: Fresh install (no sensors) → Shows "Demo data" warning
+* [x] Test: Sensors exist but < 4 days data → Shows "Baseline" info
+* [x] Test: Sensors exist + 14+ days but no ML models → Shows "ML unavailable" warning
+* [x] Test: All working → Shows "ML" status, no warnings
+* [x] Run `uv run ruff check .`
+* [x] Run `pnpm lint`
+
+#### Phase 6: Frontend Sensor Organization [DONE]
+**Issue:** Sensors were moved to "Required HA Input Sensors" section but:
+- All marked `required: true` incorrectly
+- Not organized by device type (all in System tab)
+- Missing proper subsection grouping
+
+**Backend Requirements (confirmed):**
+| Sensor | Required When | UI Flag |
+|--------|---------------|---------|
+| `total_load_consumption` | **ALWAYS** | `required: true` |
+| `total_grid_import` | **ALWAYS** | `required: true` |
+| `total_grid_export` | When `export.enable: true` | `required: true` |
+| `total_pv_production` | When `has_solar: true` | `required: true` |
+| `total_battery_charge` | When `has_battery: true` | `required: true` |
+| `total_battery_discharge` | When `has_battery: true` | `required: true` |
+| `today_*` | **NEVER** (dashboard only) | `required: false`, helper text "Optional - if not set, Dashboard shows 0.0" |
+
+**Completed Changes:**
+* [x] Fixed `frontend/src/pages/settings/types.ts`:
+  - **Battery Tab**: Added `today_battery_charge`, `today_battery_discharge`, `total_battery_charge`, `total_battery_discharge`
+    - `today_*` → `required: false`, helper: "Optional - Dashboard shows 0.0 if not set"
+    - `total_*` → `required: true`
+  - **Solar Tab**: Added `today_pv_production`, `total_pv_production`
+    - `today_pv_production` → `required: false`, helper: "Optional - Dashboard shows 0.0 if not set"
+    - `total_pv_production` → `required: true`
+  - **System Tab**: Added dedicated sections for today/total load and grid sensors
+    - `today_load_consumption`, `today_grid_*` → `required: false`, helper: "Optional - Dashboard shows 0.0 if not set"
+    - `total_load_consumption`, `total_grid_import` → `required: true`
+    - `total_grid_export` → `required: true`, showIf: `export.enable_export`
+  - Added proper subsection groupings per tab
+* [x] Added validation error UI:
+  - Added pre-save validation in `useSettingsForm.ts` that checks ALL required fields
+  - Shows prominent toast with list of missing required fields
+  - Lists field labels in toast description
+
+#### Phase 7: Test & Verify [IN PROGRESS]
+* [x] Run `uv run ruff check .`
+* [x] Run `pnpm lint` in frontend
+* [ ] Test: Empty `today_*` sensors don't block save, show optional badge
+* [ ] Test: Empty required `total_*` sensors block save with error
+* [ ] Test: With all sensors configured, no warnings
+* [ ] Test: Validation banner appears when required fields are empty
+
+---
+
 ### [DONE] REV // F68 — Advanced Tab showIf & inverter_profile Preservation
 
 **Goal:** Fix two post-deployment bugs: (1) Inverter Logic card blank in Advanced settings, (2) Config migration resetting inverter_profile.
