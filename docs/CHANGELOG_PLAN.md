@@ -3,6 +3,26 @@
 This document contains the archive of all completed revisions. It serves as the historical record of technical decisions and implemented features.
 
 ---
+### [DONE] REV // F68 — Advanced Tab showIf & inverter_profile Preservation
+
+**Goal:** Fix two post-deployment bugs: (1) Inverter Logic card blank in Advanced settings, (2) Config migration resetting inverter_profile.
+
+**Context:**
+1. **Advanced Tab showIf Bug**: `AdvancedTab.tsx:47` renders ALL sections without checking `showIf` conditions. "Inverter Logic" section has `showIf: { configKey: 'system.inverter_profile', value: 'generic' }` but it's ignored, causing blank card.
+2. **inverter_profile Reset**: Config migration overwrites user's `system.inverter_profile: deye` → `generic` (default).
+
+**Plan:**
+
+#### Phase 1: Fix Advanced Tab showIf Filtering [DONE]
+* [x] Update `AdvancedTab.tsx` to evaluate `showIf` conditions before rendering each section
+* [x] Section only renders if `showIf` condition passes or is undefined
+* [x] Test: Inverter Logic card shows when `inverter_profile: generic`, hidden otherwise
+
+#### Phase 2: Fix Config Migration Preserving inverter_profile [DONE]
+* [x] Add `system.inverter_profile` to critical values preserved during merge
+* [x] Test: Config with `inverter_profile: deye` preserves value after migration
+
+---
 
 ### [DONE] REV // ARC16 — Controller-to-Executor Mode Communication Fix
 

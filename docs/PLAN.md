@@ -249,24 +249,3 @@ Missing from validation:
 * [ ] Run `pnpm lint` in frontend
 
 ---
-
-### [DRAFT] REV // F68 — Advanced Tab showIf & inverter_profile Preservation
-
-**Goal:** Fix two post-deployment bugs: (1) Inverter Logic card blank in Advanced settings, (2) Config migration resetting inverter_profile.
-
-**Context:**
-1. **Advanced Tab showIf Bug**: `AdvancedTab.tsx:47` renders ALL sections without checking `showIf` conditions. "Inverter Logic" section has `showIf: { configKey: 'system.inverter_profile', value: 'generic' }` but it's ignored, causing blank card.
-2. **inverter_profile Reset**: Config migration overwrites user's `system.inverter_profile: deye` → `generic` (default).
-
-**Plan:**
-
-#### Phase 1: Fix Advanced Tab showIf Filtering [DRAFT]
-* [x] Update `AdvancedTab.tsx` to evaluate `showIf` conditions before rendering each section
-* [x] Section only renders if `showIf` condition passes or is undefined
-* [x] Add `showIf` to "Inverter Logic" section in `types.ts`
-* [x] Test: Inverter Logic card shows when `inverter_profile: generic`, hidden otherwise
-
-#### Phase 2: Fix Config Migration Preserving inverter_profile [DRAFT]
-* [x] Add `migrate_root_inverter_profile` function to move inverter_profile from root to system
-* [x] Add migration to legacy_steps list
-* [x] Test: Config with `inverter_profile: deye` preserves value after migration
