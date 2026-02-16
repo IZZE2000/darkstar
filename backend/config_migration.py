@@ -490,6 +490,36 @@ def migrate_inverter_profile_keys(config: Any) -> tuple[Any, bool]:
     return config, changed
 
 
+def migrate_root_inverter_profile(config: Any) -> tuple[Any, bool]:
+    """
+    Migration for REV F68: Move inverter_profile from root level to system.inverter_profile.
+
+    Some older configs have inverter_profile at root level instead of under system.
+    This migration ensures it's in the correct location before merge.
+    """
+    changed = False
+
+    # Check if inverter_profile exists at root level
+    if "inverter_profile" in config:
+        root_profile = config.pop("inverter_profile")
+        logger.info(f"Migrated 'inverter_profile' from root to system (value: {root_profile})")
+
+        # Ensure system exists
+        if "system" not in config:
+            config["system"] = {}
+
+        # Only set if not already present (preserve user value if already in system)
+        if "inverter_profile" not in config["system"]:
+            config["system"]["inverter_profile"] = root_profile
+            changed = True
+        else:
+            logger.info("system.inverter_profile already exists, keeping existing value")
+            # Restore root level one since we popped it
+            config["inverter_profile"] = root_profile
+
+    return config, changed
+
+
 def migrate_arc15_entity_config(config: Any) -> tuple[Any, bool]:
     """
     Migration for REV ARC15: Entity-Centric Config Restructure.
@@ -1102,6 +1132,7 @@ async def migrate_config(
         migrate_solar_arrays,
         migrate_soc_target_entity,
         migrate_inverter_profile_keys,
+        migrate_root_inverter_profile,  # REV F68: Move inverter_profile from root to system
         migrate_arc15_entity_config,  # ARC15: Entity-centric config restructure
         cleanup_water_heating_duplicates,  # Cleanup: Remove duplicate keys from water_heating
         migrate_ev_charger_legacy_fields,  # REV K25 Phase 1: Remove legacy EV SoC fields

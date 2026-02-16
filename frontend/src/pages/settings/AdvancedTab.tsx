@@ -40,57 +40,71 @@ export const AdvancedTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode
         return <Card className="p-6 text-sm text-muted">Loading advanced configuration…</Card>
     }
 
+    const isSectionEnabled = (section: (typeof advancedSections)[0]) => {
+        if (!section.showIf) return true
+        const configValue = form[section.showIf.configKey]
+        if (section.showIf.value !== undefined) {
+            if (Array.isArray(section.showIf.value)) {
+                return section.showIf.value.includes(configValue as string | boolean | number)
+            }
+            return configValue === String(section.showIf.value)
+        }
+        return configValue === 'true'
+    }
+
     return (
         <div className="space-y-4">
             <UnsavedChangesBanner visible={isDirty} onSave={() => save()} saving={saving} />
 
-            {advancedSections.map((section) => (
-                <Card key={section.title} className="p-6">
-                    <div className="flex items-baseline justify-between gap-2">
-                        <div>
-                            <div className="text-sm font-semibold">{section.title}</div>
-                            <p className="text-xs text-muted mt-1">{section.description}</p>
-                        </div>
-                        <span className="text-[10px] uppercase text-muted tracking-wide">Advanced</span>
-                    </div>
-
-                    {section.title === 'Danger Zone' ? (
-                        <div className="mt-5 border border-bad/20 bg-bad/5 rounded-xl p-4">
-                            <div className="flex items-center justify-between gap-4">
-                                <div>
-                                    <h4 className="text-xs font-bold text-bad italic uppercase tracking-wider">
-                                        Reset All Settings
-                                    </h4>
-                                    <p className="text-[11px] text-bad/80 mt-1">
-                                        Permanently delete all custom configurations and return to project factory
-                                        defaults. This action cannot be undone.
-                                    </p>
-                                </div>
-                                <button
-                                    onClick={() => setResetModalOpen(true)}
-                                    className="rounded-lg bg-bad/20 border border-bad/30 px-3 py-1.5 text-[10px] font-bold text-bad uppercase tracking-wider hover:bg-bad/30 transition"
-                                >
-                                    Reset to Defaults
-                                </button>
+            {advancedSections
+                .filter((section) => isSectionEnabled(section))
+                .map((section) => (
+                    <Card key={section.title} className="p-6">
+                        <div className="flex items-baseline justify-between gap-2">
+                            <div>
+                                <div className="text-sm font-semibold">{section.title}</div>
+                                <p className="text-xs text-muted mt-1">{section.description}</p>
                             </div>
+                            <span className="text-[10px] uppercase text-muted tracking-wide">Advanced</span>
                         </div>
-                    ) : (
-                        <div className="mt-5 grid gap-4 sm:grid-cols-2">
-                            {section.fields.map((field) => (
-                                <SettingsField
-                                    key={field.key}
-                                    field={field}
-                                    value={form[field.key] ?? ''}
-                                    onChange={handleChange}
-                                    error={fieldErrors[field.key]}
-                                    fullForm={form}
-                                    advancedMode={advancedMode}
-                                />
-                            ))}
-                        </div>
-                    )}
-                </Card>
-            ))}
+
+                        {section.title === 'Danger Zone' ? (
+                            <div className="mt-5 border border-bad/20 bg-bad/5 rounded-xl p-4">
+                                <div className="flex items-center justify-between gap-4">
+                                    <div>
+                                        <h4 className="text-xs font-bold text-bad italic uppercase tracking-wider">
+                                            Reset All Settings
+                                        </h4>
+                                        <p className="text-[11px] text-bad/80 mt-1">
+                                            Permanently delete all custom configurations and return to project factory
+                                            defaults. This action cannot be undone.
+                                        </p>
+                                    </div>
+                                    <button
+                                        onClick={() => setResetModalOpen(true)}
+                                        className="rounded-lg bg-bad/20 border border-bad/30 px-3 py-1.5 text-[10px] font-bold text-bad uppercase tracking-wider hover:bg-bad/30 transition"
+                                    >
+                                        Reset to Defaults
+                                    </button>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                                {section.fields.map((field) => (
+                                    <SettingsField
+                                        key={field.key}
+                                        field={field}
+                                        value={form[field.key] ?? ''}
+                                        onChange={handleChange}
+                                        error={fieldErrors[field.key]}
+                                        fullForm={form}
+                                        advancedMode={advancedMode}
+                                    />
+                                ))}
+                            </div>
+                        )}
+                    </Card>
+                ))}
 
             <div className="flex flex-wrap items-center gap-3">
                 <button

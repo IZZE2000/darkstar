@@ -1267,6 +1267,10 @@ export const advancedSections: SettingsSection[] = [
     {
         title: 'Inverter Logic',
         description: 'Custom command strings for your inverter work modes.',
+        showIf: {
+            configKey: 'system.inverter_profile',
+            value: 'generic',
+        },
         fields: [
             {
                 key: 'executor.inverter.work_mode_export',

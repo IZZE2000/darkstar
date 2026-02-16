@@ -261,10 +261,12 @@ Missing from validation:
 **Plan:**
 
 #### Phase 1: Fix Advanced Tab showIf Filtering [DRAFT]
-* [ ] Update `AdvancedTab.tsx` to evaluate `showIf` conditions before rendering each section
-* [ ] Section only renders if `showIf` condition passes or is undefined
-* [ ] Test: Inverter Logic card shows when `inverter_profile: generic`, hidden otherwise
+* [x] Update `AdvancedTab.tsx` to evaluate `showIf` conditions before rendering each section
+* [x] Section only renders if `showIf` condition passes or is undefined
+* [x] Add `showIf` to "Inverter Logic" section in `types.ts`
+* [x] Test: Inverter Logic card shows when `inverter_profile: generic`, hidden otherwise
 
 #### Phase 2: Fix Config Migration Preserving inverter_profile [DRAFT]
-* [ ] Add `system.inverter_profile` to critical values preserved during merge
-* [ ] Test: Config with `inverter_profile: deye` preserves value after migration
+* [x] Add `migrate_root_inverter_profile` function to move inverter_profile from root to system
+* [x] Add migration to legacy_steps list
+* [x] Test: Config with `inverter_profile: deye` preserves value after migration
