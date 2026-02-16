@@ -17,6 +17,8 @@ class HAWebSocketClient:
         self._load_config()
         self.id_counter = 1
         self.inversion_flags: dict[str, bool] = {}
+        self.ev_charger_configs: list[dict] = []  # Rev F64: Store EV config with index and name
+        self.latest_values = {}  # Must init before _get_monitored_entities (F64 writes ev_chargers here)
         self.monitored_entities = self._get_monitored_entities()
         self.running = False
 
@@ -31,9 +33,6 @@ class HAWebSocketClient:
             "last_emit_at": None,
             "errors": [],  # Keep last 5 errors
         }
-
-        # State tracking for synthetic sensors
-        self.latest_values = {}
 
         # Early validation with logging
         if not self.token:
@@ -105,18 +104,44 @@ class HAWebSocketClient:
             if "vacation_mode" in sensors:
                 mapping[sensors["vacation_mode"]] = "vacation_mode"
 
-            # Rev F63: EV Charging sensors - read only from ev_chargers[]
+            # Rev F64: EV Charging sensors - monitor ALL enabled EV chargers with indexed keys
             if system.get("has_ev_charger", False):
                 ev_chargers = cfg.get("ev_chargers", [])
-                for ev in ev_chargers:
+                self.ev_charger_configs = []
+                # Phase 7: Separate tracking per sensor type to avoid cross-type collisions
+                used_power_sensors = set()
+                used_soc_sensors = set()
+                used_plug_sensors = set()
+                for idx, ev in enumerate(ev_chargers):
                     if ev.get("enabled", True):
-                        if ev.get("sensor"):
-                            mapping[ev["sensor"]] = "ev_kw"
-                        if ev.get("soc_sensor"):
-                            mapping[ev["soc_sensor"]] = "ev_soc"
-                        if ev.get("plug_sensor"):
-                            mapping[ev["plug_sensor"]] = "ev_plug"
-                        break  # Only use first enabled EV charger
+                        ev_name = ev.get("name", f"EV {idx + 1}")
+                        self.ev_charger_configs.append({"index": idx, "name": ev_name})
+                        # Only map sensors that aren't already used for the same type
+                        # This allows same sensor for different types (e.g., one sensor for both power and soc)
+                        # but prevents duplicate mappings within the same type
+                        if ev.get("sensor") and ev["sensor"] not in used_power_sensors:
+                            mapping[ev["sensor"]] = f"ev_kw_{idx}"
+                            used_power_sensors.add(ev["sensor"])
+                        if ev.get("soc_sensor") and ev["soc_sensor"] not in used_soc_sensors:
+                            mapping[ev["soc_sensor"]] = f"ev_soc_{idx}"
+                            used_soc_sensors.add(ev["soc_sensor"])
+                        if ev.get("plug_sensor") and ev["plug_sensor"] not in used_plug_sensors:
+                            mapping[ev["plug_sensor"]] = f"ev_plug_{idx}"
+                            used_plug_sensors.add(ev["plug_sensor"])
+
+                # Initialize ev_chargers array upfront with configured EVs
+                self.latest_values["ev_chargers"] = [
+                    {
+                        "name": ec.get("name", f"EV {i + 1}"),
+                        "kw": 0.0,
+                        "soc": None,
+                        "plugged_in": False,
+                    }
+                    for i, ec in enumerate(self.ev_charger_configs)
+                ]
+                logger.info(
+                    f"✅ Initialized {len(self.ev_charger_configs)} EV chargers for monitoring"
+                )
 
             # Store inversion flags for efficient lookup in _handle_state_change
             self.inversion_flags = {
@@ -205,6 +230,45 @@ class HAWebSocketClient:
                                 entity_id = state.get("entity_id")
                                 if entity_id in self.monitored_entities:
                                     self._handle_state_change(entity_id, state)
+
+                            # Rev F64: Emit initial ev_chargers array after all states processed
+                            if self.ev_charger_configs:
+                                from backend.events import emit_live_metrics
+
+                                # Initialize ev_chargers if not already done
+                                if "ev_chargers" not in self.latest_values:
+                                    self.latest_values["ev_chargers"] = []
+                                    while len(self.latest_values["ev_chargers"]) < len(
+                                        self.ev_charger_configs
+                                    ):
+                                        self.latest_values["ev_chargers"].append(
+                                            {
+                                                "name": self.ev_charger_configs[
+                                                    len(self.latest_values["ev_chargers"])
+                                                ].get(
+                                                    "name",
+                                                    f"EV {len(self.latest_values['ev_chargers']) + 1}",
+                                                ),
+                                                "kw": 0.0,
+                                                "soc": None,
+                                                "plugged_in": False,
+                                            }
+                                        )
+
+                                total_ev_kw = sum(
+                                    ev.get("kw", 0.0) for ev in self.latest_values["ev_chargers"]
+                                )
+                                any_plugged = any(
+                                    ev.get("plugged_in", False)
+                                    for ev in self.latest_values["ev_chargers"]
+                                )
+                                emit_live_metrics(
+                                    {
+                                        "ev_chargers": self.latest_values["ev_chargers"],
+                                        "ev_kw": total_ev_kw,
+                                        "ev_plugged_in": any_plugged,
+                                    }
+                                )
                             continue
 
                         if data.get("type") == "event":
@@ -256,19 +320,44 @@ class HAWebSocketClient:
                 logger.error(f"Failed to emit vacation_mode change: {e}")
             return
 
-        # Rev K25: Handle EV plug sensor changes
-        if key == "ev_plug":
+        # Rev F64: Handle EV plug sensor changes - indexed per EV
+        if key and key.startswith("ev_plug_"):
             try:
+                ev_idx = int(key.split("_")[-1])
                 state_val = new_state.get("state", "").lower()
-                logger.info(f"EV plug state changed: {entity_id}={state_val}")
+                logger.info(f"EV{ev_idx} plug state changed: {entity_id}={state_val}")
 
-                # Track state for live_metrics
                 is_plugged = state_val in ("on", "true", "1", "connected")
-                self.latest_values["ev_plugged_in"] = is_plugged
+
+                # Initialize ev_chargers data structure if needed
+                if "ev_chargers" not in self.latest_values:
+                    self.latest_values["ev_chargers"] = []
+
+                # Ensure we have entries for all configured EVs
+                while len(self.latest_values["ev_chargers"]) < len(self.ev_charger_configs):
+                    self.latest_values["ev_chargers"].append(
+                        {
+                            "name": self.ev_charger_configs[
+                                len(self.latest_values["ev_chargers"])
+                            ].get("name", f"EV {len(self.latest_values['ev_chargers']) + 1}"),
+                            "kw": 0.0,
+                            "soc": None,
+                            "plugged_in": False,
+                        }
+                    )
+
+                # Update this EV's plug status
+                if ev_idx < len(self.latest_values["ev_chargers"]):
+                    self.latest_values["ev_chargers"][ev_idx]["plugged_in"] = is_plugged
+
+                # Build aggregate for backward compat
+                any_plugged = any(
+                    ev.get("plugged_in", False) for ev in self.latest_values["ev_chargers"]
+                )
 
                 # Trigger immediate re-plan when car plugs in
                 if is_plugged:
-                    logger.info("EV plugged in - triggering immediate re-plan")
+                    logger.info(f"EV{ev_idx} plugged in - triggering immediate re-plan")
                     self._trigger_ev_replan()
 
                 # Emit entity change event
@@ -279,42 +368,140 @@ class HAWebSocketClient:
                 # Also emit via live_metrics for instant UI response in PowerFlowCard
                 from backend.events import emit_live_metrics
 
-                emit_live_metrics({"ev_plugged_in": is_plugged})
+                # Emit full ev_chargers array plus aggregate for backward compat
+                emit_live_metrics(
+                    {
+                        "ev_chargers": self.latest_values["ev_chargers"],
+                        "ev_plugged_in": any_plugged,
+                    }
+                )
             except Exception as e:
                 logger.error(f"Failed to handle EV plug change: {e}")
             return
 
-        # Rev K25: Handle EV SoC changes (optional replanning)
-        if key == "ev_soc":
+        # Rev F64: Handle EV SoC changes - indexed per EV
+        if key and key.startswith("ev_soc_"):
             try:
+                ev_idx = int(key.split("_")[-1])
                 state_val = new_state.get("state")
-                logger.debug(f"EV SoC updated: {entity_id}={state_val}")
+                logger.debug(f"EV{ev_idx} SoC updated: {entity_id}={state_val}")
 
                 # Parse SoC value for live metrics
-                try:
-                    soc_val = (
-                        float(state_val)
-                        if state_val not in (None, "unknown", "unavailable")
-                        else None
+                soc_val = (
+                    float(state_val) if state_val not in (None, "unknown", "unavailable") else None
+                )
+
+                # Initialize ev_chargers data structure if needed
+                if "ev_chargers" not in self.latest_values:
+                    self.latest_values["ev_chargers"] = []
+
+                # Ensure we have entries for all configured EVs
+                while len(self.latest_values["ev_chargers"]) < len(self.ev_charger_configs):
+                    self.latest_values["ev_chargers"].append(
+                        {
+                            "name": self.ev_charger_configs[
+                                len(self.latest_values["ev_chargers"])
+                            ].get("name", f"EV {len(self.latest_values['ev_chargers']) + 1}"),
+                            "kw": 0.0,
+                            "soc": None,
+                            "plugged_in": False,
+                        }
                     )
-                    if soc_val is not None:
-                        self.latest_values["ev_soc"] = soc_val
-                        # Emit via live_metrics for UI display
-                        from backend.events import emit_live_metrics
 
-                        emit_live_metrics({"ev_soc": soc_val})
-                except (ValueError, TypeError):
-                    pass  # Invalid SoC value, ignore
+                # Update this EV's SoC
+                if ev_idx < len(self.latest_values["ev_chargers"]):
+                    self.latest_values["ev_chargers"][ev_idx]["soc"] = soc_val
 
-                # Note: We don't trigger replan on every SoC change to avoid noise
-                # Re-planning happens on schedule or when plug state changes
+                # Build aggregate ev_kw for backward compat
+                total_ev_kw = sum(ev.get("kw", 0.0) for ev in self.latest_values["ev_chargers"])
 
-                # Emit entity change event
-                from backend.events import emit_ha_entity_change
+                # Emit via live_metrics for UI display
+                from backend.events import emit_live_metrics
 
-                emit_ha_entity_change(entity_id=entity_id, state=state_val)
+                emit_live_metrics(
+                    {
+                        "ev_chargers": self.latest_values["ev_chargers"],
+                        "ev_kw": total_ev_kw,
+                    }
+                )
             except Exception as e:
                 logger.error(f"Failed to handle EV SoC change: {e}")
+            return
+
+        # Rev F64: Handle EV power changes - indexed per EV (MUST be before numeric early return)
+        if key and key.startswith("ev_kw_"):
+            try:
+                ev_idx = int(key.split("_")[-1])
+                state_val = new_state.get("state")
+                logger.debug(f"EV{ev_idx} power updated: {entity_id}={state_val}")
+
+                # Parse numeric value (handle unknown/unavailable gracefully)
+                value = 0.0
+                if state_val and str(state_val).lower() not in (
+                    "unknown",
+                    "unavailable",
+                    "none",
+                    "null",
+                    "",
+                ):
+                    value = float(state_val)
+                    # Normalize units if needed (kW vs W)
+                    unit = str(
+                        new_state.get("attributes", {}).get("unit_of_measurement", "")
+                    ).upper()
+                    if unit == "W":
+                        value = value / 1000.0
+
+                    # Apply inversion if configured
+                    if self.inversion_flags.get(key, False):
+                        value = -value
+
+                    # Sanitize value (prevent NaN/Inf from crashing JSON transport)
+                    import math
+
+                    if math.isnan(value) or math.isinf(value):
+                        logger.warning(f"DIAG: Sanitized invalid float for {key}: {value} -> 0.0")
+                        value = 0.0
+
+                # Initialize ev_chargers data structure if needed
+                if "ev_chargers" not in self.latest_values:
+                    self.latest_values["ev_chargers"] = []
+
+                # Ensure we have entries for all configured EVs
+                while len(self.latest_values["ev_chargers"]) < len(self.ev_charger_configs):
+                    self.latest_values["ev_chargers"].append(
+                        {
+                            "name": self.ev_charger_configs[
+                                len(self.latest_values["ev_chargers"])
+                            ].get("name", f"EV {len(self.latest_values['ev_chargers']) + 1}"),
+                            "kw": 0.0,
+                            "soc": None,
+                            "plugged_in": False,
+                        }
+                    )
+
+                # Update this EV's power
+                if ev_idx < len(self.latest_values["ev_chargers"]):
+                    self.latest_values["ev_chargers"][ev_idx]["kw"] = value
+
+                # Build aggregate for backward compat
+                total_ev_kw = sum(ev.get("kw", 0.0) for ev in self.latest_values["ev_chargers"])
+                any_plugged = any(
+                    ev.get("plugged_in", False) for ev in self.latest_values["ev_chargers"]
+                )
+
+                # Emit via live_metrics
+                from backend.events import emit_live_metrics
+
+                emit_live_metrics(
+                    {
+                        "ev_chargers": self.latest_values["ev_chargers"],
+                        "ev_kw": total_ev_kw,
+                        "ev_plugged_in": any_plugged,
+                    }
+                )
+            except Exception as e:
+                logger.error(f"Failed to handle EV power change: {e}")
             return
 
         # Handle numeric sensors (existing logic)
@@ -366,10 +553,6 @@ class HAWebSocketClient:
             # Include EV plug state if we know it (Rev UI18)
             if "ev_plugged_in" in self.latest_values:
                 payload["ev_plugged_in"] = self.latest_values["ev_plugged_in"]
-
-            # Include EV SoC if we know it (Rev F50 Phase 5)
-            if "ev_soc" in self.latest_values:
-                payload["ev_soc"] = self.latest_values["ev_soc"]
 
             emit_live_metrics(payload)
 

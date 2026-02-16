@@ -6,11 +6,12 @@
  * Uses CircuitNode (Chips) and CircuitPath (Traces) for a sci-fi aesthetic.
  */
 
-import { useMemo } from 'react'
+import { useMemo, useState, useCallback, useEffect } from 'react'
 import { NODE_REGISTRY, type PowerFlowData } from './PowerFlowRegistry'
 import type { LucideIcon } from 'lucide-react'
 import { CircuitNode } from './CircuitNode'
 import { CircuitPath } from './CircuitPath'
+import { Plug } from 'lucide-react'
 
 // =============================================================================
 // TYPES
@@ -27,6 +28,99 @@ interface PowerFlowCardProps {
 // =============================================================================
 
 export default function PowerFlowCard({ data, systemConfig, compact = false }: PowerFlowCardProps) {
+    // Rev F64: EV Tooltip state
+    const [showEvTooltip, setShowEvTooltip] = useState(false)
+
+    // Close tooltip on outside click (mobile)
+    const handleOutsideClick = useCallback(() => {
+        setShowEvTooltip(false)
+    }, [])
+
+    useEffect(() => {
+        if (showEvTooltip) {
+            // Rev F64: Defer listener registration to next tick to avoid
+            // the same click that opened the tooltip from immediately closing it
+            const timeoutId = setTimeout(() => {
+                document.addEventListener('click', handleOutsideClick)
+                document.addEventListener('touchstart', handleOutsideClick)
+            }, 0)
+            return () => {
+                clearTimeout(timeoutId)
+                document.removeEventListener('click', handleOutsideClick)
+                document.removeEventListener('touchstart', handleOutsideClick)
+            }
+        }
+    }, [showEvTooltip, handleOutsideClick])
+
+    const handleEvInteract = useCallback((e: React.MouseEvent | React.TouchEvent) => {
+        e.stopPropagation()
+        setShowEvTooltip((prev) => !prev)
+    }, [])
+
+    // Build EV tooltip content - dynamic sizing and centered
+    const evTooltipContent = useMemo(() => {
+        if (!data.evChargers || data.evChargers.length === 0 || compact) return null
+
+        const evCount = data.evChargers.length
+        const header = evCount > 1 ? `${evCount} EVs Connected` : data.evChargers[0]?.name || 'EV'
+
+        return (
+            <div
+                className="bg-surface-elevated"
+                style={{
+                    borderRadius: '8px',
+                    border: '1px solid rgba(255,255,255,0.2)',
+                    boxShadow: '0 4px 20px rgba(0,0,0,0.7)',
+                    padding: '10px 14px',
+                    fontFamily: 'JetBrains Mono, monospace',
+                    fontSize: '11px',
+                    color: '#e2e8f0',
+                    maxHeight: '180px',
+                    overflowY: 'auto',
+                    minWidth: '180px',
+                    width: 'max-content',
+                    zIndex: 1000,
+                    opacity: 0.98,
+                }}
+            >
+                <div
+                    style={{
+                        fontWeight: 'bold',
+                        marginBottom: '6px',
+                        color: 'rgb(var(--color-ai))',
+                        whiteSpace: 'nowrap',
+                    }}
+                >
+                    {header}
+                </div>
+                {data.evChargers.map((ev, idx) => (
+                    <div
+                        key={idx}
+                        style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            padding: '4px 0',
+                            borderTop: idx > 0 ? '1px solid rgba(255,255,255,0.1)' : 'none',
+                            whiteSpace: 'nowrap',
+                        }}
+                    >
+                        <Plug
+                            size={12}
+                            style={{
+                                color: ev.pluggedIn ? 'rgb(var(--color-good))' : '#64748b',
+                                flexShrink: 0,
+                            }}
+                        />
+                        <span style={{ flex: 1 }}>{ev.name}</span>
+                        <span>{ev.kw.toFixed(1)} kW</span>
+                        {ev.soc !== null && <span>{ev.soc.toFixed(0)}%</span>}
+                    </div>
+                ))}
+            </div>
+        )
+    }, [data.evChargers, compact])
+
     // 1. Flatten config into dot-notation map for easy lookup
     const configMap = useMemo(() => {
         if (!systemConfig || typeof systemConfig !== 'object') return null
@@ -314,9 +408,24 @@ export default function PowerFlowCard({ data, systemConfig, compact = false }: P
                         icon={resolvedIcon}
                         isActive={isActive}
                         variant={node.id === 'house' ? 'circle' : 'bracket'}
+                        // Rev F64: EV Tooltip - tap/click handler for EV node with multiple EVs
+                        onInteract={node.id === 'ev' && evTooltipContent ? handleEvInteract : undefined}
                     />
                 )
             })}
+
+            {/* Rev F64: Render tooltip as foreignObject if shown - centered in card */}
+            {showEvTooltip && evTooltipContent && (
+                <foreignObject
+                    x={compact ? 70 : 100}
+                    y={compact ? 40 : 50}
+                    width={compact ? 160 : 200}
+                    height={compact ? 120 : 160}
+                    style={{ overflow: 'visible' }}
+                >
+                    <div style={{ display: 'flex', justifyContent: 'center' }}>{evTooltipContent}</div>
+                </foreignObject>
+            )}
         </svg>
     )
 }

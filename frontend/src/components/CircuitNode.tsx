@@ -10,6 +10,7 @@ interface CircuitNodeProps {
     icon?: LucideIcon
     isActive?: boolean
     variant?: 'bracket' | 'circle'
+    onInteract?: () => void
 }
 
 export function CircuitNode({
@@ -22,12 +23,20 @@ export function CircuitNode({
     icon: Icon,
     isActive = false,
     variant = 'bracket',
+    onInteract,
 }: CircuitNodeProps) {
     // Circle variant (House)
     if (variant === 'circle') {
         const r = 30 // Reduced diameter as requested
+        const interactionProps = onInteract
+            ? {
+                  onClick: onInteract,
+                  style: { cursor: 'pointer' },
+              }
+            : {}
+
         return (
-            <g transform={`translate(${x}, ${y})`}>
+            <g transform={`translate(${x}, ${y})`} {...interactionProps}>
                 {isActive && (
                     <circle r={r + 4} fill={color} fillOpacity="0.15" filter={`drop-shadow(0 0 8px ${color})`} />
                 )}
@@ -89,8 +98,16 @@ export function CircuitNode({
         L ${bW - bracketSize} ${bH}
     `
 
+    // Interaction props
+    const interactionProps = onInteract
+        ? {
+              onClick: onInteract,
+              style: { cursor: 'pointer' },
+          }
+        : {}
+
     return (
-        <g transform={`translate(${x}, ${y})`}>
+        <g transform={`translate(${x}, ${y})`} {...interactionProps}>
             {/* Left Bracket */}
             <path d={bracketPathLeft} fill="none" stroke={isActive ? color : '#64748b'} strokeWidth="1.5" />
 

@@ -90,6 +90,7 @@ export default function Dashboard() {
         ev_kw?: number
         ev_plugged_in?: boolean // Rev UI18
         ev_soc?: number // Rev F50 Phase 5: EV battery SoC
+        ev_chargers?: Array<{ name: string; kw: number; soc: number | null; pluggedIn: boolean }> // Rev F64: Per-EV details
     }>({})
 
     // REV LCL01: Health status for config validation banners
@@ -116,6 +117,12 @@ export default function Dashboard() {
             ev_kw: data.ev_kw ?? prev.ev_kw,
             ev_plugged_in: data.ev_plugged_in !== undefined ? data.ev_plugged_in : prev.ev_plugged_in,
             ev_soc: data.ev_soc !== undefined ? data.ev_soc : prev.ev_soc,
+            ev_chargers: data.ev_chargers
+                ? data.ev_chargers.map((ev: { name: string; kw: number; soc: number | null; plugged_in: boolean }) => ({
+                      ...ev,
+                      pluggedIn: ev.plugged_in,
+                  }))
+                : prev.ev_chargers, // Rev F64: Per-EV array (transform snake_case to camelCase)
         }))
     })
 
@@ -781,6 +788,7 @@ export default function Dashboard() {
                                 },
                                 evPluggedIn: livePower.ev_plugged_in, // Rev UI18
                                 evSoc: livePower.ev_soc, // Rev F50 Phase 5: EV SoC
+                                evChargers: livePower.ev_chargers, // Rev F64: Per-EV details
                             }}
                         />
                     </div>

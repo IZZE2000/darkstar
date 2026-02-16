@@ -1398,19 +1398,6 @@ export const waterFieldList = waterSections.flatMap((section) => section.fields)
 export const uiFieldList = uiSections.flatMap((section) => section.fields)
 export const advancedFieldList = advancedSections.flatMap((section) => section.fields)
 
-// DEBUG: Log battery_soc field definition on module load
-const batterySocField = systemFieldList.find((f) => f.key === 'input_sensors.battery_soc')
-if (batterySocField) {
-    console.warn('[SETTINGS_DEBUG] Module loaded - battery_soc field definition:', {
-        key: batterySocField.key,
-        type: batterySocField.type,
-        label: batterySocField.label,
-        path: batterySocField.path,
-    })
-} else {
-    console.error('[SETTINGS_DEBUG] ERROR: battery_soc field not found in systemFieldList!')
-}
-
 export const allFields = [
     ...systemFieldList,
     ...parameterFieldList,

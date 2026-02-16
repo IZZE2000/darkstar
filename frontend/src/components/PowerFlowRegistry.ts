@@ -17,6 +17,7 @@ export interface PowerFlowData {
     ev?: { kw: number }
     evPluggedIn?: boolean // Rev UI18: Streamed from backend
     evSoc?: number // Rev F50 Phase 5: EV battery SoC percentage
+    evChargers?: Array<{ name: string; kw: number; soc: number | null; pluggedIn: boolean }> // Rev F64: Per-EV details
 }
 
 export interface FlowNodeConfig {
@@ -107,8 +108,13 @@ export const NODE_REGISTRY: FlowNodeConfig[] = [
         color: (data: PowerFlowData) => (data.evPluggedIn ? 'rgb(var(--color-ai))' : 'rgb(var(--color-muted))'),
         label: 'EV',
         valueAccessor: (data) => (data.ev ? fmtKw(data.ev.kw) : '0.0 kW'),
-        subValueAccessor: (data) =>
-            data.evPluggedIn && data.evSoc !== undefined ? `${data.evSoc.toFixed(0)}%` : undefined,
+        subValueAccessor: (data) => {
+            // Phase 7: Show SoC of plugged-in EV, or first EV if multiple plugged in
+            if (!data.evChargers || data.evChargers.length === 0) return undefined
+            const pluggedIn = data.evChargers.filter((ev) => ev.pluggedIn)
+            const evToShow = pluggedIn.length > 0 ? pluggedIn[0] : data.evChargers[0]
+            return evToShow?.soc !== null ? `${evToShow.soc.toFixed(0)}%` : undefined
+        },
         glowIntensityAccessor: (data) => (data.ev ? Math.min(data.ev.kw / 11, 1) : 0),
     },
 ]
