@@ -16,15 +16,27 @@ class TestAuroraForward(unittest.IsolatedAsyncioTestCase):
     @patch("ml.forward.get_vacation_mode_series")
     @patch("ml.forward.get_alarm_armed_series")
     @patch("backend.astro.SunCalculator")
+    @patch("ml.forward._determine_graduation_level")
     async def test_forward_pass_multi_array(
-        self, mock_sun, mock_alarm, mock_vacation, mock_weather, mock_models, mock_get_engine
+        self,
+        mock_grad_level,
+        mock_sun,
+        mock_alarm,
+        mock_vacation,
+        mock_weather,
+        mock_models,
+        mock_get_engine,
     ):
         print("\n--- Testing Aurora Forward Pass with Multi-Array ---")
 
-        # 1. Mock LearningEngine
+        # 1. Mock graduation level
+        mock_grad_level.return_value = MagicMock(level=2)
+
+        # 2. Mock LearningEngine
         mock_engine = MagicMock(spec=LearningEngine)
         mock_engine.store_forecasts = AsyncMock()
         mock_engine.timezone = pytz.UTC
+        mock_engine.db_path = "fake_db.db"
 
         # 2. Mock SunCalculator
         mock_sun_instance = MagicMock()

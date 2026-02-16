@@ -276,7 +276,9 @@ def _clamp_correction(base: float, raw_correction: float) -> float:
     raw = float(raw_correction or 0.0)
     if base <= 0.0:
         return 0.0
-    max_abs = 0.5 * base
+    # REV F67: Increased from 0.5 to 2.0 to allow fixing large systematic errors (Bug #2).
+    # This allows a correction up to 2x the base forecast (e.g. 0.1 -> 0.3).
+    max_abs = 2.0 * base
     if max_abs <= 0.0:
         return 0.0
     return float(max(-max_abs, min(max_abs, raw)))

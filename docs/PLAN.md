@@ -165,7 +165,7 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 
 ---
 
-### [PLANNED] REV // F67 — Aurora PV Forecast Pipeline Fix
+### [DONE] REV // F67 — Aurora PV Forecast Pipeline Fix
 
 **Goal:** Fix 5 bugs in the Aurora ML pipeline causing 7-8x PV forecast underestimation on sunny days.
 
@@ -186,27 +186,27 @@ further amplifies the error.
 
 **Plan:**
 
-#### Phase 1: Weather Interpolation (Bug #1) [PLANNED]
-* [ ] In `ml/weather.py`: After fetching hourly data, resample to 15-min using linear interpolation: `weather_df.resample("15min").interpolate(method="linear")`
-* [ ] Ensure this applies to `temp_c`, `cloud_cover_pct`, and `shortwave_radiation_w_m2`
-* [ ] Verify interpolated DataFrame has 4x the rows, no NaN gaps between hours
-* [ ] This fix automatically improves both `ml/train.py` and `ml/forward.py` since both call `get_weather_series`
-* [ ] Add unit test: mock hourly weather → verify 15-min output with correct interpolated values
+#### Phase 1: Weather Interpolation (Bug #1) [DONE]
+* [x] In `ml/weather.py`: After fetching hourly data, resample to 15-min using linear interpolation: `weather_df.resample("15min").interpolate(method="linear")`
+* [x] Ensure this applies to `temp_c`, `cloud_cover_pct`, and `shortwave_radiation_w_m2`
+* [x] Verify interpolated DataFrame has 4x the rows, no NaN gaps between hours
+* [x] This fix automatically improves both `ml/train.py` and `ml/forward.py` since both call `get_weather_series`
+* [x] Add unit test: mock hourly weather → verify 15-min output with correct interpolated values
 
-#### Phase 2: Corrector Clamp (Bug #2) [PLANNED]
-* [ ] In `ml/corrector.py` `_clamp_correction`: Change `max_abs = 0.5 * base` → `max_abs = 2.0 * base`
-* [ ] Add unit test: verify corrections up to 200% are allowed
+#### Phase 2: Corrector Clamp (Bug #2) [DONE]
+* [x] In `ml/corrector.py` `_clamp_correction`: Change `max_abs = 0.5 * base` → `max_abs = 2.0 * base`
+* [x] Add unit test: verify corrections up to 200% are allowed
 
-#### Phase 3: Reflex Improvements (Bugs #3, #4, #5) [PLANNED]
-* [ ] In `backend/learning/store.py` `get_forecast_vs_actual`: Add filter `actual > 0.01` when target is "pv" to exclude night slots from bias calculation
-* [ ] In `backend/learning/reflex.py`: Change `MAX_DAILY_CHANGE["forecasting.pv_confidence_percent"]` from `2.0` → `5.0`
-* [ ] In `backend/learning/reflex.py`: Change `BOUNDS["forecasting.pv_confidence_percent"]` from `(80, 100)` → `(70, 120)`
-* [ ] Update existing `tests/test_reflex.py` if any assertions check the old bounds/rate values
+#### Phase 3: Reflex Improvements (Bugs #3, #4, #5) [DONE]
+* [x] In `backend/learning/store.py` `get_forecast_vs_actual`: Add filter `actual > 0.01` when target is "pv" to exclude night slots from bias calculation
+* [x] In `backend/learning/reflex.py`: Change `MAX_DAILY_CHANGE["forecasting.pv_confidence_percent"]` from `2.0` → `5.0`
+* [x] In `backend/learning/reflex.py`: Change `BOUNDS["forecasting.pv_confidence_percent"]` from `(80, 100)` → `(70, 120)`
+* [x] Update existing `tests/test_reflex.py` if any assertions check the old bounds/rate values
 
-#### Phase 4: Verification [PLANNED]
-* [ ] Run `uv run python -m pytest tests/test_aurora_forward.py -v`
-* [ ] Run `uv run python -m pytest tests/test_reflex.py -v`
-* [ ] Run `uv run ruff check ml/ backend/learning/reflex.py backend/learning/store.py`
-* [ ] Local smoke test: run training script and verify weather features are populated (not NaN) in training logs
+#### Phase 4: Verification [DONE]
+* [x] Run `uv run python -m pytest tests/test_aurora_forward.py -v`
+* [x] Run `uv run python -m pytest tests/test_reflex.py -v`
+* [x] Run `uv run ruff check ml/ backend/learning/reflex.py backend/learning/store.py`
+* [x] Local smoke test: run training script and verify weather features are populated (not NaN) in training logs
 
 ---

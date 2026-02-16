@@ -443,6 +443,16 @@ class LearningStore:
             p90_col = SlotForecast.load_p90
 
         async with self.AsyncSession() as session:
+            conditions = [
+                func.date(SlotObservation.slot_start) >= cutoff_date,
+                actual_col.is_not(None),
+                forecast_col.is_not(None),
+            ]
+            if target == "pv":
+                # REV F67: Filter out night slots (Bug #3) to avoid diluting bias signal.
+                # Only analyze slots where PV production was actually occurring.
+                conditions.append(actual_col > 0.01)
+
             stmt = (
                 select(
                     SlotObservation.slot_start,
@@ -457,11 +467,7 @@ class LearningStore:
                     (SlotObservation.slot_start == SlotForecast.slot_start)
                     & (SlotForecast.forecast_version == "aurora"),
                 )
-                .where(
-                    func.date(SlotObservation.slot_start) >= cutoff_date,
-                    actual_col.is_not(None),
-                    forecast_col.is_not(None),
-                )
+                .where(*conditions)
                 .order_by(SlotObservation.slot_start.asc())
             )
 

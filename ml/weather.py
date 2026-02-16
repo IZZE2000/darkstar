@@ -132,6 +132,14 @@ def get_weather_series(
         return pd.DataFrame(dtype="float64")
 
     df = pd.DataFrame(data, index=dt_index).astype("float64")
+
+    # REV F67: Resample from hourly to 15-minute resolution via linear interpolation.
+    # This ensures all slots (Bug #1) get weather data (radiation/temp/clouds).
+    if not df.empty and len(df) > 1:
+        # We resample BEFORE filtering to start/end so that boundary points
+        # are used for interpolation of the edge slots.
+        df = df.resample("15min").interpolate(method="linear")
+
     df = df[(df.index >= start_local) & (df.index < end_local)]
 
     # --- Cache Store ---

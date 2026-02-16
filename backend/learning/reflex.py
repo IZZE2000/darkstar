@@ -17,14 +17,14 @@ logger = logging.getLogger("AuroraReflex")
 # ============================================================================
 BOUNDS = {
     "s_index.base_factor": (1.0, 1.3),
-    "forecasting.pv_confidence_percent": (80, 100),
+    "forecasting.pv_confidence_percent": (70, 120),
     "battery_economics.battery_cycle_cost_kwh": (0.1, 0.5),
     "battery.capacity_kwh": (0, None),  # Only decrease, min 0, max is nameplate
 }
 
 MAX_DAILY_CHANGE = {
     "s_index.base_factor": 0.02,
-    "forecasting.pv_confidence_percent": 2.0,
+    "forecasting.pv_confidence_percent": 5.0,
     "battery_economics.battery_cycle_cost_kwh": 0.05,
     "battery.capacity_kwh": 0.5,
 }

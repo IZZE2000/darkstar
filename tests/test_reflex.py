@@ -485,8 +485,8 @@ class TestAnalyzeConfidence:
 
             assert "forecasting.pv_confidence_percent" in updates
             new_value = updates["forecasting.pv_confidence_percent"]
-            # Should decrease by max_change (2.0) from 90 to 88
-            assert new_value == 88.0
+            # Should decrease by max_change (5.0) from 90 to 85
+            assert new_value == 85.0
             assert "Over-predicting" in msg
 
     @pytest.mark.asyncio
@@ -509,8 +509,8 @@ class TestAnalyzeConfidence:
 
             assert "forecasting.pv_confidence_percent" in updates
             new_value = updates["forecasting.pv_confidence_percent"]
-            # Should increase by max_change (2.0) from 90 to 92
-            assert new_value == 92.0
+            # Should increase by max_change (5.0) from 90 to 95
+            assert new_value == 95.0
             assert "Under-predicting" in msg
 
     @pytest.mark.asyncio
@@ -539,8 +539,8 @@ class TestAnalyzeConfidence:
         """Should not go below 80% or above 100%."""
         db_path, store, tz = temp_db
 
-        # Set to max
-        mock_config["forecasting"]["pv_confidence_percent"] = 100
+        # Set to old max (100)
+        mock_config["forecasting"]["pv_confidence_percent"] = 120
 
         # Insert data with negative bias (would want to increase)
         with sqlite3.connect(db_path) as conn:
@@ -585,11 +585,9 @@ class TestConstants:
         assert CONFIDENCE_MIN_SAMPLES == 100
         assert CONFIDENCE_LOOKBACK_DAYS == 14
 
-    def test_bounds_for_confidence(self):
-        """pv_confidence_percent bounds should be 80 to 100."""
         min_val, max_val = BOUNDS["forecasting.pv_confidence_percent"]
-        assert min_val == 80
-        assert max_val == 100
+        assert min_val == 70
+        assert max_val == 120
 
     def test_bounds_for_cycle_cost(self):
         """battery_cycle_cost_kwh bounds should be 0.1 to 0.5."""
