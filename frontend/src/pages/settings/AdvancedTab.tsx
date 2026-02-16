@@ -14,13 +14,40 @@ import { useUnsavedChangesGuard } from './hooks/useUnsavedChangesGuard'
 export const AdvancedTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }) => {
     const navigate = useNavigate()
     const { toast } = useToast()
-    const { form, fieldErrors, loading, saving, statusMessage, handleChange, save, reload, isDirty } =
+    const { config, form, fieldErrors, loading, saving, statusMessage, handleChange, save, reload, isDirty } =
         useSettingsForm(advancedFieldList)
 
     const blocker = useUnsavedChangesGuard(isDirty)
 
     const [resetModalOpen, setResetModalOpen] = useState(false)
     const [resetLoading, setResetLoading] = useState(false)
+
+    const isSectionEnabled = (section: (typeof advancedSections)[0]) => {
+        if (!section.showIf) return true
+
+        // For system-level showIf checks, use config directly (form may not have these fields)
+        if (section.showIf.configKey.startsWith('system.')) {
+            const systemKey = section.showIf.configKey.replace('system.', '')
+            const configValue = (config as unknown as { system?: Record<string, unknown> })?.system?.[systemKey]
+            if (section.showIf.value !== undefined) {
+                if (Array.isArray(section.showIf.value)) {
+                    return section.showIf.value.includes(configValue as string | boolean | number)
+                }
+                return configValue === section.showIf.value
+            }
+            return configValue === true
+        }
+
+        // For non-system fields, use form state
+        const configValue = form[section.showIf.configKey]
+        if (section.showIf.value !== undefined) {
+            if (Array.isArray(section.showIf.value)) {
+                return section.showIf.value.includes(configValue as string | boolean | number)
+            }
+            return configValue === String(section.showIf.value)
+        }
+        return configValue === 'true'
+    }
 
     const handleResetAll = async () => {
         setResetLoading(true)
@@ -38,18 +65,6 @@ export const AdvancedTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode
 
     if (loading) {
         return <Card className="p-6 text-sm text-muted">Loading advanced configuration…</Card>
-    }
-
-    const isSectionEnabled = (section: (typeof advancedSections)[0]) => {
-        if (!section.showIf) return true
-        const configValue = form[section.showIf.configKey]
-        if (section.showIf.value !== undefined) {
-            if (Array.isArray(section.showIf.value)) {
-                return section.showIf.value.includes(configValue as string | boolean | number)
-            }
-            return configValue === String(section.showIf.value)
-        }
-        return configValue === 'true'
     }
 
     return (
@@ -98,6 +113,7 @@ export const AdvancedTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode
                                         onChange={handleChange}
                                         error={fieldErrors[field.key]}
                                         fullForm={form}
+                                        config={config as unknown as Record<string, unknown>}
                                         advancedMode={advancedMode}
                                     />
                                 ))}
