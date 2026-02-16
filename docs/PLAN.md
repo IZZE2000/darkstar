@@ -122,45 +122,59 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 
 ---
 
-### [DRAFT] REV // F64 — EV Node Tooltip for Multiple EVs
+### [PLANNED] REV // F64 — EV Node Tooltip for Multiple EVs
 
-**Goal:** Add a tooltip to the PowerflowCard EV node that shows detailed information about all configured EVs when hovering.
+**Goal:** Show per-EV details (name, power, SoC, plug status) in a tooltip on the PowerFlowCard EV node. Must work for both single and multiple EVs, and support both desktop hover and mobile tap.
 
-**Context:** The PowerflowCard currently shows only the first enabled EV's data (power, SoC, plug status). When multiple EVs are configured, users can't see individual EV details. A tooltip on hover should display:
-- Total number of EVs
-- Individual EV names
-- Individual power draw (kW)
-- Individual SoC (%)
-- Plug status for each EV
+**Context:** The backend `ha_socket.py:_get_monitored_entities` only monitors the **first** enabled EV charger (explicit `break` at line 119). State changes emit scalar keys (`ev_kw`, `ev_soc`, `ev_plugged_in`). The frontend `PowerFlowData` type, `Dashboard.tsx` state, and `CircuitNode.tsx` are all scalar — none support per-EV data. The `PowerFlowCard` renders inside an `<svg>`, so standard React tooltip libraries won't work out of the box.
 
-**Backend Status:** Already aggregates correctly in `planner/solver/adapter.py` (sums max power, etc.). The issue is frontend display only shows first EV.
+**Backend Status:** Solver (`planner/solver/adapter.py`) already aggregates across all EVs. This REV addresses the **live metrics display** path only.
 
 **Plan:**
 
-#### Phase 1: Backend - Pass All EV Data to Frontend [DRAFT]
-* [ ] Update `backend/ha_socket.py` to include all EV data in `emit_live_metrics` payload
-* [ ] Change from single `ev_kw`, `ev_soc`, `ev_plug_in` to array `ev_chargers: [{name, kw, soc, plugged_in}]`
-* [ ] Test: WebSocket payload contains all EV details
+#### Phase 1: Backend — Per-EV Live Metrics [PLANNED]
+**Files:** `backend/ha_socket.py`
 
-#### Phase 2: Frontend - Update API Types [DRAFT]
-* [ ] Update `frontend/src/lib/api.ts` to reflect new EV charger array in `LiveMetrics`
-* [ ] Add proper TypeScript types for individual EV charger data
+* [ ] **Remove `break`** in `_get_monitored_entities` — monitor ALL enabled EV chargers, not just the first
+* [ ] **Per-EV entity keys** — Change flat `"ev_kw"` mapping to indexed keys: `"ev_kw_0"`, `"ev_soc_0"`, `"ev_plug_0"`, `"ev_kw_1"`, etc. Store the EV name alongside each index for display
+* [ ] **Rework `_handle_state_change`** — The `ev_plug`, `ev_soc`, and numeric sensor branches must:
+  - Identify *which* EV index the entity belongs to
+  - Update per-EV state in `self.latest_values` (e.g. `ev_chargers[0].kw`)
+  - Emit the full `ev_chargers` array (not just the changed scalar) via `emit_live_metrics`
+* [ ] **Payload shape** — Emit `ev_chargers: [{name: str, kw: float, soc: float|null, plugged_in: bool}]` plus aggregate `ev_kw` (sum) for backward compat in the main node display
+* [ ] **Re-plan trigger** — Keep existing `_trigger_ev_replan` logic, but fire for ANY EV plug-in event
+* [ ] **Test:** Print/log WebSocket payload with 2+ mock EVs, verify array shape
 
-#### Phase 3: Frontend - Update PowerflowCard EV Node [DRAFT]
-* [ ] Add tooltip component to EV node in `PowerFlowCard.tsx`
-* [ ] Tooltip shows on hover with:
-  - "X EVs" header
-  - List of each EV with name, power, SoC, plug status
-* [ ] Tooltip styling: dark background, rounded corners, max-height with scroll if many EVs
+#### Phase 2: Frontend — Types & Dashboard State [PLANNED]
+**Files:** `frontend/src/components/PowerFlowRegistry.ts`, `frontend/src/pages/Dashboard.tsx`
 
-#### Phase 4: Backend - Aggregation Fallback [DRAFT]
-* [ ] For backward compatibility: If frontend expects old format, provide aggregate values
-* [ ] Or: Version the WebSocket API with compatibility layer
+* [ ] **`PowerFlowData` type** — Add `evChargers?: Array<{name: string, kw: number, soc: number | null, pluggedIn: boolean}>` to the interface (keep existing `ev`, `evPluggedIn`, `evSoc` for aggregate node display)
+* [ ] **`Dashboard.tsx` state** — Add `ev_chargers` to the `livePower` state shape
+* [ ] **`setLivePower` handler** (lines 109–118) — Merge incoming `ev_chargers` array into state; continue mapping aggregate `ev_kw` → `ev.kw` for the main node value
+* [ ] **Pass through** — Include `evChargers` in the `powerFlowData` prop object passed to `PowerFlowCard`
 
-#### Phase 5: Test & Lint [DRAFT]
-* [ ] Test with single EV - tooltip shows single EV details
-* [ ] Test with multiple EVs - tooltip shows all EVs
-* [ ] Run `pnpm lint` - fix any errors
-* [ ] Build succeeds
+#### Phase 3: Frontend — EV Tooltip Component [PLANNED]
+**Files:** `frontend/src/components/CircuitNode.tsx`, `frontend/src/components/PowerFlowCard.tsx`
+
+* [ ] **`CircuitNode` extension** — Add optional `tooltipContent?: React.ReactNode` and `onInteract?: () => void` props
+* [ ] **Interaction handling** — On the EV `<g>` group:
+  - Desktop: `onMouseEnter` / `onMouseLeave` to show/hide tooltip
+  - Mobile: `onClick` / `onTouchStart` to toggle tooltip; dismiss on outside tap (attach a one-time `document.addEventListener` on open)
+* [ ] **Tooltip rendering strategy** — Use `<foreignObject>` inside the SVG to render a styled HTML tooltip div. Position it relative to the EV node coordinates. This avoids z-index/portal issues while keeping it within the SVG coordinate system
+* [ ] **Tooltip content:**
+  - Header: "X EVs Connected" (or "EV" for single)
+  - Per-EV row: `name` • `kw` kW • `soc`% • plug icon (green/grey)
+  - Styling: dark bg (`--color-card`), rounded corners, 11px JetBrains Mono, max-height 120px with overflow scroll
+* [ ] **Single EV case** — If only 1 EV, show its name + details (no redundant "1 EV" header). Tooltip is still useful as it shows more detail than the node itself (name, plug status icon)
+* [ ] **Hide tooltip** when PowerFlowCard is in `compact` mode (e.g. mobile widget) — not enough space
+
+#### Phase 4: Test & Lint [PLANNED]
+* [ ] Test: Single EV — node shows aggregate, tooltip shows single EV details
+* [ ] Test: Multiple EVs — node shows aggregate sum, tooltip lists all EVs
+* [ ] Test: No EVs enabled — EV node hidden via `shouldRender` (existing behavior)
+* [ ] Test: Mobile — tap EV node to show tooltip, tap outside to dismiss
+* [ ] Run `pnpm lint` in `frontend/` — zero errors
+* [ ] Run `uv run ruff check backend/ha_socket.py` — zero errors
+* [ ] `pnpm run build` succeeds
 
 ---
