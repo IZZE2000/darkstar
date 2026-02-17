@@ -1652,7 +1652,20 @@ class ExecutorEngine:
                             success=1 if not result.skipped else 0,
                             source="ev_charger",
                             duration_ms=result.duration_ms,
-                            action_results=[result],
+                            action_results=[
+                                {
+                                    "type": result.action_type,
+                                    "success": result.success,
+                                    "message": result.message,
+                                    "entity_id": result.entity_id,
+                                    "previous_value": result.previous_value,
+                                    "new_value": result.new_value,
+                                    "verified_value": result.verified_value,
+                                    "verification_success": result.verification_success,
+                                    "skipped": result.skipped,
+                                    "error_details": result.error_details,
+                                }
+                            ],
                         )
                     )
 
@@ -1677,7 +1690,20 @@ class ExecutorEngine:
                             success=1 if not result.skipped else 0,
                             source="ev_charger",
                             duration_ms=result.duration_ms,
-                            action_results=[result],
+                            action_results=[
+                                {
+                                    "type": result.action_type,
+                                    "success": result.success,
+                                    "message": result.message,
+                                    "entity_id": result.entity_id,
+                                    "previous_value": result.previous_value,
+                                    "new_value": result.new_value,
+                                    "verified_value": result.verified_value,
+                                    "verification_success": result.verification_success,
+                                    "skipped": result.skipped,
+                                    "error_details": result.error_details,
+                                }
+                            ],
                         )
                     )
 

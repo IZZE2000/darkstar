@@ -322,6 +322,7 @@ def load_executor_config(config_path: str = "config.yaml") -> ExecutorConfig:
         ),
         control_unit=str(inverter_data.get("control_unit", "A")),
         # Capture all other keys as custom entities (Rev IP2)
+        # REV F71: Add "custom_entities" to exclusion set to prevent stringification of nested dict
         custom_entities={
             k: _str_or_none(v)
             for k, v in inverter_data.items()
@@ -352,9 +353,18 @@ def load_executor_config(config_path: str = "config.yaml") -> ExecutorConfig:
                 "work_mode_export",
                 "work_mode_zero_export",
                 "control_unit",
+                "custom_entities",  # REV F71: Don't stringify nested custom_entities dict
             }
         },
     )
+
+    # REV F71: Explicitly merge nested custom_entities from YAML
+    # This handles the case where users define custom_entities as a nested dict
+    nested_custom = inverter_data.get("custom_entities", {})
+    if isinstance(nested_custom, dict):
+        for k, v in nested_custom.items():
+            if k not in inverter.custom_entities or inverter.custom_entities.get(k) is None:
+                inverter.custom_entities[k] = _str_or_none(v)
 
     water_data: dict[str, Any] = (
         executor_data.get("water_heater", {})

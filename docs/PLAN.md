@@ -196,3 +196,29 @@ The Aurora ML pipeline uses corrector models (`pv_error.lgb`, `load_error.lgb`) 
 * [x] Verify forecasts are now identical between runs (with same Open-Meteo data)
 * [x] Confirm corrector models produce consistent corrections at Graduate level (14+ days data)
 * [x] Document the fix in code comments explaining the seed choice
+
+---
+
+### [DONE] REV // F71 — Sungrow Composite Entity Loading & EV Serialization Fix
+
+**Goal:** Fix two bugs causing executor failures for Sungrow users: composite entity config not loading, and EV charger history crashes.
+
+**Context:**
+- **Bug 1 (Critical):** `executor/config.py` has a dict comprehension (lines 324–356) that collects all non-standard `inverter_data` keys into `custom_entities`. The key `"custom_entities"` itself is NOT in the exclusion set, so the nested YAML dict `{ems_mode: ..., forced_charge_discharge_cmd: ...}` gets passed through `_str_or_none()` which **stringifies the entire dict** instead of unpacking it. Result: `self.config.inverter.custom_entities.get("ems_mode")` returns `None`, causing "Entity not configured" errors for ALL Sungrow composite modes. REV F69 migration only handles legacy misplaced keys — it does not fix the loading path for correctly-structured configs.
+- **Bug 2 (Medium):** `executor/engine.py` lines 1646–1657 and 1671–1682 store raw `ActionResult` dataclass objects in `action_results=[result]` for EV charger events. When the `ExecutionRecord` is serialized to JSON for the history DB, it crashes with `Object of type ActionResult is not JSON serializable`. The main execute path (line 1487–1501) correctly converts to dicts but the EV path does not.
+
+**Plan:**
+
+#### Phase 1: Fix custom_entities Loading [DONE]
+* [x] In `executor/config.py`, add `"custom_entities"` to the exclusion set in the dict comprehension (line ~329).
+* [x] After the comprehension, explicitly unpack `inverter_data.get("custom_entities", {})` and merge into `custom_entities` dict with `_str_or_none()` per value.
+* [x] Verify the catch-all still works for other non-standard keys (e.g., `work_mode_export`).
+
+#### Phase 2: Fix EV ActionResult Serialization [DONE]
+* [x] In `executor/engine.py` lines ~1655 and ~1682, convert `ActionResult` to dict before storing in `action_results`, matching the pattern used in `_create_execution_record()` (lines 1487–1501).
+
+#### Phase 3: Testing [DONE]
+* [x] Write unit test: load a config with properly nested `custom_entities` and assert `InverterConfig.custom_entities["ems_mode"]` resolves correctly.
+* [x] Write unit test: verify EV charger execution record serializes to JSON without error.
+* [x] Run full test suite: `uv run python -m pytest -q`.
+* [x] Run linting: `uv run ruff check .`.
