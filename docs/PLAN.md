@@ -225,7 +225,7 @@ The Aurora ML pipeline uses corrector models (`pv_error.lgb`, `load_error.lgb`) 
 
 ---
 
-### [PLANNED] REV // F72 — Missing Executor Control Entity Fields in Settings UI
+### [DONE] REV // F72 — Missing Executor Control Entity Fields in Settings UI
 
 **Goal:** Expose all profile-required executor control entities in the Settings UI so users can configure them without manually editing `config.yaml`.
 
@@ -249,28 +249,29 @@ The Aurora ML pipeline uses corrector models (`pv_error.lgb`, `load_error.lgb`) 
 
 **Plan:**
 
-#### Phase 1: Move work_mode to System Tab [PLANNED]
-* [ ] In `frontend/src/pages/settings/types.ts`, remove `executor.inverter.work_mode` field from `batterySections` (line 1024).
-* [ ] Add `executor.inverter.work_mode` to `systemSections` → "Required HA Control Entities" section (after line 342).
-* [ ] Label: "Work Mode Selector", Helper: "Darkstar sets inverter operating mode (Export/Zero-Export/etc.)."
+#### Phase 1: Move work_mode to System Tab [DONE]
+* [x] In `frontend/src/pages/settings/types.ts`, remove `executor.inverter.work_mode` field from `batterySections` (line 1024).
+* [x] Add `executor.inverter.work_mode` to `systemSections` → "Required HA Control Entities" section (after line 342).
+* [x] Label: "Work Mode Selector", Helper: "Darkstar sets inverter operating mode (Export/Zero-Export/etc.)."
 
-#### Phase 2: Add Missing Generic/Deye Entity Fields [PLANNED]
-* [ ] Add `executor.inverter.soc_target` to System tab "Required HA Control Entities".
+#### Phase 2: Add Missing Generic/Deye Entity Fields [DONE]
+* [x] Add `executor.inverter.soc_target` to System tab "Required HA Control Entities".
   - Label: "SoC Target", Helper: "Darkstar sets battery state of charge target percentage."
-* [ ] Add `executor.inverter.grid_charging_enable` to System tab "Required HA Control Entities".
+* [x] Add `executor.inverter.grid_charging_enable` to System tab "Required HA Control Entities".
   - Label: "Grid Charging Switch", Helper: "Darkstar enables/disables grid charging."
+  - Added `showIf` to show only for generic/deye profiles (not fronius)
 
-#### Phase 3: Add Missing Fronius Entity Fields [PLANNED]
-* [ ] Add `executor.inverter.minimum_reserve` to System tab "Required HA Control Entities".
+#### Phase 3: Add Missing Fronius Entity Fields [DONE]
+* [x] Add `executor.inverter.minimum_reserve` to System tab "Required HA Control Entities".
   - Label: "Minimum Reserve", Helper: "Darkstar sets minimum battery reserve (Fronius-specific)."
   - `showIf: { configKey: 'system.inverter_profile', value: 'fronius' }`
-* [ ] Add `executor.inverter.grid_charge_power` to System tab "Required HA Control Entities".
+* [x] Add `executor.inverter.grid_charge_power` to System tab "Required HA Control Entities".
   - Label: "Grid Charge Power", Helper: "Darkstar sets grid charging power in Watts (Fronius-specific)."
   - `showIf: { configKey: 'system.inverter_profile', value: 'fronius' }`
 
-#### Phase 4: Testing [PLANNED]
+#### Phase 4: Testing [IN PROGRESS]
 * [ ] Manual test: With generic profile selected, verify all 3 required entity fields (`work_mode`, `soc_target`, `grid_charging_enable`) are visible in System → Required HA Control Entities.
 * [ ] Manual test: With fronius profile selected, verify 5 required fields are visible (including `minimum_reserve` and `grid_charge_power`).
 * [ ] Manual test: Configure entity IDs for all required fields, save settings, verify no validation errors.
 * [ ] Manual test: Leave one required field empty, try to save, verify save is blocked with helpful error message.
-* [ ] Run frontend linting: `cd frontend && pnpm lint`.
+* [x] Run frontend linting: `cd frontend && pnpm lint`.

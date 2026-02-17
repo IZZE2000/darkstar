@@ -406,6 +406,53 @@ export const systemSections: SettingsSection[] = [
                     disabledText: 'Enable "Grid Export" in System Profile to configure',
                 },
             },
+            {
+                key: 'executor.inverter.work_mode',
+                label: 'Work Mode Selector',
+                path: ['executor', 'inverter', 'work_mode'],
+                type: 'entity',
+                helper: 'Darkstar sets inverter operating mode (Export/Zero-Export/etc.).',
+            },
+            {
+                key: 'executor.inverter.soc_target',
+                label: 'SoC Target',
+                path: ['executor', 'inverter', 'soc_target'],
+                type: 'entity',
+                helper: 'Darkstar sets battery state of charge target percentage.',
+            },
+            {
+                key: 'executor.inverter.grid_charging_enable',
+                label: 'Grid Charging Switch',
+                path: ['executor', 'inverter', 'grid_charging_enable'],
+                type: 'entity',
+                helper: 'Darkstar enables/disables grid charging.',
+                showIf: {
+                    configKey: 'system.inverter_profile',
+                    value: ['generic', 'deye'],
+                },
+            },
+            {
+                key: 'executor.inverter.minimum_reserve',
+                label: 'Minimum Reserve',
+                path: ['executor', 'inverter', 'minimum_reserve'],
+                type: 'entity',
+                helper: 'Darkstar sets minimum battery reserve (Fronius-specific).',
+                showIf: {
+                    configKey: 'system.inverter_profile',
+                    value: 'fronius',
+                },
+            },
+            {
+                key: 'executor.inverter.grid_charge_power',
+                label: 'Grid Charge Power',
+                path: ['executor', 'inverter', 'grid_charge_power'],
+                type: 'entity',
+                helper: 'Darkstar sets grid charging power in Watts (Fronius-specific).',
+                showIf: {
+                    configKey: 'system.inverter_profile',
+                    value: 'fronius',
+                },
+            },
         ],
     },
     {
@@ -1019,15 +1066,7 @@ export const batterySections: SettingsSection[] = [
         title: 'HA Control Entities',
         description: 'Home Assistant entities for battery control.',
         isHA: true,
-        fields: [
-            {
-                key: 'executor.inverter.work_mode',
-                label: 'Work Mode Selector',
-                path: ['executor', 'inverter', 'work_mode'],
-                type: 'entity',
-                helper: 'Darkstar sets inverter mode (Export/Zero-Export).',
-            },
-        ],
+        fields: [],
     },
 ]
 
