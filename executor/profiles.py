@@ -1,8 +1,10 @@
 """
-Inverter Profile System
+Inverter Profile System v2
 
-Loads and validates inverter profiles from YAML files.
-Enables Darkstar to support multiple inverter brands without code changes.
+Declarative, profile-driven architecture where each mode defines an ordered
+list of entity+value actions. The executor is a generic loop.
+
+Schema Version: 2
 """
 
 import logging
@@ -14,54 +16,108 @@ import yaml
 
 logger = logging.getLogger(__name__)
 
-# REV F58: Standard entity keys that live directly in executor.inverter (not in custom_entities)
-# Must match frontend's standardInverterKeys in SystemTab.tsx
-STANDARD_ENTITY_KEYS = frozenset(
+VALID_DOMAINS = frozenset(["select", "number", "switch", "input_number"])
+VALID_CATEGORIES = frozenset(["system", "battery"])
+VALID_TEMPLATES = frozenset(
     [
-        "work_mode",
+        "charge_value",
+        "discharge_value",
         "soc_target",
-        "grid_charging_enable",
-        "grid_charge_power",
-        "minimum_reserve",
-        "grid_max_export_power",
-        "grid_max_export_power_switch",
-        "max_charge_current",
-        "max_discharge_current",
-        "max_charge_power",
-        "max_discharge_power",
+        "export_power_w",
+        "max_charge",
+        "max_discharge",
     ]
 )
+REQUIRED_MODES = frozenset(["charge", "export", "self_consumption", "idle"])
+
+
+class ProfileError(Exception):
+    """Raised when a profile has invalid configuration."""
+
+    pass
+
+
+@dataclass
+class EntityDefinition:
+    """A single entity in the profile's entity registry."""
+
+    default_entity: str | None
+    domain: str
+    category: str
+    description: str
+    required: bool = True
+
+
+@dataclass
+class ModeAction:
+    """A single action within a mode definition."""
+
+    entity: str
+    value: str | int | float | bool
+    settle_ms: int | None = None
+
+
+@dataclass
+class ModeDefinition:
+    """A complete mode definition with ordered actions."""
+
+    description: str
+    actions: list[ModeAction] = field(default_factory=list)
+
+
+@dataclass
+class ProfileBehavior:
+    """Executor behavior parameters."""
+
+    control_unit: str = "A"
+    min_charge_a: float = 1.0
+    min_charge_w: float = 10.0
+    round_step_a: float = 1.0
+    round_step_w: float = 100.0
+    grid_charge_round_step_w: float | None = None
+    write_threshold_w: float = 100.0
+    mode_settling_ms: int = 100
+    requires_mode_settling: bool = False
 
 
 @dataclass
 class ProfileMetadata:
-    """Profile identification and documentation."""
+    """Profile metadata."""
 
     name: str
     version: str
-    description: str
+    schema_version: int = 1
+    description: str = ""
     supported_brands: list[str] = field(default_factory=list)
-    author: str = "Unknown"
-    created_at: str = ""
-    updated_at: str = ""
+
+
+@dataclass
+class WorkMode:
+    """Legacy WorkMode dataclass for backwards compatibility.
+
+    Deprecated: This is kept for Phase 2 compatibility only.
+    The v2 system uses ModeDefinition with ordered action lists instead.
+    """
+
+    value: str | None
+    description: str = ""
+    requires_grid_charging: bool = False
+    skip_discharge_limit: bool = False
+    skip_export_power: bool = False
+    set_entities: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
 class ProfileCapabilities:
-    """Feature flags for inverter-specific capabilities."""
+    """Legacy ProfileCapabilities for backwards compatibility."""
 
-    # Control capabilities
     grid_charging_control: bool = True
     watts_based_control: bool = False
     service_call_mode: bool = False
     separate_grid_charging_switch: bool = True
-
-    # Work mode capabilities
     supports_export_mode: bool = True
     supports_zero_export: bool = True
     supports_self_consumption: bool = True
-
-    # Advanced features
     supports_soc_target: bool = True
     supports_grid_export_limit: bool = True
     supports_force_discharge: bool = False
@@ -69,113 +125,145 @@ class ProfileCapabilities:
 
 @dataclass
 class ProfileEntities:
-    """Home Assistant entity mappings."""
+    """Legacy ProfileEntities for backwards compatibility."""
 
-    # Required entities
     required: dict[str, str | None] = field(default_factory=dict)
-
-    # Optional entities
     optional: dict[str, str | None] = field(default_factory=dict)
-    # forced_power_entity: str | None = None  # Planned for Rev IP2 Phase 3 (Keeping as dict entry for consistency)
 
     def validate_required(self) -> tuple[bool, list[str]]:
-        """
-        Validate that all required entities are configured.
-
-        Returns:
-            Tuple of (is_valid, missing_entities)
-        """
         missing = []
         for key, value in self.required.items():
             if value is None or value == "":
                 missing.append(key)
-
         return len(missing) == 0, missing
 
 
 @dataclass
-class WorkMode:
-    """Work mode definition with value and description."""
-
-    value: str | None
-    description: str = ""
-    requires_grid_charging: bool = False  # Whether this mode needs grid_charging_entity=ON
-    skip_discharge_limit: bool = False  # Explicitly skip writing discharge limit in this mode
-    skip_export_power: bool = False  # Explicitly skip writing export power limit in this mode
-    # Composite mode settings (Rev IP2)
-    # Maps profile entity key -> value to set
-    set_entities: dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass
 class ProfileModes:
-    """Work mode translations for the inverter."""
+    """Legacy ProfileModes for backwards compatibility."""
 
     export: WorkMode | None = None
     zero_export: WorkMode | None = None
     self_consumption: WorkMode | None = None
-    charge_from_grid: WorkMode | None = None  # Grid charging mode
-    force_discharge: WorkMode | None = None  # Force discharge mode
-    idle: WorkMode | None = None  # Idle/standby mode
-
-
-@dataclass
-class ProfileBehavior:
-    """Inverter-specific behavioral parameters."""
-
-    # Control unit settings
-    control_unit: str | None = "A"  # "A" or "W"
-
-    # Ampere-based control limits
-    min_charge_a: float = 10.0
-    round_step_a: float = 5.0
-    write_threshold_a: float = 5.0
-
-    # Watt-based control limits
-    min_charge_w: float = 500.0
-    round_step_w: float = 100.0
-    write_threshold_w: float = 100.0
-
-    # Mode behavior
-    soc_target_is_discharge_floor: bool = True
-    soc_target_is_charge_ceiling: bool = True
-
-    # Safety parameters
-    inverter_ac_limit_kw: float = 8.0
-
-    # Mode settling behavior
-    requires_mode_settling: bool = False
-    mode_settling_ms: int = 0
-
-    # Grid Charge Specifics
-    grid_charge_round_step_w: float | None = None  # Specific rounding for grid charging
+    charge_from_grid: WorkMode | None = None
+    force_discharge: WorkMode | None = None
+    idle: WorkMode | None = None
 
 
 @dataclass
 class ProfileDefaults:
-    """Suggested configuration values for this profile."""
+    """Legacy ProfileDefaults for backwards compatibility."""
 
     battery: dict[str, Any] = field(default_factory=dict)
     executor: dict[str, Any] = field(default_factory=dict)
-    # Note: suggested_entities is deprecated in favor of defining suggestions
-    # directly as values in the entities block.
     suggested_entities: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
 class InverterProfile:
-    """
-    Complete inverter profile definition.
+    """Complete v2 inverter profile.
 
-    Contains all information needed to control a specific inverter brand.
+    For backwards compatibility, this also accepts optional v1-style arguments:
+    - capabilities: ProfileCapabilities (ignored in v2)
+    - entities: ProfileEntities (ignored in v2, use entities dict instead)
+    - modes: ProfileModes (ignored in v2, use modes dict instead)
+    - defaults: ProfileDefaults (ignored in v2)
+
+    Supports both v1-style attribute access (profile.modes.export) and
+    v2-style dict access (profile.modes['export']).
     """
 
     metadata: ProfileMetadata
-    capabilities: ProfileCapabilities
-    entities: ProfileEntities
-    modes: ProfileModes
-    behavior: ProfileBehavior
+    entities: dict[str, EntityDefinition] = field(default_factory=dict)
+    modes: Any = field(default_factory=dict)
+    behavior: ProfileBehavior = field(default_factory=ProfileBehavior)
+    capabilities: ProfileCapabilities = field(default_factory=ProfileCapabilities)
     defaults: ProfileDefaults = field(default_factory=ProfileDefaults)
+    _v1_modes: ProfileModes | None = field(default=None, repr=False)
+    _modes_dict: dict[str, ModeDefinition] = field(default_factory=dict)
+
+    def __init__(self, **kwargs):
+        modes_dict = kwargs.pop("modes", {})
+        v1_modes = kwargs.pop("_v1_modes", None)
+        entities = kwargs.get("entities")
+
+        if entities is not None and isinstance(entities, ProfileEntities):
+            v1_entities = entities
+            entities_dict: dict[str, EntityDefinition] = {}
+            for key, val in {**v1_entities.required, **v1_entities.optional}.items():
+                if val:
+                    entities_dict[key] = EntityDefinition(
+                        default_entity=val,
+                        domain="select",
+                        category="system",
+                        description=f"Entity {key}",
+                        required=key in v1_entities.required,
+                    )
+            kwargs["entities"] = entities_dict
+
+        object.__setattr__(self, "_modes_dict", modes_dict)
+        object.__setattr__(self, "_v1_modes", v1_modes)
+        object.__setattr__(self, "_modes_wrapper", _ModesCompatWrapper(modes_dict, v1_modes))
+        for key, value in kwargs.items():
+            object.__setattr__(self, key, value)
+
+    def __getattribute__(self, name: str):
+        """Intercept attribute access to provide v1-style modes.export access."""
+        if name == "modes":
+            return object.__getattribute__(self, "_modes_wrapper")
+        return object.__getattribute__(self, name)
+
+    def __setattr__(self, name: str, value):
+        if name == "modes":
+            object.__setattr__(self, "_modes_dict", value)
+            object.__setattr__(
+                self,
+                "_modes_wrapper",
+                _ModesCompatWrapper(value, self._v1_modes if hasattr(self, "_v1_modes") else None),
+            )
+        else:
+            object.__setattr__(self, name, value)
+
+    def get_mode(self, mode_intent: str) -> ModeDefinition:
+        """Get mode definition by intent key. Raises ProfileError if not found."""
+        if mode_intent not in self.modes:
+            raise ProfileError(
+                f"Mode '{mode_intent}' not defined in profile '{self.metadata.name}'"
+            )
+        return self.modes[mode_intent]
+
+    def get_entity(self, key: str) -> EntityDefinition:
+        """Get entity definition by key. Raises ProfileError if not found."""
+        if key not in self.entities:
+            raise ProfileError(f"Entity '{key}' not defined in profile '{self.metadata.name}'")
+        return self.entities[key]
+
+    def get_required_entities(self) -> dict[str, EntityDefinition]:
+        """Return all required entities."""
+        return {k: v for k, v in self.entities.items() if v.required}
+
+    def get_entities_by_category(self, category: str) -> dict[str, EntityDefinition]:
+        """Return all entities in a specific category."""
+        return {k: v for k, v in self.entities.items() if v.category == category}
+
+    def get_missing_entities(self, config: dict) -> list[str]:
+        """
+        Check config for missing required entities.
+
+        Returns list of missing entity keys (not full config paths).
+        Uses entity resolution order: user override > standard config > profile default.
+        """
+        missing = []
+
+        for key, entity_def in self.entities.items():
+            if not entity_def.required:
+                continue
+
+            resolved = _resolve_entity_id_from_config(key, config)
+            if not resolved and entity_def.default_entity is None:
+                missing.append(key)
+
+        return missing
 
     def validate(self) -> tuple[bool, list[str]]:
         """
@@ -186,179 +274,68 @@ class InverterProfile:
         """
         errors = []
 
-        # Validate metadata
+        if self.metadata.schema_version != 2:
+            errors.append(f"Invalid schema_version: {self.metadata.schema_version}. Must be 2.")
+
         if not self.metadata.name:
             errors.append("Profile metadata.name is required")
+
         if not self.metadata.version:
             errors.append("Profile metadata.version is required")
 
-        # Validate control unit
-        if self.behavior.control_unit is not None and self.behavior.control_unit not in [
-            "A",
-            "W",
-        ]:
+        if self.behavior.control_unit not in ("A", "W"):
             errors.append(f"Invalid control_unit: {self.behavior.control_unit}. Must be 'A' or 'W'")
 
-        # Validate mode values
-        if not self.modes.export or not self.modes.export.value:
-            errors.append("modes.export.value is required")
-        if not self.modes.zero_export or not self.modes.zero_export.value:
-            errors.append("modes.zero_export.value is required")
-        if not self.modes.self_consumption or not self.modes.self_consumption.value:
-            errors.append("modes.self_consumption.value is required")
-        if not self.modes.idle or not self.modes.idle.value:
-            errors.append("modes.idle.value is required")
+        modes_dict = self._modes_dict
+        for mode_name in REQUIRED_MODES:
+            if mode_name not in modes_dict:
+                errors.append(f"Missing required mode: {mode_name}")
+            elif not modes_dict[mode_name].actions:
+                errors.append(f"Mode '{mode_name}' has no actions defined")
 
-        # Optional modes can be null, but if they exist, they must have a value
-        if self.modes.charge_from_grid and not self.modes.charge_from_grid.value:
-            errors.append("modes.charge_from_grid.value is required")
-        if self.modes.force_discharge and not self.modes.force_discharge.value:
-            errors.append("modes.force_discharge.value is required")
+        for key, entity_def in self.entities.items():
+            if entity_def.domain not in VALID_DOMAINS:
+                errors.append(f"Entity '{key}' has invalid domain: {entity_def.domain}")
+            if entity_def.category not in VALID_CATEGORIES:
+                errors.append(f"Entity '{key}' has invalid category: {entity_def.category}")
 
-        # ARC16: Check for shared mode values and warn if set_entities differ
-        self._validate_shared_mode_values()
+        for mode_key, mode_def in modes_dict.items():
+            for action in mode_def.actions:
+                if action.entity not in self.entities:
+                    errors.append(
+                        f"Mode '{mode_key}': action references unknown entity '{action.entity}'"
+                    )
 
-        # Validate required entities (only log warnings, don't fail validation)
-        # This is because entities are configured by the user in config.yaml
-        is_entities_valid, missing = self.entities.validate_required()
-        if not is_entities_valid:
-            logger.warning(
-                "Profile '%s' has missing required entities (user must configure): %s",
-                self.metadata.name,
-                ", ".join(missing),
-            )
+                if isinstance(action.value, str) and action.value.startswith("{{"):
+                    template = action.value[2:-2]
+                    if template not in VALID_TEMPLATES:
+                        errors.append(
+                            f"Mode '{mode_key}': action uses unknown template '{{{{{template}}}}}'"
+                        )
 
         return len(errors) == 0, errors
 
-    def _validate_shared_mode_values(self) -> None:
-        """
-        ARC16: Check for modes sharing the same value string with different set_entities.
 
-        When multiple modes share the same value, they should have identical set_entities
-        (or use skip flags) to avoid ambiguity in composite entity application.
+def _resolve_entity_id_from_config(key: str, config: dict) -> str | None:
+    """
+    Resolve entity key to actual HA entity ID from config.
 
-        Logs warnings if potential issues are detected.
-        """
-        if not self.modes:
-            return
+    Resolution order:
+    1. User override: executor.inverter.custom_entities[key]
+    2. Standard config: executor.inverter[key]
+    3. None if not found
+    """
+    inverter_config = config.get("executor", {}).get("inverter", {})
 
-        # Build map of value -> list of (mode_name, mode_obj, set_entities)
-        value_to_modes: dict[str, list[tuple[str, WorkMode, dict[str, Any]]]] = {}
+    override = inverter_config.get("custom_entities", {}).get(key)
+    if override:
+        return override
 
-        mode_list = [
-            ("export", self.modes.export),
-            ("zero_export", self.modes.zero_export),
-            ("self_consumption", self.modes.self_consumption),
-            ("charge_from_grid", self.modes.charge_from_grid),
-            ("force_discharge", self.modes.force_discharge),
-            ("idle", self.modes.idle),
-        ]
+    standard = inverter_config.get(key)
+    if standard:
+        return standard
 
-        for mode_name, mode_obj in mode_list:
-            if mode_obj and mode_obj.value:
-                value = mode_obj.value
-                if value not in value_to_modes:
-                    value_to_modes[value] = []
-                value_to_modes[value].append((mode_name, mode_obj, mode_obj.set_entities))
-
-        # Check for shared values with different set_entities
-        for value, modes in value_to_modes.items():
-            if len(modes) > 1:
-                # Multiple modes share this value
-                first_entities = modes[0][2]
-                differing_modes = []
-
-                for mode_name, _mode_obj, entities in modes[1:]:
-                    if entities != first_entities:
-                        differing_modes.append(mode_name)
-
-                if differing_modes:
-                    all_mode_names = [m[0] for m in modes]
-                    logger.warning(
-                        "Profile '%s': Modes %s share value '%s' but have different "
-                        "set_entities. This can cause incorrect composite entity application. "
-                        "ARC16 mode_intent will be used for disambiguation.",
-                        self.metadata.name,
-                        all_mode_names,
-                        value,
-                    )
-
-    def get_suggested_config(self) -> dict[str, Any]:
-        """
-        Return suggested configuration based on profile defaults.
-
-        Returns:
-            Dictionary with suggested config keys and values
-        """
-        suggestions = {}
-
-        # 1. Internal entities block suggestions (Rev IP4)
-        # REV F58: Distinguish standard vs custom entity paths
-        for key, value in self.entities.required.items():
-            if value:
-                if key in STANDARD_ENTITY_KEYS:
-                    suggestions[f"executor.inverter.{key}"] = value
-                else:
-                    suggestions[f"executor.inverter.custom_entities.{key}"] = value
-        for key, value in self.entities.optional.items():
-            if value:
-                if key in STANDARD_ENTITY_KEYS:
-                    suggestions[f"executor.inverter.{key}"] = value
-                else:
-                    suggestions[f"executor.inverter.custom_entities.{key}"] = value
-
-        # 2. Legacy suggested_entities block (for compatibility)
-        for key, value in self.defaults.suggested_entities.items():
-            suggestions[f"executor.inverter.{key}"] = value
-
-        # 3. Battery defaults
-        for key, value in self.defaults.battery.items():
-            suggestions[f"battery.{key}"] = value
-
-        # 4. Executor defaults
-        for key, value in self.defaults.executor.items():
-            if isinstance(value, dict):
-                for subkey, subval in value.items():
-                    suggestions[f"executor.{key}.{subkey}"] = subval
-            else:
-                suggestions[f"executor.{key}"] = value
-
-        return suggestions
-
-    def get_missing_entities(self, config: dict[str, Any]) -> list[str]:
-        """
-        Check which required entities are missing in the provided config.
-
-        Args:
-            config: Full configuration dictionary
-
-        Returns:
-            List of missing configuration keys with correct path:
-            - Standard keys: 'executor.inverter.{key}'
-            - Custom keys: 'executor.inverter.custom_entities.{key}'
-        """
-        missing = []
-        inverter_config = config.get("executor", {}).get("inverter", {})
-
-        for entity_key in self.entities.required:
-            # Check both clean key and legacy key (with _entity suffix)
-            val = inverter_config.get(entity_key)
-            if not val:
-                legacy_key = f"{entity_key}_entity"
-                val = inverter_config.get(legacy_key)
-
-            # REV F56: Check custom_entities as well for profile-specific required keys
-            if not val:
-                val = inverter_config.get("custom_entities", {}).get(entity_key)
-
-            if not val:
-                # REV F58: Distinguish standard vs custom entity paths
-                if entity_key in STANDARD_ENTITY_KEYS:
-                    missing.append(f"executor.inverter.{entity_key}")
-                else:
-                    missing.append(f"executor.inverter.custom_entities.{entity_key}")
-
-        return missing
+    return None
 
 
 def load_profile_yaml(profile_path: Path) -> dict[str, Any]:
@@ -387,18 +364,35 @@ def load_profile_yaml(profile_path: Path) -> dict[str, Any]:
     return data
 
 
-def _parse_work_mode(mode_data: dict[str, Any] | None) -> WorkMode | None:
-    """Parse work mode from YAML data."""
-    if not mode_data:
-        return None
+def _parse_entity(key: str, data: dict[str, Any]) -> EntityDefinition:
+    """Parse a single entity definition from YAML data."""
+    return EntityDefinition(
+        default_entity=data.get("default_entity"),
+        domain=data.get("domain", "select"),
+        category=data.get("category", "system"),
+        description=data.get("description", ""),
+        required=data.get("required", True),
+    )
 
-    return WorkMode(
-        value=mode_data.get("value"),
-        description=mode_data.get("description", ""),
-        requires_grid_charging=mode_data.get("requires_grid_charging", False),
-        skip_discharge_limit=mode_data.get("skip_discharge_limit", False),
-        skip_export_power=mode_data.get("skip_export_power", False),
-        set_entities=mode_data.get("set_entities", {}),
+
+def _parse_mode_action(data: dict[str, Any]) -> ModeAction:
+    """Parse a single mode action from YAML data."""
+    return ModeAction(
+        entity=data.get("entity", ""),
+        value=data.get("value"),
+        settle_ms=data.get("settle_ms"),
+    )
+
+
+def _parse_mode_definition(data: dict[str, Any]) -> ModeDefinition:
+    """Parse a complete mode definition from YAML data."""
+    actions = []
+    for action_data in data.get("actions", []):
+        actions.append(_parse_mode_action(action_data))
+
+    return ModeDefinition(
+        description=data.get("description", ""),
+        actions=actions,
     )
 
 
@@ -415,85 +409,78 @@ def parse_profile(data: dict[str, Any]) -> InverterProfile:
     Raises:
         ValueError: If required fields are missing
     """
-    # Parse metadata
     metadata_data = data.get("metadata", {})
     metadata = ProfileMetadata(
         name=metadata_data.get("name", "unknown"),
         version=metadata_data.get("version", "1.0.0"),
+        schema_version=metadata_data.get("schema_version", 1),
         description=metadata_data.get("description", ""),
         supported_brands=metadata_data.get("supported_brands", []),
-        author=metadata_data.get("author", "Unknown"),
-        created_at=metadata_data.get("created_at", ""),
-        updated_at=metadata_data.get("updated_at", ""),
     )
 
-    # Parse capabilities
-    cap_data = data.get("capabilities", {})
-    capabilities = ProfileCapabilities(
-        grid_charging_control=cap_data.get("grid_charging_control", True),
-        watts_based_control=cap_data.get("watts_based_control", False),
-        service_call_mode=cap_data.get("service_call_mode", False),
-        separate_grid_charging_switch=cap_data.get("separate_grid_charging_switch", True),
-        supports_export_mode=cap_data.get("supports_export_mode", True),
-        supports_zero_export=cap_data.get("supports_zero_export", True),
-        supports_self_consumption=cap_data.get("supports_self_consumption", True),
-        supports_soc_target=cap_data.get("supports_soc_target", True),
-        supports_grid_export_limit=cap_data.get("supports_grid_export_limit", True),
-        supports_force_discharge=cap_data.get("supports_force_discharge", False),
-    )
-
-    # Parse entities
+    entities: dict[str, EntityDefinition] = {}
     entities_data = data.get("entities", {})
-    entities = ProfileEntities(
-        required=entities_data.get("required", {}),
-        optional=entities_data.get("optional", {}),
-    )
+    for key, entity_data in entities_data.items():
+        entities[key] = _parse_entity(key, entity_data)
 
-    # Parse modes
+    modes: dict[str, ModeDefinition] = {}
     modes_data = data.get("modes", {})
-    modes = ProfileModes(
-        export=_parse_work_mode(modes_data.get("export")),
-        zero_export=_parse_work_mode(modes_data.get("zero_export")),
-        self_consumption=_parse_work_mode(modes_data.get("self_consumption")),
-        charge_from_grid=_parse_work_mode(modes_data.get("charge_from_grid")),
-        force_discharge=_parse_work_mode(modes_data.get("force_discharge")),
-        idle=_parse_work_mode(modes_data.get("idle")),
-    )
+    for key, mode_data in modes_data.items():
+        modes[key] = _parse_mode_definition(mode_data)
 
-    # Parse behavior
     behavior_data = data.get("behavior", {})
     behavior = ProfileBehavior(
         control_unit=behavior_data.get("control_unit", "A"),
-        min_charge_a=behavior_data.get("min_charge_a", 10.0),
-        round_step_a=behavior_data.get("round_step_a", 5.0),
-        write_threshold_a=behavior_data.get("write_threshold_a", 5.0),
-        min_charge_w=behavior_data.get("min_charge_w", 500.0),
+        min_charge_a=behavior_data.get("min_charge_a", 1.0),
+        min_charge_w=behavior_data.get("min_charge_w", 10.0),
+        round_step_a=behavior_data.get("round_step_a", 1.0),
         round_step_w=behavior_data.get("round_step_w", 100.0),
-        write_threshold_w=behavior_data.get("write_threshold_w", 100.0),
-        soc_target_is_discharge_floor=behavior_data.get("soc_target_is_discharge_floor", True),
-        soc_target_is_charge_ceiling=behavior_data.get("soc_target_is_charge_ceiling", True),
-        inverter_ac_limit_kw=behavior_data.get("inverter_ac_limit_kw", 8.0),
-        requires_mode_settling=behavior_data.get("requires_mode_settling", False),
-        mode_settling_ms=behavior_data.get("mode_settling_ms", 0),
         grid_charge_round_step_w=behavior_data.get("grid_charge_round_step_w"),
-    )
-
-    # Parse defaults
-    defaults_data = data.get("defaults", {})
-    defaults = ProfileDefaults(
-        battery=defaults_data.get("battery", {}),
-        executor=defaults_data.get("executor", {}),
-        suggested_entities=defaults_data.get("suggested_entities", {}),
+        write_threshold_w=behavior_data.get("write_threshold_w", 100.0),
+        mode_settling_ms=behavior_data.get("mode_settling_ms", 100),
     )
 
     return InverterProfile(
         metadata=metadata,
-        capabilities=capabilities,
         entities=entities,
         modes=modes,
         behavior=behavior,
-        defaults=defaults,
     )
+
+
+class _ModesCompatWrapper:
+    """Wrapper for v2 modes dict that provides v1-style attribute access."""
+
+    def __init__(self, modes: dict[str, ModeDefinition], v1_modes: ProfileModes | None = None):
+        if v1_modes is None and not isinstance(modes, dict):
+            v1_modes = modes
+            modes = {}
+        object.__setattr__(self, "_modes", modes)
+        object.__setattr__(self, "_v1_modes", v1_modes)
+
+    def __getattr__(self, name: str):
+        if name.startswith("_"):
+            raise AttributeError(f"'{type(self).__name__}' has no attribute '{name}'")
+        v1_modes = object.__getattribute__(self, "_v1_modes")
+        if v1_modes is not None:
+            try:
+                val = object.__getattribute__(v1_modes, name)
+                return val
+            except AttributeError:
+                pass
+        modes = object.__getattribute__(self, "_modes")
+        if isinstance(modes, dict) and name in modes:
+            mode_def = modes[name]
+            first_action = mode_def.actions[0] if mode_def.actions else None
+            return WorkMode(
+                value=first_action.value
+                if first_action and isinstance(first_action.value, str)
+                else None,
+                description=mode_def.description,
+            )
+        if not isinstance(modes, dict):
+            return None
+        return None
 
 
 def load_profile(profile_name: str, profiles_dir: str | Path = "profiles") -> InverterProfile:
@@ -516,7 +503,6 @@ def load_profile(profile_name: str, profiles_dir: str | Path = "profiles") -> In
 
     logger.info("Loading inverter profile: %s from %s", profile_name, profile_file)
 
-    # Load YAML
     try:
         data = load_profile_yaml(profile_file)
     except FileNotFoundError:
@@ -526,14 +512,12 @@ def load_profile(profile_name: str, profiles_dir: str | Path = "profiles") -> In
         logger.error("Failed to parse profile YAML: %s", e)
         raise ValueError(f"Invalid YAML in profile {profile_name}: {e}") from e
 
-    # Parse into dataclass
     try:
         profile = parse_profile(data)
     except Exception as e:
         logger.exception("Failed to parse profile data for profile %s", profile_name)
         raise ValueError(f"Failed to parse profile {profile_name}: {e}") from e
 
-    # Validate
     is_valid, errors = profile.validate()
     if not is_valid:
         error_msg = f"Profile {profile_name} validation failed: {', '.join(errors)}"
@@ -541,10 +525,11 @@ def load_profile(profile_name: str, profiles_dir: str | Path = "profiles") -> In
         raise ValueError(error_msg)
 
     logger.info(
-        "Profile loaded successfully: %s v%s (%s)",
+        "Profile loaded successfully: %s v%s (schema v%d, %s)",
         profile.metadata.name,
         profile.metadata.version,
-        ", ".join(profile.metadata.supported_brands),
+        profile.metadata.schema_version,
+        ", ".join(profile.metadata.supported_brands) or "generic",
     )
 
     return profile
@@ -563,22 +548,18 @@ def get_profile_from_config(
     Returns:
         InverterProfile instance
     """
-    # Get profile name from config
     system_config = config.get("system", {})
     profile_name = system_config.get("inverter_profile", "generic")
 
     logger.info("Loading inverter profile from config: %s", profile_name)
 
-    # Try to load the specified profile
     try:
         return load_profile(profile_name, profiles_dir)
     except FileNotFoundError:
         logger.warning("Profile '%s' not found, falling back to 'generic' profile", profile_name)
-        # Fallback to generic profile
         return load_profile("generic", profiles_dir)
     except Exception as e:
         logger.error("Failed to load profile '%s': %s. Falling back to 'generic'", profile_name, e)
-        # Fallback to generic profile
         return load_profile("generic", profiles_dir)
 
 
@@ -587,7 +568,7 @@ def list_profiles(profiles_dir: str | Path = "profiles") -> list[dict[str, Any]]
     List all available profiles in the profiles directory.
 
     Returns:
-        List of profile metadata dictionaries (name, description, supported_brands)
+        List of profile metadata dictionaries
     """
     profiles_path = Path(profiles_dir)
     profiles = []
@@ -601,8 +582,6 @@ def list_profiles(profiles_dir: str | Path = "profiles") -> list[dict[str, Any]]
             continue
 
         try:
-            # We only need metadata for the list, but loading the whole profile
-            # ensures only valid profiles are shown in the UI.
             profile = load_profile(yaml_file.stem, profiles_dir)
             profiles.append(
                 {
@@ -610,29 +589,47 @@ def list_profiles(profiles_dir: str | Path = "profiles") -> list[dict[str, Any]]
                     "description": profile.metadata.description,
                     "supported_brands": profile.metadata.supported_brands,
                     "version": profile.metadata.version,
-                    "capabilities": {
-                        "grid_charging_control": profile.capabilities.grid_charging_control,
-                        "watts_based_control": profile.capabilities.watts_based_control,
-                        "service_call_mode": profile.capabilities.service_call_mode,
-                        "separate_grid_charging_switch": profile.capabilities.separate_grid_charging_switch,
-                        "supports_export_mode": profile.capabilities.supports_export_mode,
-                        "supports_zero_export": profile.capabilities.supports_zero_export,
-                        "supports_self_consumption": profile.capabilities.supports_self_consumption,
-                        "supports_soc_target": profile.capabilities.supports_soc_target,
-                        "supports_grid_export_limit": profile.capabilities.supports_grid_export_limit,
-                        "supports_force_discharge": profile.capabilities.supports_force_discharge,
+                    "schema_version": profile.metadata.schema_version,
+                    "entities": {
+                        k: {
+                            "default_entity": v.default_entity,
+                            "domain": v.domain,
+                            "category": v.category,
+                            "description": v.description,
+                            "required": v.required,
+                        }
+                        for k, v in profile.entities.items()
+                    },
+                    "modes": {
+                        k: {
+                            "description": v.description,
+                            "action_count": len(v.actions),
+                        }
+                        for k, v in profile.modes.items()
                     },
                     "behavior": {
                         "control_unit": profile.behavior.control_unit,
-                    },
-                    "entities": {
-                        "required": profile.entities.required,
-                        "optional": profile.entities.optional,
                     },
                 }
             )
         except Exception as e:
             logger.error("Skipping invalid profile %s: %s", yaml_file.name, e)
 
-    # Sort by name
     return sorted(profiles, key=lambda x: x["name"])
+
+
+STANDARD_ENTITY_KEYS = frozenset(
+    [
+        "work_mode",
+        "soc_target",
+        "grid_charging_enable",
+        "grid_charge_power",
+        "minimum_reserve",
+        "grid_max_export_power",
+        "grid_max_export_power_switch",
+        "max_charge_current",
+        "max_discharge_current",
+        "max_charge_power",
+        "max_discharge_power",
+    ]
+)

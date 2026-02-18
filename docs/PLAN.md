@@ -139,14 +139,14 @@ The "Actual EV" dotted line in the schedule chart is incorrectly displaying plan
 * [x] Delete `profiles/sungrow_logic.md` and `profiles/fronius_logic.md` (logic now in profiles).
 * [ ] **USER VERIFICATION AND COMMIT:** Verify all 4 profiles are correct and complete.
 
-#### Phase 2: Python Dataclasses & Parser [PLANNED]
-* [ ] Rewrite `executor/profiles.py` with new dataclasses: `EntityDefinition`, `ModeAction`, `ModeDefinition`, `ProfileMetadata`, `ProfileBehavior`, `InverterProfile`.
-* [ ] Implement v2 YAML parser: `load_profile()`, `parse_profile()`.
-* [ ] Implement entity resolution: `_resolve_entity_id()` (user override > standard config > profile default).
-* [ ] Implement `get_missing_entities()` for config validation.
-* [ ] Implement `get_required_entities()` and `get_entities_by_category()`.
-* [ ] Add validation: all mode actions reference valid entity keys, all templates are valid, domains are valid.
-* [ ] **USER VERIFICATION AND COMMIT.**
+#### Phase 2: Python Dataclasses & Parser [DONE]
+* [x] Rewrite `executor/profiles.py` with new dataclasses: `EntityDefinition`, `ModeAction`, `ModeDefinition`, `ProfileMetadata`, `ProfileBehavior`, `InverterProfile`.
+* [x] Implement v2 YAML parser: `load_profile()`, `parse_profile()`.
+* [x] Implement entity resolution: `_resolve_entity_id()` (user override > standard config > profile default).
+* [x] Implement `get_missing_entities()` for config validation.
+* [x] Implement `get_required_entities()` and `get_entities_by_category()`.
+* [x] Add validation: all mode actions reference valid entity keys, all templates are valid, domains are valid.
+* [x] **USER VERIFICATION AND COMMIT.**
 
 #### Phase 3: Controller Simplification [PLANNED]
 * [ ] Simplify `ControllerDecision` dataclass: remove `work_mode`, `grid_charging` fields. Make `mode_intent` required primary field.
