@@ -613,6 +613,19 @@ def migrate_arc15_entity_config(config: Any) -> tuple[Any, bool]:
 
         elif load_id in ["ev_charger", "ev"] or load_type == "variable":
             # Migrate to ev_chargers
+            # If existing ev_chargers entries exist (with any ID), populate their sensors
+            if existing_ev_ids:
+                for ev in ev_chargers:
+                    if not ev.get("soc_sensor"):
+                        ev["soc_sensor"] = input_sensors.get("ev_soc", "")
+                        logger.info("Populated soc_sensor for existing EV entry: %s", ev.get("id"))
+                        changed = True
+                    if not ev.get("plug_sensor"):
+                        ev["plug_sensor"] = input_sensors.get("ev_plug", "")
+                        logger.info("Populated plug_sensor for existing EV entry: %s", ev.get("id"))
+                        changed = True
+                continue
+
             if "main_ev" in existing_ev_ids:
                 logger.debug("EV charger 'main_ev' already exists, skipping")
                 continue

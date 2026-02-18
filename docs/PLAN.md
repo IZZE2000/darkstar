@@ -275,3 +275,46 @@ The Aurora ML pipeline uses corrector models (`pv_error.lgb`, `load_error.lgb`) 
 * [ ] Manual test: Configure entity IDs for all required fields, save settings, verify no validation errors.
 * [ ] Manual test: Leave one required field empty, try to save, verify save is blocked with helpful error message.
 * [x] Run frontend linting: `cd frontend && pnpm lint`.
+
+---
+
+### [DRAFT] REV // UI22 — Fix EV Plan "Actual" Dotted Line Showing in Future Slots
+
+**Goal:** Fix the EV plan chart showing a dotted "Actual EV (kW)" line in future scheduled slots when it should only appear for historical (already executed) slots.
+
+**Context:**
+The "Actual EV" dotted line in the schedule chart is incorrectly displaying planned EV values for ALL slots (both historic and future) instead of showing actual executed values only for historical slots. This creates visual confusion since actual execution data should only exist for slots that have already occurred.
+
+**Root Cause Analysis:**
+1. **No Separate Actual Data Field:** The `ChartValues` type in `frontend/src/components/ChartCard.tsx` (lines 229-243) has no `actualEvCharging` field - unlike other actuals like `actualCharge`, `actualDischarge`, etc.
+2. **Wrong Data Source:** The dotted line dataset (lines 554-566) uses `values.evCharging` (planned data) instead of a separate actual data source:
+   ```typescript
+   data: values.evCharging ?? values.labels.map(() => null), // WRONG: Uses planned data!
+   ```
+3. **Missing Backend Support:** The backend API in `backend/api/routers/schedule.py` does not populate actual EV charging data from the execution database (`SlotObservation` or execution history).
+4. **Missing Frontend Mapping:** The data population code in `buildLiveData()` only pushes planned EV data: `evCharging.push(slot.ev_charging_kw ?? null)` - it never populates actual EV values from a field like `slot.actual_ev_charging_kw`.
+
+**Plan:**
+
+#### Phase 1: Backend - Add Actual EV Data Support [DRAFT]
+* [ ] Add `actual_ev_charging_kw` field to slot response in `backend/api/routers/schedule.py`.
+* [ ] Query execution database (LearningStore) for actual EV charging values from `SlotObservation` or execution history.
+* [ ] Only populate `actual_ev_charging_kw` for historical slots where `is_executed=true`.
+* [ ] Return `null` for future slots to ensure no actual data leaks into future periods.
+
+#### Phase 2: Frontend - Add Actual EV Data Type and Mapping [DRAFT]
+* [ ] Add `actualEvCharging?: (number | null)[]` to the `ChartValues` type in `ChartCard.tsx`.
+* [ ] Update `buildLiveData()` function to populate `actualEvCharging` from `slot.actual_ev_charging_kw`.
+* [ ] Ensure actual data is only pushed for historical slots (check `is_executed` flag).
+
+#### Phase 3: Frontend - Fix Dotted Line Data Source [DRAFT]
+* [ ] Update the "Actual EV (kW)" line dataset (lines 554-566) to use `values.actualEvCharging` instead of `values.evCharging`.
+* [ ] Verify the dotted line only appears for historical slots with actual data.
+* [ ] Ensure the line is hidden (null values) for future slots.
+
+#### Phase 4: Testing and Verification [DRAFT]
+* [ ] Run `pnpm lint` in `frontend/` directory to verify no TypeScript errors.
+* [ ] Run `uv run ruff check .` to verify Python backend changes.
+* [ ] Manual test: Verify dotted line appears only for past slots with executed EV charging.
+* [ ] Manual test: Verify no dotted line appears in future scheduled slots.
+* [ ] Verify the "Show Actual" toggle correctly shows/hides the EV actual line.
