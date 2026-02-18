@@ -511,10 +511,9 @@ class ExecutorEngine:
 
         from .controller import ControllerDecision
 
-        # Idle mode: Zero export, no grid charging, min SoC target, no water heat
+        # Idle mode: use idle mode_intent, min SoC target, no water heat
         idle_decision = ControllerDecision(
-            work_mode=self.config.inverter.work_mode_zero_export,
-            grid_charging=False,
+            mode_intent="idle",
             charge_value=0,
             discharge_value=50,  # Allow discharge to power house
             soc_target=10,  # Min SoC
@@ -1227,8 +1226,7 @@ class ExecutorEngine:
                 self.history.update_slot_observation(
                     slot_start,
                     {
-                        "work_mode": decision.work_mode,
-                        "grid_charging": decision.grid_charging,
+                        "mode_intent": decision.mode_intent,
                         "soc_target": decision.soc_target,
                         "water_temp": decision.water_temp,
                         "source": decision.source,
@@ -1466,8 +1464,8 @@ class ExecutorEngine:
             planned_soc_target=slot.soc_target,
             planned_soc_projected=slot.soc_projected,
             # Commanded values
-            commanded_work_mode=decision.work_mode,
-            commanded_grid_charging=1 if decision.grid_charging else 0,
+            commanded_work_mode=decision.mode_intent,
+            commanded_grid_charging=1 if decision.mode_intent == "charge" else 0,
             commanded_charge_current_a=decision.charge_value,
             commanded_discharge_current_a=decision.discharge_value,
             commanded_unit=self.config.inverter.control_unit,
@@ -1536,13 +1534,14 @@ class ExecutorEngine:
             # Estimate charging this slot (5 min @ planned power)
             slot_duration_h = self.config.interval_seconds / 3600.0
 
-            # Grid charge: if grid charging is enabled and charge current > 0
+            # Grid charge: if mode_intent is "charge" and charge value > 0
             grid_charge_kwh = 0.0
-            if decision.grid_charging and decision.charge_current_a > 0:
-                # Rough estimate: charge_current_a * voltage / 1000 * efficiency * duration
+            is_grid_charging = decision.mode_intent == "charge"
+            if is_grid_charging and decision.charge_value > 0:
+                # Rough estimate: charge_value * voltage / 1000 * efficiency * duration
                 voltage_v = self.config.controller.system_voltage_v or 48.0
                 efficiency = self.config.controller.charge_efficiency or 0.92
-                charge_kw = (decision.charge_current_a * voltage_v / 1000.0) * efficiency
+                charge_kw = (decision.charge_value * voltage_v / 1000.0) * efficiency
                 grid_charge_kwh = charge_kw * slot_duration_h
 
             # PV charge: if PV exceeds load, surplus goes to battery

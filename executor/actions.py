@@ -16,7 +16,7 @@ import requests
 
 from .config import ExecutorConfig
 from .controller import ControllerDecision
-from .profiles import STANDARD_ENTITY_KEYS, InverterProfile, WorkMode
+from .profiles import InverterProfile, ModeAction
 
 logger = logging.getLogger(__name__)
 
@@ -311,6 +311,9 @@ class ActionDispatcher:
     """
     Dispatches actions to Home Assistant based on controller decisions.
 
+    Uses profile-driven architecture where each mode defines an ordered list
+    of entity+value actions. The executor is a generic loop.
+
     Features:
     - Idempotent execution (skip if already at target)
     - Configurable notifications per action type
@@ -329,937 +332,268 @@ class ActionDispatcher:
         self.shadow_mode = shadow_mode
         self.profile = profile
 
-    def _get_mode_def_for_value(self, mode_value: str) -> Any | None:
-        """Get the WorkMode definition for a given mode value string.
+    def _resolve_entity_id(self, key: str) -> str | None:
+        """
+        Resolve entity key to actual HA entity ID.
 
-        Args:
-            mode_value: The mode value string (e.g., "Auto", "Charge from Grid")
-
-        Returns:
-            WorkMode object if found, None otherwise
+        Resolution order:
+        1. User override: executor.inverter.custom_entities[key]
+        2. Standard config: executor.inverter[key]
+        3. Profile default: entities[key].default_entity
         """
         if not self.profile:
             return None
 
-        for attr in [
-            "export",
-            "zero_export",
-            "self_consumption",
-            "force_discharge",
-            "charge_from_grid",
-            "idle",
-        ]:
-            mode = getattr(self.profile.modes, attr, None)
-            if mode and mode.value == mode_value:
-                return mode
-        return None
+        entity_def = self.profile.entities.get(key)
+        if not entity_def:
+            return None
+
+        override = self.config.inverter.custom_entities.get(key)
+        if override:
+            return override
+
+        standard = getattr(self.config.inverter, key, None)
+        if standard:
+            return standard
+
+        return entity_def.default_entity
+
+    def _resolve_value(self, value: str | int | float | bool, decision: ControllerDecision) -> Any:
+        """
+        Resolve dynamic template values from ControllerDecision.
+
+        Templates are strings in the form {{field_name}} where field_name
+        is a property on ControllerDecision.
+        """
+        if isinstance(value, str) and value.startswith("{{") and value.endswith("}}"):
+            field_name = value[2:-2]
+            if not hasattr(decision, field_name):
+                logger.error("Unknown template variable: %s", field_name)
+                return value
+            return getattr(decision, field_name)
+        return value
+
+    async def _write_entity(
+        self,
+        entity_id: str,
+        value: Any,
+        domain: str,
+    ) -> bool:
+        """
+        Write value to HA entity using appropriate service call.
+
+        Args:
+            entity_id: The HA entity ID to write to
+            value: The value to write
+            domain: The HA domain (select, number, switch, input_number)
+
+        Returns:
+            True if successful
+        """
+        try:
+            if domain in ("number", "input_number"):
+                return self.ha.set_number(entity_id, float(value))
+            elif domain == "select":
+                return self.ha.set_select_option(entity_id, str(value))
+            elif domain in ("switch", "input_boolean"):
+                return self.ha.set_switch(entity_id, bool(value))
+            else:
+                logger.error("Unknown entity domain: %s", domain)
+                return False
+        except HACallError as e:
+            logger.error("Failed to write to %s: %s", entity_id, e)
+            return False
+
+    def _values_match(self, current: str | None, target: Any) -> bool:
+        """Check if current value matches target value."""
+        if current is None:
+            return False
+        try:
+            current_float = float(current)
+            target_float = float(target)
+            return abs(current_float - target_float) < 0.01
+        except (ValueError, TypeError):
+            return str(current).strip().lower() == str(target).strip().lower()
+
+    async def _verify_action(self, entity_id: str, expected: Any) -> tuple[Any, bool]:
+        """Verify that an action was applied correctly."""
+        state = self.ha.get_state_value(entity_id)
+        if state is None:
+            return None, None
+
+        matches = self._values_match(state, expected)
+        return state, matches
 
     async def execute(self, decision: ControllerDecision) -> list[ActionResult]:
         """
-        Execute all actions from a controller decision.
+        Execute all actions from a controller decision using profile-driven approach.
 
         Args:
-            decision: The controller's decision on what actions to take
+            decision: The controller's decision with mode_intent
 
         Returns:
             List of ActionResult for each action attempted
         """
+        if not self.profile:
+            logger.error("No profile loaded - cannot execute actions")
+            return [
+                ActionResult(
+                    action_type="error",
+                    success=False,
+                    message="No inverter profile loaded",
+                )
+            ]
+
+        mode_intent = decision.mode_intent
+
+        try:
+            mode_def = self.profile.get_mode(mode_intent)
+        except Exception as e:
+            logger.error("Failed to get mode '%s' from profile: %s", mode_intent, e)
+            return [
+                ActionResult(
+                    action_type="error",
+                    success=False,
+                    message=f"Profile error: {e}",
+                )
+            ]
+
+        logger.info(
+            "Executing mode '%s' (%s) for profile '%s'",
+            mode_intent,
+            mode_def.description,
+            self.profile.metadata.name,
+        )
+
         results: list[ActionResult] = []
-        target_mode = decision.work_mode
 
-        # 1. Set work mode (Rev O1)
-        if self.config.has_battery:
-            mode_results = await self._set_work_mode(
-                target_mode,
-                is_charging=decision.grid_charging,
-                mode_intent=decision.mode_intent,
-            )
-            results.extend(mode_results)
-
-        # Get mode definition for skip flag checking (REV F53 Phase 1)
-        mode_def = self._get_mode_def_for_value(target_mode) if self.profile else None
-
-        # Optimization: Identify if we should skip power limits based on mode (REV IP4)
-        # We skip discharge/export limits in Charge and Hold/Idle modes to prevent conflict.
-        is_charging = False
-        is_idle = False
-        if self.profile:
-            if (
-                self.profile.modes.charge_from_grid
-                and target_mode == self.profile.modes.charge_from_grid.value
-            ):
-                is_charging = True
-            if self.profile.modes.idle and target_mode == self.profile.modes.idle.value:
-                is_idle = True
-
-        # 2. Set grid charging (Rev O1)
-        # Skip if profile uses mode-based charging (REV F53 Phase 1)
-        if self.config.has_battery:
-            skip_grid_charging = (
-                self.profile and not self.profile.capabilities.separate_grid_charging_switch
-            )
-            if skip_grid_charging:
-                logger.debug(
-                    "Skipping grid_charging action: profile '%s' uses mode-based charging",
-                    self.profile.metadata.name,
-                )
-            else:
-                result = await self._set_grid_charging(decision.grid_charging)
-                if result is not None:
-                    results.append(result)
-
-        # 3. Set charge limit (Rev O1 + E3)
-        if self.config.has_battery and decision.write_charge_current:
-            result = await self._set_charge_limit(decision.charge_value, decision.control_unit)
+        for action in mode_def.actions:
+            result = await self._execute_action(action, decision, mode_intent)
             results.append(result)
 
-        # 4. Set discharge limit (Rev O1 + E3 + Rev F54 Phase 4)
-        # Skip if in Charge or Idle mode (Generic optimization REV IP4)
-        # OR if profile mode has skip_discharge_limit flag (REV F53 Phase 1)
-        if self.config.has_battery and decision.write_discharge_current:
-            skip_discharge = is_charging or is_idle
-            if not skip_discharge and mode_def and mode_def.skip_discharge_limit:
-                skip_discharge = True
-                logger.debug(
-                    "Skipping discharge_limit action: mode '%s' has skip_discharge_limit=true",
-                    target_mode,
-                )
-            if skip_discharge:
-                logger.debug("Skipping discharge_limit action: mode is %s", target_mode)
-            else:
-                result = await self._set_discharge_limit(
-                    decision.discharge_value, decision.control_unit
-                )
-                if result is not None:
-                    results.append(result)
+            if action.settle_ms and action.settle_ms > 0:
+                logger.debug("Settle delay: %dms after %s", action.settle_ms, action.entity)
+                await asyncio.sleep(action.settle_ms / 1000.0)
 
-        # 5. Set SoC target (Rev O1 + Rev F54 Phase 3)
-        if self.config.has_battery:
-            result = await self._set_soc_target(decision.soc_target)
-            if result is not None:
-                results.append(result)
-
-        # 6. Set water heater target (Rev O1)
-        if self.config.has_water_heater:
-            result = await self.set_water_temp(decision.water_temp)
-            results.append(result)
-
-        # 7. Set max export power (Bug fix #1 + Rev F54 Phase 5)
-        # Skip if in Charge or Idle mode (Generic optimization REV IP4)
-        # OR if profile mode has skip_export_power flag (REV F53 Phase 1)
-        if self.config.has_battery:
-            skip_export = is_charging or is_idle
-            if not skip_export and mode_def and mode_def.skip_export_power:
-                skip_export = True
-                logger.debug(
-                    "Skipping max_export_power action: mode '%s' has skip_export_power=true",
-                    target_mode,
-                )
-            if skip_export:
-                logger.debug("Skipping max_export_power action: mode is %s", target_mode)
-            else:
-                result = await self._set_max_export_power(decision.export_power_w)
-                if result is not None:
-                    results.append(result)
+        if results:
+            successful = sum(1 for r in results if r.success)
+            logger.info(
+                "Mode '%s' executed: %d/%d actions successful",
+                mode_intent,
+                successful,
+                len(results),
+            )
 
         return results
 
-    async def _apply_composite_entities(
+    async def _execute_action(
         self,
-        target_mode: str,
-        is_charging: bool,
-        mode_changed: bool,
-        mode_intent: str | None = None,
-    ) -> list[ActionResult]:
-        """Apply composite mode entities for inverters that require multiple entity changes.
-
-        This is called even when work_mode hasn't changed, to support inverters like Sungrow
-        where multiple logical modes share the same work_mode value (e.g., "Forced mode")
-        but have different composite entity requirements.
-
-        Args:
-            target_mode: The target work mode string value
-            is_charging: Whether we're in a charging intent context
-            mode_changed: Whether the primary work_mode entity was actually changed
-            mode_intent: The controller's intended mode definition key (e.g., "idle", "export")
-                        Used to disambiguate when multiple modes share the same value string (ARC16)
-
-        Returns:
-            List of ActionResult objects for composite entity operations
-        """
-        results: list[ActionResult] = []
+        action: ModeAction,
+        decision: ControllerDecision,
+        mode_intent: str,
+    ) -> ActionResult:
+        """Execute a single mode action."""
+        start_time = time.time()
 
         if not self.profile:
-            return results
-
-        # unique string value -> mode object lookup
-        mode_obj = None
-        applied_mode_name = None
-
-        # ARC16: Use mode_intent for direct lookup when provided
-        # This fixes the bug where multiple modes share the same value string
-        if mode_intent:
-            mode_mapping = {
-                "export": self.profile.modes.export,
-                "zero_export": self.profile.modes.zero_export,
-                "self_consumption": self.profile.modes.self_consumption,
-                "charge_from_grid": self.profile.modes.charge_from_grid,
-                "force_discharge": self.profile.modes.force_discharge,
-                "idle": self.profile.modes.idle,
-            }
-            mode_obj = mode_mapping.get(mode_intent)
-            if mode_obj:
-                applied_mode_name = mode_intent
-                logger.debug(
-                    "ARC16: Using mode_intent '%s' for composite entity lookup", mode_intent
-                )
-
-        # Fallback to legacy value-based lookup if mode_intent not provided or invalid
-        if not mode_obj:
-            # Rev F52 Phase 4: Ambiguous Mode Resolution
-            # Determine which mode object matches the target string AND intent
-            # Priority:
-            # 1. If is_charging=True, check charge_from_grid first
-            # 2. Check all other modes
-
-            # Helper to find matching mode in a list
-            def find_mode(mode_list: list[WorkMode | None]) -> WorkMode | None:
-                for m in mode_list:
-                    if m and m.value == target_mode:
-                        return m
-                return None
-
-            if is_charging:
-                mode_obj = find_mode([self.profile.modes.charge_from_grid])
-                if mode_obj:
-                    applied_mode_name = "charge_from_grid"
-
-            if not mode_obj:
-                # Standard lookup order (Export/Zero/Self/ForceDischarge/Idle)
-                # Note: We exclude charge_from_grid here if is_charging is False to avoid accidental match
-                # if it shares a value with another mode (e.g. Sungrow Forced Mode)
-                candidates = [
-                    ("export", self.profile.modes.export),
-                    ("zero_export", self.profile.modes.zero_export),
-                    ("self_consumption", self.profile.modes.self_consumption),
-                    ("force_discharge", self.profile.modes.force_discharge),
-                    ("idle", self.profile.modes.idle),
-                ]
-                # Only include charge_from_grid as fallback if we haven't checked it yet (unlikely path)
-                if is_charging:
-                    candidates.append(("charge_from_grid", self.profile.modes.charge_from_grid))
-
-                for name, candidate in candidates:
-                    if candidate and candidate.value == target_mode:
-                        mode_obj = candidate
-                        applied_mode_name = name
-                        break
-
-        if mode_obj and mode_obj.set_entities:
-            logger.debug(
-                "Applying composite mode entities for %s (Intent: Charging=%s, ModeChanged=%s)",
-                target_mode,
-                is_charging,
-                mode_changed,
-            )
-            for key, val in mode_obj.set_entities.items():
-                # Look up entity ID from custom_entities config
-                # Fallback to standard entities for STANDARD_ENTITY_KEYS (REV F69)
-                aux_start = time.time()
-                entity_id = self.config.inverter.custom_entities.get(key)
-                if not _is_entity_configured(entity_id) and key in STANDARD_ENTITY_KEYS:
-                    entity_id = getattr(self.config.inverter, key, None)
-                if not _is_entity_configured(entity_id):
-                    logger.error(
-                        "Profile requires setting '%s' to '%s', but entity is not configured (add to executor.inverter)",
-                        key,
-                        val,
-                    )
-                    results.append(
-                        ActionResult(
-                            action_type="composite_mode",
-                            success=False,
-                            message=f"Entity '{key}' not configured in executor.inverter",
-                            previous_value=None,
-                            new_value=val,
-                            entity_id=None,
-                            error_details=f"Missing composite entity mapping for '{key}'",
-                            duration_ms=int((time.time() - aux_start) * 1000),
-                            requested_mode=mode_intent,
-                            applied_mode=applied_mode_name,
-                        )
-                    )
-                    continue
-
-                # Capture previous state
-                aux_previous = self.ha.get_state_value(entity_id)
-
-                # Idempotent skip
-                # Idempotent skip: only skip if value matches AND (mode didn't change and intent didn't change)
-                # This ensures we re-assert the composite values on mode transitions even if same.
-                if str(aux_previous) == str(val) and not mode_changed:
-                    results.append(
-                        ActionResult(
-                            action_type="composite_mode",
-                            success=True,
-                            message=f"{key} already at {val}",
-                            previous_value=aux_previous,
-                            new_value=val,
-                            entity_id=entity_id,
-                            skipped=True,
-                            duration_ms=int((time.time() - aux_start) * 1000),
-                            error_details=None,
-                            requested_mode=mode_intent,
-                            applied_mode=applied_mode_name,
-                        )
-                    )
-                    continue
-
-                if self.shadow_mode:
-                    logger.info(
-                        "[SHADOW] Composite Mode: Would set %s to %s (current: %s)",
-                        entity_id,
-                        val,
-                        aux_previous,
-                    )
-                    results.append(
-                        ActionResult(
-                            action_type="composite_mode",
-                            success=True,
-                            message=f"[SHADOW] Would change {aux_previous} → {val}",
-                            previous_value=aux_previous,
-                            new_value=val,
-                            entity_id=entity_id,
-                            skipped=True,
-                            duration_ms=int((time.time() - aux_start) * 1000),
-                            error_details=None,
-                            requested_mode=mode_intent,
-                            applied_mode=applied_mode_name,
-                        )
-                    )
-                    continue
-
-                logger.info("Composite Mode: Setting %s to %s", entity_id, val)
-                aux_success = False
-                aux_error_details = None
-                try:
-                    if isinstance(val, int | float):
-                        aux_success = self.ha.set_number(entity_id, float(val))
-                    elif isinstance(val, str):
-                        aux_success = self.ha.set_select_option(entity_id, val)
-                    elif isinstance(val, bool):
-                        aux_success = self.ha.set_switch(entity_id, val)
-                except HACallError as e:
-                    aux_success = False
-                    aux_error_details = str(e)
-                    logger.error(
-                        "Composite mode entity %s failed: %s", entity_id, aux_error_details
-                    )
-
-                # Verification
-                aux_verified_value = None
-                aux_verification_success = None
-                if aux_success:
-                    aux_verified_value, aux_verification_success = await self._verify_action(
-                        entity_id, val
-                    )
-
-                results.append(
-                    ActionResult(
-                        action_type="composite_mode",
-                        success=aux_success,
-                        message=f"{key}: {aux_previous} → {val}"
-                        if aux_success
-                        else f"{key} failed: {aux_error_details}"
-                        if aux_error_details
-                        else f"Failed to set {key}",
-                        previous_value=aux_previous,
-                        new_value=val,
-                        entity_id=entity_id,
-                        verified_value=aux_verified_value,
-                        verification_success=aux_verification_success,
-                        duration_ms=int((time.time() - aux_start) * 1000),
-                        error_details=aux_error_details,
-                        requested_mode=mode_intent,
-                        applied_mode=applied_mode_name,
-                    )
-                )
-
-        return results
-
-    async def _set_work_mode(
-        self,
-        target_mode: str,
-        is_charging: bool = False,
-        mode_intent: str | None = None,
-    ) -> list[ActionResult]:
-        """Set inverter work mode if different from current.
-
-        Args:
-            target_mode: The target work mode string value to write to HA
-            is_charging: Whether we're in a charging context (for composite entity selection)
-            mode_intent: The controller's intended mode definition (e.g., "idle", "export")
-                        Used to disambiguate when multiple modes share the same value string (ARC16)
-        """
-        start = time.time()
-        results: list[ActionResult] = []
-        entity = self.config.inverter.work_mode_entity
-
-        if not _is_entity_configured(entity):
-            logger.debug("Skipping work_mode action: entity not configured")
-            results.append(
-                ActionResult(
-                    action_type="work_mode",
-                    success=True,
-                    message="Work mode entity not configured. Configure in Settings → System → HA Entities",
-                    skipped=True,
-                    duration_ms=int((time.time() - start) * 1000),
-                    error_details=None,
-                )
-            )
-            return results
-
-        # Get current state
-        current = self.ha.get_state_value(entity)
-
-        # Track if primary work_mode entity actually changed
-        mode_changed = current != target_mode
-        success = True
-        error_details = None
-
-        if mode_changed:
-            if self.shadow_mode:
-                logger.info(
-                    "[SHADOW] Would set work_mode to %s (current: %s)", target_mode, current
-                )
-                success = True
-            else:
-                # Apply work mode change
-                try:
-                    success = self.ha.set_select_option(entity, target_mode)
-                except HACallError as e:
-                    success = False
-                    error_details = str(e)
-                    logger.error("Failed to set work mode: %s", error_details)
-        else:
-            logger.debug("Work mode already at target: %s", target_mode)
-
-        # Handle composite mode entities (Rev IP2 + Rev F54 Phase 1)
-        # Some inverters (e.g. Sungrow) require setting multiple entities for a single mode change.
-        # CRITICAL: Process composite entities EVEN when work_mode hasn't changed, because
-        # inverters like Sungrow use the same work_mode value for multiple logical modes
-        # (e.g., "Forced mode" for both export and charge), differing only in composite entities.
-        if self.profile:
-            composite_results = await self._apply_composite_entities(
-                target_mode, is_charging, mode_changed, mode_intent
-            )
-            results.extend(composite_results)
-
-        # Mode settling delay (Rev IP1 Phase 3)
-        if success and self.profile and self.profile.behavior.requires_mode_settling:
-            settle_ms = self.profile.behavior.mode_settling_ms
-            logger.debug(
-                "Applying mode settling delay: %dms for %s",
-                settle_ms,
-                self.profile.metadata.name,
-            )
-            await asyncio.sleep(settle_ms / 1000.0)
-
-        # Verification for primary mode
-        verified_value = None
-        verification_success = None
-        if success:
-            verified_value, verification_success = await self._verify_action(entity, target_mode)
-
-        duration = int((time.time() - start) * 1000)
-
-        if success and mode_changed:
-            self._maybe_notify("work_mode", f"Work mode changed to {target_mode}")
-
-        primary_msg = ""
-        if success:
-            if not mode_changed:
-                primary_msg = f"Already at {target_mode}"
-            elif self.shadow_mode:
-                primary_msg = f"[SHADOW] Would change {current} → {target_mode}"
-            else:
-                primary_msg = f"Changed {current} → {target_mode}"
-        else:
-            primary_msg = f"Failed: {error_details}" if error_details else "Failed to set work mode"
-
-        results.insert(
-            0,
-            ActionResult(
-                action_type="work_mode",
-                success=success,
-                message=primary_msg,
-                previous_value=current,
-                new_value=target_mode,
-                entity_id=entity,
-                verified_value=verified_value,
-                verification_success=verification_success,
-                skipped=(not mode_changed)
-                or self.shadow_mode,  # Skip if already at target or shadow mode
-                duration_ms=duration,
-                error_details=error_details,
-            ),
-        )
-
-        return results
-
-    async def _set_grid_charging(self, enabled: bool) -> ActionResult | None:
-        """Set grid charging switch."""
-        start = time.time()
-        entity = self.config.inverter.grid_charging_entity
-        target = "on" if enabled else "off"
-
-        # Handle grid charging via profile logic if available (Rev ARC13 Phase 4 + Rev F54 Phase 2)
-        if self.profile:
-            if not self.profile.capabilities.grid_charging_control:
-                logger.debug(
-                    "Skipping grid_charging action: profile '%s' does not support grid charging control",
-                    self.profile.metadata.name,
-                )
-                return None  # Silent skip - no entry in execution history
-            if not self.profile.capabilities.separate_grid_charging_switch:
-                logger.debug(
-                    "Skipping grid_charging switch: profile '%s' uses mode-based charging",
-                    self.profile.metadata.name,
-                )
-                return None  # Silent skip - no entry in execution history
-
-        if not _is_entity_configured(entity):
-            logger.debug("Skipping grid_charging action: entity not configured")
             return ActionResult(
-                action_type="grid_charging",
-                success=True,
-                message="Grid charging entity not configured. Configure in Settings → System → HA Entities",
-                skipped=True,
-                duration_ms=int((time.time() - start) * 1000),
-                error_details=None,
-            )
-
-        # Get current state
-        current = self.ha.get_state_value(entity)
-
-        if current == target:
-            return ActionResult(
-                action_type="grid_charging",
-                success=True,
-                message=f"Already {target}",
-                previous_value=current,
-                new_value=target,
-                entity_id=entity,
-                skipped=True,
-                duration_ms=int((time.time() - start) * 1000),
-                error_details=None,
-            )
-
-        if self.shadow_mode:
-            logger.info("[SHADOW] Would set grid_charging to %s (current: %s)", target, current)
-            return ActionResult(
-                action_type="grid_charging",
-                success=True,
-                message=f"[SHADOW] Would change {current} → {target}",
-                previous_value=current,
-                new_value=target,
-                entity_id=entity,
-                skipped=True,
-                duration_ms=int((time.time() - start) * 1000),
-                error_details=None,
-            )
-
-        # Handle grid charging via profile logic if available
-        error_details = None
-        try:
-            success = self.ha.set_switch(entity, enabled)
-        except HACallError as e:
-            success = False
-            error_details = str(e)
-            logger.error("Failed to set grid charging: %s", error_details)
-
-        # Verification
-        verified_value = None
-        verification_success = None
-        if success:
-            verified_value, verification_success = await self._verify_action(entity, target)
-
-        duration = int((time.time() - start) * 1000)
-
-        action = "start" if enabled else "stop"
-        if success:
-            self._maybe_notify(f"charge_{action}", f"Grid charging {action}ed")
-
-        return ActionResult(
-            action_type="grid_charging",
-            success=success,
-            message=f"Changed {current} → {target}"
-            if success
-            else f"Failed: {error_details}"
-            if error_details
-            else "Failed to set grid charging",
-            previous_value=current,
-            new_value=target,
-            entity_id=entity,
-            verified_value=verified_value,
-            verification_success=verification_success,
-            duration_ms=duration,
-            error_details=error_details,
-        )
-
-    async def _set_charge_limit(self, value: float, unit: str) -> ActionResult:
-        """Set max charging limit (Amps or Watts)."""
-        start = time.time()
-
-        # Generic Split Charging Support (REV IP4)
-        # If we are in 'charge_from_grid' mode and a specific grid entity is defined, use it.
-        entity = None
-        current_mode = self.ha.get_state_value(self.config.inverter.work_mode_entity)
-        is_grid_mode = (
-            self.profile
-            and self.profile.modes.charge_from_grid
-            and current_mode == self.profile.modes.charge_from_grid.value
-        )
-
-        if is_grid_mode:
-            # Use standardized grid_charge_power (Rev IP4)
-            entity = self.config.inverter.grid_charge_power
-            if _is_entity_configured(entity):
-                logger.debug("Using dedicated grid_charge_power: %s", entity)
-            else:
-                entity = None  # Fall back to standard logic
-
-        if not entity:
-            if unit == "W":
-                entity = self.config.inverter.max_charging_power_entity
-            else:
-                entity = self.config.inverter.max_charging_current_entity
-
-        unit_label = unit
-
-        if not _is_entity_configured(entity):
-            logger.debug("Skipping charge_limit action: entity not configured for unit %s", unit)
-            return ActionResult(
-                action_type="charge_limit",
-                success=True,
-                message=f"Max charge {unit_label} entity not configured. Configure in Settings.",
-                skipped=True,
-                duration_ms=int((time.time() - start) * 1000),
-                error_details=None,
-            )
-
-        logger.info("Setting charge_limit: %.1f %s on entity: %s", value, unit_label, entity)
-
-        if self.shadow_mode:
-            logger.info("[SHADOW] Would set charge_limit to %s %s", value, unit_label)
-            return ActionResult(
-                action_type="charge_limit",
-                success=True,
-                message=f"[SHADOW] Would set to {value} {unit_label}",
-                new_value=value,
-                entity_id=entity,
-                skipped=True,
-                duration_ms=int((time.time() - start) * 1000),
-                error_details=None,
-            )
-
-        error_details = None
-        try:
-            success = self.ha.set_number(entity, value)
-        except HACallError as e:
-            success = False
-            error_details = str(e)
-            logger.error("Failed to set charge limit: %s", error_details)
-
-        # Verification
-        verified_value = None
-        verification_success = None
-        if success:
-            verified_value, verification_success = await self._verify_action(entity, value)
-
-        # Sync to forced power entity if applicable (Rev IP2 Phase 3 + IP5)
-        # Check for 'forced_power' (new) or 'forced_power_entity' (legacy)
-        forced_entity_id = self.config.inverter.custom_entities.get(
-            "forced_power"
-        ) or self.config.inverter.custom_entities.get("forced_power_entity")
-
-        if success and self.profile and _is_entity_configured(forced_entity_id):
-            current_mode_val = self.ha.get_state_value(self.config.inverter.work_mode_entity)
-            if (
-                self.profile.modes.charge_from_grid
-                and current_mode_val == self.profile.modes.charge_from_grid.value
-            ):
-                logger.info("Syncing charge limit to forced power entity: %s", forced_entity_id)
-                self.ha.set_number(forced_entity_id, value)
-
-        duration = int((time.time() - start) * 1000)
-        logger.info("Set charge_limit result: success=%s, duration=%dms", success, duration)
-
-        return ActionResult(
-            action_type="charge_limit",
-            success=success,
-            message=f"Set to {value} {unit_label}"
-            if success
-            else f"Failed: {error_details}"
-            if error_details
-            else "Failed to set charge limit",
-            new_value=value,
-            entity_id=entity,
-            verified_value=verified_value,
-            verification_success=verification_success,
-            duration_ms=duration,
-            error_details=error_details,
-        )
-
-    async def _set_discharge_limit(self, value: float, unit: str) -> ActionResult | None:
-        """Set max discharging limit (Amps or Watts)."""
-        start = time.time()
-
-        # 1. Profile-aware Skip Logic (Rev IP11 + Rev F54 Phase 4)
-        # If the current mode handles discharge limits internally, we skip the write.
-        if self.profile:
-            current_mode = self.ha.get_state_value(self.config.inverter.work_mode_entity)
-            # Find the mode definition matching current HA state
-            mode_def = None
-            for attr in [
-                "export",
-                "zero_export",
-                "self_consumption",
-                "force_discharge",
-                "charge_from_grid",
-                "idle",
-            ]:
-                m = getattr(self.profile.modes, attr, None)
-                if m and m.value == current_mode:
-                    mode_def = m
-                    break
-
-            if mode_def and mode_def.skip_discharge_limit:
-                logger.info(
-                    "Skipping discharge limit write: mode '%s' manages limits internally (Profile: %s)",
-                    current_mode,
-                    self.profile.metadata.name,
-                )
-                return None  # Silent skip - no entry in execution history
-
-        if unit == "W":
-            entity = self.config.inverter.max_discharging_power_entity
-            unit_label = "W"
-        else:
-            entity = self.config.inverter.max_discharging_current_entity
-            unit_label = "A"
-
-        if not _is_entity_configured(entity):
-            logger.debug("Skipping discharge_limit action: entity not configured for unit %s", unit)
-            return ActionResult(
-                action_type="discharge_limit",
-                success=True,
-                message=f"Max discharge {unit_label} entity not configured. Configure in Settings.",
-                skipped=True,
-                duration_ms=int((time.time() - start) * 1000),
-                error_details=None,
-            )
-
-        result_label = f"{value} {unit_label}"
-        logger.info("Setting discharge_limit: %s on entity: %s", result_label, entity)
-
-        if self.shadow_mode:
-            logger.info(
-                "[SHADOW] Would set discharge_limit to %s %s on entity %s",
-                value,
-                unit_label,
-                entity,
-            )
-            return ActionResult(
-                action_type="discharge_limit",
-                success=True,
-                message=f"[SHADOW] Would set to {result_label}",
-                new_value=value,
-                entity_id=entity,
-                skipped=True,
-                duration_ms=int((time.time() - start) * 1000),
-                error_details=None,
-            )
-
-        # Safety Guard: Prevent extremely high Amps (Rev E3 Bug Fix)
-        if unit == "A" and value > 500:
-            logger.error(
-                "SAFETY GUARD: Refusing to set discharge limit to %.0fA (limit exceeded)", value
-            )
-            return ActionResult(
-                action_type="discharge_limit",
+                action_type=action.entity,
                 success=False,
-                message=f"Refused dangerously high limit: {value}A",
-                entity_id=entity,
-                skipped=False,
-                duration_ms=int((time.time() - start) * 1000),
-                error_details=f"Safety guard: {value}A exceeds 500A limit",
+                message="No profile loaded",
+                requested_mode=mode_intent,
+                applied_mode=mode_intent,
+                duration_ms=int((time.time() - start_time) * 1000),
             )
 
-        error_details = None
-        try:
-            success = self.ha.set_number(entity, value)
-        except HACallError as e:
-            success = False
-            error_details = str(e)
-            logger.error("Failed to set discharge limit: %s", error_details)
-
-        # Verification
-        verified_value = None
-        verification_success = None
-        if success:
-            verified_value, verification_success = await self._verify_action(entity, value)
-
-        # Sync to forced power entity if applicable (Rev IP2 Phase 3 + IP5)
-        # Check for 'forced_power' (new) or 'forced_power_entity' (legacy)
-        forced_entity_id = self.config.inverter.custom_entities.get(
-            "forced_power"
-        ) or self.config.inverter.custom_entities.get("forced_power_entity")
-
-        if success and self.profile and _is_entity_configured(forced_entity_id):
-            current_mode_val = self.ha.get_state_value(self.config.inverter.work_mode_entity)
-            is_forced = False
-            if (
-                self.profile.modes.export and current_mode_val == self.profile.modes.export.value
-            ) or (
-                self.profile.modes.force_discharge
-                and current_mode_val == self.profile.modes.force_discharge.value
-            ):
-                is_forced = True
-
-            if is_forced:
-                logger.info("Syncing discharge limit to forced power entity: %s", forced_entity_id)
-                self.ha.set_number(forced_entity_id, value)
-
-        duration = int((time.time() - start) * 1000)
-        logger.info("Set discharge_limit result: success=%s, duration=%dms", success, duration)
-
-        return ActionResult(
-            action_type="discharge_limit",
-            success=success,
-            message=f"Set to {value} {unit_label}"
-            if success
-            else f"Failed: {error_details}"
-            if error_details
-            else "Failed to set discharge limit",
-            new_value=value,
-            entity_id=entity,
-            verified_value=verified_value,
-            verification_success=verification_success,
-            duration_ms=duration,
-            error_details=error_details,
-        )
-
-    async def _set_soc_target(self, target: int) -> ActionResult | None:
-        """Set SoC target."""
-        start = time.time()
-        entity = self.config.inverter.soc_target_entity
-
-        # Handle profile without SoC target support (Rev F54 Phase 3)
-        if self.profile and not self.profile.capabilities.supports_soc_target:
-            logger.debug(
-                "Skipping soc_target action: profile '%s' does not support SoC target control",
-                self.profile.metadata.name,
-            )
-            return None  # Silent skip - no entry in execution history
-
-        if not _is_entity_configured(entity):
-            # Check if this entity is actually required by the profile
-            is_required = True
-            if self.profile:
-                # If we have a profile, check if soc_target_entity is in its required list
-                is_required = "soc_target_entity" in self.profile.entities.required
-
-            if not is_required:
-                # Silent skip - not configured and not required
-                return None  # Silent skip - no entry in execution history
-
-            logger.debug("Skipping soc_target action: entity not configured")
+        entity_def = self.profile.entities.get(action.entity)
+        if not entity_def:
             return ActionResult(
-                action_type="soc_target",
-                success=True,
-                message="SoC target entity not configured. Configure in Settings → System → HA Entities",
-                skipped=True,
-                duration_ms=int((time.time() - start) * 1000),
-                error_details=None,
+                action_type=action.entity,
+                success=False,
+                message=f"Entity '{action.entity}' not defined in profile",
+                requested_mode=mode_intent,
+                applied_mode=mode_intent,
+                duration_ms=int((time.time() - start_time) * 1000),
             )
 
-        current = self.ha.get_state_value(entity)
-        try:
-            current_val = int(float(current)) if current else None
-        except (ValueError, TypeError):
-            current_val = None
+        entity_id = self._resolve_entity_id(action.entity)
 
-        if current_val == target:
+        if not entity_id:
             return ActionResult(
-                action_type="soc_target",
+                action_type=action.entity,
+                success=False,
+                message=f"Entity '{action.entity}' not configured",
+                requested_mode=mode_intent,
+                applied_mode=mode_intent,
+                duration_ms=int((time.time() - start_time) * 1000),
+            )
+
+        resolved_value = self._resolve_value(action.value, decision)
+
+        previous_value = self.ha.get_state_value(entity_id)
+
+        if self._values_match(previous_value, resolved_value):
+            return ActionResult(
+                action_type=action.entity,
                 success=True,
-                message=f"Already at {target}%",
-                previous_value=current_val,
-                new_value=target,
-                entity_id=entity,
+                message=f"Already at {resolved_value}",
+                previous_value=previous_value,
+                new_value=resolved_value,
+                entity_id=entity_id,
                 skipped=True,
-                duration_ms=int((time.time() - start) * 1000),
-                error_details=None,
+                requested_mode=mode_intent,
+                applied_mode=mode_intent,
+                duration_ms=int((time.time() - start_time) * 1000),
             )
 
         if self.shadow_mode:
             logger.info(
-                "[SHADOW] Would set soc_target to %s%% (current: %s%%)", target, current_val
+                "[SHADOW] Would set %s to %s (current: %s)",
+                entity_id,
+                resolved_value,
+                previous_value,
             )
             return ActionResult(
-                action_type="soc_target",
+                action_type=action.entity,
                 success=True,
-                message=f"[SHADOW] Would change {current_val}% → {target}%",
-                previous_value=current_val,
-                new_value=target,
-                entity_id=entity,
+                message=f"[SHADOW] Would change {previous_value} → {resolved_value}",
+                previous_value=previous_value,
+                new_value=resolved_value,
+                entity_id=entity_id,
                 skipped=True,
-                duration_ms=int((time.time() - start) * 1000),
-                error_details=None,
+                requested_mode=mode_intent,
+                applied_mode=mode_intent,
+                duration_ms=int((time.time() - start_time) * 1000),
             )
 
-        error_details = None
-        try:
-            success = self.ha.set_input_number(entity, float(target))
-        except HACallError as e:
-            success = False
-            error_details = str(e)
-            logger.error("Failed to set soc_target: %s", error_details)
+        success = await self._write_entity(entity_id, resolved_value, entity_def.domain)
 
-        # Verification
         verified_value = None
         verification_success = None
         if success:
-            v_val, v_ok = await self._verify_action(entity, target)
-            verification_success = v_ok
-            try:
-                verified_value = int(float(v_val)) if v_val else None
-            except (ValueError, TypeError):
-                verified_value = v_val
+            verified_value, verification_success = await self._verify_action(
+                entity_id, resolved_value
+            )
 
-        duration = int((time.time() - start) * 1000)
+        duration_ms = int((time.time() - start_time) * 1000)
 
-        if success and self.config.notifications.on_soc_target_change:
-            self._send_notification(f"SoC target changed to {target}%")
+        if success:
+            self._maybe_notify(action.entity, f"Set {action.entity} to {resolved_value}")
 
         return ActionResult(
-            action_type="soc_target",
+            action_type=action.entity,
             success=success,
-            message=(
-                f"Changed {current_val}% → {target}%"
-                if success
-                else f"Failed: {error_details}"
-                if error_details
-                else "Failed to set SoC target"
-            ),
-            previous_value=current_val,
-            new_value=target,
-            entity_id=entity,
+            message=f"{previous_value} → {resolved_value}"
+            if success
+            else f"Failed to set {action.entity}",
+            previous_value=previous_value,
+            new_value=resolved_value,
+            entity_id=entity_id,
             verified_value=verified_value,
             verification_success=verification_success,
-            duration_ms=duration,
-            error_details=error_details,
+            requested_mode=mode_intent,
+            applied_mode=mode_intent,
+            duration_ms=duration_ms,
         )
 
     async def set_water_temp(self, target: int) -> ActionResult:
@@ -1598,50 +932,6 @@ class ActionDispatcher:
             duration_ms=duration,
             error_details=error_details,
         )
-
-    async def _verify_action(
-        self, entity_id: str, expected_value: Any, timeout: float = 2.0
-    ) -> tuple[Any, bool]:
-        """
-        Verify that an action successfully changed the state of an entity.
-
-        Args:
-            entity_id: The HA entity ID to check
-            expected_value: The value we expect the entity to have
-            timeout: Max time to wait for state update (seconds)
-
-        Returns:
-            tuple of (actual_value, success)
-        """
-        # Wait 1s for HA/Inverter to update
-        await asyncio.sleep(1.0)
-
-        start_wait = time.time()
-        actual_value = None
-
-        while time.time() - start_wait < timeout:
-            actual_value = self.ha.get_state_value(entity_id)
-
-            # Support loose matching for numeric types
-            if isinstance(expected_value, int | float) and actual_value is not None:
-                try:
-                    # STRICTER TOLERANCE (REV UI11): 1.0 -> 0.1
-                    if abs(float(actual_value) - float(expected_value)) < 0.1:
-                        return actual_value, True
-                except (ValueError, TypeError):
-                    pass
-            elif str(actual_value) == str(expected_value):
-                return actual_value, True
-
-            await asyncio.sleep(0.5)
-
-        logger.warning(
-            "Verification FAILED for %s: Expected %s, got %s",
-            entity_id,
-            expected_value,
-            actual_value,
-        )
-        return actual_value, False
 
     def _maybe_notify(self, action_type: str, message: str) -> None:
         """Send notification if enabled for this action type."""

@@ -204,6 +204,13 @@ class InverterProfile:
         object.__setattr__(self, "_modes_dict", modes_dict)
         object.__setattr__(self, "_v1_modes", v1_modes)
         object.__setattr__(self, "_modes_wrapper", _ModesCompatWrapper(modes_dict, v1_modes))
+
+        # Set defaults for fields not provided (for v2 profiles)
+        if "capabilities" not in kwargs:
+            kwargs["capabilities"] = ProfileCapabilities()
+        if "defaults" not in kwargs:
+            kwargs["defaults"] = ProfileDefaults()
+
         for key, value in kwargs.items():
             object.__setattr__(self, key, value)
 
@@ -457,6 +464,42 @@ class _ModesCompatWrapper:
             modes = {}
         object.__setattr__(self, "_modes", modes)
         object.__setattr__(self, "_v1_modes", v1_modes)
+
+    def __iter__(self):
+        modes = object.__getattribute__(self, "_modes")
+        if isinstance(modes, dict):
+            return iter(modes)
+        return iter([])
+
+    def keys(self):
+        modes = object.__getattribute__(self, "_modes")
+        if isinstance(modes, dict):
+            return modes.keys()
+        return {}.keys()
+
+    def values(self):
+        modes = object.__getattribute__(self, "_modes")
+        if isinstance(modes, dict):
+            return modes.values()
+        return {}.values()
+
+    def items(self):
+        modes = object.__getattribute__(self, "_modes")
+        if isinstance(modes, dict):
+            return modes.items()
+        return {}.items()
+
+    def __len__(self):
+        modes = object.__getattribute__(self, "_modes")
+        if isinstance(modes, dict):
+            return len(modes)
+        return 0
+
+    def __contains__(self, key):
+        modes = object.__getattribute__(self, "_modes")
+        if isinstance(modes, dict):
+            return key in modes
+        return False
 
     def __getattr__(self, name: str):
         if name.startswith("_"):

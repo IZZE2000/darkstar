@@ -47,6 +47,10 @@ class ControllerDecision:
     water_temp: int = 40
     export_power_w: float = 0.0  # Planned grid export power in Watts
 
+    # User's configured max limits (for templates like {{max_charge}})
+    max_charge: float = 0.0
+    max_discharge: float = 0.0
+
     # Flags
     write_charge_current: bool = False  # Only write if significant change
     write_discharge_current: bool = False
@@ -144,6 +148,15 @@ class Controller:
         soc_target = int(actions.get("soc_target", 10))
         water_temp = int(actions.get("water_temp", 40))
 
+        # User's configured max limits (for templates)
+        unit = (
+            self.profile.behavior.control_unit
+            if self.profile
+            else self.inverter_config.control_unit
+        )
+        max_charge = self.config.max_charge_w if unit == "W" else self.config.max_charge_a
+        max_discharge = self.config.max_discharge_w if unit == "W" else self.config.max_discharge_a
+
         return ControllerDecision(
             mode_intent=mode_intent,
             charge_value=charge_value,
@@ -151,11 +164,11 @@ class Controller:
             export_power_w=0.0,
             soc_target=soc_target,
             water_temp=water_temp,
+            max_charge=max_charge,
+            max_discharge=max_discharge,
             write_charge_current=write_charge,
             write_discharge_current=write_discharge,
-            control_unit=self.profile.behavior.control_unit or self.inverter_config.control_unit
-            if self.profile
-            else self.inverter_config.control_unit,
+            control_unit=unit,
             source="override",
             reason=override.reason,
         )
@@ -188,6 +201,15 @@ class Controller:
         # Water heater from plan
         water_temp = self._determine_water_temp(slot)
 
+        # User's configured max limits (for templates)
+        unit = (
+            self.profile.behavior.control_unit
+            if self.profile
+            else self.inverter_config.control_unit
+        )
+        max_charge = self.config.max_charge_w if unit == "W" else self.config.max_charge_a
+        max_discharge = self.config.max_discharge_w if unit == "W" else self.config.max_discharge_a
+
         reason = self._generate_reason(slot, mode_intent)
 
         return ControllerDecision(
@@ -197,11 +219,11 @@ class Controller:
             export_power_w=export_power_w,
             soc_target=soc_target,
             water_temp=water_temp,
+            max_charge=max_charge,
+            max_discharge=max_discharge,
             write_charge_current=write_charge,
             write_discharge_current=write_discharge,
-            control_unit=self.profile.behavior.control_unit or self.inverter_config.control_unit
-            if self.profile
-            else self.inverter_config.control_unit,
+            control_unit=unit,
             source="plan",
             reason=reason,
         )
