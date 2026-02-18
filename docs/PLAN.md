@@ -106,7 +106,7 @@ The "Actual EV" dotted line in the schedule chart is incorrectly displaying plan
 
 ---
 
-### [IN PROGRESS] REV // ARC17 — Inverter Profile System v2 (Declarative Mode-Action Architecture)
+### [IN PROGRESS] REV // ARC17 — Inverter Profile System v2 (Phase 4 Complete)
 
 **Goal:** Replace the current fragmented inverter profile system (logic split across YAML profiles, `controller.py`, and ~1700 lines of `actions.py`) with a fully declarative, profile-driven architecture where each mode defines an ordered list of entity+value actions, and the executor is a generic loop.
 
@@ -157,20 +157,20 @@ The "Actual EV" dotted line in the schedule chart is incorrectly displaying plan
 * [x] Update `_generate_reason()` to use `mode_intent` directly.
 * [ ] **USER VERIFICATION AND COMMIT.**
 
-#### Phase 4: Executor Rewrite [PLANNED]
-* [ ] Implement generic action loop in `executor/actions.py`: `execute_mode()`.
-* [ ] Implement `_resolve_value()` for dynamic template resolution.
-* [ ] Implement `_write_entity()` using domain-appropriate HA service calls.
-* [ ] Implement idempotent checks (skip if entity already at target value).
-* [ ] Implement `settle_ms` delay support.
-* [ ] Implement shadow mode support in generic loop.
-* [ ] Remove old per-action methods: `_set_work_mode`, `_apply_composite_entities`, `_set_grid_charging`, `_set_charge_limit`, `_set_discharge_limit`, `_set_soc_target`, `_set_max_export_power`.
-* [ ] Remove `STANDARD_ENTITY_KEYS` constant and related lookups.
-* [ ] Keep and adapt: safety guards, notification logic, action verification.
-* [ ] Update `executor/engine.py` to use new `ControllerDecision` structure.
-* [ ] Update `executor/override.py` override actions to use 4 mode intents.
-* [ ] Update `executor/config.py` to simplify entity loading.
-* [ ] **USER VERIFICATION AND COMMIT.**
+#### Phase 4: Executor Rewrite [DONE]
+* [x] Implement generic action loop in `executor/actions.py`: `execute_mode()`.
+* [x] Implement `_resolve_value()` for dynamic template resolution.
+* [x] Implement `_write_entity()` using domain-appropriate HA service calls.
+* [x] Implement idempotent checks (skip if entity already at target value).
+* [x] Implement `settle_ms` delay support in action loop.
+* [x] Implement shadow mode support in generic loop.
+* [x] Remove old per-action methods: `_set_work_mode`, `_apply_composite_entities`, `_set_grid_charging`, `_set_charge_limit`, `_set_discharge_limit`, `_set_soc_target`, `_set_max_export_power`.
+* [x] Remove `STANDARD_ENTITY_KEYS` constant and related lookups.
+* [x] Keep and adapt: safety guards, notification logic, action verification.
+* [x] Update `executor/engine.py` to use new `ControllerDecision` structure.
+* [x] Add `max_charge` and `max_discharge` fields to `ControllerDecision` for templates.
+* [x] Update idle mode to use `mode_intent: "idle"` instead of `work_mode` values.
+* [x] **USER VERIFICATION AND COMMIT.**
 
 #### Phase 5: Execution History & Logging [PLANNED]
 * [ ] Update execution history format to log per-action results (entity_key, entity_id, value, success, skipped).
