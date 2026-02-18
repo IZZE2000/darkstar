@@ -4,6 +4,163 @@ This document contains the archive of all completed revisions. It serves as the 
 
 ---
 
+### [DONE] REV // F72 — Missing Executor Control Entity Fields in Settings UI
+
+**Goal:** Expose all profile-required executor control entities in the Settings UI so users can configure them without manually editing `config.yaml`.
+
+**Context:**
+- **Critical blocker:** Users report "3 required fields missing: work mode entity, soc target entity, grid charging enable entity" error when saving settings. The backend validation (`backend/api/routers/config.py` lines 595–609) is profile-driven: it calls `active_profile.get_missing_entities(config)` and creates save-blocking errors for each missing entity.
+- **Root cause:** The generic profile (`profiles/generic.yaml`) requires 3 entities: `work_mode`, `soc_target`, `grid_charging_enable`. The Settings UI (`frontend/src/pages/settings/types.ts`) is missing **all 3** from the System tab's "Required HA Control Entities" section (line 339). Only `work_mode` is exposed, but it's **incorrectly placed** in the Battery tab (line 1024) instead of System tab.
+- **Additional gaps:** Fronius profile requires `minimum_reserve` and `grid_charge_power` entities which are also completely missing from the UI.
+
+**Missing Entity Fields Audit:**
+
+| Profile | Required Entity | Currently Exposed? | Current Location | Should Be |
+|---------|----------------|-------------------|------------------|-----------|
+| generic, deye | `work_mode` | ✅ | Battery tab (WRONG) | System tab |
+| generic, deye | `soc_target` | ❌ | Not exposed | System tab |
+| generic, deye | `grid_charging_enable` | ❌ | Not exposed | System tab |
+| fronius | `work_mode` | ✅ | Battery tab (WRONG) | System tab |
+| fronius | `minimum_reserve` | ❌ | Not exposed | System tab |
+| fronius | `grid_charge_power` | ❌ | Not exposed | System tab |
+| fronius | `max_charge_power` | ✅ | System tab ✓ | System tab |
+| fronius | `max_discharge_power` | ✅ | System tab ✓ | System tab |
+
+**Plan:**
+
+#### Phase 1: Move work_mode to System Tab [DONE]
+* [x] In `frontend/src/pages/settings/types.ts`, remove `executor.inverter.work_mode` field from `batterySections` (line 1024).
+* [x] Add `executor.inverter.work_mode` to `systemSections` → "Required HA Control Entities" section (after line 342).
+* [x] Label: "Work Mode Selector", Helper: "Darkstar sets inverter operating mode (Export/Zero-Export/etc.)."
+
+#### Phase 2: Add Missing Generic/Deye Entity Fields [DONE]
+* [x] Add `executor.inverter.soc_target` to System tab "Required HA Control Entities".
+  - Label: "SoC Target", Helper: "Darkstar sets battery state of charge target percentage."
+* [x] Add `executor.inverter.grid_charging_enable` to System tab "Required HA Control Entities".
+  - Label: "Grid Charging Switch", Helper: "Darkstar enables/disables grid charging."
+  - Added `showIf` to show only for generic/deye profiles (not fronius)
+
+#### Phase 3: Add Missing Fronius Entity Fields [DONE]
+* [x] Add `executor.inverter.minimum_reserve` to System tab "Required HA Control Entities".
+  - Label: "Minimum Reserve", Helper: "Darkstar sets minimum battery reserve (Fronius-specific)."
+  - `showIf: { configKey: 'system.inverter_profile', value: 'fronius' }`
+* [x] Add `executor.inverter.grid_charge_power` to System tab "Required HA Control Entities".
+  - Label: "Grid Charge Power", Helper: "Darkstar sets grid charging power in Watts (Fronius-specific)."
+  - `showIf: { configKey: 'system.inverter_profile', value: 'fronius' }`
+
+#### Phase 4: Testing [IN PROGRESS]
+* [ ] Manual test: With generic profile selected, verify all 3 required entity fields (`work_mode`, `soc_target`, `grid_charging_enable`) are visible in System → Required HA Control Entities.
+* [ ] Manual test: With fronius profile selected, verify 5 required fields are visible (including `minimum_reserve` and `grid_charge_power`).
+* [ ] Manual test: Configure entity IDs for all required fields, save settings, verify no validation errors.
+* [ ] Manual test: Leave one required field empty, try to save, verify save is blocked with helpful error message.
+* [x] Run frontend linting: `cd frontend && pnpm lint`.
+
+---
+
+### [DONE] REV // F71 — Sungrow Composite Entity Loading & EV Serialization Fix
+
+**Goal:** Fix two bugs causing executor failures for Sungrow users: composite entity config not loading, and EV charger history crashes.
+
+**Context:**
+- **Bug 1 (Critical):** `executor/config.py` has a dict comprehension (lines 324–356) that collects all non-standard `inverter_data` keys into `custom_entities`. The key `"custom_entities"` itself is NOT in the exclusion set, so the nested YAML dict `{ems_mode: ..., forced_charge_discharge_cmd: ...}` gets passed through `_str_or_none()` which **stringifies the entire dict** instead of unpacking it. Result: `self.config.inverter.custom_entities.get("ems_mode")` returns `None`, causing "Entity not configured" errors for ALL Sungrow composite modes. REV F69 migration only handles legacy misplaced keys — it does not fix the loading path for correctly-structured configs.
+- **Bug 2 (Medium):** `executor/engine.py` lines 1646–1657 and 1671–1682 store raw `ActionResult` dataclass objects in `action_results=[result]` for EV charger events. When the `ExecutionRecord` is serialized to JSON for the history DB, it crashes with `Object of type ActionResult is not JSON serializable`. The main execute path (line 1487–1501) correctly converts to dicts but the EV path does not.
+
+**Plan:**
+
+#### Phase 1: Fix custom_entities Loading [DONE]
+* [x] In `executor/config.py`, add `"custom_entities"` to the exclusion set in the dict comprehension (line ~329).
+* [x] After the comprehension, explicitly unpack `inverter_data.get("custom_entities", {})` and merge into `custom_entities` dict with `_str_or_none()` per value.
+* [x] Verify the catch-all still works for other non-standard keys (e.g., `work_mode_export`).
+
+#### Phase 2: Fix EV ActionResult Serialization [DONE]
+* [x] In `executor/engine.py` lines ~1655 and ~1682, convert `ActionResult` to dict before storing in `action_results`, matching the pattern used in `_create_execution_record()` (lines 1487–1501).
+
+#### Phase 3: Testing [DONE]
+* [x] Write unit test: load a config with properly nested `custom_entities` and assert `InverterConfig.custom_entities["ems_mode"]` resolves correctly.
+* [x] Write unit test: verify EV charger execution record serializes to JSON without error.
+* [x] Run full test suite: `uv run python -m pytest -q`.
+* [x] Run linting: `uv run ruff check .`.
+
+---
+
+### [PLANNED] REV // F70 — Fix Non-Deterministic PV Forecast Corrector
+
+**Goal:** Make Aurora corrector model training deterministic by adding fixed random seeds, ensuring repeatable PV forecasts across planner runs.
+
+**Context:**
+The Aurora ML pipeline uses corrector models (`pv_error.lgb`, `load_error.lgb`) to adjust base forecasts based on historical errors. These models are trained using LightGBM with `feature_fraction: 0.9` and `bagging_fraction: 0.8` for robustness, but lack a fixed `seed` parameter. This causes:
+- Slightly different corrector models every training run
+- Different PV forecast corrections between planner executions
+- Inconsistent scheduling decisions even with identical weather/pricing data
+
+**Root Cause:** In `ml/corrector.py:167-178`, the `lgb.train()` call uses random sampling without a seed, making training non-deterministic.
+
+**Plan:**
+
+#### Phase 1: Add Fixed Seeds to Corrector Training [DONE]
+* [x] Add `seed=42` and `bagging_seed=42` to LightGBM params in `_train_error_models()` function
+* [x] Verify the change is minimal (2 lines) and consistent with existing `random_state=42` in `ml/train.py`
+* [x] Run `uv run ruff check .` to ensure no lint errors
+* [x] Run `uv run python -m pytest tests/test_corrector_clamp.py -v` to verify existing tests pass
+
+#### Phase 2: Verification [DONE]
+* [x] Run planner twice in succession and compare PV forecast curves
+* [x] Verify forecasts are now identical between runs (with same Open-Meteo data)
+* [x] Confirm corrector models produce consistent corrections at Graduate level (14+ days data)
+* [x] Document the fix in code comments explaining the seed choice
+
+---
+
+### [DONE] REV // F69 — Sungrow Beta Config Regression Fix
+
+**Goal:** Fix two regressions affecting Sungrow beta testers: executor errors about missing max_discharge_power, and settings save failures for profile-specific entity keys.
+
+**Context:**
+- Issue 1: Executor error: "Profile requires setting 'max_discharge_power' to '10', but entity is not configured" - This happens because executor/actions.py only checks `custom_entities` but max_discharge_power is a standard key in `executor.inverter`.
+- Issue 2: Settings save fails because profile-specific keys (ems_mode, forced_charge_discharge_cmd) are in wrong location (directly in executor.inverter instead of executor.inverter.custom_entities).
+- Root cause: User's config has keys in legacy locations that worked before stricter validation was added. No migration exists to move them to correct location.
+
+**Plan:**
+
+#### Phase 1: Config Migration [COMPLETED]
+* [x] Add `migrate_inverter_custom_entities()` function to `backend/config_migration.py`.
+* [x] Detect profile-specific keys in wrong location: `ems_mode`, `ems_mode_entity`, `forced_charge_discharge_cmd`, `forced_charge_discharge_cmd_entity`.
+* [x] Move these from `executor.inverter` → `executor.inverter.custom_entities`, stripping `_entity` suffix.
+* [x] Register migration in `MIGRATION_STEPS` after existing inverter migrations.
+* [ ] Test migration with user's config snippet to verify correct move.
+
+#### Phase 2: Executor Actions Fix [COMPLETED]
+* [x] In `executor/actions.py` line ~569, add fallback lookup for composite entity handling.
+* [x] Check `custom_entities` FIRST.
+* [x] If not found AND key is in STANDARD_ENTITY_KEYS, fall back to checking standard `executor.inverter` location.
+* [x] Run ruff/format and verify no lint errors.
+
+#### Phase 3: Validation & Testing [COMPLETED]
+* [ ] Verify validation now passes with user's config after migration runs.
+* [x] Run full test suite: `uv run python -m pytest -q`.
+* [ ] Test that executor no longer errors on Sungrow idle mode.
+
+---
+
+### [DONE] REV // UI21 — Add Actual PV/Load to Schedule Chart
+
+**Goal:** Display actual (observed) PV and load data in the ChartCard alongside forecasts when the "Actual" overlay is toggled.
+**Context:** The frontend already supports showing "Actual PV/Load" datasets with dashed lines, but the backend schedule endpoint doesn't provide the actual data from `SlotObservation`. Users want to compare forecast vs actual.
+
+**Plan:**
+
+#### Phase 1: Backend - Add Observations Query [DONE]
+* [x] Add method `get_observations_range()` to `backend/learning/store.py` that queries `SlotObservation` for `pv_kwh`, `load_kwh`, `water_kwh`, `slot_start` within a date range.
+* [x] Import and call this method in `backend/api/routers/schedule.py` in `schedule_today_with_history()`.
+* [x] Populate `actual_pv_kwh`, `actual_load_kwh`, `actual_water_kw` in the slot response for historical slots.
+
+#### Phase 2: Frontend Verification [DONE]
+* [x] Verify `buildLiveData()` in `frontend/src/components/ChartCard.tsx` correctly maps the new fields.
+* [x] Test that toggling "📊 Actual" button shows dashed lines for actual PV and load.
+* [x] Ensure actual data only appears for historical slots (where `is_executed=true`).
+
+---
+
 ### [DONE] REV // F64 — EV Node Tooltip for Multiple EVs
 
 **Goal:** Show per-EV details (name, power, SoC, plug status) in a tooltip on the PowerFlowCard EV node. Must work for both single and multiple EVs, and support both desktop hover and mobile tap.
