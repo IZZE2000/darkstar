@@ -1,104 +1,105 @@
+# ============================================================
+# Inverter Profile: Sungrow
+# Schema Version: 2
+# ============================================================
+
 metadata:
   name: "sungrow"
-  version: "1.0.0"
-  description: "Sungrow SHx Hybrid Inverters (Modbus) - mkaiser v2 Integration"
-  supported_brands: ["Sungrow"]
-  author: "@ergetie"
-  # NOTE: This profile uses entity names from the mkaiser/Sungrow-SHx-Inverter-Modbus-Home-Assistant v2 integration
-  # Integration: https://github.com/mkaiser/Sungrow-SHx-Inverter-Modbus-Home-Assistant
-
-capabilities:
-  grid_charging_control: true
-  watts_based_control: true
-  service_call_mode: false
-  separate_grid_charging_switch: false
-  supports_export_mode: true
-  supports_zero_export: true
-  supports_self_consumption: true
-  supports_soc_target: false          # Unclear from docs, safe to assume false or managed via input_number helper
-  supports_grid_export_limit: true
-  supports_force_discharge: true
+  version: "2.0.0"
+  schema_version: 2
+  description: "Sungrow hybrid inverters using Watts-based control with composite modes"
+  supported_brands:
+    - "Sungrow"
 
 entities:
-  required:
-    work_mode: "select.ems_mode"
-    max_charge_power: "number.battery_max_charge_power"
-    max_discharge_power: "number.battery_max_discharge_power"
-    grid_max_export_power: "number.export_power_limit"
-    grid_max_export_power_switch: "switch.export_power_limit"
-    # Custom Entities
-    ems_mode: "select.ems_mode"
-    forced_charge_discharge_cmd: "select.battery_forced_charge_discharge"
+  work_mode:
+    default_entity: "select.ems_mode"
+    domain: "select"
+    category: "system"
+    description: "EMS Mode selector (primary operating mode)"
+    required: true
 
+  forced_charge_discharge_cmd:
+    default_entity: "select.battery_forced_charge_discharge"
+    domain: "select"
+    category: "system"
+    description: "Forced charge/discharge command selector"
+    required: true
 
+  max_charge_power:
+    default_entity: "number.battery_max_charge_power"
+    domain: "number"
+    category: "battery"
+    description: "Maximum battery charging power (Watts)"
+    required: true
+
+  max_discharge_power:
+    default_entity: "number.battery_max_discharge_power"
+    domain: "number"
+    category: "battery"
+    description: "Maximum battery discharge power (Watts)"
+    required: true
+
+  export_power_limit:
+    default_entity: "number.export_power_limit"
+    domain: "number"
+    category: "battery"
+    description: "Grid export power limit (Watts)"
+    required: false
+
+  export_power_limit_switch:
+    default_entity: "switch.export_power_limit"
+    domain: "switch"
+    category: "battery"
+    description: "Grid export power limit switch"
+    required: false
 
 modes:
-  # Export mode - Force discharge to grid
+  charge:
+    description: "Grid charge — Force charge battery from AC grid"
+    actions:
+      - entity: "work_mode"
+        value: "Forced mode"
+      - entity: "forced_charge_discharge_cmd"
+        value: "Forced charge"
+      - entity: "max_charge_power"
+        value: "{{charge_value}}"
+      - entity: "max_discharge_power"
+        value: "{{max_discharge}}"
+
   export:
-    value: "Forced mode"
-    description: "Force discharge battery to grid"
-    requires_grid_charging: false
-    skip_discharge_limit: true
-    set_entities:
-      ems_mode: "Forced mode"
-      forced_charge_discharge_cmd: "Forced discharge"
+    description: "Grid export — Force discharge battery to grid"
+    actions:
+      - entity: "work_mode"
+        value: "Forced mode"
+      - entity: "forced_charge_discharge_cmd"
+        value: "Forced discharge"
+      - entity: "max_discharge_power"
+        value: "{{discharge_value}}"
 
-
-  # Zero export mode - Self consumption with explicit 0 limit?
-  # User feedback: "Export limit switch buggy, easier to set limit to 0"
-  zero_export:
-    value: "Self-consumption mode (default)"
-    description: "Self-consumption mode (Stop forced commands)"
-    requires_grid_charging: false
-    skip_discharge_limit: true
-    set_entities:
-      ems_mode: "Self-consumption mode (default)"
-      forced_charge_discharge_cmd: "Stop (default)"
-
-
-  # Self-consumption mode - Normal operation
   self_consumption:
-    value: "Self-consumption mode (default)"
-    description: "Self-consumption mode (Stop forced commands)"
-    requires_grid_charging: false
-    skip_discharge_limit: true
-    set_entities:
-      ems_mode: "Self-consumption mode (default)"
-      forced_charge_discharge_cmd: "Stop (default)"
+    description: "Self consumption — Normal PV to battery and house"
+    actions:
+      - entity: "work_mode"
+        value: "Self-consumption mode (default)"
+      - entity: "forced_charge_discharge_cmd"
+        value: "Stop (default)"
+      - entity: "max_discharge_power"
+        value: "{{max_discharge}}"
 
-
-  # Grid charging mode - Force charge from grid
-  charge_from_grid:
-    value: "Forced mode"
-    description: "Force charge battery from grid"
-    requires_grid_charging: true
-    skip_discharge_limit: true
-    set_entities:
-      ems_mode: "Forced mode"
-      forced_charge_discharge_cmd: "Forced charge"
-
-
-  # Idle/Standby mode - Stop forced commands
   idle:
-    value: "Self-consumption mode (default)"
-    description: "Idle (Stop forced commands)"
-    requires_grid_charging: false
-    set_entities:
-      ems_mode: "Self-consumption mode (default)"
-      forced_charge_discharge_cmd: "Stop (default)"
-      max_discharge_power: 10      # Idle fix: set low discharge power
+    description: "Idle / Hold — Block discharge, preserve battery"
+    actions:
+      - entity: "work_mode"
+        value: "Self-consumption mode (default)"
+      - entity: "forced_charge_discharge_cmd"
+        value: "Stop (default)"
+      - entity: "max_discharge_power"
+        value: 10
 
 behavior:
   control_unit: "W"
   min_charge_w: 10.0
   round_step_w: 100.0
   write_threshold_w: 100.0
-  soc_target_is_discharge_floor: true
-  soc_target_is_charge_ceiling: true
-  requires_mode_settling: true        # User reported 20ms requirement
-  mode_settling_ms: 100               # 100ms safe margin
-
-defaults:
-  battery:
-    max_charge_w: 9000
-    max_discharge_w: 9000
+  mode_settling_ms: 100

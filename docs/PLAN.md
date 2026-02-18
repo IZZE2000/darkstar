@@ -106,7 +106,7 @@ The "Actual EV" dotted line in the schedule chart is incorrectly displaying plan
 
 ---
 
-### [PLANNED] REV // ARC17 — Inverter Profile System v2 (Declarative Mode-Action Architecture)
+### [IN PROGRESS] REV // ARC17 — Inverter Profile System v2 (Declarative Mode-Action Architecture)
 
 **Goal:** Replace the current fragmented inverter profile system (logic split across YAML profiles, `controller.py`, and ~1700 lines of `actions.py`) with a fully declarative, profile-driven architecture where each mode defines an ordered list of entity+value actions, and the executor is a generic loop.
 
@@ -129,14 +129,14 @@ The "Actual EV" dotted line in the schedule chart is incorrectly displaying plan
 
 **Plan:**
 
-#### Phase 1: Profile YAML Schema v2 [PLANNED]
-* [ ] Rewrite `profiles/deye.yaml` to v2 schema (entity registry + mode action lists).
-* [ ] Rewrite `profiles/sungrow.yaml` to v2 schema.
-* [ ] Rewrite `profiles/fronius.yaml` to v2 schema.
-* [ ] Rewrite `profiles/generic.yaml` to v2 schema.
-* [ ] Update `profiles/schema.yaml` to document v2 schema.
-* [ ] Delete `profiles/victron.yaml` (never implemented, placeholder only).
-* [ ] Delete `profiles/sungrow_logic.md` and `profiles/fronius_logic.md` (logic now in profiles).
+#### Phase 1: Profile YAML Schema v2 [DONE]
+* [x] Rewrite `profiles/deye.yaml` to v2 schema (entity registry + mode action lists).
+* [x] Rewrite `profiles/sungrow.yaml` to v2 schema.
+* [x] Rewrite `profiles/fronius.yaml` to v2 schema.
+* [x] Rewrite `profiles/generic.yaml` to v2 schema.
+* [x] Update `profiles/schema.yaml` to document v2 schema.
+* [x] Delete `profiles/victron.yaml` (never implemented, placeholder only). (Already did not exist)
+* [x] Delete `profiles/sungrow_logic.md` and `profiles/fronius_logic.md` (logic now in profiles).
 * [ ] **USER VERIFICATION AND COMMIT:** Verify all 4 profiles are correct and complete.
 
 #### Phase 2: Python Dataclasses & Parser [PLANNED]

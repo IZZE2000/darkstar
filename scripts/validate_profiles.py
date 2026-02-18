@@ -2,6 +2,7 @@
 """
 Inverter Profile Validator
 Validates Darkstar inverter profile YAML files against the schema.
+Supports both v1 and v2 schema.
 """
 
 import sys
@@ -9,8 +10,8 @@ from pathlib import Path
 
 import yaml
 
-# Mapping of required modes that Darkstar expects
-REQUIRED_MODES = ["export", "zero_export", "charge_from_grid", "idle", "self_consumption"]
+REQUIRED_MODES_V1 = ["export", "zero_export", "charge_from_grid", "idle", "self_consumption"]
+REQUIRED_MODES_V2 = ["charge", "export", "idle", "self_consumption"]
 
 
 def validate_profile(file_path):
@@ -28,35 +29,37 @@ def validate_profile(file_path):
 
     errors = []
 
-    # 1. Metadata Check
     metadata = data.get("metadata", {})
     if not metadata.get("name"):
         errors.append("Missing metadata.name")
     if not metadata.get("version"):
         errors.append("Missing metadata.version")
 
-    # 2. Capabilities Check
+    schema_version = metadata.get("schema_version", 1)
+
+    if schema_version == 2:
+        return validate_profile_v2(file_path, data, errors)
+    else:
+        return validate_profile_v1(file_path, data, errors)
+
+
+def validate_profile_v1(file_path, data, errors):
     capabilities = data.get("capabilities", {})
     if "watts_based_control" not in capabilities:
         errors.append("Missing capabilities.watts_based_control")
 
-    # 3. Entities Check
     entities = data.get("entities", {})
     required_entities = entities.get("required", {})
     if "work_mode" not in required_entities:
         errors.append("Missing entities.required.work_mode")
 
-    # 4. Mode Completeness
     modes = data.get("modes", {})
-    for mode_name in REQUIRED_MODES:
+    for mode_name in REQUIRED_MODES_V1:
         if mode_name not in modes:
             errors.append(f"Missing required mode: '{mode_name}'")
 
-    # 5. Entity Format Check (simple regex-like check)
     def check_entities(entity_dict):
         for key, val in entity_dict.items():
-            # Rev IP2 Phase 3: Allow profile internal keys (no dots) for custom lookup
-            # We only enforce domain.name format if it's a "suggested" entity or a default HA entity
             if val and "." not in val and key not in ["forced_power"]:
                 errors.append(
                     f"Invalid HA entity ID format for '{key}': '{val}' (must be 'domain.name')"
@@ -70,7 +73,39 @@ def validate_profile(file_path):
             print(f"  [ERROR] {err}")
         return False
 
-    print("  [OK] Profile is valid.")
+    print("  [OK] Profile is valid (v1).")
+    return True
+
+
+def validate_profile_v2(file_path, data, errors):
+    entities = data.get("entities", {})
+    if not entities:
+        errors.append("Missing entities registry")
+
+    modes = data.get("modes", {})
+    for mode_name in REQUIRED_MODES_V2:
+        if mode_name not in modes:
+            errors.append(f"Missing required mode: '{mode_name}'")
+        else:
+            mode = modes[mode_name]
+            if "actions" not in mode:
+                errors.append(f"Mode '{mode_name}' missing actions list")
+            elif not isinstance(mode["actions"], list):
+                errors.append(f"Mode '{mode_name}' actions must be a list")
+
+    behavior = data.get("behavior", {})
+    if not behavior:
+        errors.append("Missing behavior section")
+    else:
+        if "control_unit" not in behavior:
+            errors.append("Missing behavior.control_unit")
+
+    if errors:
+        for err in errors:
+            print(f"  [ERROR] {err}")
+        return False
+
+    print("  [OK] Profile is valid (v2).")
     return True
 
 

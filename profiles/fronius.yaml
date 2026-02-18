@@ -1,101 +1,104 @@
+# ============================================================
+# Inverter Profile: Fronius
+# Schema Version: 2
+# ============================================================
+
 metadata:
   name: "fronius"
-  version: "1.0.0"
-  description: "Fronius Gen24 Inverters (Watts-based)"
-  supported_brands: ["Fronius"]
-  author: "Darkstar"
-
-capabilities:
-  grid_charging_control: true
-  watts_based_control: true
-  service_call_mode: false
-  separate_grid_charging_switch: false
-  supports_export_mode: true
-  supports_zero_export: true
-  supports_self_consumption: true
-  supports_soc_target: false
-  supports_grid_export_limit: true
-  supports_force_discharge: true
+  version: "2.0.0"
+  schema_version: 2
+  description: "Fronius GEN24 hybrid inverters using Watts-based control"
+  supported_brands:
+    - "Fronius"
 
 entities:
-  required:
-    work_mode: "select.byd_battery_box_premium_hv_storage_control_mode"
-    max_charge_power: "number.byd_battery_box_premium_hv_grid_charge_power"
-    max_discharge_power: "number.byd_battery_box_premium_hv_discharge_limit"
-    minimum_reserve: "number.byd_battery_box_premium_hv_minimum_reserve"
-    grid_charge_power: "number.byd_battery_box_premium_hv_grid_charge_power"
-  optional:
-    soc_target: "input_number.master_soc_target"
+  work_mode:
+    default_entity: "select.storage_control_mode"
+    domain: "select"
+    category: "system"
+    description: "Storage control mode selector"
+    required: true
+
+  minimum_reserve:
+    default_entity: "number.minimum_reserve"
+    domain: "number"
+    category: "system"
+    description: "Minimum battery reserve percentage (used as SoC floor)"
+    required: true
+
+  grid_charge_power:
+    default_entity: "number.grid_charge_power"
+    domain: "number"
+    category: "battery"
+    description: "Grid charging power (Watts) — only active in Charge from Grid mode"
+    required: true
+
+  max_charge_power:
+    default_entity: "number.battery_max_charge_power"
+    domain: "number"
+    category: "battery"
+    description: "Maximum battery charging power (Watts)"
+    required: true
+
+  max_discharge_power:
+    default_entity: "number.battery_max_discharge_power"
+    domain: "number"
+    category: "battery"
+    description: "Maximum battery discharge power (Watts)"
+    required: true
+
+  soc_target:
+    default_entity: "input_number.master_soc_target"
+    domain: "input_number"
+    category: "battery"
+    description: "Battery SoC target percentage"
+    required: false
 
 modes:
-  # Export mode - Battery discharges to grid for profit
+  charge:
+    description: "Grid charge — Force charge from AC grid"
+    actions:
+      - entity: "work_mode"
+        value: "Charge from Grid"
+        settle_ms: 500
+      - entity: "grid_charge_power"
+        value: "{{charge_value}}"
+      - entity: "minimum_reserve"
+        value: "{{soc_target}}"
+
   export:
-    value: "Discharge to Grid"
-    description: "Force discharge battery to grid (Grid Export)"
-    requires_grid_charging: false
+    description: "Grid export — Maximize battery discharge to grid"
+    actions:
+      - entity: "work_mode"
+        value: "Auto"
+        settle_ms: 500
+      - entity: "max_discharge_power"
+        value: "{{discharge_value}}"
+      - entity: "minimum_reserve"
+        value: 5
 
-  # Zero export mode - Fronius does not appear to have a dedicated zero-export mode select.
-  # We map it to Auto (Self consumption) which prioritizes local load.
-  zero_export:
-    value: "Auto"
-    description: "Prioritize local load (Note: Fronius handles export via dynamic power limit)"
-    requires_grid_charging: false
-    skip_discharge_limit: true
-    skip_export_power: true
-
-  # Self-consumption mode - Normal operation
   self_consumption:
-    value: "Auto"
-    description: "Self-consumption mode (Standard operation)"
-    requires_grid_charging: false
-    skip_discharge_limit: true
-    skip_export_power: true
+    description: "Self consumption — Normal automatic operation"
+    actions:
+      - entity: "work_mode"
+        value: "Auto"
+        settle_ms: 500
+      - entity: "minimum_reserve"
+        value: "{{soc_target}}"
 
-  # Hold mode - Block discharging to preserve battery for high price windows
-  hold:
-    value: "Block Discharging"
-    description: "Prevent battery from discharging"
-    requires_grid_charging: false
-
-  # Grid charging mode - Charge battery from grid
-  charge_from_grid:
-    value: "Charge from Grid"
-    description: "Force charge battery from AC grid (Uses Grid Charge Power)"
-    requires_grid_charging: true
-
-  # Idle/Standby mode - Maintain battery level
   idle:
-    value: "Block Discharging"
-    description: "Block battery discharge to preserve level (Idle)"
-    requires_grid_charging: false
+    description: "Idle / Hold — Block battery discharge"
+    actions:
+      - entity: "work_mode"
+        value: "Block Discharging"
+        settle_ms: 500
+      - entity: "minimum_reserve"
+        value: "{{soc_target}}"
 
 behavior:
   control_unit: "W"
-  min_charge_w: 500.0
+  min_charge_w: 100.0
   round_step_w: 100.0
+  grid_charge_round_step_w: 100.0
   write_threshold_w: 100.0
-  soc_target_is_discharge_floor: true
-  soc_target_is_charge_ceiling: true
-  requires_mode_settling: true        # Fronius requires delay after mode select
-  mode_settling_ms: 500               # 500ms delay for stability
-
-  # Grid Charge Specifics
-  # NOTE: Fronius grid charging efficiency is notoriously low (approx 50-60%)
-  # at low power levels (< 1000W). It improves at higher power.
-  # Beta feedback (Kristoffer) suggests 10W increments for stability.
-  grid_charge_round_step_w: 10.0      # Granular 10W rounding for grid charging
-
-defaults:
-  # Suggested non-entity config values
-  executor:
-    control_unit: "W"
-    inverter:
-      work_mode: "select.byd_battery_box_premium_hv_storage_control_mode"
-      grid_charge_power: "number.byd_battery_box_premium_hv_grid_charge_power"
-      max_charge_power: "number.byd_battery_box_premium_hv_grid_charge_power"
-      max_discharge_power: "number.byd_battery_box_premium_hv_discharge_limit"
-      minimum_reserve: "number.byd_battery_box_premium_hv_minimum_reserve"
-      grid_max_export_power: "number.fronius_symo_gen24_10_0_export_limit_rate"
-  battery:
-    max_charge_w: 5000
-    max_discharge_w: 5000
+  mode_settling_ms: 500

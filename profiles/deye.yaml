@@ -1,88 +1,110 @@
-# Deye / SunSynk Inverter Profile
-# This profile defines the standard behavior for Deye, SunSynk, and rebrands (Sol-Ark, Turbo Energy).
+# ============================================================
+# Inverter Profile: Deye / SunSynk
+# Schema Version: 2
+# ============================================================
 
 metadata:
   name: "deye"
-  version: "1.0.0"
-  description: "Native support for Deye, SunSynk and Sol-Ark hybrid inverters"
+  version: "2.0.0"
+  schema_version: 2
+  description: "Deye and SunSynk hybrid inverters using Amps-based control"
   supported_brands:
     - "Deye"
-    - "SunSynk" #Not verified
-    - "Sol-Ark" #Not verified
-    - "Turbo Energy" #Not verified
-  author: "@ergetie"
-  created_at: "2026-02-05"
-  updated_at: "2026-02-07"
-
-capabilities:
-  grid_charging_control: true
-  watts_based_control: false
-  service_call_mode: false
-  separate_grid_charging_switch: true
-  supports_export_mode: true
-  supports_zero_export: true
-  supports_self_consumption: true
-  supports_soc_target: true
-  supports_grid_export_limit: true
-  supports_force_discharge: false
+    - "SunSynk"
+    - "Sol-Ark"
+    - "Turbo Energy"
 
 entities:
-  # Required entities
-  required:
-    work_mode: "select.inverter_work_mode"
-    soc_target: "input_number.master_soc_target"
-    grid_charging_enable: "switch.inverter_battery_grid_charging"
+  work_mode:
+    default_entity: "select.inverter_work_mode"
+    domain: "select"
+    category: "system"
+    description: "Inverter work mode selector"
+    required: true
 
-  # Optional entities
-  optional:
-    max_charge_current: "number.inverter_battery_max_charge_current"
-    max_discharge_current: "number.inverter_battery_max_discharge_current"
-    grid_max_export_power: "number.inverter_grid_export_limit"
+  grid_charging_enable:
+    default_entity: "switch.inverter_battery_grid_charging"
+    domain: "switch"
+    category: "system"
+    description: "Grid charging on/off switch"
+    required: true
+
+  soc_target:
+    default_entity: "input_number.master_soc_target"
+    domain: "input_number"
+    category: "battery"
+    description: "Battery SoC target percentage"
+    required: true
+
+  max_charge_current:
+    default_entity: "number.inverter_battery_max_charge_current"
+    domain: "number"
+    category: "battery"
+    description: "Maximum battery charging current (Amps)"
+    required: true
+
+  max_discharge_current:
+    default_entity: "number.inverter_battery_max_discharge_current"
+    domain: "number"
+    category: "battery"
+    description: "Maximum battery discharge current (Amps)"
+    required: true
+
+  grid_max_export_power:
+    default_entity: "number.inverter_grid_export_limit"
+    domain: "number"
+    category: "battery"
+    description: "Grid export power limit (Watts)"
+    required: false
 
 modes:
-  export:
-    value: "Export First"
-    description: "Battery discharge to grid enabled"
-    requires_grid_charging: false
+  charge:
+    description: "Grid charge — Force charge battery from AC grid"
+    actions:
+      - entity: "work_mode"
+        value: "Zero Export To CT"
+      - entity: "grid_charging_enable"
+        value: true
+      - entity: "max_charge_current"
+        value: "{{charge_value}}"
+      - entity: "soc_target"
+        value: "{{soc_target}}"
 
-  zero_export:
-    value: "Zero Export To CT"
-    description: "Zero export to grid (self-consumption only)"
-    requires_grid_charging: false
+  export:
+    description: "Grid export — Discharge battery to grid for profit"
+    actions:
+      - entity: "work_mode"
+        value: "Export First"
+      - entity: "grid_charging_enable"
+        value: false
+      - entity: "max_discharge_current"
+        value: "{{discharge_value}}"
 
   self_consumption:
-    value: "Self Consumption"
-    description: "Prioritize local consumption"
-    requires_grid_charging: false
-
-  charge_from_grid:
-    value: "Zero Export To CT"         # Uses zero_export + grid_charging_entity=ON
-    description: "Charge battery from grid"
-    requires_grid_charging: true
+    description: "Self consumption — PV to battery and house, no grid export"
+    actions:
+      - entity: "work_mode"
+        value: "Zero Export To CT"
+      - entity: "grid_charging_enable"
+        value: false
+      - entity: "soc_target"
+        value: "{{soc_target}}"
 
   idle:
-    value: "Zero Export To CT"
-    description: "Idle via zero export and minimal settings"
-    requires_grid_charging: false
+    description: "Idle / Hold — Block discharge, preserve battery"
+    actions:
+      - entity: "work_mode"
+        value: "Zero Export To CT"
+      - entity: "grid_charging_enable"
+        value: false
+      - entity: "max_discharge_current"
+        value: 0
+      - entity: "soc_target"
+        value: "{{soc_target}}"
 
 behavior:
   control_unit: "A"
   min_charge_a: 10.0
   round_step_a: 5.0
   write_threshold_a: 5.0
-  soc_target_is_discharge_floor: true
-  soc_target_is_charge_ceiling: true
-  inverter_ac_limit_kw: 8.8
-
-# Defaults for non-entity settings
-defaults:
-  battery:
-    nominal_voltage_v: 48.0
-    min_voltage_v: 46.0
-
-  executor:
-    controller:
-      inverter_ac_limit_kw: 8.8
-      min_charge_a: 10.0
-      round_step_a: 5.0
-      write_threshold_a: 5.0
+  mode_settling_ms: 100
