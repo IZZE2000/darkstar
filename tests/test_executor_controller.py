@@ -16,25 +16,22 @@ class TestControllerDecision:
     """Test the ControllerDecision dataclass."""
 
     def test_required_fields(self):
-        """ControllerDecision requires core action fields."""
+        """ControllerDecision requires mode_intent."""
         decision = ControllerDecision(
-            work_mode="Export First",
-            grid_charging=True,
+            mode_intent="export",
             charge_value=100.0,
             discharge_value=50.0,
             soc_target=80,
             water_temp=60,
         )
-        assert decision.work_mode == "Export First"
-        assert decision.grid_charging is True
+        assert decision.mode_intent == "export"
         assert decision.charge_value == 100.0
         assert decision.soc_target == 80
 
     def test_default_flags(self):
         """ControllerDecision has sensible default flags."""
         decision = ControllerDecision(
-            work_mode="Zero Export To CT",
-            grid_charging=False,
+            mode_intent="idle",
             charge_value=0.0,
             discharge_value=0.0,
             soc_target=50,
@@ -86,41 +83,41 @@ class TestControllerFollowPlan:
         return Controller(ControllerConfig(), InverterConfig())
 
     def test_export_mode_when_export_planned(self, controller):
-        """When export is planned, use Export First mode."""
+        """When export is planned, use export mode intent."""
         slot = SlotPlan(export_kw=5.0)
         state = SystemState()
 
         decision = controller.decide(slot, state)
 
-        assert decision.work_mode == "Export First"
+        assert decision.mode_intent == "export"
         assert decision.source == "plan"
 
-    def test_zero_export_mode_when_no_export(self, controller):
-        """When no export planned, use Zero Export mode."""
+    def test_charge_mode_when_charging_only(self, controller):
+        """When charging only, use charge mode intent."""
         slot = SlotPlan(export_kw=0.0, charge_kw=3.0)
         state = SystemState()
 
         decision = controller.decide(slot, state)
 
-        assert decision.work_mode == "Zero Export To CT"
+        assert decision.mode_intent == "charge"
 
-    def test_grid_charging_when_charging_only(self, controller):
-        """Grid charging enabled when charging and not exporting."""
-        slot = SlotPlan(charge_kw=5.0, export_kw=0.0)
-        state = SystemState()
-
-        decision = controller.decide(slot, state)
-
-        assert decision.grid_charging is True
-
-    def test_no_grid_charging_when_exporting(self, controller):
-        """Grid charging disabled when exporting."""
-        slot = SlotPlan(charge_kw=0.0, export_kw=5.0)
-        state = SystemState()
+    def test_idle_mode_when_at_soc_target(self, controller):
+        """When at or below SoC target, use idle mode intent."""
+        slot = SlotPlan(export_kw=0.0, charge_kw=0.0, soc_target=50)
+        state = SystemState(current_soc_percent=50)
 
         decision = controller.decide(slot, state)
 
-        assert decision.grid_charging is False
+        assert decision.mode_intent == "idle"
+
+    def test_self_consumption_when_above_soc_target(self, controller):
+        """When above SoC target, use self_consumption mode intent."""
+        slot = SlotPlan(export_kw=0.0, charge_kw=0.0, soc_target=50)
+        state = SystemState(current_soc_percent=80)
+
+        decision = controller.decide(slot, state)
+
+        assert decision.mode_intent == "self_consumption"
 
     def test_soc_target_from_plan(self, controller):
         """SoC target comes from slot plan."""
@@ -166,16 +163,13 @@ class TestControllerApplyOverride:
             override_needed=True,
             override_type=OverrideType.EMERGENCY_CHARGE,
             actions={
-                "work_mode": "Zero Export To CT",
-                "grid_charging": True,
                 "soc_target": 30,
             },
         )
 
         decision = controller.decide(slot, state, override)
 
-        assert decision.work_mode == "Zero Export To CT"  # Override wins
-        assert decision.grid_charging is True
+        assert decision.mode_intent == "charge"  # Override sets charge intent
         assert decision.soc_target == 30
         assert decision.source == "override"
 
@@ -201,12 +195,13 @@ class TestControllerApplyOverride:
         override = OverrideResult(
             override_needed=True,
             override_type=OverrideType.FORCE_CHARGE,
-            actions={"grid_charging": True},
+            actions={},
         )
 
         decision = controller.decide(slot, state, override)
 
         # Default is Amps
+        assert decision.mode_intent == "charge"
         assert decision.charge_value == controller.config.max_charge_a
         assert decision.write_charge_current is True
 
@@ -222,6 +217,7 @@ class TestControllerApplyOverride:
 
         decision = controller.decide(slot, state, override)
 
+        assert decision.mode_intent == "export"
         assert decision.discharge_value == controller.config.max_discharge_a
         assert decision.write_discharge_current is True
 
@@ -234,7 +230,7 @@ class TestControllerApplyOverride:
         decision = controller.decide(slot, state, override)
 
         assert decision.source == "plan"
-        assert decision.work_mode == "Export First"
+        assert decision.mode_intent == "export"
 
 
 class TestCalculateChargeCurrent:
@@ -349,17 +345,17 @@ class TestGenerateReason:
         controller = Controller(ControllerConfig(), InverterConfig())
         slot = SlotPlan(charge_kw=5.0)
 
-        reason = controller._generate_reason(slot, "Zero Export To CT", True)
+        reason = controller._generate_reason(slot, "charge")
 
         assert "Charge 5.0kW" in reason
-        assert "Grid+" in reason
+        assert "Charge" in reason
 
     def test_export_reason(self):
         """Reason includes export info."""
         controller = Controller(ControllerConfig(), InverterConfig())
         slot = SlotPlan(export_kw=3.0)
 
-        reason = controller._generate_reason(slot, "Export First", False)
+        reason = controller._generate_reason(slot, "export")
 
         assert "Export 3.0kW" in reason
         assert "Export" in reason
@@ -369,9 +365,10 @@ class TestGenerateReason:
         controller = Controller(ControllerConfig(), InverterConfig())
         slot = SlotPlan()
 
-        reason = controller._generate_reason(slot, "Zero Export To CT", False)
+        reason = controller._generate_reason(slot, "idle")
 
         assert "Hold/Idle" in reason
+        assert "Idle" in reason
 
 
 class TestMakeDecisionConvenience:
@@ -385,7 +382,7 @@ class TestMakeDecisionConvenience:
         decision = make_decision(slot, state)
 
         assert isinstance(decision, ControllerDecision)
-        assert decision.work_mode == "Export First"
+        assert decision.mode_intent == "export"
 
     def test_with_custom_config(self):
         """Works with custom config."""
@@ -405,10 +402,10 @@ class TestMakeDecisionConvenience:
         override = OverrideResult(
             override_needed=True,
             override_type=OverrideType.EMERGENCY_CHARGE,
-            actions={"work_mode": "Zero Export To CT"},
+            actions={},
         )
 
         decision = make_decision(slot, state, override)
 
         assert decision.source == "override"
-        assert decision.work_mode == "Zero Export To CT"
+        assert decision.mode_intent == "charge"

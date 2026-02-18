@@ -148,13 +148,13 @@ The "Actual EV" dotted line in the schedule chart is incorrectly displaying plan
 * [x] Add validation: all mode actions reference valid entity keys, all templates are valid, domains are valid.
 * [x] **USER VERIFICATION AND COMMIT.**
 
-#### Phase 3: Controller Simplification [PLANNED]
-* [ ] Simplify `ControllerDecision` dataclass: remove `work_mode`, `grid_charging` fields. Make `mode_intent` required primary field.
-* [ ] Rewrite `Controller._follow_plan()` to use 4 mode intents only (charge, export, idle, self_consumption).
-* [ ] Remove legacy Deye hardcoded fallback (`else` branch with `work_mode_export`/`work_mode_zero_export`).
-* [ ] Remove `_get_mode_def_for_value()` method.
-* [ ] Simplify `_apply_override()` to use 4 mode intents.
-* [ ] Update `_generate_reason()` to use `mode_intent` directly.
+#### Phase 3: Controller Simplification [DONE]
+* [x] Simplify `ControllerDecision` dataclass: remove `work_mode`, `grid_charging` fields. Make `mode_intent` required primary field.
+* [x] Rewrite `Controller._follow_plan()` to use 4 mode intents only (charge, export, idle, self_consumption).
+* [x] Remove legacy Deye hardcoded fallback (`else` branch with `work_mode_export`/`work_mode_zero_export`).
+* [x] Remove `_get_mode_def_for_value()` method.
+* [x] Simplify `_apply_override()` to use 4 mode intents.
+* [x] Update `_generate_reason()` to use `mode_intent` directly.
 * [ ] **USER VERIFICATION AND COMMIT.**
 
 #### Phase 4: Executor Rewrite [PLANNED]
