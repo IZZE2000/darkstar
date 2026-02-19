@@ -716,11 +716,12 @@ class ActionDispatcher:
         """Set max grid export power."""
         start = time.time()
 
-        entity = self.config.inverter.grid_max_export_power_entity
+        entity = self.config.inverter.grid_max_export_power
 
-        if self.profile and not self.profile.capabilities.supports_grid_export_limit:
+        # Check if profile supports grid export limit via entity registry
+        if self.profile and "grid_max_export_power" not in self.profile.entities:
             logger.debug(
-                "Skipping max_export_power action: profile '%s' does not support grid export limit control",
+                "Skipping max_export_power action: profile '%s' does not define grid_max_export_power entity",
                 self.profile.metadata.name,
             )
             return None  # Silent skip - no entry in execution history
@@ -728,8 +729,8 @@ class ActionDispatcher:
         if not _is_entity_configured(entity):
             # Check if this entity is actually required by the profile
             is_required = True
-            if self.profile:
-                is_required = "grid_max_export_power_entity" in self.profile.entities.required
+            if self.profile and "grid_max_export_power" in self.profile.entities:
+                is_required = self.profile.entities["grid_max_export_power"].required
 
             if not is_required:
                 # Silent skip - not configured and not required

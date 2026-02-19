@@ -48,86 +48,11 @@ class InverterConfig:
     max_charge_power: str | None = None
     max_discharge_power: str | None = None
 
-    # Constants / Behavior
-    work_mode_export: str = "Export First"
-    work_mode_zero_export: str = "Zero Export To CT"
+    # Control unit (A or W)
     control_unit: str = "A"
 
     # Dynamic entities for complex profiles (Rev IP2)
     custom_entities: dict[str, str | None] = field(default_factory=dict)
-
-    # Legacy property aliases for backward compatibility (Rev IP4)
-    @property
-    def work_mode_entity(self) -> str | None:
-        return self.work_mode
-
-    @work_mode_entity.setter
-    def work_mode_entity(self, value: str | None) -> None:
-        self.work_mode = value
-
-    @property
-    def soc_target_entity(self) -> str | None:
-        return self.soc_target
-
-    @soc_target_entity.setter
-    def soc_target_entity(self, value: str | None) -> None:
-        self.soc_target = value
-
-    @property
-    def grid_charging_entity(self) -> str | None:
-        return self.grid_charging_enable
-
-    @grid_charging_entity.setter
-    def grid_charging_entity(self, value: str | None) -> None:
-        self.grid_charging_enable = value
-
-    @property
-    def max_charging_current_entity(self) -> str | None:
-        return self.max_charge_current
-
-    @max_charging_current_entity.setter
-    def max_charging_current_entity(self, value: str | None) -> None:
-        self.max_charge_current = value
-
-    @property
-    def max_discharging_current_entity(self) -> str | None:
-        return self.max_discharge_current
-
-    @max_discharging_current_entity.setter
-    def max_discharging_current_entity(self, value: str | None) -> None:
-        self.max_discharge_current = value
-
-    @property
-    def max_charging_power_entity(self) -> str | None:
-        return self.max_charge_power
-
-    @max_charging_power_entity.setter
-    def max_charging_power_entity(self, value: str | None) -> None:
-        self.max_charge_power = value
-
-    @property
-    def max_discharging_power_entity(self) -> str | None:
-        return self.max_discharge_power
-
-    @max_discharging_power_entity.setter
-    def max_discharging_power_entity(self, value: str | None) -> None:
-        self.max_discharge_power = value
-
-    @property
-    def grid_max_export_power_switch_entity(self) -> str | None:
-        return self.grid_max_export_power_switch
-
-    @grid_max_export_power_switch_entity.setter
-    def grid_max_export_power_switch_entity(self, value: str | None) -> None:
-        self.grid_max_export_power_switch = value
-
-    @property
-    def grid_max_export_power_entity(self) -> str | None:
-        return self.grid_max_export_power
-
-    @grid_max_export_power_entity.setter
-    def grid_max_export_power_entity(self, value: str | None) -> None:
-        self.grid_max_export_power = value
 
 
 @dataclass
@@ -226,15 +151,6 @@ class ExecutorConfig:
     has_water_heater: bool = True
     inverter_profile: str = "generic"
 
-    # Legacy property proxy for backward compatibility (Rev IP4)
-    @property
-    def soc_target_entity(self) -> str | None:
-        return self.inverter.soc_target
-
-    @soc_target_entity.setter
-    def soc_target_entity(self, value: str | None) -> None:
-        self.inverter.soc_target = value
-
 
 def load_yaml(path: str) -> dict[str, Any]:
     """Load YAML file with strict typing."""
@@ -314,12 +230,6 @@ def load_executor_config(config_path: str = "config.yaml") -> ExecutorConfig:
         max_discharge_current=get_ent("max_discharge_current", "max_discharging_current_entity"),
         max_charge_power=get_ent("max_charge_power", "max_charging_power_entity"),
         max_discharge_power=get_ent("max_discharge_power", "max_discharging_power_entity"),
-        work_mode_export=str(
-            inverter_data.get("work_mode_export", InverterConfig.work_mode_export)
-        ),
-        work_mode_zero_export=str(
-            inverter_data.get("work_mode_zero_export", InverterConfig.work_mode_zero_export)
-        ),
         control_unit=str(inverter_data.get("control_unit", "A")),
         # Capture all other keys as custom entities (Rev IP2)
         # REV F71: Add "custom_entities" to exclusion set to prevent stringification of nested dict
@@ -350,8 +260,6 @@ def load_executor_config(config_path: str = "config.yaml") -> ExecutorConfig:
                 "max_charging_power_entity",
                 "max_discharge_power",
                 "max_discharging_power_entity",
-                "work_mode_export",
-                "work_mode_zero_export",
                 "control_unit",
                 "custom_entities",  # REV F71: Don't stringify nested custom_entities dict
             }

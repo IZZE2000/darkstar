@@ -32,8 +32,8 @@ def test_fronius_self_consumption_logic(executor_config, fronius_profile):
     - Current SoC: 95%
 
     Expected Behavior:
-    - Work Mode: "Auto" (Zero Export / Self Consumption)
-    - Should NOT be "Block Discharging"
+    - Mode Intent: "self_consumption" (was "Auto" in v1)
+    - Should NOT be "idle"
     """
     controller = Controller(
         config=executor_config.controller,
@@ -48,13 +48,12 @@ def test_fronius_self_consumption_logic(executor_config, fronius_profile):
 
     decision = controller.decide(slot, state)
 
-    print(f"Decision Work Mode: {decision.work_mode}")
+    print(f"Decision Mode Intent: {decision.mode_intent}")
     print(f"Decision Reason: {decision.reason}")
 
-    # This assertion is expected to FAIL if the bug exists
-    # If bug exists, it will be "Block Discharging"
-    assert decision.work_mode == "Auto", (
-        f"Expected 'Auto' for self-consumption, got '{decision.work_mode}'"
+    # v2: mode_intent "self_consumption" replaces v1 work_mode "Auto"
+    assert decision.mode_intent == "self_consumption", (
+        f"Expected 'self_consumption' for self-consumption, got '{decision.mode_intent}'"
     )
 
 

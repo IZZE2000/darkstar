@@ -92,152 +92,25 @@ class ProfileMetadata:
 
 
 @dataclass
-class WorkMode:
-    """Legacy WorkMode dataclass for backwards compatibility.
-
-    Deprecated: This is kept for Phase 2 compatibility only.
-    The v2 system uses ModeDefinition with ordered action lists instead.
-    """
-
-    value: str | None
-    description: str = ""
-    requires_grid_charging: bool = False
-    skip_discharge_limit: bool = False
-    skip_export_power: bool = False
-    set_entities: dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass
-class ProfileCapabilities:
-    """Legacy ProfileCapabilities for backwards compatibility."""
-
-    grid_charging_control: bool = True
-    watts_based_control: bool = False
-    service_call_mode: bool = False
-    separate_grid_charging_switch: bool = True
-    supports_export_mode: bool = True
-    supports_zero_export: bool = True
-    supports_self_consumption: bool = True
-    supports_soc_target: bool = True
-    supports_grid_export_limit: bool = True
-    supports_force_discharge: bool = False
-
-
-@dataclass
-class ProfileEntities:
-    """Legacy ProfileEntities for backwards compatibility."""
-
-    required: dict[str, str | None] = field(default_factory=dict)
-    optional: dict[str, str | None] = field(default_factory=dict)
-
-    def validate_required(self) -> tuple[bool, list[str]]:
-        missing = []
-        for key, value in self.required.items():
-            if value is None or value == "":
-                missing.append(key)
-        return len(missing) == 0, missing
-
-
-@dataclass
-class ProfileModes:
-    """Legacy ProfileModes for backwards compatibility."""
-
-    export: WorkMode | None = None
-    zero_export: WorkMode | None = None
-    self_consumption: WorkMode | None = None
-    charge_from_grid: WorkMode | None = None
-    force_discharge: WorkMode | None = None
-    idle: WorkMode | None = None
-
-
-@dataclass
-class ProfileDefaults:
-    """Legacy ProfileDefaults for backwards compatibility."""
-
-    battery: dict[str, Any] = field(default_factory=dict)
-    executor: dict[str, Any] = field(default_factory=dict)
-    suggested_entities: dict[str, str] = field(default_factory=dict)
-
-
-@dataclass
 class InverterProfile:
     """Complete v2 inverter profile.
 
-    For backwards compatibility, this also accepts optional v1-style arguments:
-    - capabilities: ProfileCapabilities (ignored in v2)
-    - entities: ProfileEntities (ignored in v2, use entities dict instead)
-    - modes: ProfileModes (ignored in v2, use modes dict instead)
-    - defaults: ProfileDefaults (ignored in v2)
-
-    Supports both v1-style attribute access (profile.modes.export) and
-    v2-style dict access (profile.modes['export']).
+    Uses entity registry + mode action lists architecture.
+    Each mode defines an ordered list of entity+value pairs.
     """
 
     metadata: ProfileMetadata
     entities: dict[str, EntityDefinition] = field(default_factory=dict)
-    modes: Any = field(default_factory=dict)
+    modes: dict[str, ModeDefinition] = field(default_factory=dict)
     behavior: ProfileBehavior = field(default_factory=ProfileBehavior)
-    capabilities: ProfileCapabilities = field(default_factory=ProfileCapabilities)
-    defaults: ProfileDefaults = field(default_factory=ProfileDefaults)
-    _v1_modes: ProfileModes | None = field(default=None, repr=False)
-    _modes_dict: dict[str, ModeDefinition] = field(default_factory=dict)
-
-    def __init__(self, **kwargs):
-        modes_dict = kwargs.pop("modes", {})
-        v1_modes = kwargs.pop("_v1_modes", None)
-        entities = kwargs.get("entities")
-
-        if entities is not None and isinstance(entities, ProfileEntities):
-            v1_entities = entities
-            entities_dict: dict[str, EntityDefinition] = {}
-            for key, val in {**v1_entities.required, **v1_entities.optional}.items():
-                if val:
-                    entities_dict[key] = EntityDefinition(
-                        default_entity=val,
-                        domain="select",
-                        category="system",
-                        description=f"Entity {key}",
-                        required=key in v1_entities.required,
-                    )
-            kwargs["entities"] = entities_dict
-
-        object.__setattr__(self, "_modes_dict", modes_dict)
-        object.__setattr__(self, "_v1_modes", v1_modes)
-        object.__setattr__(self, "_modes_wrapper", _ModesCompatWrapper(modes_dict, v1_modes))
-
-        # Set defaults for fields not provided (for v2 profiles)
-        if "capabilities" not in kwargs:
-            kwargs["capabilities"] = ProfileCapabilities()
-        if "defaults" not in kwargs:
-            kwargs["defaults"] = ProfileDefaults()
-
-        for key, value in kwargs.items():
-            object.__setattr__(self, key, value)
-
-    def __getattribute__(self, name: str):
-        """Intercept attribute access to provide v1-style modes.export access."""
-        if name == "modes":
-            return object.__getattribute__(self, "_modes_wrapper")
-        return object.__getattribute__(self, name)
-
-    def __setattr__(self, name: str, value):
-        if name == "modes":
-            object.__setattr__(self, "_modes_dict", value)
-            object.__setattr__(
-                self,
-                "_modes_wrapper",
-                _ModesCompatWrapper(value, self._v1_modes if hasattr(self, "_v1_modes") else None),
-            )
-        else:
-            object.__setattr__(self, name, value)
 
     def get_mode(self, mode_intent: str) -> ModeDefinition:
         """Get mode definition by intent key. Raises ProfileError if not found."""
-        if mode_intent not in self._modes_dict:
+        if mode_intent not in self.modes:
             raise ProfileError(
                 f"Mode '{mode_intent}' not defined in profile '{self.metadata.name}'"
             )
-        return self._modes_dict[mode_intent]
+        return self.modes[mode_intent]
 
     def get_entity(self, key: str) -> EntityDefinition:
         """Get entity definition by key. Raises ProfileError if not found."""
@@ -293,11 +166,10 @@ class InverterProfile:
         if self.behavior.control_unit not in ("A", "W"):
             errors.append(f"Invalid control_unit: {self.behavior.control_unit}. Must be 'A' or 'W'")
 
-        modes_dict = self._modes_dict
         for mode_name in REQUIRED_MODES:
-            if mode_name not in modes_dict:
+            if mode_name not in self.modes:
                 errors.append(f"Missing required mode: {mode_name}")
-            elif not modes_dict[mode_name].actions:
+            elif not self.modes[mode_name].actions:
                 errors.append(f"Mode '{mode_name}' has no actions defined")
 
         for key, entity_def in self.entities.items():
@@ -306,7 +178,7 @@ class InverterProfile:
             if entity_def.category not in VALID_CATEGORIES:
                 errors.append(f"Entity '{key}' has invalid category: {entity_def.category}")
 
-        for mode_key, mode_def in modes_dict.items():
+        for mode_key, mode_def in self.modes.items():
             for action in mode_def.actions:
                 if action.entity not in self.entities:
                     errors.append(
@@ -453,77 +325,6 @@ def parse_profile(data: dict[str, Any]) -> InverterProfile:
         modes=modes,
         behavior=behavior,
     )
-
-
-class _ModesCompatWrapper:
-    """Wrapper for v2 modes dict that provides v1-style attribute access."""
-
-    def __init__(self, modes: dict[str, ModeDefinition], v1_modes: ProfileModes | None = None):
-        if v1_modes is None and not isinstance(modes, dict):
-            v1_modes = modes
-            modes = {}
-        object.__setattr__(self, "_modes", modes)
-        object.__setattr__(self, "_v1_modes", v1_modes)
-
-    def __iter__(self):
-        modes = object.__getattribute__(self, "_modes")
-        if isinstance(modes, dict):
-            return iter(modes)
-        return iter([])
-
-    def keys(self):
-        modes = object.__getattribute__(self, "_modes")
-        if isinstance(modes, dict):
-            return modes.keys()
-        return {}.keys()
-
-    def values(self):
-        modes = object.__getattribute__(self, "_modes")
-        if isinstance(modes, dict):
-            return modes.values()
-        return {}.values()
-
-    def items(self):
-        modes = object.__getattribute__(self, "_modes")
-        if isinstance(modes, dict):
-            return modes.items()
-        return {}.items()
-
-    def __len__(self):
-        modes = object.__getattribute__(self, "_modes")
-        if isinstance(modes, dict):
-            return len(modes)
-        return 0
-
-    def __contains__(self, key):
-        modes = object.__getattribute__(self, "_modes")
-        if isinstance(modes, dict):
-            return key in modes
-        return False
-
-    def __getattr__(self, name: str):
-        if name.startswith("_"):
-            raise AttributeError(f"'{type(self).__name__}' has no attribute '{name}'")
-        v1_modes = object.__getattribute__(self, "_v1_modes")
-        if v1_modes is not None:
-            try:
-                val = object.__getattribute__(v1_modes, name)
-                return val
-            except AttributeError:
-                pass
-        modes = object.__getattribute__(self, "_modes")
-        if isinstance(modes, dict) and name in modes:
-            mode_def = modes[name]
-            first_action = mode_def.actions[0] if mode_def.actions else None
-            return WorkMode(
-                value=first_action.value
-                if first_action and isinstance(first_action.value, str)
-                else None,
-                description=mode_def.description,
-            )
-        if not isinstance(modes, dict):
-            return None
-        return None
 
 
 def load_profile(profile_name: str, profiles_dir: str | Path = "profiles") -> InverterProfile:

@@ -9,11 +9,12 @@ def test_validate_config_executor_entities_required_when_enabled():
     }
     issues = _validate_config_for_save(config)
 
-    # Should have errors for missing critical entities
-    error_messages = [i["message"] for i in issues if i["severity"] == "error"]
-    assert any("executor.inverter.work_mode" in m for m in error_messages)
-    assert any("executor.inverter.grid_charging_enable" in m for m in error_messages)
-    assert any("input_sensors.battery_soc" in m for m in error_messages)
+    # REV UI23: Missing required entities now return warnings instead of errors
+    # to allow incremental configuration across tabs
+    warning_messages = [i["message"] for i in issues if i["severity"] == "warning"]
+    assert any("work_mode" in m for m in warning_messages)
+    assert any("grid_charging_enable" in m for m in warning_messages)
+    assert any("battery_soc" in m for m in warning_messages)
 
 
 def test_validate_config_executor_entities_not_required_when_disabled():

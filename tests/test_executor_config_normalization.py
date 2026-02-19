@@ -36,16 +36,16 @@ def test_load_executor_config_normalization(tmp_path):
 
     config = load_executor_config(str(config_file))
 
-    # Assert normalized values
-    assert config.inverter.work_mode_entity == "select.my_mode"
-    assert config.inverter.grid_charging_entity is None
-    assert config.inverter.max_charging_current_entity is None
-    assert config.inverter.max_discharging_current_entity is None
+    # Assert normalized values (using v2 field names)
+    assert config.inverter.work_mode == "select.my_mode"
+    assert config.inverter.grid_charging_enable is None
+    assert config.inverter.max_charge_current is None
+    assert config.inverter.max_discharge_current is None
     assert config.water_heater.target_entity is None
-    assert config.soc_target_entity == "input_number.target"
+    assert config.inverter.soc_target == "input_number.target"
 
     # Assert other default values stay valid
-    assert config.inverter.work_mode_export == "Export First"
+    assert config.inverter.control_unit == "A"
     assert config.water_heater.temp_normal == 60
 
 
@@ -59,7 +59,8 @@ def test_load_executor_config_defaults(tmp_path):
 
     config = load_executor_config(str(config_file))
 
-    assert config.inverter.work_mode_entity is None
-    assert config.inverter.grid_charging_entity is None
+    # Using v2 field names
+    assert config.inverter.work_mode is None
+    assert config.inverter.grid_charging_enable is None
     assert config.water_heater.target_entity is None
     assert config.automation_toggle_entity is None

@@ -31,7 +31,7 @@ def test_fronius_hold_logic(executor_config, fronius_profile):
     - Load: 2kW
 
     Expected Behavior:
-    - Work Mode: "Block Discharging" (Idle)
+    - Mode Intent: "idle" (was "Block Discharging" in v1)
     - Reason: Should prevent discharge because we are at/below target.
     """
     controller = Controller(
@@ -48,12 +48,12 @@ def test_fronius_hold_logic(executor_config, fronius_profile):
 
     decision = controller.decide(slot, state)
 
-    print(f"Decision Work Mode: {decision.work_mode}")
+    print(f"Decision Mode Intent: {decision.mode_intent}")
     print(f"Decision Reason: {decision.reason}")
 
-    # This assertion is expected to FAIL currently (gets "Auto")
-    assert decision.work_mode == "Block Discharging", (
-        f"Expected 'Block Discharging' for hold at target, got '{decision.work_mode}'"
+    # v2: mode_intent "idle" replaces v1 work_mode "Block Discharging"
+    assert decision.mode_intent == "idle", (
+        f"Expected 'idle' for hold at target, got '{decision.mode_intent}'"
     )
 
 
@@ -65,8 +65,7 @@ def test_fronius_hold_logic_below_target(executor_config, fronius_profile):
     - Current SoC: 95%
 
     Expected Behavior:
-    - Work Mode: "Block Discharging" or "Charge from Grid" (if configured?)
-    - But with charge_kw=0, we won't active charge. We should at least NOT discharge.
+    - Mode Intent: "idle" (prevent discharge when below target)
     """
     controller = Controller(
         config=executor_config.controller,
@@ -79,15 +78,15 @@ def test_fronius_hold_logic_below_target(executor_config, fronius_profile):
 
     decision = controller.decide(slot, state)
 
-    # Should definitely block discharge
-    assert decision.work_mode == "Block Discharging", (
-        f"Expected 'Block Discharging' when below target, got '{decision.work_mode}'"
+    # Should block discharge via idle mode
+    assert decision.mode_intent == "idle", (
+        f"Expected 'idle' when below target, got '{decision.mode_intent}'"
     )
 
 
 def test_fronius_self_consumption_allowed(executor_config, fronius_profile):
     """
-    verify regression of F47 is avoided.
+    Verify regression of F47 is avoided.
 
     Scenario:
     - Slot Plan: Charge=0, Export=0
@@ -95,7 +94,7 @@ def test_fronius_self_consumption_allowed(executor_config, fronius_profile):
     - Current SoC: 95%
 
     Expected Behavior:
-    - Work Mode: "Auto" (Self Consumption allowed because we have excess SoC)
+    - Mode Intent: "self_consumption" (was "Auto" in v1)
     """
     controller = Controller(
         config=executor_config.controller,
@@ -108,6 +107,7 @@ def test_fronius_self_consumption_allowed(executor_config, fronius_profile):
 
     decision = controller.decide(slot, state)
 
-    assert decision.work_mode == "Auto", (
-        f"Expected 'Auto' when above target, got '{decision.work_mode}'"
+    # v2: mode_intent "self_consumption" replaces v1 work_mode "Auto"
+    assert decision.mode_intent == "self_consumption", (
+        f"Expected 'self_consumption' when above target, got '{decision.mode_intent}'"
     )
