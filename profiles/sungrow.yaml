@@ -54,6 +54,13 @@ entities:
     description: "Grid export power limit switch"
     required: false
 
+  forced_charge_discharge_power:
+    default_entity: "number.battery_forced_charge_discharge_power"
+    domain: "number"
+    category: "battery"
+    description: "Forced mode charge/discharge power cap (Watts)"
+    required: true
+
 modes:
   charge:
     description: "Grid charge — Force charge battery from AC grid"
@@ -62,6 +69,8 @@ modes:
         value: "Forced mode"
       - entity: "forced_charge_discharge_cmd"
         value: "Forced charge"
+      - entity: "forced_charge_discharge_power"
+        value: "{{charge_value}}"
       - entity: "max_charge_power"
         value: "{{charge_value}}"
       - entity: "max_discharge_power"
@@ -74,8 +83,14 @@ modes:
         value: "Forced mode"
       - entity: "forced_charge_discharge_cmd"
         value: "Forced discharge"
+      - entity: "forced_charge_discharge_power"
+        value: "{{max_discharge}}"
       - entity: "max_discharge_power"
         value: "{{discharge_value}}"
+      - entity: "export_power_limit"
+        value: "{{export_power_w}}"
+      - entity: "export_power_limit_switch"
+        value: "on"
 
   self_consumption:
     description: "Self consumption — Normal PV to battery and house"
@@ -84,6 +99,8 @@ modes:
         value: "Self-consumption mode (default)"
       - entity: "forced_charge_discharge_cmd"
         value: "Stop (default)"
+      - entity: "forced_charge_discharge_power"
+        value: 0
       - entity: "max_discharge_power"
         value: "{{max_discharge}}"
 
@@ -94,6 +111,8 @@ modes:
         value: "Self-consumption mode (default)"
       - entity: "forced_charge_discharge_cmd"
         value: "Stop (default)"
+      - entity: "forced_charge_discharge_power"
+        value: 0
       - entity: "max_discharge_power"
         value: 10
 

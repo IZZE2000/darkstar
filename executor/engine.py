@@ -120,6 +120,20 @@ class ExecutorEngine:
             # Set profile to None - executor will use existing hardcoded behavior
             self.inverter_profile = None
 
+        # Validate export power entity is configured when export is enabled
+        export_config = self._full_config.get("export", {})
+        if export_config.get("enable_export", True):
+            inv_config = self._full_config.get("executor", {}).get("inverter", {})
+            export_power_entity = inv_config.get("grid_max_export_power") or inv_config.get(
+                "grid_max_export_power_entity"
+            )
+            if not export_power_entity:
+                logger.warning(
+                    "⚠️ Export enabled but no export power entity configured. "
+                    "Grid export will not work properly. "
+                    "Configure 'grid_max_export_power' in executor.inverter section."
+                )
+
         # Initialize components
         self.history = ExecutionHistory(
             db_path=self._get_db_path(),

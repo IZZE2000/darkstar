@@ -62,6 +62,13 @@ entities:
     description: "Maximum battery discharge power (Watts)"
     required: false
 
+  export_power_limit:
+    default_entity: null
+    domain: "number"
+    category: "battery"
+    description: "Grid export power limit (Watts) - configure entity ID in UI"
+    required: false
+
 modes:
   charge:
     description: "Grid charge — charge battery from AC grid"
@@ -84,6 +91,8 @@ modes:
         value: false
       - entity: "max_discharge_current"
         value: "{{discharge_value}}"
+      - entity: "export_power_limit"
+        value: "{{export_power_w}}"
 
   self_consumption:
     description: "Self consumption — normal operation"

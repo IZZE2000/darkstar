@@ -54,6 +54,20 @@ entities:
     description: "Battery SoC target percentage"
     required: false
 
+  export_power_limit_enable:
+    default_entity: "switch.export_limit_enable"
+    domain: "switch"
+    category: "battery"
+    description: "Export limit enable switch"
+    required: false
+
+  export_power_limit:
+    default_entity: "number.export_limit_rate"
+    domain: "number"
+    category: "battery"
+    description: "Max solar export power (Watts)"
+    required: false
+
 modes:
   charge:
     description: "Grid charge — Force charge from AC grid"
@@ -76,6 +90,10 @@ modes:
         value: "{{discharge_value}}"
       - entity: "minimum_reserve"
         value: 5
+      - entity: "export_power_limit_enable"
+        value: "on"
+      - entity: "export_power_limit"
+        value: "{{export_power_w}}"
 
   self_consumption:
     description: "Self consumption — Normal automatic operation"

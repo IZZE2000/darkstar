@@ -37,21 +37,21 @@ entities:
     required: true
 
   max_charge_current:
-    default_entity: "number.inverter_battery_max_charge_current"
+    default_entity: "number.inverter_battery_max_charging_current"
     domain: "number"
     category: "battery"
     description: "Maximum battery charging current (Amps)"
     required: true
 
   max_discharge_current:
-    default_entity: "number.inverter_battery_max_discharge_current"
+    default_entity: "number.inverter_battery_max_discharging_current"
     domain: "number"
     category: "battery"
     description: "Maximum battery discharge current (Amps)"
     required: true
 
   grid_max_export_power:
-    default_entity: "number.inverter_grid_export_limit"
+    default_entity: "number.inverter_export_surplus_power"
     domain: "number"
     category: "battery"
     description: "Grid export power limit (Watts)"
@@ -79,6 +79,8 @@ modes:
         value: false
       - entity: "max_discharge_current"
         value: "{{discharge_value}}"
+      - entity: "grid_max_export_power"
+        value: "{{export_power_w}}"
 
   self_consumption:
     description: "Self consumption — PV to battery and house, no grid export"
