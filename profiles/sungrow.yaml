@@ -122,3 +122,42 @@ behavior:
   round_step_w: 100.0
   write_threshold_w: 100.0
   mode_settling_ms: 100
+
+# ============================================================
+# IMPORTANT NOTES (from mkaiser/Sungrow-SHx-Inverter-Modbus-Home-Assistant)
+# ============================================================
+#
+# 1. COMPOSITE MODE ARCHITECTURE:
+#    Sungrow uses two selectors together:
+#    - work_mode (EMS Mode): "Self-consumption mode (default)" or "Forced mode"
+#    - forced_charge_discharge_cmd: "Stop (default)", "Forced charge", or "Forced discharge"
+#
+# 2. POWER VALUES:
+#    - Minimum power value is 10W (inverter enforces this as lowest valid setting)
+#    - Forced Power must be set in multiples of 10W
+#    - In forced modes, always set the corresponding max_*_power to ensure
+#      it doesn't cap the forced power
+#
+# 3. IDLE MODE BEHAVIOR:
+#    Idle mode uses max_discharge_power=10W (minimum) instead of 0W to
+#    prevent battery discharge while still allowing PV charging.
+#
+# 4. SELF-CONSUMPTION MODE:
+#    In "Self-consumption mode (default)", the forced_charge_discharge_cmd
+#    is completely ignored regardless of its current value. The battery
+#    charges from excess PV and discharges to meet home load demand.
+#
+# 5. MAX DISCHARGE POWER CAP:
+#    max_charge_power and max_discharge_power act as caps on battery power
+#    in BOTH Self-consumption and Forced modes. Set these high (9000W)
+#    when you want full power availability.
+#
+# 6. EXPORT LIMIT:
+#    Export limit works independently of EMS mode - it is active in all
+#    modes when the switch is on. Export is controlled via export_power_limit
+#    entity, NOT via max_discharge_power.
+#
+# 7. FORCED MODE BEHAVIOR:
+#    In "Forced mode", the battery responds to forced_charge_discharge_cmd
+#    and forced_charge_discharge_power settings. This is used for grid
+#    charge and grid export actions.

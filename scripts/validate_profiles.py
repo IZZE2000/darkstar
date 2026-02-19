@@ -56,7 +56,7 @@ def validate_file(path: Path) -> list[str]:
 
     # 3. Required modes
     for mode_name in REQUIRED_MODES:
-        if mode_name not in profile._modes_dict:
+        if mode_name not in profile.modes:
             errors.append(f"  ✗ Missing required mode: '{mode_name}'")
         else:
             mode = profile.get_mode(mode_name)
@@ -85,7 +85,7 @@ def validate_file(path: Path) -> list[str]:
 
     # 5. Mode actions reference valid entity keys
     entity_keys = set(profile.entities.keys())
-    for mode_name, mode in profile._modes_dict.items():
+    for mode_name, mode in profile.modes.items():
         for i, action in enumerate(mode.actions):
             if action.entity not in entity_keys:
                 errors.append(

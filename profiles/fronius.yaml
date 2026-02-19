@@ -13,56 +13,45 @@ metadata:
 
 entities:
   work_mode:
-    default_entity: "select.storage_control_mode"
+    default_entity: "select.byd_battery_box_premium_hv_storage_control_mode"
     domain: "select"
     category: "system"
     description: "Storage control mode selector"
     required: true
 
+  # NOTE: minimum_reserve is the safety reserve (bottom SoC threshold).
+  # It should be configured manually in HAand NEVER written by Darkstar.
+  # Modifying this could cause dangerous battery behavior.
   minimum_reserve:
-    default_entity: "number.minimum_reserve"
+    default_entity: "number.byd_battery_box_premium_hv_minimum_reserve"
     domain: "number"
     category: "system"
-    description: "Minimum battery reserve percentage (used as SoC floor)"
-    required: true
-
-  grid_charge_power:
-    default_entity: "number.grid_charge_power"
-    domain: "number"
-    category: "battery"
-    description: "Grid charging power (Watts) — only active in Charge from Grid mode"
-    required: true
-
-  max_charge_power:
-    default_entity: "number.battery_max_charge_power"
-    domain: "number"
-    category: "battery"
-    description: "Maximum battery charging power (Watts)"
-    required: true
-
-  max_discharge_power:
-    default_entity: "number.battery_max_discharge_power"
-    domain: "number"
-    category: "battery"
-    description: "Maximum battery discharge power (Watts)"
-    required: true
-
-  soc_target:
-    default_entity: "input_number.master_soc_target"
-    domain: "input_number"
-    category: "battery"
-    description: "Battery SoC target percentage"
+    description: "Minimum battery reserve percentage (safety floor) - NEVER WRITE THIS"
     required: false
 
+  grid_charge_power:
+    default_entity: "number.byd_battery_box_premium_hv_grid_charge_power"
+    domain: "number"
+    category: "battery"
+    description: "Grid charging power (Watts) - used in Charge from Grid mode"
+    required: true
+
+  grid_discharge_power:
+    default_entity: "number.byd_battery_box_premium_hv_grid_discharge_power"
+    domain: "number"
+    category: "battery"
+    description: "Grid discharge power (Watts) - used in Discharge to Grid mode"
+    required: true
+
   export_power_limit_enable:
-    default_entity: "switch.export_limit_enable"
+    default_entity: "switch.fronius_symo_gen24_10_0_export_limit_enable"
     domain: "switch"
     category: "battery"
     description: "Export limit enable switch"
     required: false
 
   export_power_limit:
-    default_entity: "number.export_limit_rate"
+    default_entity: "number.fronius_symo_gen24_10_0_export_limit_rate"
     domain: "number"
     category: "battery"
     description: "Max solar export power (Watts)"
@@ -70,48 +59,40 @@ entities:
 
 modes:
   charge:
-    description: "Grid charge — Force charge from AC grid"
+    description: "Grid charge - Force charge from AC grid"
     actions:
       - entity: "work_mode"
         value: "Charge from Grid"
         settle_ms: 500
       - entity: "grid_charge_power"
         value: "{{charge_value}}"
-      - entity: "minimum_reserve"
-        value: "{{soc_target}}"
 
   export:
-    description: "Grid export — Maximize battery discharge to grid"
+    description: "Grid export - Maximize battery discharge to grid"
     actions:
       - entity: "work_mode"
-        value: "Auto"
+        value: "Discharge to Grid"
         settle_ms: 500
-      - entity: "max_discharge_power"
+      - entity: "grid_discharge_power"
         value: "{{discharge_value}}"
-      - entity: "minimum_reserve"
-        value: 5
       - entity: "export_power_limit_enable"
         value: "on"
       - entity: "export_power_limit"
         value: "{{export_power_w}}"
 
   self_consumption:
-    description: "Self consumption — Normal automatic operation"
+    description: "Self consumption - Normal automatic operation"
     actions:
       - entity: "work_mode"
         value: "Auto"
         settle_ms: 500
-      - entity: "minimum_reserve"
-        value: "{{soc_target}}"
 
   idle:
-    description: "Idle / Hold — Block battery discharge"
+    description: "Idle / Hold - Block battery discharge"
     actions:
       - entity: "work_mode"
-        value: "Block Discharging"
+        value: "Block discharging"
         settle_ms: 500
-      - entity: "minimum_reserve"
-        value: "{{soc_target}}"
 
 behavior:
   control_unit: "W"
@@ -120,3 +101,45 @@ behavior:
   grid_charge_round_step_w: 100.0
   write_threshold_w: 100.0
   mode_settling_ms: 500
+
+# ============================================================
+# IMPORTANT NOTES (from callifo/fronius_modbus integration)
+# ============================================================
+#
+# 1. GRID CHARGING EFFICIENCY:
+#    Grid charging efficiency is approximately 50-60% at low power
+#    levels (< 1000W). It improves at higher power levels.
+#
+# 2. POWER ROUNDING:
+#    Grid Charge Power must be set in multiples of 10W. If not
+#    rounded to 10, it may cause odd behavior (e.g., charging at
+#    500W instead of requested value).
+#
+# 3. POWER RESET:
+#    After changing modes, power values are automatically reset to 0.
+#    You must set the power value AFTER selecting the mode.
+#
+# 4. FIRMWARE:
+#    Update GEN24 inverter firmware to 1.34.6-1 or higher.
+#    Otherwise battery charging might be limited.
+#
+# 5. SCHEDULED CHARGING:
+#    Turn off scheduled (dis)charging in the Fronius Web UI to
+#    avoid unexpected behavior.
+#
+# 6. MODE ORDERING:
+#    Always change the mode FIRST, then set controls active
+#    in that mode. This profile uses settle_ms to ensure proper
+#    sequencing.
+#
+# 7. MODE BEHAVIOR (from integration docs):
+#    - Auto: Allows charging/discharging up to minimum reserve
+#    - Charge from Grid: Uses 'Grid Charge Power' entity
+#    - Discharge to Grid: Uses 'Grid Discharge Power' entity
+#    - Block discharging: Only PV charging allowed
+#    - Block charging: Only discharging allowed
+#
+# 8. EXPORT LIMIT:
+#    Export limit works independently of storage mode.
+#    Enable switch first, then set limit value.
+#
