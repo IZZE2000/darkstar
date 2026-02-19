@@ -251,7 +251,7 @@ The "Actual EV" dotted line in the schedule chart is incorrectly displaying plan
 * [x] Also show banner on Settings index page
 * [x] Banner persists across sessions using localStorage dismissal flag
 
-#### Phase 3: Testing [IN PROGRESS]
+#### Phase 3: Testing [DONE]
 * [x] Run `pnpm lint` and `pnpm format` in frontend/
 * [x] Run `uv run ruff check .` in backend/
 * [x] Manual test: Enable battery in System tab → save should succeed with warning

@@ -204,10 +204,37 @@ class ExecutorEngine:
         """Reload configuration from config.yaml."""
         with self._lock:
             self.config = load_executor_config(self.config_path)
+            self._full_config = load_yaml(self.config_path)
             self.status.enabled = self.config.enabled
             self.status.shadow_mode = self.config.shadow_mode
             if self.dispatcher:
                 self.dispatcher.shadow_mode = self.config.shadow_mode
+
+            # Reload inverter profile if changed (REV FIX: Profile switch now takes effect immediately)
+            from .profiles import get_profile_from_config
+
+            try:
+                new_profile = get_profile_from_config(self._full_config)
+                if (
+                    new_profile.metadata.name != self.inverter_profile.metadata.name
+                    if self.inverter_profile
+                    else True
+                ):
+                    self.inverter_profile = new_profile
+                    self.status.profile_name = new_profile.metadata.name
+                    self.status.profile_error = None
+                    if self.dispatcher:
+                        self.dispatcher.profile = new_profile
+                    logger.info(
+                        "Inverter profile reloaded: %s v%s (%s)",
+                        new_profile.metadata.name,
+                        new_profile.metadata.version,
+                        ", ".join(new_profile.metadata.supported_brands),
+                    )
+            except Exception as e:
+                logger.error("Failed to reload inverter profile during config reload: %s", e)
+                self.status.profile_error = str(e)
+
             logger.info("Executor config reloaded")
 
     def get_status(self) -> dict[str, Any]:
