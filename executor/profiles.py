@@ -233,11 +233,11 @@ class InverterProfile:
 
     def get_mode(self, mode_intent: str) -> ModeDefinition:
         """Get mode definition by intent key. Raises ProfileError if not found."""
-        if mode_intent not in self.modes:
+        if mode_intent not in self._modes_dict:
             raise ProfileError(
                 f"Mode '{mode_intent}' not defined in profile '{self.metadata.name}'"
             )
-        return self.modes[mode_intent]
+        return self._modes_dict[mode_intent]
 
     def get_entity(self, key: str) -> EntityDefinition:
         """Get entity definition by key. Raises ProfileError if not found."""

@@ -194,8 +194,8 @@ The "Actual EV" dotted line in the schedule chart is incorrectly displaying plan
 * [x] Fix Bug 4: Remove `STANDARD_ENTITY_KEYS` constant from `executor/profiles.py` — plan said to remove it, now finally gone.
 * [ ] **USER VERIFICATION AND COMMIT.**
 
-#### Phase 7: Comprehensive Testing [PLANNED]
-* [ ] Create `tests/test_profiles_v2.py` with parametrized tests over ALL profiles:
+#### Phase 7: Comprehensive Testing [DONE]
+* [x] Create `tests/test_profiles_v2.py` with parametrized tests over ALL profiles:
     - All profiles load successfully (schema_version == 2).
     - All profiles have 4 required modes (charge, export, self_consumption, idle).
     - All mode actions reference valid entity keys.
@@ -203,7 +203,7 @@ The "Actual EV" dotted line in the schedule chart is incorrectly displaying plan
     - All entity domains are valid (select, number, switch, input_number).
     - All entity categories are valid (system, battery).
     - Profile roundtrip (YAML → dataclass → validation).
-* [ ] Create `tests/test_executor_v2.py`:
+* [x] Create `tests/test_executor_v2.py`:
     - Execute mode writes all actions in order.
     - Idempotent skip when entity already at target.
     - Dynamic template resolution.
@@ -211,10 +211,21 @@ The "Actual EV" dotted line in the schedule chart is incorrectly displaying plan
     - Settle delay applied.
     - Shadow mode logs without writing.
     - Entity resolution order (user override > standard config > profile default).
-* [ ] Update `tests/test_executor_controller.py`:
+* [x] Update `tests/test_executor_controller.py`:
     - 4-mode selection (charge, export, idle, self_consumption) with parametrized inputs.
     - Override mode mapping.
-* [ ] Delete obsolete test files: `test_executor_profiles.py`, `test_profile_validation.py`, `test_executor_fronius_profile.py`, `test_executor_composite_mode.py`.
+* [x] Delete obsolete test files: `test_executor_profiles.py`, `test_profile_validation.py`, `test_executor_fronius_profile.py`, `test_executor_composite_mode.py`.
+* [x] Update remaining test files: `test_executor_actions.py`, `test_executor_watt_control.py`.
+* [x] Run full test suite: `uv run python -m pytest -q` (136 tests passing).
+* [x] Run linting: `uv run ruff check .` and `cd frontend && pnpm lint`.
+* [ ] **USER VERIFICATION AND COMMIT.**
+
+#### Phase 8: Final Cleanup & Documentation [PLANNED]
+* [ ] Review and clean up any remaining v1 backwards compatibility code.
+* [ ] Update README.md if needed.
+* [ ] Update architecture documentation.
+* [ ] Final integration testing.
+* [ ] **USER VERIFICATION AND COMMIT.**
 * [ ] Update remaining test files: `test_executor_actions.py`, `test_executor_watt_control.py`.
 * [ ] Run full test suite: `uv run python -m pytest -q`.
 * [ ] Run linting: `uv run ruff check .` and `cd frontend && pnpm lint`.
