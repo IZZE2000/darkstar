@@ -659,20 +659,3 @@ def list_profiles(profiles_dir: str | Path = "profiles") -> list[dict[str, Any]]
             logger.error("Skipping invalid profile %s: %s", yaml_file.name, e)
 
     return sorted(profiles, key=lambda x: x["name"])
-
-
-STANDARD_ENTITY_KEYS = frozenset(
-    [
-        "work_mode",
-        "soc_target",
-        "grid_charging_enable",
-        "grid_charge_power",
-        "minimum_reserve",
-        "grid_max_export_power",
-        "grid_max_export_power_switch",
-        "max_charge_current",
-        "max_discharge_current",
-        "max_charge_power",
-        "max_discharge_power",
-    ]
-)

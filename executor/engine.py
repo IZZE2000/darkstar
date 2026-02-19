@@ -113,12 +113,6 @@ class ExecutorEngine:
                     self.inverter_profile.metadata.name,
                     ", ".join(missing),
                 )
-                # Log suggestions if available
-                suggestions = self.inverter_profile.get_suggested_config()
-                for key in missing:
-                    suggestion = suggestions.get(key)
-                    if suggestion:
-                        logger.warning("   💡 Suggestion for %s: %s", key, suggestion)
         except Exception as e:
             logger.error("Failed to load inverter profile: %s", e)
             self.status.profile_error = str(e)
@@ -1003,23 +997,15 @@ class ExecutorEngine:
                 actions = {}
 
                 if action_type == "force_charge":
-                    # allow target_soc from params (default 100)
                     target_soc = quick_action.get("params", {}).get("target_soc", 100)
                     actions = {
-                        "work_mode": self.config.inverter.work_mode_zero_export,
-                        "grid_charging": True,
                         "soc_target": int(target_soc),
                     }
                 elif action_type == "force_export":
-                    actions = {
-                        "work_mode": self.config.inverter.work_mode_export,
-                        "grid_charging": False,
-                    }
+                    actions = {}
                 elif action_type == "force_stop":
                     actions = {
-                        "work_mode": self.config.inverter.work_mode_zero_export,
-                        "grid_charging": False,
-                        "soc_target": 10,  # Minimal activity
+                        "soc_target": 10,
                         "water_temp": self.config.water_heater.temp_off,
                     }
                 elif action_type == "force_heat":

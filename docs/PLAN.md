@@ -187,6 +187,13 @@ The "Actual EV" dotted line in the schedule chart is incorrectly displaying plan
 * [x] Keep all non-profile fields (pricing, sensors, notifications, battery specs, etc.) unchanged.
 * [ ] **USER VERIFICATION AND COMMIT.**
 
+#### Phase 1-6 Review: Bug Fixes [DONE]
+* [x] Fix Bug 1: Remove `get_suggested_config()` call in `engine.py:117` — method doesn't exist in v2 profile, causes crash on startup with missing entities.
+* [x] Fix Bug 2: Remove v1 mode lookup in `actions.py:696-735` `_set_max_export_power` — skip logic used non-existent v2 attributes (`zero_export`, `skip_export_power`). Export power is now profile-driven.
+* [x] Fix Bug 3: Clean up dead `work_mode`/`grid_charging` keys in `engine.py:1009-1024` quick actions dict — v2 controller ignores these fields.
+* [x] Fix Bug 4: Remove `STANDARD_ENTITY_KEYS` constant from `executor/profiles.py` — plan said to remove it, now finally gone.
+* [ ] **USER VERIFICATION AND COMMIT.**
+
 #### Phase 7: Comprehensive Testing [PLANNED]
 * [ ] Create `tests/test_profiles_v2.py` with parametrized tests over ALL profiles:
     - All profiles load successfully (schema_version == 2).
