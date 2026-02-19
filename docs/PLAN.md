@@ -63,7 +63,7 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 
 ## REVISION STREAM:
 
-### [DRAFT] REV // UI22 — Fix EV Plan "Actual" Dotted Line Showing in Future Slots
+### [DONE] REV // UI22 — Fix EV Plan "Actual" Dotted Line Showing in Future Slots
 
 **Goal:** Fix the EV plan chart showing a dotted "Actual EV (kW)" line in future scheduled slots when it should only appear for historical (already executed) slots.
 
@@ -81,28 +81,38 @@ The "Actual EV" dotted line in the schedule chart is incorrectly displaying plan
 
 **Plan:**
 
-#### Phase 1: Backend - Add Actual EV Data Support [DRAFT]
-* [ ] Add `actual_ev_charging_kw` field to slot response in `backend/api/routers/schedule.py`.
-* [ ] Query execution database (LearningStore) for actual EV charging values from `SlotObservation` or execution history.
-* [ ] Only populate `actual_ev_charging_kw` for historical slots where `is_executed=true`.
-* [ ] Return `null` for future slots to ensure no actual data leaks into future periods.
+#### Phase 1: Backend - Add Actual EV Data Support [DONE]
+* [x] Add `ev_charging_kwh` field to `SlotObservation` model in `backend/learning/models.py`.
+* [x] Update `store_slot_observations()` in `backend/learning/store.py` to store EV charging data with conflict handling.
+* [x] Update `get_history_range()` in `backend/learning/store.py` to query `ev_charging_kwh` from execution database.
+* [x] Update recorder.py to collect EV charging power from configured EV chargers and calculate `ev_charging_kwh`.
+* [x] Add `actual_ev_charging_kw` to slot response in `backend/api/routers/schedule.py` for historical slots only.
+* [x] Create Alembic migration `a1b2c3d4e5f6_add_ev_charging_kwh_to_slot_observations.py` for database schema.
 
-#### Phase 2: Frontend - Add Actual EV Data Type and Mapping [DRAFT]
-* [ ] Add `actualEvCharging?: (number | null)[]` to the `ChartValues` type in `ChartCard.tsx`.
-* [ ] Update `buildLiveData()` function to populate `actualEvCharging` from `slot.actual_ev_charging_kw`.
-* [ ] Ensure actual data is only pushed for historical slots (check `is_executed` flag).
+#### Phase 2: Frontend - Add Actual EV Data Type and Mapping [DONE]
+* [x] Add `actual_ev_charging_kw` to the `ScheduleSlot` type in `frontend/src/lib/types.ts`.
+* [x] Add `actualEvCharging?: (number | null)[]` to the `ChartValues` type in `ChartCard.tsx`.
+* [x] Update `buildLiveData()` function to populate `actualEvCharging` from `slot.actual_ev_charging_kw`.
+* [x] Push null values for slots without data to ensure future slots show no actual line.
 
-#### Phase 3: Frontend - Fix Dotted Line Data Source [DRAFT]
-* [ ] Update the "Actual EV (kW)" line dataset (lines 554-566) to use `values.actualEvCharging` instead of `values.evCharging`.
-* [ ] Verify the dotted line only appears for historical slots with actual data.
-* [ ] Ensure the line is hidden (null values) for future slots.
+#### Phase 3: Frontend - Fix Dotted Line Data Source [DONE]
+* [x] Update the "Actual EV (kW)" line dataset to use `values.actualEvCharging` instead of `values.evCharging`.
+* [x] Dotted line now correctly shows actual executed EV charging data only.
+* [x] Future slots receive null values, ensuring no line appears for unexecuted slots.
 
-#### Phase 4: Testing and Verification [DRAFT]
-* [ ] Run `pnpm lint` in `frontend/` directory to verify no TypeScript errors.
-* [ ] Run `uv run ruff check .` to verify Python backend changes.
-* [ ] Manual test: Verify dotted line appears only for past slots with executed EV charging.
-* [ ] Manual test: Verify no dotted line appears in future scheduled slots.
-* [ ] Verify the "Show Actual" toggle correctly shows/hides the EV actual line.
+#### Phase 4: Testing and Verification [DONE]
+* [x] Run `pnpm lint` in `frontend/` directory - **PASSED** (no TypeScript errors).
+* [x] Run `uv run ruff check .` to verify Python backend changes - **PASSED**.
+* [x] Manual test: Verify dotted line appears only for past slots with executed EV charging.
+* [x] Manual test: Verify no dotted line appears in future scheduled slots.
+* [x] Verify the "Show Actual" toggle correctly shows/hides the EV actual line.
+
+**Implementation Summary:**
+- Database schema updated with `ev_charging_kwh` column in `slot_observations` table
+- Backend correctly queries and returns `actual_ev_charging_kw` only for historical (executed) slots
+- Frontend properly separates planned (`evCharging`) and actual (`actualEvCharging`) EV data
+- Dotted "Actual EV (kW)" line now uses actual execution data instead of planned data
+- All linting and type checks pass
 
 ---
 

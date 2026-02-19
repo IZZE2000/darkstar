@@ -18,6 +18,7 @@ class SlotObservation(Base):
     pv_kwh: Mapped[float] = mapped_column(Float, default=0.0, server_default=text("0"))
     load_kwh: Mapped[float] = mapped_column(Float, default=0.0, server_default=text("0"))
     water_kwh: Mapped[float] = mapped_column(Float, default=0.0, server_default=text("0"))
+    ev_charging_kwh: Mapped[float] = mapped_column(Float, default=0.0, server_default=text("0"))
     batt_charge_kwh: Mapped[float | None] = mapped_column(Float)
     batt_discharge_kwh: Mapped[float | None] = mapped_column(Float)
     soc_start_percent: Mapped[float | None] = mapped_column(Float)

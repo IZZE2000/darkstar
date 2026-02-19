@@ -16,6 +16,10 @@ if command -v uv >/dev/null 2>&1; then
     echo "Running config migrations..."
     uv run python -m backend.config_migration
 
+    # Run database migrations (Alembic)
+    echo "Running database migrations..."
+    uv run alembic upgrade head
+
     # uv run automatically handles venv and environment
     uv run uvicorn backend.main:app --host 0.0.0.0 --port $PORT --reload --log-level info
 else
@@ -36,6 +40,10 @@ else
     # Run config migration
     echo "Running config migrations..."
     python -m backend.config_migration
+
+    # Run database migrations (Alembic)
+    echo "Running database migrations..."
+    alembic upgrade head
 
     uvicorn backend.main:app --host 0.0.0.0 --port $PORT --reload --log-level info
 fi

@@ -135,6 +135,7 @@ class LearningStore:
                     pv_kwh=float(record.get("pv_kwh", 0.0) or 0.0),
                     load_kwh=float(record.get("load_kwh", 0.0) or 0.0),
                     water_kwh=float(record.get("water_kwh", 0.0) or 0.0),
+                    ev_charging_kwh=float(record.get("ev_charging_kwh", 0.0) or 0.0),
                     batt_charge_kwh=record.get("batt_charge_kwh"),
                     batt_discharge_kwh=record.get("batt_discharge_kwh"),
                     soc_start_percent=record.get("soc_start_percent"),
@@ -168,6 +169,10 @@ class LearningStore:
                         "water_kwh": case(
                             (stmt.excluded.water_kwh > 0, stmt.excluded.water_kwh),
                             else_=SlotObservation.water_kwh,
+                        ),
+                        "ev_charging_kwh": case(
+                            (stmt.excluded.ev_charging_kwh > 0, stmt.excluded.ev_charging_kwh),
+                            else_=SlotObservation.ev_charging_kwh,
                         ),
                         "batt_charge_kwh": func.coalesce(
                             stmt.excluded.batt_charge_kwh, SlotObservation.batt_charge_kwh
@@ -745,6 +750,7 @@ class LearningStore:
                     SlotObservation.batt_discharge_kwh,
                     SlotObservation.soc_end_percent,
                     SlotObservation.water_kwh,
+                    SlotObservation.ev_charging_kwh,
                     SlotObservation.import_kwh,
                     SlotObservation.export_kwh,
                     SlotObservation.import_price_sek_kwh,

@@ -240,6 +240,7 @@ type ChartValues = {
     actualDischarge?: (number | null)[]
     actualExport?: (number | null)[]
     actualWater?: (number | null)[]
+    actualEvCharging?: (number | null)[]
 }
 
 interface ExtendedChartData extends ChartData {
@@ -554,7 +555,7 @@ const createChartData = (
             {
                 type: 'line',
                 label: 'Actual EV (kW)',
-                data: values.evCharging ?? values.labels.map(() => null), // Map evCharging to actual EV
+                data: values.actualEvCharging ?? values.labels.map(() => null),
                 borderColor: DS.ai,
                 borderDash: [2, 4],
                 pointRadius: 0,
@@ -1344,6 +1345,7 @@ function buildLiveData(
     const actualDischarge: (number | null)[] = []
     const actualExport: (number | null)[] = []
     const actualWater: (number | null)[] = []
+    const actualEvCharging: (number | null)[] = []
 
     let nowIndex: number | null = null
     const now = new Date()
@@ -1403,6 +1405,7 @@ function buildLiveData(
             actualDischarge.push(slot.actual_discharge_kw ?? null)
             actualExport.push(slot.actual_export_kw ?? null)
             actualWater.push(slot.actual_water_kw ?? null)
+            actualEvCharging.push(slot.actual_ev_charging_kw ?? null)
         } else {
             price.push(null)
             pv.push(null)
@@ -1421,6 +1424,7 @@ function buildLiveData(
             actualDischarge.push(null)
             actualExport.push(null)
             actualWater.push(null)
+            actualEvCharging.push(null)
         }
 
         if (now >= bucketStart && now < bucketEnd) {
@@ -1459,6 +1463,7 @@ function buildLiveData(
                 actualDischarge,
                 actualExport,
                 actualWater,
+                actualEvCharging,
                 nowPct,
             },
             themeColors,

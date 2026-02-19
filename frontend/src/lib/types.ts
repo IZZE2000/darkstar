@@ -25,6 +25,7 @@ export type ScheduleSlot = {
     actual_load_kwh?: number
     actual_pv_kwh?: number
     actual_water_kw?: number
+    actual_ev_charging_kw?: number
 }
 
 export type Status = { value: number; timestamp: string; planned_at?: string; planner_version?: string }

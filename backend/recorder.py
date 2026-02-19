@@ -92,6 +92,24 @@ async def record_observation_from_current_state(
     battery_kw = await get_kw("battery_power")
     water_kw = await get_kw("water_power")
 
+    # Collect EV charging power from all configured EV chargers
+    ev_charging_kw = 0.0
+    ev_chargers = config.get("ev_chargers", [])
+    for ev_charger in ev_chargers:
+        if ev_charger.get("enabled", True):
+            sensor = ev_charger.get("sensor")
+            if sensor:
+                power_kw = await get_kw("sensor_not_configured")  # Dummy call to get_kw
+                # Actually get from HA directly since sensors are indexed
+                try:
+                    val = await get_ha_sensor_float(sensor)
+                    if val is not None:
+                        # Assume sensors are in Watts, convert to kW
+                        power_kw = val / 1000.0
+                        ev_charging_kw += power_kw
+                except Exception:
+                    pass  # Sensor not available, skip
+
     # Apply inversion flags if configured (REV F55)
     input_sensors = config.get("input_sensors", {})
     if input_sensors.get("battery_power_inverted", False):
@@ -114,6 +132,7 @@ async def record_observation_from_current_state(
     import_kwh = import_kw * 0.25
     export_kwh = export_kw * 0.25
     water_kwh = water_kw * 0.25
+    ev_charging_kwh = ev_charging_kw * 0.25
 
     # Standard inverter convention: positive = discharge, negative = charge
     batt_discharge_kwh = (battery_kw * 0.25) if battery_kw > 0 else 0.0
@@ -172,6 +191,7 @@ async def record_observation_from_current_state(
         "import_kwh": import_kwh,
         "export_kwh": export_kwh,
         "water_kwh": water_kwh,
+        "ev_charging_kwh": ev_charging_kwh,
         "batt_charge_kwh": batt_charge_kwh,
         "batt_discharge_kwh": batt_discharge_kwh,
         "soc_end_percent": soc_percent,
