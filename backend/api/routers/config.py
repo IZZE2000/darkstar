@@ -57,19 +57,66 @@ async def get_config() -> dict[str, Any]:
 
 
 @router.get(
-    "/api/config/validate",
-    summary="Validate Configuration",
-    description="Returns validation warnings without saving. Use to check for incomplete configuration.",
+    "/api/config/download",
+    summary="Download Configuration",
+    description="Returns config.yaml as a downloadable YAML file with secrets sanitized.",
 )
-async def validate_config() -> dict[str, Any]:
-    """Validate current config and return warnings (no save)."""
+async def download_config():
+    """Download the configuration file."""
+    config_path = Path("config.yaml")
+    if not config_path.exists():
+        raise HTTPException(status_code=404, detail="Config file not found")
+
     try:
+        # Load config and sanitize
         conf: dict[str, Any] = load_yaml("config.yaml") or {}
-        validation_issues = _validate_config_for_save(conf)
-        warnings = [i for i in validation_issues if i["severity"] == "warning"]
-        return {"status": "success", "warnings": warnings}
+
+        # Merge Home Assistant secrets
+        ha_secrets = load_home_assistant_config()
+        if ha_secrets:
+            if "home_assistant" not in conf:
+                conf["home_assistant"] = {}
+            cast("dict[str, Any]", conf["home_assistant"]).update(ha_secrets)
+
+        # Merge Notification secrets
+        notif_secrets = load_notifications_config()
+        if notif_secrets:
+            if "notifications" not in conf:
+                conf["notifications"] = {}
+            cast("dict[str, Any]", conf["notifications"]).update(notif_secrets)
+
+        # Sanitize secrets before returning
+        if "home_assistant" in conf:
+            cast("dict[str, Any]", conf["home_assistant"]).pop("token", None)
+        if "notifications" in conf:
+            for key in ["api_key", "token", "password", "webhook_url"]:
+                cast("dict[str, Any]", conf.get("notifications", {})).pop(key, None)
+
+        # Convert to YAML string
+        yaml_handler = YAML()
+        yaml_handler.preserve_quotes = True
+        yaml_handler.width = 4096
+
+        import io
+
+        stream = io.StringIO()
+        yaml_handler.dump(conf, stream)
+        yaml_content = stream.getvalue()
+
+        # Create response with proper headers for download
+        from starlette.responses import StreamingResponse
+
+        return StreamingResponse(
+            io.BytesIO(yaml_content.encode("utf-8")),
+            media_type="application/x-yaml",
+            headers={
+                "Content-Disposition": "attachment; filename=config.yaml",
+                "Content-Type": "application/x-yaml",
+            },
+        )
     except Exception as e:
-        return {"error": str(e)}
+        logger.error(f"Failed to download config: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post(

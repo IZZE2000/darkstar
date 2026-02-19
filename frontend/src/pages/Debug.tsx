@@ -93,13 +93,22 @@ function LogsView({
                             {loading ? 'Refreshing…' : 'Refresh'}
                         </button>
                         <button
-                            className="rounded-pill border border-line/60 px-3 py-1 hover:border-accent flex items-center gap-1.5"
+                            className="rounded-pill border border-sky-500/60 px-3 py-1 hover:border-sky-500 hover:bg-sky-500/10 text-sky-400 flex items-center gap-1.5"
                             onClick={() => {
                                 window.location.href = 'api/system/logs'
                             }}
                         >
                             <Download size={10} />
-                            Download
+                            Logs
+                        </button>
+                        <button
+                            className="rounded-pill border border-accent/60 px-3 py-1 hover:border-accent hover:bg-accent/10 text-accent flex items-center gap-1.5"
+                            onClick={() => {
+                                window.location.href = 'api/config/download'
+                            }}
+                        >
+                            <Download size={10} />
+                            Config
                         </button>
                         <button
                             className="rounded-pill border border-rose-500/40 px-3 py-1 hover:border-rose-500 text-rose-300 disabled:opacity-40 flex items-center gap-1.5"
