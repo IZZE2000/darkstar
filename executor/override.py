@@ -25,8 +25,6 @@ class OverrideType(Enum):
     EXCESS_PV_HEATING = "excess_pv_heating"
     SLOT_FAILURE_FALLBACK = "slot_failure_fallback"
     MANUAL_OVERRIDE = "manual_override"
-    EMERGENCY_CHARGE = "emergency_charge"
-    GRID_OUTAGE = "grid_outage"
     # User-initiated quick actions
     FORCE_CHARGE = "force_charge"
     FORCE_EXPORT = "force_export"
@@ -51,7 +49,11 @@ class OverrideResult:
 
 @dataclass
 class SystemState:
-    """Current system state for override evaluation."""
+    """Current system state for override evaluation.
+
+    Note: min_soc_percent is a planning/optimization target, not a safety limit.
+    The battery BMS has a hard safety limit below Darkstar's soft limit.
+    """
 
     # SoC
     current_soc_percent: float = 50.0
@@ -101,6 +103,10 @@ class OverrideEvaluator:
     Evaluates real-time conditions and determines if overrides are needed.
 
     Ported from n8n Helios Executor "Override" JavaScript node.
+
+    NOTE: Emergency charge override was removed in REV E6.
+    The battery BMS has a hard safety limit below Darkstar's soft planning limit.
+    min_soc_percent is a planning/optimization target, not a safety floor.
     """
 
     def __init__(
@@ -125,10 +131,9 @@ class OverrideEvaluator:
 
         Overrides are evaluated in priority order (highest first):
         1. Manual override (user explicitly took control) - Priority 10
-        2. Emergency charge (critically low SoC) - Priority 9
-        3. Low SoC export prevention - Priority 8.5
-        4. Slot failure fallback - Priority 8
-        5. Excess PV heating - Priority 5
+        2. Low SoC export prevention - Priority 8.5
+        3. Slot failure fallback - Priority 8
+        4. Excess PV heating - Priority 5
         """
         # Priority 10: Manual override
         if state.manual_override_active:
@@ -138,21 +143,6 @@ class OverrideEvaluator:
                 priority=10.0,
                 reason="Manual override is active - executor will not change settings",
                 actions={},  # No actions, let user control
-            )
-
-        # Priority 9: Emergency charge (SoC BELOW absolute floor)
-        if state.current_soc_percent < self.min_soc_floor:
-            return OverrideResult(
-                override_needed=True,
-                override_type=OverrideType.EMERGENCY_CHARGE,
-                priority=9.0,
-                reason=f"EMERGENCY: SoC at floor ({state.current_soc_percent}%). "
-                f"Enabling grid charge, stopping all export.",
-                actions={
-                    "grid_charging": True,
-                    "soc_target": int(self.min_soc_floor + 5),  # min_soc + 5%
-                    "water_temp": self.water_temp_off,
-                },
             )
 
         # Priority 8.5: Low SoC export prevention

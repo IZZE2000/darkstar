@@ -114,7 +114,7 @@ class Controller:
         # Determine mode intent from override type
         mode_intent = "idle"  # default
 
-        if override.override_type.value in ("force_charge", "emergency_charge"):
+        if override.override_type.value == "force_charge":
             mode_intent = "charge"
         elif override.override_type.value == "force_export":
             mode_intent = "export"
@@ -127,7 +127,7 @@ class Controller:
         write_discharge = False
 
         # Handle quick action charging
-        if override.override_type.value in ("force_charge", "emergency_charge"):
+        if override.override_type.value == "force_charge":
             # Force charge - use max charging value
             if self.inverter_config.control_unit == "W":
                 charge_value = self.config.max_charge_w

@@ -267,7 +267,7 @@ class TestGetStats:
                 slot_start=exec_time,
                 commanded_work_mode="Test",
                 override_active=override,
-                override_type="emergency_charge" if override else None,
+                override_type="manual_override" if override else None,
                 success=1,
             )
             history.log_execution(record)

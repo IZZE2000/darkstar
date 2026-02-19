@@ -319,6 +319,15 @@ The executor includes real-time override logic for edge cases:
 - **Excess PV Utilization**: Heats water to `temp_max` when excess PV available
 - **Slot Failure Fallback**: Safe defaults if slot plan unavailable
 
+> **⚠️ IMPORTANT: Emergency Charge Override Removed (REV E6)**
+>
+> The Emergency Charge override (which would force grid charging when SoC dropped below `min_soc_percent`) has been removed to prevent jojo oscillation behavior.
+>
+> - `min_soc_percent` is now a **planning/optimization constraint only**, not a safety floor
+> - The battery BMS (Battery Management System) handles the actual hard safety limit
+> - If your BMS does not have a hard cutoff configured, the battery could discharge below safe levels
+> - **Ensure your inverter/BMS is configured with appropriate hard SoC limits for safety**
+
 ### Water Heater Temperature Hierarchy
 
 The executor uses a 4-level temperature system for water heater control:

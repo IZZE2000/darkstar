@@ -126,6 +126,30 @@ Darkstar treats your Electric Vehicle as a "Deferrable Load." This means it unde
 
 ---
 
+## ⚠️ Safety Considerations
+
+### Battery State of Charge (SoC) Limits
+
+**Darkstar's `min_soc_percent` is NOT a safety limit.** It is a planning constraint used by the optimization algorithm to determine charge/discharge schedules.
+
+- **Planning Constraint**: The planner uses `min_soc_percent` to calculate optimal schedules
+- **Not a Hard Floor**: The executor will NOT force charging if the battery drops below this value
+- **BMS Responsibility**: Your battery's **BMS (Battery Management System)** must handle the actual hard safety cutoff
+
+**⚠️ WARNING:**
+- If your inverter/BMS allows discharge below safe levels, Darkstar will not prevent it
+- Ensure your inverter is configured with appropriate hard SoC limits
+- Verify your battery BMS has a hard cutoff configured to prevent over-discharge
+- Without proper BMS limits, deep discharge could damage your battery
+
+**Recommended Actions:**
+1. Check your inverter settings for minimum SoC limits
+2. Ensure the BMS hard limit is below Darkstar's `min_soc_percent`
+3. Test that your BMS actually cuts off discharge at the configured limit
+4. Monitor battery behavior during initial use to verify safety limits work
+
+---
+
 ## 📚 6. FAQ
 
 ### "Executor not setting entity" - How to check history logs

@@ -97,43 +97,6 @@ class TestOverrideEvaluatorManualOverride:
         assert result.override_type != OverrideType.MANUAL_OVERRIDE
 
 
-class TestOverrideEvaluatorEmergencyCharge:
-    """Test Priority 9: Emergency charge when SoC BELOW floor."""
-
-    def test_soc_at_floor_no_emergency(self):
-        """SoC exactly at minimum floor should NOT trigger emergency charge.
-
-        The floor (min_soc) is the user's acceptable minimum. Being AT the floor
-        is still within tolerance; only dropping BELOW triggers emergency.
-        """
-        evaluator = OverrideEvaluator(min_soc_floor=10.0)
-        state = SystemState(current_soc_percent=10.0)
-
-        result = evaluator.evaluate(state)
-
-        assert result.override_needed is False
-        assert result.override_type != OverrideType.EMERGENCY_CHARGE
-
-    def test_soc_below_floor_triggers_emergency(self):
-        """SoC below minimum floor should trigger emergency charge."""
-        evaluator = OverrideEvaluator(min_soc_floor=10.0)
-        state = SystemState(current_soc_percent=5.0)
-
-        result = evaluator.evaluate(state)
-
-        assert result.override_needed is True
-        assert result.override_type == OverrideType.EMERGENCY_CHARGE
-
-    def test_soc_above_floor_no_emergency(self):
-        """SoC above minimum floor should not trigger emergency."""
-        evaluator = OverrideEvaluator(min_soc_floor=10.0)
-        state = SystemState(current_soc_percent=15.0)
-
-        result = evaluator.evaluate(state)
-
-        assert result.override_type != OverrideType.EMERGENCY_CHARGE
-
-
 class TestOverrideEvaluatorLowSocExportPrevention:
     """Test Priority 8.5: Low SoC export prevention."""
 
@@ -303,29 +266,31 @@ class TestOverrideEvaluatorNoOverride:
 class TestOverridePriority:
     """Test that higher priority overrides take precedence."""
 
-    def test_manual_override_beats_emergency(self):
-        """Manual override (10) should win over emergency charge (9)."""
-        evaluator = OverrideEvaluator(min_soc_floor=10.0)
+    def test_manual_override_beats_low_soc_export_prevention(self):
+        """Manual override (10) should win over low SoC export prevention (8.5)."""
+        evaluator = OverrideEvaluator(low_soc_threshold=20.0)
         state = SystemState(
-            current_soc_percent=5.0,  # Would trigger emergency
+            current_soc_percent=15.0,  # Would trigger low SoC export prevention
             manual_override_active=True,  # But manual is higher priority
         )
+        slot = SlotPlan(export_kw=5.0)
 
-        result = evaluator.evaluate(state)
+        result = evaluator.evaluate(state, slot)
 
         assert result.override_type == OverrideType.MANUAL_OVERRIDE
 
-    def test_emergency_beats_slot_failure(self):
-        """Emergency charge (9) should win over slot failure (8)."""
-        evaluator = OverrideEvaluator(min_soc_floor=10.0)
+    def test_low_soc_export_prevention_beats_slot_failure(self):
+        """Low SoC export prevention (8.5) should win over slot failure (8)."""
+        evaluator = OverrideEvaluator(low_soc_threshold=20.0)
         state = SystemState(
-            current_soc_percent=5.0,  # Would trigger emergency
+            current_soc_percent=15.0,  # Low SoC
             slot_exists=False,  # Also slot failure
         )
+        slot = SlotPlan(export_kw=5.0)  # Trying to export
 
-        result = evaluator.evaluate(state)
+        result = evaluator.evaluate(state, slot)
 
-        assert result.override_type == OverrideType.EMERGENCY_CHARGE
+        assert result.override_type == OverrideType.LOW_SOC_EXPORT_PREVENTION
 
 
 class TestEvaluateOverridesConvenienceFunction:
@@ -346,8 +311,8 @@ class TestEvaluateOverridesConvenienceFunction:
 
         result = evaluate_overrides(state, config=config)
 
-        assert result.override_needed is True
-        assert result.override_type == OverrideType.EMERGENCY_CHARGE
+        # Emergency charge removed - low SoC does not trigger override
+        assert result.override_needed is False
 
     def test_with_slot_plan(self):
         """Works with slot plan provided."""

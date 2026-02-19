@@ -161,7 +161,7 @@ class TestControllerApplyOverride:
         state = SystemState()
         override = OverrideResult(
             override_needed=True,
-            override_type=OverrideType.EMERGENCY_CHARGE,
+            override_type=OverrideType.FORCE_CHARGE,
             actions={
                 "soc_target": 30,
             },
@@ -401,7 +401,7 @@ class TestMakeDecisionConvenience:
         state = SystemState()
         override = OverrideResult(
             override_needed=True,
-            override_type=OverrideType.EMERGENCY_CHARGE,
+            override_type=OverrideType.FORCE_CHARGE,
             actions={},
         )
 
