@@ -1,25 +1,64 @@
-import React from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Card from '../../components/Card'
 import { useSettingsForm } from './hooks/useSettingsForm'
 import { SettingsField } from './components/SettingsField'
-import { batteryFieldList, batterySections } from './types'
+import { batteryFieldList, batterySections, InverterProfile } from './types'
 import { shouldRenderField } from './logic'
 import { motion, AnimatePresence } from 'framer-motion'
 import { AdditionalAdvancedNotice, GlobalAdvancedLockedNotice } from './components/AdvancedLockedNotice'
 import { UnsavedChangesBanner } from './components/UnsavedChangesBanner'
 import { NavigationBlockerDialog } from './components/NavigationBlockerDialog'
 import { useUnsavedChangesGuard } from './hooks/useUnsavedChangesGuard'
+import { Api } from '../../lib/api'
 
 export const BatteryTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }) => {
     const navigate = useNavigate()
-    const { form, fieldErrors, loading, saving, handleChange, save, isDirty, haEntities, haLoading } =
-        useSettingsForm(batteryFieldList)
+    const [profiles, setProfiles] = useState<InverterProfile[]>([])
+
+    // Load profiles on mount
+    useEffect(() => {
+        Api.listProfiles()
+            .then((data) => setProfiles(data))
+            .catch((err) => console.error('Failed to load profiles:', err))
+    }, [])
+
+    const { form, fieldErrors, loading, saving, handleChange, save, isDirty, haEntities, haLoading } = useSettingsForm(
+        batteryFieldList,
+        profiles,
+    )
 
     const blocker = useUnsavedChangesGuard(isDirty)
     const hasHiddenSections = batterySections.some((s) => s.fields.every((f) => f.isAdvanced))
 
-    if (loading) {
+    // Generate dynamic sections with profile entities
+    const dynamicSections = useMemo(() => {
+        const selectedProfileName = form['system.inverter_profile']
+        const selectedProfile = profiles.find((p) => p.name === selectedProfileName)
+
+        return batterySections.map((section) => {
+            // Replace hardcoded "Battery HA Control Entities" with dynamic fields from profile (battery category)
+            if (section.title === 'Battery HA Control Entities' && selectedProfile) {
+                const batteryEntities = Object.entries(selectedProfile.entities)
+                    .filter(([_, entity]) => entity.category === 'battery')
+                    .map(([key, entity]) => ({
+                        key: `executor.inverter.${key}`,
+                        label: entity.description,
+                        path: ['executor', 'inverter', key] as (string | number)[],
+                        type: 'entity' as const,
+                        helper: entity.required ? `Required for ${selectedProfile.name}` : `Optional`,
+                        required: entity.required,
+                    }))
+                return {
+                    ...section,
+                    fields: batteryEntities,
+                }
+            }
+            return section
+        })
+    }, [profiles, form])
+
+    if (loading || profiles.length === 0) {
         return <Card className="p-6 text-sm text-muted">Loading battery configuration…</Card>
     }
 
@@ -33,7 +72,7 @@ export const BatteryTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode 
         <div className="space-y-4">
             <UnsavedChangesBanner visible={isDirty} onSave={() => save()} saving={saving} />
 
-            {batterySections.map((section) => {
+            {dynamicSections.map((section) => {
                 // Check section-level showIf
                 let sectionEnabled = true
                 if (section.showIf) {

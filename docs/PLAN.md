@@ -172,19 +172,19 @@ The "Actual EV" dotted line in the schedule chart is incorrectly displaying plan
 * [x] Update idle mode to use `mode_intent: "idle"` instead of `work_mode` values.
 * [x] **USER VERIFICATION AND COMMIT.**
 
-#### Phase 5: Execution History & Logging [PLANNED]
-* [ ] Update execution history format to log per-action results (entity_key, entity_id, value, success, skipped).
-* [ ] Update `backend/api/routers/executor.py` history endpoint for new action log format.
-* [ ] Ensure frontend executor history component renders the new format correctly.
-* [ ] **USER VERIFICATION AND COMMIT.**
+#### Phase 5: Execution History & Logging [DONE]
+* [x] Update execution history format to log per-action results (entity_key, entity_id, value, success, skipped).
+* [x] Update `backend/api/routers/executor.py` history endpoint for new action log format.
+* [x] Ensure frontend executor history component renders the new format correctly.
+* [x] **USER VERIFICATION AND COMMIT.**
 
-#### Phase 6: Settings UI — Dynamic Entity Fields [PLANNED]
-* [ ] Add/extend backend API endpoint to return profile entity registry with categories.
-* [ ] Update `backend/api/routers/config.py` validation to use v2 profile entity registry.
-* [ ] Remove hardcoded entity fields with `showIf` per-profile from `systemSections` and `batterySections` in `types.ts`.
-* [ ] Add dynamic field generation in Settings frontend: fetch profile entities, group by `category`, render entity fields dynamically for selected profile.
-* [ ] Ensure only entities from the selected profile are displayed.
-* [ ] Keep all non-profile fields (pricing, sensors, notifications, battery specs, etc.) unchanged.
+#### Phase 6: Settings UI — Dynamic Entity Fields [DONE]
+* [x] Add/extend backend API endpoint to return profile entity registry with categories.
+* [x] Update `backend/api/routers/config.py` validation to use v2 profile entity registry.
+* [x] Remove hardcoded entity fields with `showIf` per-profile from `systemSections` and `batterySections` in `types.ts`.
+* [x] Add dynamic field generation in Settings frontend: fetch profile entities, group by `category`, render entity fields dynamically for selected profile.
+* [x] Ensure only entities from the selected profile are displayed.
+* [x] Keep all non-profile fields (pricing, sensors, notifications, battery specs, etc.) unchanged.
 * [ ] **USER VERIFICATION AND COMMIT.**
 
 #### Phase 7: Comprehensive Testing [PLANNED]

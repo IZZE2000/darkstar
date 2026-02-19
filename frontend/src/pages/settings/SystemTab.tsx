@@ -4,7 +4,7 @@ import { Api } from '../../lib/api'
 import Card from '../../components/Card'
 import { useSettingsForm } from './hooks/useSettingsForm'
 import { SettingsField } from './components/SettingsField'
-import { systemFieldList, systemSections, InverterProfile } from './types'
+import { systemFieldList, systemSections, InverterProfile, generateProfileEntityFields } from './types'
 import { shouldRenderField } from './logic'
 import { motion, AnimatePresence } from 'framer-motion'
 import { AdditionalAdvancedNotice, GlobalAdvancedLockedNotice } from './components/AdvancedLockedNotice'
@@ -42,6 +42,9 @@ export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }
 
     // Update systemSections dynamic options and conditional visibility
     const dynamicSections = useMemo(() => {
+        const selectedProfileName = form['system.inverter_profile']
+        const selectedProfile = profiles.find((p) => p.name === selectedProfileName)
+
         return systemSections.map((section) => {
             if (section.title === 'System Profile') {
                 return {
@@ -57,9 +60,6 @@ export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }
                             }
                         }
                         if (field.key === 'executor.inverter.control_unit') {
-                            const selectedProfileName = form['system.inverter_profile']
-                            const selectedProfile = profiles.find((p) => p.name === selectedProfileName)
-
                             // Hide control_unit if profile behavior defines it strongly
                             if (selectedProfile && selectedProfile.name !== 'generic') {
                                 return { ...field, disabled: true }
@@ -67,6 +67,15 @@ export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }
                         }
                         return field
                     }),
+                }
+            }
+
+            // Replace hardcoded "Required HA Control Entities" with dynamic fields from profile
+            if (section.title === 'Required HA Control Entities' && selectedProfile) {
+                const dynamicFields = generateProfileEntityFields(selectedProfile)
+                return {
+                    ...section,
+                    fields: dynamicFields,
                 }
             }
 

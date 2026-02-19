@@ -55,24 +55,32 @@ export interface InverterProfile {
     description: string
     supported_brands: string[]
     version: string
-    capabilities: {
-        grid_charging_control: boolean
-        watts_based_control: boolean
-        service_call_mode: boolean
-        separate_grid_charging_switch: boolean
-        supports_export_mode: boolean
-        supports_zero_export: boolean
-        supports_self_consumption: boolean
-        supports_soc_target: boolean
-        supports_grid_export_limit: boolean
-        supports_force_discharge: boolean
-    }
+    schema_version: number
+    entities: Record<
+        string,
+        {
+            default_entity: string | null
+            domain: string
+            category: 'system' | 'battery'
+            description: string
+            required: boolean
+        }
+    >
+    modes: Record<
+        string,
+        {
+            description: string
+            action_count: number
+        }
+    >
     behavior: {
         control_unit: 'A' | 'W'
-    }
-    entities: {
-        required: Record<string, string | null>
-        optional: Record<string, string | null>
+        min_charge_a?: number
+        min_charge_w?: number
+        round_step_a?: number
+        round_step_w?: number
+        write_threshold_w?: number
+        mode_settling_ms?: number
     }
 }
 
@@ -1453,6 +1461,24 @@ export const allFields = [
         type: 'text' as FieldType,
     },
 ]
+
+export function generateProfileEntityFields(profile: InverterProfile): BaseField[] {
+    const fields: BaseField[] = []
+
+    for (const [key, entity] of Object.entries(profile.entities)) {
+        const configPath = `executor.inverter.${key}`
+        fields.push({
+            key: configPath,
+            label: entity.description,
+            path: ['executor', 'inverter', key],
+            type: 'entity' as FieldType,
+            helper: entity.required ? `Required for ${profile.name} profile` : `Optional for ${profile.name} profile`,
+            required: entity.required,
+        })
+    }
+
+    return fields
+}
 
 export const fieldMap = allFields.reduce(
     (acc, field) => {
