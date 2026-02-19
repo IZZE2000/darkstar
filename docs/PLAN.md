@@ -5,19 +5,21 @@ Darkstar is transitioning from a deterministic optimizer (v1) to an intelligent 
 
 ---
 
-| Prefix  | Area                 | Examples |
-| ------- | -------------------- | -------- |
-| **K**   | Kepler (MILP solver) | F41      |
-| **E**   | Executor             | E1       |
-| **A**   | Aurora (ML)          | A29      |
-| **H**   | History/DB           | H1       |
-| **O**   | Onboarding           | O1       |
-| **UI**  | User Interface       | UI2      |
-| **DS**  | Design System        | DS1      |
-| **F**   | Fixes/Bugfixes       | F6       |
-| **DX**  | Developer Experience | DX1      |
-| **ARC** | Architecture         | ARC1     |
-| **IP**  | Inverter Profiles    | IP1      |
+| Prefix  | Area                 |
+| ------- | -------------------- |
+| **K**   | Kepler (MILP solver) |
+| **E**   | Executor             |
+| **A**   | Aurora (ML)          |
+| **H**   | History/DB           |
+| **O**   | Onboarding           |
+| **UI**  | User Interface       |
+| **DS**  | Design System        |
+| **F**   | Fixes/Bugfixes       |
+| **DX**  | Developer Experience |
+| **ARC** | Architecture         |
+| **IP**  | Inverter Profiles    |
+
+Check this document or `docs/CHANGELOG_PLAN.md` for previous revisions.
 
 ---
 
@@ -353,3 +355,49 @@ Add a second layer of protection that monitors actual EV power consumption via t
 * [ ] Add note about dual-layer protection (schedule + actual power detection)
 
 ---
+
+### [PLANNED] REV // E6 — Remove Emergency Charge Override to Fix SoC Oscillation
+
+**Goal:** Remove the Emergency Charge override from the executor to eliminate jojo oscillation when `soc_target = min_soc_percent`, treating `min_soc_percent` as a planning constraint rather than a safety limit.
+
+**Context:**
+Currently, when the battery reaches the `min_soc_percent` target (e.g., 10%), slight self-discharge causes it to drop below the threshold. This triggers the Emergency Charge override (Priority 9), which charges the battery back above the threshold, only for it to self-discharge again—creating a rapid on/off charging oscillation (jojo behavior).
+
+**Root Cause:**
+1. Emergency Charge override triggers when `SoC < min_soc_floor` (line 144 in `executor/override.py`)
+2. It sets `soc_target = min_soc_floor + 5%` and enables grid charging
+3. Once charged above threshold, override stops
+4. Self-discharge causes immediate re-trigger, creating a loop
+5. This is particularly problematic when `soc_target = soc_min` as the planner intended
+
+**Why Remove It:**
+- The battery BMS already has a hard `soc_min` limit below Darkstar's soft limit
+- `min_soc_percent` should be a planning/optimization constraint, not a safety override
+- Other overrides (Low SoC Export Prevention) still protect against dangerous exports
+- Simpler system with fewer oscillation edge cases
+
+**Plan:**
+
+#### Phase 1: Remove Emergency Charge Override from `executor/override.py` [DRAFT]
+* [ ] Remove Priority 9 emergency charge block (lines 143-156 in `executor/override.py`)
+* [ ] Update docstring/comments to clarify `min_soc_floor` is now a planning target only
+* [ ] Verify Low SoC Export Prevention override still functions correctly
+
+#### Phase 2: Update `executor/controller.py` [DRAFT]
+* [ ] Remove `EMERGENCY_CHARGE` handling from `_apply_override()` method (lines 117, 130)
+* [ ] Update any references to `OverrideType.EMERGENCY_CHARGE` in controller logic
+
+#### Phase 3: Update `executor/engine.py` [DRAFT]
+* [ ] Verify no emergency charge specific logic in engine's override evaluation
+* [ ] Ensure engine gracefully handles absence of EMERGENCY_CHARGE override type
+
+#### Phase 4: Update Tests [DRAFT]
+* [ ] Remove/update emergency charge test cases in `tests/test_executor_override.py`
+* [ ] Remove `emergency_charge` references from `tests/test_executor_history.py`
+* [ ] Run full test suite: `uv run python -m pytest tests/ -v -k override`
+
+#### Phase 5: Documentation & Cleanup [DRAFT]
+* [ ] Add comment in `executor/override.py` explaining that BMS handles hard safety limits
+* [ ] Update any architecture docs mentioning emergency charge behavior
+* [ ] Update user manual with clear warning about the planner behavior and it not being a safety feature
+* [ ] Run linting: `uv run ruff check .`
