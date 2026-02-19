@@ -222,6 +222,54 @@ The "Actual EV" dotted line in the schedule chart is incorrectly displaying plan
 * [x] Final integration testing (113 tests passing).
 * [x] **USER VERIFICATION AND FINAL COMMIT.**
 
+#### Phase 9: Post-Audit Legacy Purge [PLANNED]
+
+**Context:** A post-implementation audit found that a significant amount of v1 compatibility scaffolding survived Phase 8. The code is dormant (not called by any v2 path), but it adds noise, hides intent, and causes false test failures. This phase removes it completely.
+
+**Dependency Order (must be respected):**
+
+* [ ] **9.1 — Fix `actions.py:721` first** (required before any dataclass deletion)
+  * `_set_max_export_power()` still reads `self.profile.capabilities.supports_grid_export_limit` — a `ProfileCapabilities` field.
+  * This method is itself a v1 holdover (not integrated into the generic action loop). Evaluate: either migrate its logic into the `export` mode action list in profile YAMLs, or at minimum remove the `capabilities` guard and replace with a profile entity check (`grid_max_export_power` present in entities dict).
+
+* [ ] **9.2 — Delete legacy dataclasses from `executor/profiles.py`**
+  * `WorkMode` (L94–107) — v1 concept, no v2 code constructs these.
+  * `ProfileCapabilities` (L110–124) — only referenced by `_set_max_export_power()` (see 9.1).
+  * `ProfileEntities` (L126–138) — has a `validate_required()` method, but v2 uses `InverterProfile.get_missing_entities()`.
+  * `ProfileModes` (L141–150) — pure v1 container.
+  * `ProfileDefaults` (L153–158) — pure v1 scaffold.
+
+* [ ] **9.3 — Delete `_ModesCompatWrapper` class from `executor/profiles.py` (L458–526)**
+  * Provides v1-style `profile.modes.export` attribute access. No v2 code uses this path.
+  * `profile.modes` should return the plain `dict[str, ModeDefinition]` directly.
+
+* [ ] **9.4 — Simplify `InverterProfile` in `executor/profiles.py`**
+  * Remove `_v1_modes` field and `_modes_wrapper` field.
+  * Remove `capabilities: ProfileCapabilities` and `defaults: ProfileDefaults` fields (v1 sentinel fields with no v2 role).
+  * Remove the custom `__init__` (L185–215) — its only purpose is v1 entity/modes conversion. Replace with a standard `@dataclass` or simple `__post_init__`.
+  * Remove `__getattribute__` and `__setattr__` overrides (L217–232) — these exist solely to route `profile.modes` through `_ModesCompatWrapper`.
+
+* [ ] **9.5 — Delete legacy constants and property aliases from `executor/config.py`**
+  * Remove `work_mode_export: str = "Export First"` and `work_mode_zero_export: str = "Zero Export To CT"` from `InverterConfig` (L52–53).
+  * Remove their loading from `load_executor_config()` (L317–322) and exclusion from the `custom_entities` set (L353–354).
+  * Remove all `@property` / `@property.setter` aliases in `InverterConfig` (L59–131): `work_mode_entity`, `soc_target_entity`, `grid_charging_entity`, `max_charging_current_entity`, `max_discharging_current_entity`, `max_charging_power_entity`, `max_discharging_power_entity`, `grid_max_export_power_switch_entity`, `grid_max_export_power_entity`.
+  * Remove the `soc_target_entity` proxy property from `ExecutorConfig` (L230–236).
+
+* [ ] **9.6 — Rewrite `tests/test_executor_deye_migration.py`**
+  * Current assertions reference `decision.work_mode` and `decision.grid_charging`, which do not exist on `ControllerDecision` (the fields were removed in Phase 3). All tests in this file are currently broken/invalid.
+  * Rewrite to assert on `decision.mode_intent` instead (e.g. `assert decision.mode_intent == "export"`), which is the v2 equivalent.
+
+* [ ] **9.7 — Fix `tests/repro_issue_fronius_hold.py` and `tests/repro_issue_fronius_idle.py`**
+  * Both files assert on `decision.work_mode` (e.g. `assert decision.work_mode == "Block Discharging"`), which does not exist on `ControllerDecision`. They were written to reproduce v2 controller bugs using v1 decision vocabulary.
+  * Rewrite assertions to use `decision.mode_intent` (e.g. `assert decision.mode_intent == "idle"`), or delete if the bugs they were created for are now resolved.
+
+* [ ] **9.8 — Linting & full test suite**
+  * `uv run ruff check .` — must be clean.
+  * `uv run python -m pytest -q` — all tests must pass.
+  * `cd frontend && pnpm lint` — no regressions.
+
+* [ ] **USER VERIFICATION AND COMMIT.**
+
 ---
 
 ### [DONE] REV // UI23 — Global Configuration Incomplete Banner
