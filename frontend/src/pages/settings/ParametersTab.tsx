@@ -14,7 +14,7 @@ import { useUnsavedChangesGuard } from './hooks/useUnsavedChangesGuard'
 export const ParametersTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }) => {
     const navigate = useNavigate()
     const { form, fieldErrors, loading, saving, statusMessage, handleChange, save, isDirty, haEntities, haLoading } =
-        useSettingsForm(parameterFieldList)
+        useSettingsForm(parameterFieldList, [])
 
     const blocker = useUnsavedChangesGuard(isDirty)
 

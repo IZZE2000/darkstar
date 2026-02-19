@@ -56,12 +56,30 @@ async def get_config() -> dict[str, Any]:
         return {"error": str(e)}
 
 
+@router.get(
+    "/api/config/validate",
+    summary="Validate Configuration",
+    description="Returns validation warnings without saving. Use to check for incomplete configuration.",
+)
+async def validate_config() -> dict[str, Any]:
+    """Validate current config and return warnings (no save)."""
+    try:
+        conf: dict[str, Any] = load_yaml("config.yaml") or {}
+        validation_issues = _validate_config_for_save(conf)
+        warnings = [i for i in validation_issues if i["severity"] == "warning"]
+        return {"status": "success", "warnings": warnings}
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @router.post(
     "/api/config/save",
     summary="Save Configuration",
     description="Updates config.yaml with new values.",
 )
-async def save_config(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+async def save_config(
+    payload: dict[str, Any] = Body(...),
+) -> dict[str, Any]:
     """Save config.yaml."""
     try:
         yaml_handler = YAML()
@@ -224,11 +242,14 @@ async def save_config(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
         raise HTTPException(500, str(e)) from e
 
 
-def _validate_config_for_save(config: dict[str, Any]) -> list[dict[str, str]]:
+def _validate_config_for_save(
+    config: dict[str, Any],
+) -> list[dict[str, str]]:
     """Validate config and return list of issues.
 
     REV LCL01: Run on every config save to catch misconfigurations immediately.
     ARC15: Added validation for water_heaters[] and ev_chargers[] arrays.
+    REV UI23: Downgrade missing required entities to warnings instead of blocking saves.
     Returns list of {"severity": "error"|"warning", "message": str, "guidance": str}
     """
     issues: list[dict[str, str]] = []
@@ -584,9 +605,10 @@ def _validate_config_for_save(config: dict[str, Any]) -> list[dict[str, str]]:
                     }
                 )
 
-    # Executor: Critical entities (ERROR)
+    # Executor: Critical entities - downgraded to WARNING to allow incremental setup
     # REV IP2: Input validation is now Profile-Aware.
     # We ask the active profile which entities are strictly required.
+    # REV UI23: Downgrade missing critical entities to warnings to allow incremental setup.
     executor_cfg = config.get("executor", {})
     executor_enabled = executor_cfg.get("enabled", True)
     has_battery = system_cfg.get("has_battery", True)
@@ -597,24 +619,34 @@ def _validate_config_for_save(config: dict[str, Any]) -> list[dict[str, str]]:
             active_profile = get_profile_from_config(config)
 
             # Check for missing required entities as defined by the profile
+            # REV UI23: Always downgrade to warnings to never block saves
             missing_entities = active_profile.get_missing_entities(config)
 
             for missing_key in missing_entities:
+                entity_def = active_profile.entities.get(missing_key, {})
+                entity_category = (
+                    entity_def.get("category", "system")
+                    if isinstance(entity_def, dict)
+                    else "system"
+                )
+                recommended_tab = "Battery" if entity_category == "battery" else "System"
+
                 issues.append(
                     {
-                        "severity": "error",
+                        "severity": "warning",
                         "message": f"Profile '{active_profile.metadata.name}' requires {missing_key} to be configured.",
-                        "guidance": f"Please configure {missing_key} in the Settings - System tab.",
+                        "guidance": f"Please configure {missing_key} in the Settings - {recommended_tab} tab.",
                     }
                 )
 
             # Global Requirement: Battery SoC is always needed for battery operations
+            # REV UI23: Downgrade to warning to allow incremental setup
             if not input_sensors.get("battery_soc"):
                 issues.append(
                     {
-                        "severity": "error",
+                        "severity": "warning",
                         "message": "Executor requires input_sensors.battery_soc (Battery State of Charge).",
-                        "guidance": "Please configure input_sensors.battery_soc in the Settings - System tab.",
+                        "guidance": "Please configure input_sensors.battery_soc in the Settings - Battery tab.",
                     }
                 )
 

@@ -72,9 +72,7 @@ export function useSettingsForm(baseFields: BaseField[], profiles: InverterProfi
         const profileFields: BaseField[] = Object.entries(selectedProfile.entities)
             .map(([key, entity]) => {
                 const isStandard = standardInverterKeys.has(key)
-                const configKey = isStandard
-                    ? `executor.inverter.${key}`
-                    : `executor.inverter.custom_entities.${key}`
+                const configKey = isStandard ? `executor.inverter.${key}` : `executor.inverter.custom_entities.${key}`
                 const configPath = isStandard
                     ? ['executor', 'inverter', key]
                     : ['executor', 'inverter', 'custom_entities', key]
@@ -86,9 +84,7 @@ export function useSettingsForm(baseFields: BaseField[], profiles: InverterProfi
                     type: 'entity' as const,
                     required: entity.required,
                     subsection: 'Inverter Profile Entities',
-                    helper: entity.default_entity
-                        ? `Suggested: ${entity.default_entity}`
-                        : undefined,
+                    helper: entity.default_entity ? `Suggested: ${entity.default_entity}` : undefined,
                 }
             })
             .filter((f) => !existingKeys.has(f.key))
@@ -253,6 +249,8 @@ export function useSettingsForm(baseFields: BaseField[], profiles: InverterProfi
             })
 
             if (Object.keys(allRequiredErrors).length > 0) {
+                // REV UI23: Don't block save - show warning but allow save
+                // The global banner will handle persistent "incomplete config" warnings
                 setFieldErrors(allRequiredErrors)
                 const missingCount = Object.keys(allRequiredErrors).length
                 const missingFields = fields
@@ -262,12 +260,15 @@ export function useSettingsForm(baseFields: BaseField[], profiles: InverterProfi
                 toast({
                     message: `${missingCount} required field${missingCount > 1 ? 's' : ''} missing`,
                     description: missingFields,
-                    variant: 'error',
+                    variant: 'warning', // Changed from 'error' - don't block save
                 })
-                return false
+                // Don't return false - allow save to proceed
             }
 
-            if (Object.keys(fieldErrors).length > 0) {
+            // REV UI23: Only block on actual validation errors, not missing required fields
+            // Missing required fields show a warning but don't block saves
+            const nonRequiredErrors = Object.entries(fieldErrors).filter(([_, msg]) => msg !== 'Required')
+            if (nonRequiredErrors.length > 0) {
                 setStatusMessage('Please fix validation errors before saving.')
                 return false
             }
@@ -301,6 +302,8 @@ export function useSettingsForm(baseFields: BaseField[], profiles: InverterProfi
                         toast({ message: 'Settings saved successfully', variant: 'success' })
                     }
                     await reload()
+                    // REV UI23: Notify App.tsx to refresh config validation banner
+                    window.dispatchEvent(new Event('config-changed'))
                     return true
                 } else {
                     const apiErrors: Record<string, string> = {}

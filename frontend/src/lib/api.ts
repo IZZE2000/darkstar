@@ -515,6 +515,8 @@ export const Api = {
     version: () => getJSON<{ version: string }>('/api/version'),
     horizon: () => getJSON<HorizonResponse>('/api/forecast/horizon'),
     config: () => getJSON<ConfigResponse>('/api/config'),
+    // REV UI23: Validate config without saving
+    configValidate: () => getJSON<ConfigSaveResponse>('/api/config/validate'),
     // REV LCL01: Custom configSave that handles 400 validation errors
     configSave: async (payload: Record<string, unknown>): Promise<ConfigSaveResponse> => {
         const r = await fetch('api/config/save', {

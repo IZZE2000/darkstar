@@ -15,7 +15,7 @@ export const AdvancedTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode
     const navigate = useNavigate()
     const { toast } = useToast()
     const { config, form, fieldErrors, loading, saving, statusMessage, handleChange, save, reload, isDirty } =
-        useSettingsForm(advancedFieldList)
+        useSettingsForm(advancedFieldList, [])
 
     const blocker = useUnsavedChangesGuard(isDirty)
 

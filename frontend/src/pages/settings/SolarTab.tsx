@@ -13,8 +13,11 @@ import { useUnsavedChangesGuard } from './hooks/useUnsavedChangesGuard'
 
 export const SolarTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }) => {
     const navigate = useNavigate()
-    const { form, fieldErrors, loading, saving, handleChange, save, isDirty, haEntities, haLoading } =
-        useSettingsForm(solarFieldList)
+    const { form, fieldErrors, loading, saving, handleChange, save, isDirty, haEntities, haLoading } = useSettingsForm(
+        solarFieldList,
+        [],
+        'solar',
+    )
 
     const blocker = useUnsavedChangesGuard(isDirty)
     const hasHiddenSections = solarSections.some((s) => s.fields.every((f) => f.isAdvanced))

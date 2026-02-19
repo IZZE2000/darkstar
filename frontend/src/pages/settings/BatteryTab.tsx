@@ -26,6 +26,7 @@ export const BatteryTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode 
     const { form, fieldErrors, loading, saving, handleChange, save, isDirty, haEntities, haLoading } = useSettingsForm(
         batteryFieldList,
         profiles,
+        'battery',
     )
 
     const blocker = useUnsavedChangesGuard(isDirty)

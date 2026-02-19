@@ -212,5 +212,50 @@ The "Actual EV" dotted line in the schedule chart is incorrectly displaying plan
 * [x] Final integration testing (113 tests passing).
 * [x] **USER VERIFICATION AND FINAL COMMIT.**
 
+---
+
+### [DONE] REV // UI23 — Global Configuration Incomplete Banner
+
+**Goal:** Replace blocking validation errors with persistent warnings that allow incremental configuration across all Settings tabs without blocking saves.
+
+**Context:**
+- Current validation blocks saves when critical entities (battery_soc, work_mode, etc.) are missing
+- User enables battery in System tab → tries to save → validation fails → cannot navigate to Battery tab to configure battery_soc
+- Beta testers (especially Fronius) get stuck in a validation catch-22
+- Solution should NEVER block saves - only warn users until they complete configuration
+
+**Root Cause:**
+- Backend `_validate_config_for_save()` returns `severity: "error"` for missing required entities
+- Frontend treats any error as blocking save failure
+- No way for user to incrementally configure across tabs
+
+**Plan:**
+
+#### Phase 1: Backend — Downgrade Required Entity Validation [DONE]
+* [x] Change `_validate_config_for_save()` in `backend/api/routers/config.py`:
+  * Missing `input_sensors.battery_soc` → severity: `"warning"` (not error)
+  * Missing profile required entities (work_mode, soc_target, etc.) → severity: `"warning"` (not error)
+  * Keep actual validation errors as errors (invalid ranges, malformed data, missing capacity_kwh, etc.)
+* [x] Test: Save config with missing battery_soc → should succeed with warning
+
+#### Phase 2: Frontend — Global Configuration Incomplete Banner [DONE]
+* [x] Create new banner component `frontend/src/components/ConfigurationIncompleteBanner.tsx`:
+  * Shows when any required configuration is missing
+  * Displays count: "X required settings missing"
+  * Lists specific missing items with tab location (e.g., "Battery SoC (Battery tab)")
+  * Dismissable (user can acknowledge and ignore)
+* [x] Add banner to Dashboard (above main content):
+  * Query config validation on mount
+  * Show banner if any "required" warnings exist
+  * Link to relevant Settings tab
+* [x] Also show banner on Settings index page
+* [x] Banner persists across sessions using localStorage dismissal flag
+
+#### Phase 3: Testing [IN PROGRESS]
+* [x] Run `pnpm lint` and `pnpm format` in frontend/
+* [x] Run `uv run ruff check .` in backend/
+* [x] Manual test: Enable battery in System tab → save should succeed with warning
+* [x] Manual test: Banner appears on all pages when battery_soc missing (via App.tsx)
+* [x] Manual test: Navigate to Battery tab, configure battery_soc → banner disappears
 
 ---

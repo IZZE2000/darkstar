@@ -17,13 +17,32 @@ import Executor from './pages/Executor'
 import DesignSystem from './pages/DesignSystem'
 import PowerFlowLab from './pages/PowerFlowLab'
 import ChartExamples from './pages/ChartExamples'
-import { Api, HealthResponse } from './lib/api'
+import { Api, HealthResponse, ConfigSaveResponse } from './lib/api'
 import { SystemAlert } from './components/SystemAlert'
 import { ToastProvider } from './components/ui/Toast'
 
 function RootLayout() {
     const [backendOffline, setBackendOffline] = useState(false)
     const [healthStatus, setHealthStatus] = useState<HealthResponse | null>(null)
+    const [configWarnings, setConfigWarnings] = useState<ConfigSaveResponse | null>(null)
+
+    // Check config validation on mount
+    useEffect(() => {
+        Api.configValidate()
+            .then(setConfigWarnings)
+            .catch(() => setConfigWarnings(null))
+    }, [])
+
+    // REV UI23: Re-check config validation when config changes (after save)
+    useEffect(() => {
+        const handleConfigChanged = () => {
+            Api.configValidate()
+                .then(setConfigWarnings)
+                .catch(() => setConfigWarnings(null))
+        }
+        window.addEventListener('config-changed', handleConfigChanged)
+        return () => window.removeEventListener('config-changed', handleConfigChanged)
+    }, [])
 
     useEffect(() => {
         let cancelled = false
@@ -64,6 +83,29 @@ function RootLayout() {
             <div className="lg:pl-[96px]">
                 {/* Show health alerts if not fully healthy */}
                 {healthStatus && !healthStatus.healthy && <SystemAlert health={healthStatus} />}
+
+                {/* REV UI23: Show config incomplete warning banner */}
+                {configWarnings?.warnings && configWarnings.warnings.length > 0 && (
+                    <div className="banner banner-warning px-4 py-3 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                            <span>⚠️</span>
+                            <span className="font-medium">
+                                Configuration incomplete — {configWarnings.warnings.length} required setting
+                                {configWarnings.warnings.length > 1 ? 's' : ''} missing
+                            </span>
+                            <span className="opacity-70 text-xs">
+                                ({configWarnings.warnings.map((w) => w.message).join(', ')})
+                            </span>
+                        </div>
+                        <button
+                            onClick={() => setConfigWarnings(null)}
+                            className="opacity-60 hover:opacity-100 text-xs px-2 py-1"
+                            title="Dismiss"
+                        >
+                            ✕
+                        </button>
+                    </div>
+                )}
 
                 {/* Show backend offline banner only if no health status available */}
                 {backendOffline && !healthStatus && (

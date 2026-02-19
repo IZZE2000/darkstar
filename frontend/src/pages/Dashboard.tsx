@@ -5,14 +5,13 @@ import ChartCard from '../components/ChartCard'
 import QuickActions from '../components/QuickActions'
 import { Flame, BatteryCharging } from 'lucide-react'
 import { motion } from 'framer-motion'
-import { Api, type PlannerSIndex, type HealthResponse, type ExecutorStatusResponse } from '../lib/api'
+import { Api, type PlannerSIndex, type ExecutorStatusResponse } from '../lib/api'
 import type { ScheduleSlot } from '../lib/types'
 import { isToday, isTomorrow } from '../lib/time'
 import AdvisorCard from '../components/AdvisorCard'
 import { GridDomain, ResourcesDomain, StrategyDomain, ControlParameters } from '../components/CommandDomains'
 import { useSocket } from '../lib/hooks'
 import { useToast } from '../lib/useToast'
-import { SystemAlert } from '../components/SystemAlert'
 
 type PlannerMeta = {
     planned_at?: string
@@ -93,8 +92,6 @@ export default function Dashboard() {
         ev_chargers?: Array<{ name: string; kw: number; soc: number | null; pluggedIn: boolean }> // Rev F64: Per-EV details
     }>({})
 
-    // REV LCL01: Health status for config validation banners
-    const [healthStatus, setHealthStatus] = useState<HealthResponse | null>(null)
     // Phase 3: Executor health status
     const [executorHealth, setExecutorHealth] = useState<import('../lib/api').ExecutorHealthResponse | null>(null)
     const [config, setConfig] = useState<any>(null)
@@ -555,9 +552,6 @@ export default function Dashboard() {
     return (
         <main className="mx-auto max-w-7xl px-4 pb-24 pt-6 sm:px-6 lg:pt-10 space-y-6">
             {/* Header Removed as per user request */}
-
-            {/* REV LCL01: Config Validation Health Banners */}
-            <SystemAlert health={healthStatus} />
 
             {/* Critical Error Banner */}
             {lastError && (
