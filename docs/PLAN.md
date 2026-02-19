@@ -269,3 +269,39 @@ The "Actual EV" dotted line in the schedule chart is incorrectly displaying plan
 * [x] Manual test: Navigate to Battery tab, configure battery_soc → banner disappears
 
 ---
+
+### [DRAFT] REV // K25 — EV Discharge Protection via Actual Power Monitoring
+
+**Goal:** Add real-time detection of actual EV power consumption to block battery discharge when EV is charging, regardless of whether the charging was triggered by Darkstar's schedule or external sources (manual HA trigger, Tesla app, etc.).
+
+**Context:**
+Currently, the executor only blocks battery discharge when the schedule indicates EV should be charging (`slot.ev_charging_kw > 0.1`). This means if a user manually starts EV charging through Home Assistant or another system, the battery can still discharge to the EV because Darkstar doesn't detect the actual power flow. This creates a safety gap where energy can leave the house battery to the car when it shouldn't.
+
+**Current Implementation:**
+- Planner level (`planner/solver/kepler.py:202-209`): Optimization ensures EV charging can only use grid + PV
+- Executor level (`executor/engine.py:1137-1151`): Blocks discharge when schedule says EV should charge
+- **Gap:** No detection of actual EV power draw from external sources
+
+**Proposed Solution:**
+Add a second layer of protection that monitors actual EV power consumption via the `LoadDisaggregator` (which already tracks all configured EV charger power sensors). When any EV is consuming power (> threshold), force battery discharge to 0 regardless of the schedule.
+
+**Plan:**
+
+#### Phase 1: Backend - Detect Actual EV Power [DRAFT]
+* [ ] Add `get_total_ev_power()` method to `LoadDisaggregator` class to aggregate power from all registered EV chargers
+* [ ] Update `executor/engine.py` to query actual EV power from disaggregator during decision making
+* [ ] Modify discharge blocking logic to check: `if scheduled_ev_charge OR actual_ev_power > 0.1 kW: block_discharge()`
+* [ ] Add logging: "EV detected consuming X kW - blocking battery discharge"
+
+#### Phase 2: Testing [DRAFT]
+* [ ] Create unit test: Manual EV trigger via HA sensor → discharge blocked
+* [ ] Create unit test: Scheduled EV charging → discharge blocked (existing behavior)
+* [ ] Create unit test: No EV charging → discharge allowed normally
+* [ ] Run `uv run ruff check .` for linting
+* [ ] Run `uv run python -m pytest tests/ -v -k ev` for EV-related tests
+
+#### Phase 3: Documentation [DRAFT]
+* [ ] Update executor architecture docs if they mention EV discharge blocking
+* [ ] Add note about dual-layer protection (schedule + actual power detection)
+
+---
