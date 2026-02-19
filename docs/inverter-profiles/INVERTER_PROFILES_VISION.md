@@ -1,8 +1,21 @@
 # Inverter Profiles - Vision & Design
 
-**Status**: Implemented (REV IP3)
-**Last Updated**: 2026-02-06
-**Purpose**: Define the foundation for multi-inverter support in Darkstar
+> [!WARNING]
+> **This document describes the v1 profile schema which has been superseded by v2.**
+>
+> For current profile creation, see:
+> - **[CREATING_INVERTER_PROFILES.md](CREATING_INVERTER_PROFILES.md)** — v2 profile creation guide
+> - **[profiles_v2_blueprint.md](profiles_v2_blueprint.md)** — Complete v2 implementation blueprint
+>
+> v2 changes include:
+> - 4 mode intents only: `charge`, `export`, `idle`, `self_consumption` (removed `zero_export`, `charge_from_grid`)
+> - Entity registry with `domain`/`category`/`description`
+> - Ordered action lists instead of `value`/`set_entities`
+> - Dynamic templates like `{{charge_value}}`
+
+**Status**: Superseded by v2 (REV ARC17)
+**Last Updated**: 2026-02-06 (v1), 2026-02-19 (v2 migration)
+**Purpose**: Historical reference for v1 profile design
 
 ---
 

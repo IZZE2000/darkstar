@@ -1,13 +1,5 @@
 from executor.controller import Controller, ControllerConfig, InverterConfig, SlotPlan, SystemState
-from executor.profiles import (
-    InverterProfile,
-    ProfileBehavior,
-    ProfileCapabilities,
-    ProfileEntities,
-    ProfileMetadata,
-    ProfileModes,
-    WorkMode,
-)
+from executor.profiles import ProfileBehavior, ProfileMetadata, load_profile
 
 
 def test_charge_limit_rounding_grid_specific():
@@ -15,21 +7,13 @@ def test_charge_limit_rounding_grid_specific():
     behavior = ProfileBehavior(
         control_unit="W", round_step_w=100.0, grid_charge_round_step_w=10.0, min_charge_w=100.0
     )
-    profile = InverterProfile(
-        metadata=ProfileMetadata(name="test", version="1.0.0", description=""),
-        capabilities=ProfileCapabilities(watts_based_control=True),
-        entities=ProfileEntities(),
-        modes=ProfileModes(zero_export=WorkMode(value="Zero")),
-        behavior=behavior,
-    )
+    profile = load_profile("generic")
+    profile.behavior = behavior
+    profile.metadata = ProfileMetadata(name="test", version="1.0.0", description="")
 
     config = ControllerConfig(max_charge_w=5000)
     inverter_config = InverterConfig(control_unit="W")
     controller = Controller(config, inverter_config, profile=profile)
-
-    # 1. Test standard rounding (though in our code is_grid_charge is currently same as charge_kw > 0)
-    # Actually, in _calculate_charge_limit:
-    # is_grid_charge = slot.charge_kw > 0
 
     # Test 126W -> should round to 130W (due to 10W step)
     slot = SlotPlan(charge_kw=0.126)  # 126W
@@ -48,13 +32,9 @@ def test_charge_limit_rounding_standard():
     behavior = ProfileBehavior(
         control_unit="W", round_step_w=100.0, grid_charge_round_step_w=None, min_charge_w=100.0
     )
-    profile = InverterProfile(
-        metadata=ProfileMetadata(name="test", version="1.0.0", description=""),
-        capabilities=ProfileCapabilities(watts_based_control=True),
-        entities=ProfileEntities(),
-        modes=ProfileModes(zero_export=WorkMode(value="Zero")),
-        behavior=behavior,
-    )
+    profile = load_profile("generic")
+    profile.behavior = behavior
+    profile.metadata = ProfileMetadata(name="test", version="1.0.0", description="")
 
     config = ControllerConfig(max_charge_w=5000)
     inverter_config = InverterConfig(control_unit="W")

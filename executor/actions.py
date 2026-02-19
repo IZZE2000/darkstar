@@ -62,6 +62,25 @@ def _is_entity_configured(entity: str | None) -> bool:
     return stripped != "" and stripped.lower() != "none"
 
 
+# Standard inverter entity keys that live directly in executor.inverter.*
+# Any profile entity key NOT in this set goes into executor.inverter.custom_entities.*
+_STANDARD_INVERTER_KEYS: frozenset[str] = frozenset(
+    [
+        "work_mode",
+        "soc_target",
+        "grid_charging_enable",
+        "grid_charge_power",
+        "minimum_reserve",
+        "grid_max_export_power",
+        "grid_max_export_power_switch",
+        "max_charge_current",
+        "max_discharge_current",
+        "max_charge_power",
+        "max_discharge_power",
+    ]
+)
+
+
 @dataclass
 class ActionResult:
     """Result of executing an action."""

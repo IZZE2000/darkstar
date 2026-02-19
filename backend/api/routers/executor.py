@@ -604,7 +604,8 @@ async def get_profile_suggestions(name: str) -> dict[str, Any]:
     """Return suggested configuration for a profile.
 
     This helps users set up their inverter by providing recommended entities
-    and parameters for their selected profile.
+    and parameters for their selected profile. Returns one suggestion per entity
+    in the profile's entity registry using the profile's default_entity values.
     """
     # Deferred imports to avoid circular dependencies
     from executor.profiles import load_profile
@@ -612,7 +613,21 @@ async def get_profile_suggestions(name: str) -> dict[str, Any]:
 
     try:
         profile = load_profile(name)
-        suggestions = profile.get_suggested_config()
+
+        # Build suggestions from the v2 entity registry:
+        # Each entity's default_entity is the recommended HA entity ID.
+        # Keys are flat config paths like "executor.inverter.work_mode".
+        suggestions: dict[str, str | None] = {}
+        for key, entity_def in profile.entities.items():
+            # Standard keys live directly in executor.inverter.*
+            # Custom/composite keys go into executor.inverter.custom_entities.*
+            from executor.actions import _STANDARD_INVERTER_KEYS
+
+            if key in _STANDARD_INVERTER_KEYS:
+                config_path = f"executor.inverter.{key}"
+            else:
+                config_path = f"executor.inverter.custom_entities.{key}"
+            suggestions[config_path] = entity_def.default_entity
 
         # Calculate missing entities against current config
         config = load_yaml("config.yaml")
@@ -620,11 +635,9 @@ async def get_profile_suggestions(name: str) -> dict[str, Any]:
 
         # Build diff to show what's already set and what's suggested
         diff = []
-        for key, suggested_value in suggestions.items():
-            # suggestions are flat like "executor.inverter.work_mode" or "battery.nominal_voltage_v"
-            # we want to compare with current values
-            parts = key.split(".")
-            section = config
+        for config_key, suggested_value in suggestions.items():
+            parts = config_key.split(".")
+            section: Any = config
             for part in parts:
                 if isinstance(section, dict):
                     section = section.get(part)
@@ -636,7 +649,7 @@ async def get_profile_suggestions(name: str) -> dict[str, Any]:
 
             diff.append(
                 {
-                    "key": key,
+                    "key": config_key,
                     "short_key": short_key,
                     "suggested": suggested_value,
                     "current": current_value,

@@ -387,41 +387,68 @@ executor:
   shadow_mode: false     # If true, logs actions but doesn't execute
 ```
 
-### 7.2 Composite Inverter Profiles (Rev F56)
+### 7.2 Profile-Driven Action System (v2 Schema)
 
-Some inverters (like Sungrow) require setting multiple Home Assistant entities simultaneously to enter a specific logical work mode. Darkstar handles this via **Composite Profiles**.
+Darkstar uses a **declarative, profile-driven architecture** where each inverter mode defines an ordered list of entity+value actions. The executor is a generic loop that reads the profile and applies it — no hardcoded inverter-specific logic.
+
+**The 4 Mode Intents:**
+
+| Mode Intent | Triggered When | Purpose |
+|-------------|---------------|---------|
+| `charge` | Planner schedules `charge_kw > 0` | Force charge battery from AC grid |
+| `export` | Planner schedules `export_kw > 0` | Discharge battery to grid for arbitrage |
+| `idle` | SoC at/below target, no charge/export | Block discharge, preserve battery |
+| `self_consumption` | All other cases | Normal PV→battery→house operation |
 
 **Key Concepts:**
-1.  **Logical Mode**: The abstract mode Darkstar wants (e.g., `charge_from_grid`).
-2.  **Composite Mapping**: A single logical mode maps to multiple HA entity commands.
-3.  **Atomic Execution**: All entities in the mapping are set in sequence. If any fail, the action is marked as failed.
+1.  **Entity Registry**: Each profile defines all entities with `domain`, `category`, `description`, and `default_entity`.
+2.  **Mode Definitions**: Each mode contains an ordered `actions` list. Actions execute top-to-bottom.
+3.  **Dynamic Templates**: Values like `{{charge_value}}` are resolved from `ControllerDecision` at runtime.
+4.  **Idempotent Execution**: Actions are skipped if the entity is already at the target value.
 
-**Example: Sungrow 'Force Charge'**
-To force charge a Sungrow inverter, two changes must happen:
-1.  `ems_mode` set to "Forced Mode"
-2.  `forced_charge_discharge_cmd` set to "Force Charge"
+**Example: Sungrow 'Charge' Mode**
+To force charge a Sungrow inverter, the profile defines multiple actions:
+```yaml
+modes:
+  charge:
+    description: "Force charge battery from AC grid"
+    actions:
+      - entity: "work_mode"
+        value: "Forced mode"
+      - entity: "forced_charge_discharge_cmd"
+        value: "Forced charge"
+      - entity: "max_charge_power"
+        value: "{{charge_value}}"
+      - entity: "max_discharge_power"
+        value: "{{max_discharge}}"
+```
 
-**Profile Configuration:**
+**Entity Registry Example:**
 ```yaml
 entities:
-  required:
-    work_mode: "select.ems_mode"  # Primary entity (legacy)
-    # Composite entities required for the profile to work
-    ems_mode: "select.ems_mode"
-    forced_charge_discharge_cmd: "select.battery_forced_charge_discharge"
+  work_mode:
+    default_entity: "select.ems_mode"
+    domain: "select"
+    category: "system"
+    description: "EMS Mode selector"
+    required: true
 
-modes:
-  charge_from_grid:
-    value: "Forced mode"  # Value for primary entity
-    set_entities:         # Composite values
-      ems_mode: "Forced mode"
-      forced_charge_discharge_cmd: "Force Charge"
+  forced_charge_discharge_cmd:
+    default_entity: "select.battery_forced_charge_discharge"
+    domain: "select"
+    category: "system"
+    description: "Forced charge/discharge command"
+    required: true
 ```
 
 **Validation & Error Handling:**
-- The Executor validates that all entities listed in `entities.required` are configured in `config.yaml`.
-- Missing entities trigger a **Fail-Fast** validation error on startup and save.
-- During execution, if a required entity is missing, an `ActionResult` with `success=False` is generated to alert the user via the Execution History.
+- Profile validation ensures all 4 modes are defined with at least one action each.
+- All actions reference valid entity keys from the registry.
+- Dynamic templates must reference valid `ControllerDecision` fields.
+- Missing required entities trigger a **Fail-Fast** validation error on startup.
+- During execution, each action produces an `ActionResult` logged to Execution History.
+
+For profile creation details, see `docs/inverter-profiles/CREATING_INVERTER_PROFILES.md`.
 
 ---
 

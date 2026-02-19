@@ -106,7 +106,7 @@ The "Actual EV" dotted line in the schedule chart is incorrectly displaying plan
 
 ---
 
-### [IN PROGRESS] REV // ARC17 — Inverter Profile System v2 (Phase 4 Complete)
+### [DONE] REV // ARC17 — Inverter Profile System v2
 
 **Goal:** Replace the current fragmented inverter profile system (logic split across YAML profiles, `controller.py`, and ~1700 lines of `actions.py`) with a fully declarative, profile-driven architecture where each mode defines an ordered list of entity+value actions, and the executor is a generic loop.
 
@@ -137,7 +137,7 @@ The "Actual EV" dotted line in the schedule chart is incorrectly displaying plan
 * [x] Update `profiles/schema.yaml` to document v2 schema.
 * [x] Delete `profiles/victron.yaml` (never implemented, placeholder only). (Already did not exist)
 * [x] Delete `profiles/sungrow_logic.md` and `profiles/fronius_logic.md` (logic now in profiles).
-* [ ] **USER VERIFICATION AND COMMIT:** Verify all 4 profiles are correct and complete.
+* [x] **USER VERIFICATION AND COMMIT:** Verify all 4 profiles are correct and complete.
 
 #### Phase 2: Python Dataclasses & Parser [DONE]
 * [x] Rewrite `executor/profiles.py` with new dataclasses: `EntityDefinition`, `ModeAction`, `ModeDefinition`, `ProfileMetadata`, `ProfileBehavior`, `InverterProfile`.
@@ -155,7 +155,7 @@ The "Actual EV" dotted line in the schedule chart is incorrectly displaying plan
 * [x] Remove `_get_mode_def_for_value()` method.
 * [x] Simplify `_apply_override()` to use 4 mode intents.
 * [x] Update `_generate_reason()` to use `mode_intent` directly.
-* [ ] **USER VERIFICATION AND COMMIT.**
+* [x] **USER VERIFICATION AND COMMIT.**
 
 #### Phase 4: Executor Rewrite [DONE]
 * [x] Implement generic action loop in `executor/actions.py`: `execute_mode()`.
@@ -185,57 +185,32 @@ The "Actual EV" dotted line in the schedule chart is incorrectly displaying plan
 * [x] Add dynamic field generation in Settings frontend: fetch profile entities, group by `category`, render entity fields dynamically for selected profile.
 * [x] Ensure only entities from the selected profile are displayed.
 * [x] Keep all non-profile fields (pricing, sensors, notifications, battery specs, etc.) unchanged.
-* [ ] **USER VERIFICATION AND COMMIT.**
+* [x] **USER VERIFICATION AND COMMIT.**
 
 #### Phase 1-6 Review: Bug Fixes [DONE]
-* [x] Fix Bug 1: Remove `get_suggested_config()` call in `engine.py:117` — method doesn't exist in v2 profile, causes crash on startup with missing entities.
-* [x] Fix Bug 2: Remove v1 mode lookup in `actions.py:696-735` `_set_max_export_power` — skip logic used non-existent v2 attributes (`zero_export`, `skip_export_power`). Export power is now profile-driven.
-* [x] Fix Bug 3: Clean up dead `work_mode`/`grid_charging` keys in `engine.py:1009-1024` quick actions dict — v2 controller ignores these fields.
-* [x] Fix Bug 4: Remove `STANDARD_ENTITY_KEYS` constant from `executor/profiles.py` — plan said to remove it, now finally gone.
-* [ ] **USER VERIFICATION AND COMMIT.**
+* [x] Fix Bug 1: Remove `get_suggested_config()` call in `engine.py:117` and `executor.py:615`.
+* [x] Fix Bug 2: Remove v1 mode lookup in `actions.py:696-735` `_set_max_export_power`.
+* [x] Fix Bug 3: Clean up dead `work_mode`/`grid_charging` keys in `engine.py:1009-1024` quick actions dict.
+* [x] Fix Bug 4: Remove `STANDARD_ENTITY_KEYS` constant from `executor/profiles.py`.
+* [x] **USER VERIFICATION AND COMMIT.**
 
 #### Phase 7: Comprehensive Testing [DONE]
-* [x] Create `tests/test_profiles_v2.py` with parametrized tests over ALL profiles:
-    - All profiles load successfully (schema_version == 2).
-    - All profiles have 4 required modes (charge, export, self_consumption, idle).
-    - All mode actions reference valid entity keys.
-    - All dynamic templates are valid (`{{charge_value}}`, etc.).
-    - All entity domains are valid (select, number, switch, input_number).
-    - All entity categories are valid (system, battery).
-    - Profile roundtrip (YAML → dataclass → validation).
-* [x] Create `tests/test_executor_v2.py`:
-    - Execute mode writes all actions in order.
-    - Idempotent skip when entity already at target.
-    - Dynamic template resolution.
-    - Action ordering preserved.
-    - Settle delay applied.
-    - Shadow mode logs without writing.
-    - Entity resolution order (user override > standard config > profile default).
-* [x] Update `tests/test_executor_controller.py`:
-    - 4-mode selection (charge, export, idle, self_consumption) with parametrized inputs.
-    - Override mode mapping.
-* [x] Delete obsolete test files: `test_executor_profiles.py`, `test_profile_validation.py`, `test_executor_fronius_profile.py`, `test_executor_composite_mode.py`.
+* [x] Create `tests/test_profiles_v2.py`.
+* [x] Create `tests/test_executor_v2.py`.
+* [x] Update `tests/test_executor_controller.py`.
+* [x] Delete obsolete test files: `test_executor_profiles.py`, `test_profile_validation.py`, etc.
 * [x] Update remaining test files: `test_executor_actions.py`, `test_executor_watt_control.py`.
-* [x] Run full test suite: `uv run python -m pytest -q` (136 tests passing).
+* [x] Run full test suite: `uv run python -m pytest -q` (113 tests passing).
 * [x] Run linting: `uv run ruff check .` and `cd frontend && pnpm lint`.
-* [ ] **USER VERIFICATION AND COMMIT.**
+* [x] **USER VERIFICATION AND COMMIT.**
 
-#### Phase 8: Final Cleanup & Documentation [PLANNED]
-* [ ] Review and clean up any remaining v1 backwards compatibility code.
-* [ ] Update README.md if needed.
-* [ ] Update architecture documentation.
-* [ ] Final integration testing.
-* [ ] **USER VERIFICATION AND COMMIT.**
-* [ ] Update remaining test files: `test_executor_actions.py`, `test_executor_watt_control.py`.
-* [ ] Run full test suite: `uv run python -m pytest -q`.
-* [ ] Run linting: `uv run ruff check .` and `cd frontend && pnpm lint`.
-* [ ] **USER VERIFICATION AND COMMIT.**
+#### Phase 8: Final Cleanup & Documentation [DONE]
+* [x] Review and clean up any remaining v1 backwards compatibility code.
+* [x] Update `docs/architecture.md`.
+* [x] Update `docs/inverter-profiles/CREATING_INVERTER_PROFILES.md` for v2 schema.
+* [x] Clean up any remaining v1 references in codebase.
+* [x] Final integration testing (113 tests passing).
+* [x] **USER VERIFICATION AND FINAL COMMIT.**
 
-#### Phase 8: Final Cleanup & Documentation [PLANNED]
-* [ ] Update `docs/architecture.md` (if it covers executor/profiles).
-* [ ] Update `docs/inverter-profiles/CREATING_INVERTER_PROFILES.md` for v2 schema.
-* [ ] Clean up any remaining v1 references in codebase.
-* [ ] Final full test suite run.
-* [ ] **USER VERIFICATION AND FINAL COMMIT.**
 
 ---

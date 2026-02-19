@@ -48,8 +48,9 @@ export function useSettingsForm(baseFields: BaseField[], profiles: InverterProfi
     const [haEntities, setHaEntities] = useState<{ entity_id: string; friendly_name: string; domain: string }[]>([])
     const [haLoading, setHaLoading] = useState(false)
 
-    // Compute dynamic field list including profile-specific entity fields
-    // This uses the config data to determine which profile fields to include
+    // Compute dynamic field list including profile-specific entity fields.
+    // Iterates the v2 flat entity registry (dict of EntityDefinition objects)
+    // and injects fields grouped under 'Inverter Profile Entities' subsection.
     const fields = useMemo(() => {
         if (!config || profiles.length === 0) {
             return baseFields
@@ -64,51 +65,35 @@ export function useSettingsForm(baseFields: BaseField[], profiles: InverterProfi
         }
 
         const dynamicFields = [...baseFields]
-
-        // Add required entity fields
-        const requiredFields: BaseField[] = Object.keys(selectedProfile.entities.required || {}).map((key) => {
-            const isStandard = standardInverterKeys.has(key)
-            const label = key
-                .split('_')
-                .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-                .join(' ')
-
-            return {
-                key: isStandard ? `executor.inverter.${key}` : `executor.inverter.custom_entities.${key}`,
-                label: `${label} Entity`,
-                path: isStandard ? ['executor', 'inverter', key] : ['executor', 'inverter', 'custom_entities', key],
-                type: 'entity',
-                required: true,
-                subsection: 'Inverter Profile Entities',
-                helper: `Profile suggested mapping: ${selectedProfile.entities.required![key]}`,
-            }
-        })
-
-        // Add optional entity fields
-        const optionalFields: BaseField[] = Object.keys(selectedProfile.entities.optional || {}).map((key) => {
-            const isStandard = standardInverterKeys.has(key)
-            const label = key
-                .split('_')
-                .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-                .join(' ')
-
-            return {
-                key: isStandard ? `executor.inverter.${key}` : `executor.inverter.custom_entities.${key}`,
-                label: `${label} Entity`,
-                path: isStandard ? ['executor', 'inverter', key] : ['executor', 'inverter', 'custom_entities', key],
-                type: 'entity',
-                required: false,
-                subsection: 'Inverter Profile Entities',
-                helper: `Profile suggested mapping: ${selectedProfile.entities.optional![key]}`,
-            }
-        })
-
-        // Filter out duplicates
         const existingKeys = new Set(dynamicFields.map((f) => f.key))
-        const uniqueRequired = requiredFields.filter((f) => !existingKeys.has(f.key))
-        const uniqueOptional = optionalFields.filter((f) => !existingKeys.has(f.key))
 
-        dynamicFields.push(...uniqueRequired, ...uniqueOptional)
+        // v2 API returns entities as a flat Record<key, EntityDefinition>.
+        // Each EntityDefinition has: default_entity, domain, category, description, required.
+        const profileFields: BaseField[] = Object.entries(selectedProfile.entities)
+            .map(([key, entity]) => {
+                const isStandard = standardInverterKeys.has(key)
+                const configKey = isStandard
+                    ? `executor.inverter.${key}`
+                    : `executor.inverter.custom_entities.${key}`
+                const configPath = isStandard
+                    ? ['executor', 'inverter', key]
+                    : ['executor', 'inverter', 'custom_entities', key]
+
+                return {
+                    key: configKey,
+                    label: entity.description,
+                    path: configPath,
+                    type: 'entity' as const,
+                    required: entity.required,
+                    subsection: 'Inverter Profile Entities',
+                    helper: entity.default_entity
+                        ? `Suggested: ${entity.default_entity}`
+                        : undefined,
+                }
+            })
+            .filter((f) => !existingKeys.has(f.key))
+
+        dynamicFields.push(...profileFields)
 
         return dynamicFields
     }, [config, profiles, baseFields])

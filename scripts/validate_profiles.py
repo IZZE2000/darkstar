@@ -1,131 +1,162 @@
 #!/usr/bin/env python3
 """
-Inverter Profile Validator
-Validates Darkstar inverter profile YAML files against the schema.
-Supports both v1 and v2 schema.
+validate_profiles.py — Validate Darkstar inverter profile YAML files.
+
+Usage:
+    uv run python scripts/validate_profiles.py profiles/your_brand.yaml
+    uv run python scripts/validate_profiles.py profiles/           # validate all
+    uv run python scripts/validate_profiles.py                     # validate all in profiles/
+
+Exit codes:
+    0 — All profiles valid
+    1 — One or more validation errors
 """
 
 import sys
 from pathlib import Path
 
-import yaml
+# Ensure repo root is on path so executor package is importable
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-REQUIRED_MODES_V1 = ["export", "zero_export", "charge_from_grid", "idle", "self_consumption"]
-REQUIRED_MODES_V2 = ["charge", "export", "idle", "self_consumption"]
+from executor.profiles import (
+    REQUIRED_MODES,
+    VALID_CATEGORIES,
+    VALID_DOMAINS,
+    VALID_TEMPLATES,
+    load_profile,
+)
 
 
-def validate_profile(file_path):
-    if "schema.yaml" in str(file_path):
-        return True
+def validate_file(path: Path) -> list[str]:
+    """Validate a single profile YAML file. Returns list of error strings."""
+    errors: list[str] = []
 
-    print(f"Validating {file_path}...")
     try:
-        path = Path(file_path)
-        with path.open("r") as f:
-            data = yaml.safe_load(f)
+        profile = load_profile(path.stem, profiles_dir=path.parent)
     except Exception as e:
-        print(f"  [ERROR] Failed to parse YAML: {e}")
-        return False
+        return [f"  ✗ Failed to load: {e}"]
 
-    errors = []
+    # 1. Schema version
+    if profile.metadata.schema_version != 2:
+        errors.append(f"  ✗ schema_version must be 2, got {profile.metadata.schema_version!r}")
 
-    metadata = data.get("metadata", {})
-    if not metadata.get("name"):
-        errors.append("Missing metadata.name")
-    if not metadata.get("version"):
-        errors.append("Missing metadata.version")
+    # 2. Required metadata
+    if not profile.metadata.name:
+        errors.append("  ✗ metadata.name is required")
+    elif profile.metadata.name != path.stem:
+        errors.append(
+            f"  ✗ metadata.name '{profile.metadata.name}' does not match filename '{path.stem}'"
+        )
 
-    schema_version = metadata.get("schema_version", 1)
+    if not profile.metadata.version:
+        errors.append("  ✗ metadata.version is required")
 
-    if schema_version == 2:
-        return validate_profile_v2(file_path, data, errors)
-    else:
-        return validate_profile_v1(file_path, data, errors)
+    if not profile.metadata.supported_brands:
+        errors.append("  ✗ metadata.supported_brands must list at least one brand")
 
-
-def validate_profile_v1(file_path, data, errors):
-    capabilities = data.get("capabilities", {})
-    if "watts_based_control" not in capabilities:
-        errors.append("Missing capabilities.watts_based_control")
-
-    entities = data.get("entities", {})
-    required_entities = entities.get("required", {})
-    if "work_mode" not in required_entities:
-        errors.append("Missing entities.required.work_mode")
-
-    modes = data.get("modes", {})
-    for mode_name in REQUIRED_MODES_V1:
-        if mode_name not in modes:
-            errors.append(f"Missing required mode: '{mode_name}'")
-
-    def check_entities(entity_dict):
-        for key, val in entity_dict.items():
-            if val and "." not in val and key not in ["forced_power"]:
-                errors.append(
-                    f"Invalid HA entity ID format for '{key}': '{val}' (must be 'domain.name')"
-                )
-
-    check_entities(required_entities)
-    check_entities(entities.get("optional", {}))
-
-    if errors:
-        for err in errors:
-            print(f"  [ERROR] {err}")
-        return False
-
-    print("  [OK] Profile is valid (v1).")
-    return True
-
-
-def validate_profile_v2(file_path, data, errors):
-    entities = data.get("entities", {})
-    if not entities:
-        errors.append("Missing entities registry")
-
-    modes = data.get("modes", {})
-    for mode_name in REQUIRED_MODES_V2:
-        if mode_name not in modes:
-            errors.append(f"Missing required mode: '{mode_name}'")
+    # 3. Required modes
+    for mode_name in REQUIRED_MODES:
+        if mode_name not in profile._modes_dict:
+            errors.append(f"  ✗ Missing required mode: '{mode_name}'")
         else:
-            mode = modes[mode_name]
-            if "actions" not in mode:
-                errors.append(f"Mode '{mode_name}' missing actions list")
-            elif not isinstance(mode["actions"], list):
-                errors.append(f"Mode '{mode_name}' actions must be a list")
+            mode = profile.get_mode(mode_name)
+            if not mode.description:
+                errors.append(f"  ✗ modes.{mode_name}.description is required")
+            if not mode.actions:
+                errors.append(f"  ✗ modes.{mode_name} has no actions")
 
-    behavior = data.get("behavior", {})
-    if not behavior:
-        errors.append("Missing behavior section")
+    # 4. Entity registry
+    if not profile.entities:
+        errors.append("  ✗ entities registry is empty — at least one entity required")
+
+    for key, entity in profile.entities.items():
+        if entity.domain not in VALID_DOMAINS:
+            errors.append(
+                f"  ✗ entities.{key}.domain '{entity.domain}' is invalid "
+                f"(valid: {sorted(VALID_DOMAINS)})"
+            )
+        if entity.category not in VALID_CATEGORIES:
+            errors.append(
+                f"  ✗ entities.{key}.category '{entity.category}' is invalid "
+                f"(valid: {sorted(VALID_CATEGORIES)})"
+            )
+        if not entity.description:
+            errors.append(f"  ✗ entities.{key}.description is required")
+
+    # 5. Mode actions reference valid entity keys
+    entity_keys = set(profile.entities.keys())
+    for mode_name, mode in profile._modes_dict.items():
+        for i, action in enumerate(mode.actions):
+            if action.entity not in entity_keys:
+                errors.append(
+                    f"  ✗ modes.{mode_name}.actions[{i}].entity '{action.entity}' "
+                    f"not found in entity registry"
+                )
+            if action.value is None:
+                errors.append(f"  ✗ modes.{mode_name}.actions[{i}].value is required")
+            # Validate template strings
+            if isinstance(action.value, str) and "{{" in action.value:
+                template_inner = action.value.strip("{} ")
+                if template_inner not in VALID_TEMPLATES:
+                    errors.append(
+                        f"  ✗ modes.{mode_name}.actions[{i}].value "
+                        f"'{action.value}' is not a known template "
+                        f"(valid: {sorted(VALID_TEMPLATES)})"
+                    )
+
+    # 6. Behavior
+    if profile.behavior.control_unit not in ("A", "W"):
+        errors.append(
+            f"  ✗ behavior.control_unit '{profile.behavior.control_unit}' is invalid (use 'A' or 'W')"
+        )
+
+    return errors
+
+
+def main() -> int:
+    """Run validation on the given paths. Returns exit code."""
+    args = sys.argv[1:]
+
+    if not args:
+        # Default: validate everything in profiles/
+        paths = sorted(Path("profiles").glob("*.yaml"))
+        paths = [p for p in paths if p.name != "schema.yaml"]
     else:
-        if "control_unit" not in behavior:
-            errors.append("Missing behavior.control_unit")
+        paths = []
+        for arg in args:
+            p = Path(arg)
+            if p.is_dir():
+                found = sorted(p.glob("*.yaml"))
+                paths.extend(x for x in found if x.name != "schema.yaml")
+            elif p.is_file():
+                paths.append(p)
+            else:
+                print(f"[ERROR] Path not found: {arg}", file=sys.stderr)
+                return 1
 
-    if errors:
-        for err in errors:
-            print(f"  [ERROR] {err}")
-        return False
+    if not paths:
+        print("[ERROR] No profile YAML files found.", file=sys.stderr)
+        return 1
 
-    print("  [OK] Profile is valid (v2).")
-    return True
+    all_ok = True
 
+    for path in paths:
+        errors = validate_file(path)
+        if errors:
+            all_ok = False
+            print(f"❌ {path.name}:")
+            for err in errors:
+                print(err)
+        else:
+            print(f"✅ {path.name}: OK")
 
-def main():
-    if len(sys.argv) < 2:
-        # Default to all profiles in ./profiles/
-        profiles = [str(p) for p in Path("profiles").glob("*.yaml")]
-        # Exclude schema.yaml
-        profiles = [p for p in profiles if "schema.yaml" not in p]
+    if all_ok:
+        print(f"\n✅ All {len(paths)} profile(s) valid.")
+        return 0
     else:
-        profiles = sys.argv[1:]
-
-    success = True
-    for profile in profiles:
-        if not validate_profile(profile):
-            success = False
-
-    if not success:
-        sys.exit(1)
+        print("\n❌ Validation failed. See errors above.")
+        return 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
