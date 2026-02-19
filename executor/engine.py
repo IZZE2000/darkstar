@@ -1213,14 +1213,20 @@ class ExecutorEngine:
                 # Phase 3: Capture errors from action results
                 for r in action_results:
                     if not r.success and not r.skipped:
-                        self.recent_errors.append(
-                            {
-                                "timestamp": now_iso,
-                                "type": r.action_type,
-                                "message": r.message,
-                                "error_details": r.error_details,  # REV F52 Phase 5: HA API error details
-                            }
-                        )
+                        error_data = {
+                            "timestamp": now_iso,
+                            "type": r.action_type,
+                            "message": r.message,
+                            "error_details": r.error_details,  # REV F52 Phase 5: HA API error details
+                        }
+                        self.recent_errors.append(error_data)
+                        # Broadcast error to WebSocket clients in real-time
+                        try:
+                            from backend.core.websockets import ws_manager
+
+                            ws_manager.emit_sync("executor_error", error_data)
+                        except Exception:
+                            pass  # Silently fail if WebSocket not available
 
                 result["actions"] = [
                     {
@@ -1291,14 +1297,20 @@ class ExecutorEngine:
                 self.dispatcher.notify_error(str(e))
 
             # Phase 3: Capture critical tick failure
-            self.recent_errors.append(
-                {
-                    "timestamp": now_iso,
-                    "type": "engine_tick",
-                    "message": str(e),
-                    "error_details": None,
-                }
-            )
+            error_data = {
+                "timestamp": now_iso,
+                "type": "engine_tick",
+                "message": str(e),
+                "error_details": None,
+            }
+            self.recent_errors.append(error_data)
+            # Broadcast error to WebSocket clients in real-time
+            try:
+                from backend.core.websockets import ws_manager
+
+                ws_manager.emit_sync("executor_error", error_data)
+            except Exception:
+                pass  # Silently fail if WebSocket not available
 
         return result
 

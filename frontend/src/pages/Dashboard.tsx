@@ -95,7 +95,6 @@ export default function Dashboard() {
     // Phase 3: Executor health status
     const [executorHealth, setExecutorHealth] = useState<import('../lib/api').ExecutorHealthResponse | null>(null)
     const [config, setConfig] = useState<any>(null)
-    const [lastProcessedErrorTime, setLastProcessedErrorTime] = useState<string | null>(null)
 
     const { toast } = useToast()
 
@@ -153,6 +152,16 @@ export default function Dashboard() {
         setExecutorStatus({
             shadow_mode: data.shadow_mode ?? false,
             paused: data.paused ?? null,
+        })
+    })
+
+    // WebSocket: Real-time executor errors
+    useSocket('executor_error', (data: any) => {
+        // Show toast notification for real-time errors
+        toast({
+            message: `Executor Error: ${data.type}`,
+            description: data.message,
+            variant: 'error',
         })
     })
 
@@ -330,23 +339,9 @@ export default function Dashboard() {
                 setHealthStatus(healthData.value)
             }
 
-            // Phase 3: Update executor health and show toasts for new errors
+            // Phase 3: Update executor health status
             if (executorHealthData.status === 'fulfilled') {
-                const health = executorHealthData.value
-                setExecutorHealth(health)
-
-                // Show toasts for NEW errors
-                if (health.recent_errors && health.recent_errors.length > 0) {
-                    const latestError = health.recent_errors[health.recent_errors.length - 1]
-                    if (latestError.timestamp !== lastProcessedErrorTime) {
-                        toast({
-                            message: `Executor Error: ${latestError.type}`,
-                            description: latestError.message,
-                            variant: 'error',
-                        })
-                        setLastProcessedErrorTime(latestError.timestamp)
-                    }
-                }
+                setExecutorHealth(executorHealthData.value)
             }
 
             if (haAverageData.status === 'fulfilled') {
@@ -416,7 +411,7 @@ export default function Dashboard() {
         } finally {
             setChartRefreshToken((token) => token + 1)
         }
-    }, [lastProcessedErrorTime, toast])
+    }, [])
 
     const fetchAllData = useCallback(async () => {
         await fetchCriticalData()
