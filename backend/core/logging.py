@@ -82,6 +82,7 @@ def setup_logging():
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+    logging.getLogger("websockets.client").setLevel(logging.WARNING)
 
     # Silence repetitive API data loading (Rev DX2)
     logging.getLogger("darkstar.api").setLevel(logging.WARNING)
