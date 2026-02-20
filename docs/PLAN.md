@@ -100,3 +100,51 @@ Add a second layer of protection that monitors actual EV power consumption via t
 * [ ] Add note about dual-layer protection (schedule + actual power detection)
 
 ---
+
+### [DRAFT] REV // A25 — Fix Forecast Timestamp Alignment Bug
+
+**Goal:** Fix the critical bug where load and PV forecasts show zeros and unexpected gaps due to timestamp misalignment between forecast generation and price slots.
+
+**Context:**
+A Fronius beta tester observes completely different load/PV forecasts between consecutive planning runs seconds apart. Load forecast shows huge gaps with zero values; PV forecast plummets unexpectedly. These should be identical between runs.
+
+**Root Cause Analysis:**
+The bug is in `ml/forward.py:94-98`. The code generates forecasts starting at the **next** 15-minute slot boundary (e.g., 09:15 if current time is 09:01), but price slots start at the **current** slot boundary (e.g., 09:00). When `inputs.py:build_db_forecast_for_slots()` looks up forecasts for price slots, the first slot (09:00) has no matching forecast → returns `pv=0.0, load=0.0`.
+
+**Why it appears intermittent:**
+- If planner runs at exactly 09:00:00, forecasts start at 09:00 → alignment OK
+- If planner runs at 09:00:15, forecasts start at 09:15 → 09:00 slot has no forecast → zeros
+
+**Plan:**
+
+#### Phase 1: Fix Root Cause (Primary)
+* [ ] Modify `ml/forward.py:94-98` to generate forecasts starting from the **current** 15-minute slot boundary instead of "next slot"
+* [ ] Update comment to reflect the change: "Align to current slot boundary"
+* [ ] Verify forecast timestamps now match price slot timestamps exactly
+
+#### Phase 2: Add Defensive Fallback
+* [ ] Modify `inputs.py:911` to implement fallback logic when exact timestamp match fails
+* [ ] If `indexed.get(ts)` returns None, search for the closest forecast at or before the requested slot
+* [ ] Only return 0.0 as absolute last resort (if no forecasts available at all)
+* [ ] Add warning log when fallback is used: "No exact forecast match for {ts}, using fallback from {fallback_ts}"
+
+#### Phase 3: Testing & Validation
+* [ ] Run planner at various times within a 15-minute window and verify consistent forecasts
+* [ ] Verify no zero values in load/PV forecasts when DB has valid data
+* [ ] Run `uv run ruff check .` for linting
+* [ ] Run `uv run python -m pytest tests/ -v -k forecast` for forecast-related tests
+
+#### Phase 4: Documentation
+* [ ] Add inline comments explaining timestamp alignment requirements
+* [ ] Document the "belt and suspenders" approach (fix root cause + defensive fallback)
+
+**Affected Files:**
+- `ml/forward.py:94-98` - Forecast generation timestamp logic
+- `inputs.py:909-914` - Forecast lookup with fallback needed
+
+**Success Criteria:**
+- Consecutive planner runs (seconds apart) produce identical load/PV forecasts
+- No zero values in forecasts when the ML database contains valid predictions
+- Graceful degradation with logged warnings if forecasts are ever stale/missing
+
+---
