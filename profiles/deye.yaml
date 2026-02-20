@@ -78,9 +78,11 @@ modes:
       - entity: "grid_charging_enable"
         value: false
       - entity: "max_discharge_current"
-        value: "{{discharge_value}}"
+        value: "{{max_discharge}}"
       - entity: "grid_max_export_power"
         value: "{{export_power_w}}"
+      - entity: "soc_target"
+        value: "{{soc_target}}"
 
   self_consumption:
     description: "Self consumption — PV to battery and house, no grid export"
@@ -91,6 +93,8 @@ modes:
         value: false
       - entity: "soc_target"
         value: "{{soc_target}}"
+      - entity: "max_discharge_current"
+        value: "{{max_discharge}}"
 
   idle:
     description: "Idle / Hold — Block discharge, preserve battery"
@@ -101,6 +105,8 @@ modes:
         value: false
       - entity: "max_discharge_current"
         value: 0
+      - entity: "max_charge_current"
+        value: "{{max_charge}}"
       - entity: "soc_target"
         value: "{{soc_target}}"
 
