@@ -103,9 +103,11 @@ modes:
         value: 0
       - entity: "max_discharge_power"
         value: "{{max_discharge}}"
+      - entity: "max_charge_power"
+        value: "{{max_charge}}"
 
   idle:
-    description: "Idle / Hold — Block discharge, preserve battery"
+    description: "Idle / Hold — Block discharge, preserve battery, Allow PV charge"
     actions:
       - entity: "work_mode"
         value: "Self-consumption mode (default)"
@@ -115,6 +117,8 @@ modes:
         value: 0
       - entity: "max_discharge_power"
         value: 10
+      - entity: "max_charge_power"
+        value: "{{max_charge}}"
 
 behavior:
   control_unit: "W"
@@ -149,7 +153,7 @@ behavior:
 #
 # 5. MAX DISCHARGE POWER CAP:
 #    max_charge_power and max_discharge_power act as caps on battery power
-#    in BOTH Self-consumption and Forced modes. Set these high (9000W)
+#    in BOTH Self-consumption and Forced modes. Set these high (user config max)
 #    when you want full power availability.
 #
 # 6. EXPORT LIMIT:
