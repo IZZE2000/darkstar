@@ -567,11 +567,13 @@ async def _get_forecast_data_async(
                     "No valid solar arrays with kwp > 0 found. Using default single array."
                 )
                 # Fallback to default single array
-                azimuth_list_clean = [180.0]
+                azimuth_list_clean = [0.0]  # Open-Meteo South is 0
                 tilt_list_clean = [30.0]
                 kwp_list_clean = [5.0]
             else:
-                azimuth_list_clean = [arr[0] for arr in valid_arrays]
+                # Open-Meteo expects -180 to 180 (0=South, 90=West)
+                # Convert from HA (North=0, East=90, South=180, West=270)
+                azimuth_list_clean = [(arr[0] % 360) - 180 for arr in valid_arrays]
                 tilt_list_clean = [arr[1] for arr in valid_arrays]
                 kwp_list_clean = [arr[2] for arr in valid_arrays]
 
