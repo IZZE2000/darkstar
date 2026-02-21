@@ -57,6 +57,22 @@ async def get_config() -> dict[str, Any]:
 
 
 @router.get(
+    "/api/config/validate",
+    summary="Validate Configuration",
+    description="Returns validation warnings without saving. Use to check for incomplete configuration.",
+)
+async def validate_config() -> dict[str, Any]:
+    """Validate current config and return warnings (no save)."""
+    try:
+        conf: dict[str, Any] = load_yaml("config.yaml") or {}
+        validation_issues = _validate_config_for_save(conf)
+        warnings = [i for i in validation_issues if i["severity"] == "warning"]
+        return {"status": "success", "warnings": warnings}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@router.get(
     "/api/config/download",
     summary="Download Configuration",
     description="Returns config.yaml as a downloadable YAML file with secrets sanitized.",

@@ -322,7 +322,6 @@ export default function Dashboard() {
                 waterData,
                 auroraData,
                 historyData,
-                healthData, // REV LCL01: Fetch health for config validation banners
                 executorHealthData, // Phase 3
             ] = await Promise.allSettled([
                 Api.haAverage(), // Cached for 60s
@@ -330,14 +329,8 @@ export default function Dashboard() {
                 Api.haWaterToday(),
                 Api.aurora.dashboard(),
                 Api.scheduleTodayWithHistory(),
-                Api.health(), // REV LCL01
                 Api.executor.health(), // Phase 3
             ])
-
-            // REV LCL01: Update health status for banners
-            if (healthData.status === 'fulfilled') {
-                setHealthStatus(healthData.value)
-            }
 
             // Phase 3: Update executor health status
             if (executorHealthData.status === 'fulfilled') {
