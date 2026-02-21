@@ -91,7 +91,7 @@ modes:
     description: "Idle / Hold - Block battery discharge"
     actions:
       - entity: "work_mode"
-        value: "Block discharging"
+        value: "Block Discharging"
         settle_ms: 500
 
 behavior:
@@ -143,3 +143,12 @@ behavior:
 #    Export limit works independently of storage mode.
 #    Enable switch first, then set limit value.
 #
+# 9. CONTROL MODES (from integration docs):
+#    - Auto
+#    - PV Charge Limit
+#    - Discharge Limit
+#    - PV Charge and Discharge Limit
+#    - Charge from Grid
+#    - Discharge to Grid
+#    - Block Discharging
+#    - Block Charging
