@@ -40,14 +40,19 @@ export function CircuitNode({
                 {isActive && (
                     <circle r={r + 4} fill={color} fillOpacity="0.15" filter={`drop-shadow(0 0 8px ${color})`} />
                 )}
-                <circle r={r} fill="#0f172a" stroke={isActive ? color : '#334155'} strokeWidth={isActive ? 2 : 1} />
+                <circle
+                    r={r}
+                    fill="rgb(var(--color-surface))"
+                    stroke={isActive ? color : 'rgb(var(--color-line))'}
+                    strokeWidth={isActive ? 2 : 1}
+                />
                 {Icon && (
                     <foreignObject
                         x={-16}
                         y={-16}
                         width={32}
                         height={32}
-                        style={{ color: isActive ? color : '#94a3b8' }}
+                        style={{ color: isActive ? color : 'rgb(var(--color-muted))' }}
                     >
                         <Icon size={32} strokeWidth={1.5} />
                     </foreignObject>
@@ -57,7 +62,7 @@ export function CircuitNode({
                     x={0}
                     y={r + 16}
                     textAnchor="middle"
-                    fill={isActive ? color : '#e2e8f0'}
+                    fill={isActive ? color : 'rgb(var(--color-text))'}
                     fontSize="12"
                     fontFamily="JetBrains Mono, monospace"
                     fontWeight="bold"
@@ -109,10 +114,20 @@ export function CircuitNode({
     return (
         <g transform={`translate(${x}, ${y})`} {...interactionProps}>
             {/* Left Bracket */}
-            <path d={bracketPathLeft} fill="none" stroke={isActive ? color : '#64748b'} strokeWidth="1.5" />
+            <path
+                d={bracketPathLeft}
+                fill="none"
+                stroke={isActive ? color : 'rgb(var(--color-muted))'}
+                strokeWidth="1.5"
+            />
 
             {/* Right Bracket */}
-            <path d={bracketPathRight} fill="none" stroke={isActive ? color : '#64748b'} strokeWidth="1.5" />
+            <path
+                d={bracketPathRight}
+                fill="none"
+                stroke={isActive ? color : 'rgb(var(--color-muted))'}
+                strokeWidth="1.5"
+            />
 
             {/* Content Stack */}
 
@@ -121,7 +136,7 @@ export function CircuitNode({
                 x={0}
                 y={-18}
                 textAnchor="middle"
-                fill="#94a3b8"
+                fill="rgb(var(--color-muted))"
                 fontSize="10"
                 fontFamily="JetBrains Mono, monospace"
                 className="uppercase tracking-wider"
@@ -134,7 +149,7 @@ export function CircuitNode({
                 x={0}
                 y={4}
                 textAnchor="middle"
-                fill={isActive ? color : '#e2e8f0'}
+                fill={isActive ? color : 'rgb(var(--color-text))'}
                 fontSize="14"
                 fontFamily="JetBrains Mono, monospace"
                 fontWeight="bold"
@@ -148,7 +163,7 @@ export function CircuitNode({
                     x={0}
                     y={22}
                     textAnchor="middle"
-                    fill={isActive ? '#f1f5f9' : '#64748b'}
+                    fill={isActive ? 'rgb(var(--color-text))' : 'rgb(var(--color-muted))'}
                     fontSize="11"
                     fontFamily="JetBrains Mono, monospace"
                 >

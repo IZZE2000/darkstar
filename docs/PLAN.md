@@ -148,3 +148,74 @@ The bug is in `ml/forward.py:94-98`. The code generates forecasts starting at th
 - Graceful degradation with logged warnings if forecasts are ever stale/missing
 
 ---
+
+### [DONE] REV // UI24 — Migrate SVG Charts to CSS Variables
+
+**Goal:** Replace hardcoded hex colors in SVG charts and Chart.js configurations with dynamic CSS custom properties for proper Light/Dark mode adaptation.
+
+**Context:**
+Many SVG charts (Power Flow diagram, probabilistic forecasts, etc.) use hardcoded hex colors that don't adapt to theme changes. This causes poor visibility in certain modes - dark text on dark backgrounds or light text on light backgrounds. The `index.css` file already defines a comprehensive theme system with CSS variables like `--color-surface`, `--color-text`, `--color-muted`, and `--color-line` that automatically switch between light and dark modes.
+
+**Files to Modify:**
+
+| File | Hex Colors | Strategy |
+|------|------------|----------|
+| `CircuitNode.tsx` | 8 locations | SVG attribute replacements |
+| `CircuitPath.tsx` | 1 location | SVG stroke color |
+| `PowerFlowCard.tsx` | 2 locations | Tooltip inline styles |
+| `ProbabilisticChart.tsx` | 10 locations | Chart.js options objects |
+| `Aurora.tsx` | 12 locations | Chart.js scales configuration |
+| `ContextRadar.tsx` | 4 locations | Chart.js tooltip config |
+| `DecompositionChart.tsx` | 2 locations | Preserve OLED/Swiss logic |
+
+**Color Mapping:**
+
+| Current Hex | CSS Variable | Usage |
+|-------------|--------------|-------|
+| `#0f172a` | `rgb(var(--color-surface))` | Node backgrounds |
+| `#334155` | `rgb(var(--color-line))` | Grid lines, borders |
+| `#64748b` | `rgb(var(--color-muted))` | Secondary text, brackets |
+| `#94a3b8` | `rgb(var(--color-muted))` | Labels, small text |
+| `#e2e8f0` | `rgb(var(--color-text))` | Primary values |
+| `#f1f5f9` | `rgb(var(--color-text))` | Active text state |
+| `#1e293b` | `rgb(var(--color-surface))` | Trace backgrounds |
+| `#cbd5e1` | `rgb(var(--color-muted))` | Tooltip body |
+| `#f8fafc` | `rgb(var(--color-text))` | Tooltip titles |
+
+**Plan:**
+
+#### Phase 1: SVG Components [DONE]
+* [x] Update `CircuitNode.tsx` - Replace 8 hardcoded hex colors
+  - `fill="#0f172a"` → `fill="rgb(var(--color-surface))"`
+  - `stroke={isActive ? color : '#334155'}` → `stroke={isActive ? color : 'rgb(var(--color-line))'}`
+  - Style object colors for text and icon elements
+* [x] Update `CircuitPath.tsx` - Replace background trace color
+  - `stroke="#1e293b"` → `stroke="rgb(var(--color-surface))"`
+* [x] Update `PowerFlowCard.tsx` - Replace tooltip styles
+  - `#e2e8f0` → `rgb(var(--color-text))`
+  - `#64748b` → `rgb(var(--color-muted))`
+
+#### Phase 2: Chart.js Configurations [DONE]
+* [x] Update `ProbabilisticChart.tsx`
+  - Grid colors: `#334155` → `rgb(var(--color-line))`
+  - Text colors: `#94a3b8`, `#e2e8f0`, `#cbd5e1` → theme variables
+  - Tooltip styling: `#1e293b`, `#334155` → surface/line
+* [x] Update `Aurora.tsx`
+  - Chart scales: grid and tick colors
+  - Legend labels
+* [x] Update `ContextRadar.tsx`
+  - Tooltip configuration
+* [x] Update `DecompositionChart.tsx`
+  - Maintain conditional OLED/Swiss logic
+  - Replace default fallback colors only
+
+#### Phase 3: Testing & Validation [DONE]
+* [x] Verify Power Flow diagram in both Light and Dark modes
+* [x] Verify all charts adapt correctly to theme toggle
+* [x] Run `pnpm lint` in frontend/ directory - **PASSED**
+* [x] Run `pnpm format` to ensure consistent formatting - **FORMATTED**
+* [x] Check for any remaining hardcoded colors with grep - **NONE FOUND**
+
+**Total Changes:** ~35 hex color references across 7 files → 4 CSS variables
+
+---

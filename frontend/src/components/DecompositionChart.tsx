@@ -140,7 +140,7 @@ export default function DecompositionChart({ slots, mode, variant = 'field' }: P
                 },
                 ticks: {
                     display: !isField, // Hide Y axis for Field aesthetics
-                    color: isOled ? '#666' : isSwiss ? '#000' : '#64748b',
+                    color: isOled ? '#666' : isSwiss ? '#000' : 'rgb(var(--color-muted))',
                     font: {
                         size: 10,
                         family: isOled ? 'monospace' : 'inherit',

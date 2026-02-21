@@ -74,7 +74,7 @@ export default function PowerFlowCard({ data, systemConfig, compact = false }: P
                     padding: '10px 14px',
                     fontFamily: 'JetBrains Mono, monospace',
                     fontSize: '11px',
-                    color: '#e2e8f0',
+                    color: 'rgb(var(--color-text))',
                     maxHeight: '180px',
                     overflowY: 'auto',
                     minWidth: '180px',
@@ -108,7 +108,7 @@ export default function PowerFlowCard({ data, systemConfig, compact = false }: P
                         <Plug
                             size={12}
                             style={{
-                                color: ev.pluggedIn ? 'rgb(var(--color-good))' : '#64748b',
+                                color: ev.pluggedIn ? 'rgb(var(--color-good))' : 'rgb(var(--color-muted))',
                                 flexShrink: 0,
                             }}
                         />

@@ -41,12 +41,7 @@ export function CircuitPath({
     return (
         <g>
             {/* 1. Background Trace (Dim) */}
-            <path
-                d={pathD}
-                fill="none"
-                stroke="#1e293b" // Slate-800
-                strokeWidth="2"
-            />
+            <path d={pathD} fill="none" stroke="rgb(var(--color-line))" strokeWidth="2" />
 
             {/* 2. Active Flow Animation */}
             {isActive && (

@@ -39,7 +39,7 @@ export default function ProbabilisticChart({ title, slots, color }: Props) {
             {
                 label: 'Actual',
                 data: slots.map((s) => s.actual ?? null),
-                borderColor: '#94a3b8', // Slate-400
+                borderColor: '#94a3b8',
                 backgroundColor: '#94a3b8',
                 borderWidth: 2,
                 pointRadius: 0,
@@ -95,7 +95,7 @@ export default function ProbabilisticChart({ title, slots, color }: Props) {
             legend: {
                 display: true,
                 labels: {
-                    color: '#cbd5e1', // Slate-300
+                    color: '#94a3b8',
                     font: { size: 11 },
                     boxWidth: 8,
                     usePointStyle: true,
@@ -104,7 +104,7 @@ export default function ProbabilisticChart({ title, slots, color }: Props) {
             title: {
                 display: !!title,
                 text: title,
-                color: '#e2e8f0', // Slate-200
+                color: '#e2e8f0',
                 font: { size: 13, weight: 'normal' as const },
                 align: 'start' as const,
                 padding: { bottom: 10 },
@@ -122,7 +122,7 @@ export default function ProbabilisticChart({ title, slots, color }: Props) {
         scales: {
             x: {
                 grid: {
-                    color: '#334155', // Slate-700
+                    color: '#334155',
                     drawBorder: false,
                 },
                 ticks: {
