@@ -219,3 +219,51 @@ Many SVG charts (Power Flow diagram, probabilistic forecasts, etc.) use hardcode
 **Total Changes:** ~35 hex color references across 7 files → 4 CSS variables
 
 ---
+
+### [DRAFT] REV // F72 — Fix Profile Suggestions API Crash
+
+**Goal:** Fix the `FileNotFoundError` in the backend `get_profile_suggestions` endpoint that causes the `ProfileSetupHelper` UI to silently fail for new configs.
+
+**Context:**
+The frontend `ProfileSetupHelper.tsx` relies on `/api/profiles/{name}/suggestions` to present the user with standard configuration values for their selected inverter profile (e.g., Deye, Fronius) when onboarding or switching profiles.
+Currently, this endpoint crashes with a 500 error on fresh installations because it calls `load_yaml("config.yaml")` using a relative path to calculate missing entities. If the backend is running from a different working directory, this file isn't found. Furthermore, the frontend component hides itself if `diffItems.length === 0`, interpreting an API crash (or a completely blank config failing to match keys) as "No differences found". This prevents the user from receiving necessary auto-configuration suggestions.
+
+**Plan:**
+
+#### Phase 1: Backend Fix [DRAFT]
+* [ ] Modify `backend/api/routers/executor.py` -> `get_profile_suggestions` to resolve `config.yaml` robustly.
+* [ ] Handle cases where `config.yaml` is completely empty or missing gracefully, ensuring the endpoint returns the full standard profile template as "missing" so the UI can populate.
+
+#### Phase 2: Frontend Resilience [DRAFT]
+* [ ] Modify `frontend/src/pages/settings/components/ProfileSetupHelper.tsx`
+* [ ] Ensure errors from the backend fetch are displayed to the user rather than hiding the component.
+* [ ] Fix the local diffing logic so that an entirely blank `currentForm` correctly registers all suggested keys as `is_different` or `is_missing` so the UI appears immediately.
+
+---
+
+### [DRAFT] REV // UI25 — Mandatory Startup Overlay Wizard
+
+**Goal:** Create a mandatory, high-level "Setup Mode" overlay wizard that triggers on fresh installations (`config.system.inverter_profile == null`) to configure the minimal required settings before allowing dashboard interaction.
+
+**Context:**
+Currently, users with no data fall back to a perfectly flat dummy load profile in `inputs.py`, which ruins the Kepler solver's ability to plan for daily peaks. Furthermore, users are presented with a massive settings page and don't know where to begin.
+We need a targeted Setup Wizard that triggers automatically. It should gather the 3 critical pieces of information needed for the system to function: The Inverter Profile, the Battery/PV capacities, and a Baseline Consumption (either fetching 7 days of real HA data or generating a scaled Synthetic Profile based on user estimation).
+
+**Plan:**
+
+#### Phase 1: Trigger & Infrastructure [DRAFT]
+* [ ] Change the default `config.default.yaml` entry for `system.inverter_profile` to `null` (instead of `"generic"`) to serve as the trigger state.
+* [ ] Create a robust check in `App.tsx` (or a layout wrapper) that forces the user into a full-screen `StartupWizard` modal if the profile is `null`.
+* [ ] Implement an API call to save the minimal config upon wizard completion and trigger a backend `ExecutorEngine` reload to apply the new profile and hardware specs.
+
+#### Phase 2: The Wizard Steps [DRAFT]
+* [ ] **Step 1 (Equipment):** Present big buttons for Deye, Fronius, Generic, etc. Re-use the fixed `ProfileSetupHelper` logic from REV F72 to inject the standard entities.
+* [ ] **Step 2 (Specs):** Ask for Battery Capacity (kWh) and Solar Array (kWp). Save to `config.system`.
+* [ ] **Step 3 (Baseline):** Ask for the HA `total_load_consumption` sensor. If selected, instantly trigger the async 7-day data fetch. If not provided, ask for "Estimated Daily kWh" and implement a backend routine in `inputs.py` to generate a "Synthetic Heat Pump Profile" scaled to that kWh instead of the flat 0.5 kWh line.
+
+#### Phase 3: Testing & Polish [DRAFT]
+* [ ] Verify the wizard cannot be easily bypassed unless completed.
+* [ ] Add a "Relaunch Setup Wizard" button in Settings -> System.
+* [ ] Test the Synthetic Profile generation mathematically scales correctly.
+
+---
