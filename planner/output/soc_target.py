@@ -42,9 +42,7 @@ def apply_soc_target_percent(
     Returns:
         DataFrame with 'soc_target_percent' column applied
     """
-    if df is None or df.empty:
-        if df is not None:
-            df["soc_target_percent"] = []
+    if df.empty:
         return df
 
     # Extract required series
