@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
 set -e
 
-source venv/bin/activate
+# Support both venv and uv env
+if [ -d ".venv" ]; then
+    source .venv/bin/activate
+elif [ -d "venv" ]; then
+    source venv/bin/activate
+fi
 
 echo "🔍 Running Ruff linter..."
 ruff check .
@@ -11,5 +16,8 @@ ruff format --check .
 
 echo "📝 Running Pyright type checker..."
 pyright .
+
+echo "🧪 Running Pytest tests..."
+python -m pytest -q
 
 echo "✅ All checks passed!"

@@ -48,9 +48,10 @@ import pytz
 import yaml
 
 ### Linting & Quality Control
-*   **Mandatory Checks**: At the end of **every revision** (before marking as done), you MUST run the standard linting suite.
+*   **Mandatory Checks**: At the end of **every revision** (before marking as done), you MUST run the standard linting and testing suite.
     *   **Frontend**: `pnpm lint` (must be error-free) and `pnpm format`.
-    *   **Backend**: `uv run ruff check .` (if Python files were touched).
+    *   **Backend Linting**: `uv run ruff check .` and `uv run pyright .` (if Python files were touched).
+    *   **Backend Testing**: `uv run python -m pytest -q` (MUST pass 100% to ensure no regressions).
     *   **Scripts**: If `sys.path` manipulation is required before imports, use `# noqa: E402`.
 *   **Zero-Error Policy**: Do not leave known lint errors. If a rule cannot be satisfied, use a specific suppression comment with a justification, but prefer fixing the code.
 
@@ -161,6 +162,7 @@ The sidebar version is fetched from `/api/version` which uses `git describe --ta
     - Run `uv run ruff format .` to normalize formatting.
     - Run `uv run ruff check .` to lint and catch issues.
     - Run `uv run pyright .` to verify type safety (strict mode).
+    - Run `uv run python -m pytest -q` to verify no regressions.
     - Or simply run `./scripts/lint.sh` for all checks at once.
 
 ### Development Protocol

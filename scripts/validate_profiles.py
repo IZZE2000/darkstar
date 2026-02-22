@@ -92,7 +92,7 @@ def validate_file(path: Path) -> list[str]:
                     f"  ✗ modes.{mode_name}.actions[{i}].entity '{action.entity}' "
                     f"not found in entity registry"
                 )
-            if action.value is None:
+            if action.value is None:  # type: ignore[reportUnnecessaryComparison]
                 errors.append(f"  ✗ modes.{mode_name}.actions[{i}].value is required")
             # Validate template strings
             if isinstance(action.value, str) and "{{" in action.value:
@@ -122,14 +122,15 @@ def main() -> int:
         paths = sorted(Path("profiles").glob("*.yaml"))
         paths = [p for p in paths if p.name != "schema.yaml"]
     else:
-        paths = []
+        paths: list[Path] = []
         for arg in args:
             p = Path(arg)
             if p.is_dir():
                 found = sorted(p.glob("*.yaml"))
                 paths.extend(x for x in found if x.name != "schema.yaml")
             elif p.is_file():
-                paths.append(p)
+                if p.name != "schema.yaml":
+                    paths.append(p)
             else:
                 print(f"[ERROR] Path not found: {arg}", file=sys.stderr)
                 return 1
