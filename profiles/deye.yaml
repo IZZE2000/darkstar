@@ -64,7 +64,7 @@ modes:
       - entity: "work_mode"
         value: "Zero Export To CT"
       - entity: "grid_charging_enable"
-        value: true
+        value: on
       - entity: "max_charge_current"
         value: "{{charge_value}}"
       - entity: "soc_target"
@@ -76,7 +76,7 @@ modes:
       - entity: "work_mode"
         value: "Export First"
       - entity: "grid_charging_enable"
-        value: false
+        value: off
       - entity: "max_discharge_current"
         value: "{{max_discharge}}"
       - entity: "grid_max_export_power"
@@ -90,7 +90,7 @@ modes:
       - entity: "work_mode"
         value: "Zero Export To CT"
       - entity: "grid_charging_enable"
-        value: false
+        value: off
       - entity: "soc_target"
         value: "{{soc_target}}"
       - entity: "max_discharge_current"
@@ -102,7 +102,7 @@ modes:
       - entity: "work_mode"
         value: "Zero Export To CT"
       - entity: "grid_charging_enable"
-        value: false
+        value: off
       - entity: "max_discharge_current"
         value: 0
       - entity: "max_charge_current"
