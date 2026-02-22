@@ -110,6 +110,34 @@ class TestControllerFollowPlan:
 
         assert decision.mode_intent == "idle"
 
+    def test_idle_mode_when_soc_target_has_decimal_precision(self, controller):
+        """Regression test: SoC drift from decimal precision mismatch.
+
+        Bug: Planner outputs 78.3% target, executor stores int(78.3)=78.
+        Battery at 78.3% compared: 78.3 <= 78 was FALSE, stayed in
+        self_consumption instead of idle, causing gradual drift.
+
+        Fix: Round both planner output to int AND round current_soc at
+        comparison. This test validates the comparison fix.
+        """
+        slot = SlotPlan(export_kw=0.0, charge_kw=0.0, soc_target=78)
+        # Battery at 78.3% should trigger idle since rounded(78.3) = 78 <= 78
+        state = SystemState(current_soc_percent=78.3)
+
+        decision = controller.decide(slot, state)
+
+        assert decision.mode_intent == "idle"
+
+    def test_idle_mode_when_soc_slightly_above_target(self, controller):
+        """When SoC rounds above target, use self_consumption (not idle)."""
+        slot = SlotPlan(export_kw=0.0, charge_kw=0.0, soc_target=78)
+        # Battery at 78.6% rounds to 79, which is > 78, so self_consumption
+        state = SystemState(current_soc_percent=78.6)
+
+        decision = controller.decide(slot, state)
+
+        assert decision.mode_intent == "self_consumption"
+
     def test_self_consumption_when_above_soc_target(self, controller):
         """When above SoC target, use self_consumption mode intent."""
         slot = SlotPlan(export_kw=0.0, charge_kw=0.0, soc_target=50)

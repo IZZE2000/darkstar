@@ -170,7 +170,7 @@ class OverrideEvaluator:
                 reason="No valid slot plan found - preserving current battery state",
                 actions={
                     "grid_charging": False,
-                    "soc_target": int(state.current_soc_percent),  # Keep current SoC
+                    "soc_target": round(state.current_soc_percent),  # Keep current SoC
                     "water_temp": self.water_temp_off,
                 },
             )

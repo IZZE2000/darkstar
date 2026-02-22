@@ -250,8 +250,8 @@ def apply_soc_target_percent(
             if entry is not None:
                 targets[i] = float(entry)
 
-    # Apply targets to DataFrame
-    df["soc_target_percent"] = [round(float(val), 2) for val in targets]
+    # Apply targets to DataFrame - round to integer for consistency with executor
+    df["soc_target_percent"] = [round(float(val)) for val in targets]
 
     # Clean up internal columns from output
     drop_candidates = ["_entry_soc_percent", "_entry_soc_kwh"]

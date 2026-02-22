@@ -91,11 +91,6 @@ data/planner_learning.db-shm
 .gitignore
 data/planner_learning.db-wal
 
-.kiro/
-
-docs/prompts/
-
-.opencode
 # Config backups
 config.yaml.backup*
 config.yaml.pre*

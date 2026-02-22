@@ -181,8 +181,9 @@ class Controller:
             mode_intent = "export"
         elif slot.charge_kw > 0:
             mode_intent = "charge"
-        elif state.current_soc_percent <= slot.soc_target:
+        elif round(state.current_soc_percent) <= slot.soc_target:
             # At or below SoC target - use idle to hold battery
+            # Round current SoC to integer for consistent comparison with plan target
             mode_intent = "idle"
         else:
             # Above SoC target - use self_consumption
