@@ -3,7 +3,7 @@ import json
 import logging
 import traceback
 from collections.abc import Coroutine  # noqa: TC003
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
 
@@ -498,6 +498,9 @@ async def get_energy_range(
         today_local = now_local.date()
 
         # Determine date range based on period or custom dates
+        query_start: date = today_local
+        query_end: date = today_local
+
         if period == "custom" and start_date and end_date:
             # Parse custom dates (YYYY-MM-DD format)
             try:
@@ -508,34 +511,31 @@ async def get_energy_range(
                 if custom_end < custom_start:
                     raise ValueError("End date must be after start date")
 
-                start_date = custom_start
-                end_date = custom_end
+                query_start = custom_start
+                query_end = custom_end
             except ValueError as e:
                 if "does not match format" in str(e):
                     raise ValueError("Invalid date format. Use YYYY-MM-DD") from e
                 raise
         elif period == "today":
-            start_date = end_date = today_local
+            query_start = query_end = today_local
         elif period == "yesterday":
-            end_date = today_local - timedelta(days=1)
-            start_date = end_date
+            query_end = today_local - timedelta(days=1)
+            query_start = query_end
         elif period == "week":
-            end_date = today_local
-            start_date = today_local - timedelta(days=6)
+            query_end = today_local
+            query_start = today_local - timedelta(days=6)
         elif period == "month":
-            end_date = today_local
-            start_date = today_local - timedelta(days=29)
-        else:
-            # Fallback
-            start_date = end_date = today_local
+            query_end = today_local
+            query_start = today_local - timedelta(days=29)
 
         # Optimize query: filter by string range to use index
-        day_start = tz.localize(datetime(start_date.year, start_date.month, start_date.day))
+        day_start = tz.localize(datetime(query_start.year, query_start.month, query_start.day))
         # End date is inclusive in the logic, so we want up to the end of that day.
         # Logic says: DATE(slot_start) <= end_date.
         # So we want < end_date + 1 day
         day_end_excl = tz.localize(
-            datetime(end_date.year, end_date.month, end_date.day)
+            datetime(query_end.year, query_end.month, query_end.day)
         ) + timedelta(days=1)
 
         start_iso = day_start.isoformat()
@@ -623,8 +623,8 @@ async def get_energy_range(
 
         return {
             "period": period,
-            "start_date": start_date.isoformat(),
-            "end_date": end_date.isoformat(),
+            "start_date": query_start.isoformat(),
+            "end_date": query_end.isoformat(),
             "grid_import_kwh": round(grid_imp_kwh, 2),
             "grid_export_kwh": round(grid_exp_kwh, 2),
             "battery_charge_kwh": round(batt_chg_kwh, 2),
@@ -734,7 +734,7 @@ async def get_ha_socket_status() -> dict[str, Any]:
     try:
         from backend.ha_socket import get_ha_socket_status as _get_status
 
-        return cast("dict[str, Any]", _get_status())
+        return _get_status()
     except ImportError:
         return {"status": "unavailable", "message": "HA socket module not loaded"}
     except Exception as e:

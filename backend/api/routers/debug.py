@@ -349,7 +349,7 @@ async def executor_debug_status() -> dict[str, Any]:
     ha_client = executor.ha_client
 
     # Check thread status
-    thread_alive = executor._thread is not None and executor._thread.is_alive()
+    thread_alive = executor._thread is not None and executor._thread.is_alive()  # type: ignore[reportPrivateUsage]
 
     # Load config to compare
     try:
@@ -369,13 +369,13 @@ async def executor_debug_status() -> dict[str, Any]:
         "config": {
             "interval_seconds": cfg.interval_seconds,
             "automation_toggle_entity": cfg.automation_toggle_entity,
-            "soc_target_entity": cfg.soc_target_entity,
+            "soc_target": cfg.inverter.soc_target,
             "has_battery": cfg.has_battery,
             "has_water_heater": cfg.has_water_heater,
         },
         "entities": {
-            "work_mode_entity": cfg.inverter.work_mode_entity,
-            "grid_charging_entity": cfg.inverter.grid_charging_entity,
+            "work_mode": cfg.inverter.work_mode,
+            "grid_charging_enable": cfg.inverter.grid_charging_enable,
             "water_target_entity": cfg.water_heater.target_entity,
         },
         "runtime": {
