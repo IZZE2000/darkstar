@@ -1224,7 +1224,12 @@ export default function Executor() {
                                                                         </div>
                                                                         <div className="text-right ml-4">
                                                                             <div className="text-[10px] text-text font-medium">
-                                                                                {group.parent.new_value ?? '—'}
+                                                                                {typeof group.parent.new_value ===
+                                                                                'boolean'
+                                                                                    ? group.parent.new_value
+                                                                                        ? 'on'
+                                                                                        : 'off'
+                                                                                    : (group.parent.new_value ?? '—')}
                                                                                 {group.parent.type.includes('temp')
                                                                                     ? '°C'
                                                                                     : ''}
@@ -1306,7 +1311,12 @@ export default function Executor() {
                                                                                 </div>
                                                                                 <div className="text-right ml-4">
                                                                                     <div className="text-[9px] text-muted font-medium">
-                                                                                        {child.new_value ?? '—'}
+                                                                                        {typeof child.new_value ===
+                                                                                        'boolean'
+                                                                                            ? child.new_value
+                                                                                                ? 'on'
+                                                                                                : 'off'
+                                                                                            : (child.new_value ?? '—')}
                                                                                     </div>
                                                                                     {child.verified_value !==
                                                                                         undefined &&

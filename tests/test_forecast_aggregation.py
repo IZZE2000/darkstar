@@ -58,7 +58,7 @@ class TestForecastAggregation(unittest.IsolatedAsyncioTestCase):
                 latitude=[59.3, 59.3],
                 longitude=[18.1, 18.1],
                 declination=[35.0, 35.0],  # From Array 1 & 2
-                azimuth=[180.0, 90.0],  # From Array 1 & 2
+                azimuth=[0.0, -90.0],  # From Array 1 & 2 (South = 0 for Open-Meteo)
                 dc_kwp=[10.0, 5.0],  # From Array 1 & 2
             )
             print("✅ Correct lists passed to OpenMeteoSolarForecast")

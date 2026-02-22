@@ -430,6 +430,12 @@ class ActionDispatcher:
             target_float = float(target)
             return abs(current_float - target_float) < 0.01
         except (ValueError, TypeError):
+            if isinstance(target, bool):
+                current_lower = str(current).strip().lower()
+                if target and current_lower == "on":
+                    return True
+                if not target and current_lower == "off":
+                    return True
             return str(current).strip().lower() == str(target).strip().lower()
 
     async def _verify_action(self, entity_id: str, expected: Any) -> tuple[Any, bool | None]:
