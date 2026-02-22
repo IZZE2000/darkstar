@@ -91,11 +91,14 @@ async def generate_forward_slots(
     tz = engine.timezone
     now = datetime.now(tz)
 
-    # Align to next slot
+    # Align to current 15-minute slot boundary (matches price slot timestamps)
+    # Critical fix: previously aligned to NEXT boundary, causing first forecast
+    # slot to have no data. Part of "belt and suspenders" approach:
+    # 1. This fix aligns ML output to current boundary
+    # 2. recorder_service.py retries with 5s delay on observation gaps
+    # 3. inputs.py interpolates small gaps (1-2 slots) as defensive fallback
     minutes = (now.minute // 15) * 15
     slot_start = now.replace(minute=minutes, second=0, microsecond=0)
-    if slot_start < now:
-        slot_start += timedelta(minutes=15)
 
     horizon_end = slot_start + timedelta(hours=horizon_hours)
 

@@ -91,6 +91,47 @@ class RecorderService:
             logger.error(f"Failed to load config: {e}")
             return {}
 
+    async def _record_with_retry(self) -> bool:
+        """
+        Record observation with retry logic.
+
+        Waits briefly after waking to allow pending processes to complete,
+        then attempts to record. If it fails, retries once more.
+
+        This is part of the "belt and suspenders" approach to handle timestamp
+        alignment between ML forecast generation and price slot boundaries:
+        1. Root cause fix: ml/forward.py aligns to current 15-min boundary
+        2. This retry: waits 5s after waking to let pending writes complete
+        3. Defensive fallback: inputs.py interpolates small gaps
+
+        Returns True if recording succeeded, False if all attempts failed.
+        """
+        # Wait 5 seconds to allow pending DB writes/ML processes to complete
+        await asyncio.sleep(5)
+
+        max_retries = 2
+        for attempt in range(1, max_retries + 1):
+            try:
+                await record_observation_from_current_state(self._config, self._disaggregator)
+                self._status.last_record_at = datetime.now(UTC)
+                return True
+            except Exception as e:
+                if attempt < max_retries:
+                    logger.warning(
+                        f"Observation recording failed (attempt {attempt}/{max_retries}): {e}. "
+                        f"Retrying..."
+                    )
+                    await asyncio.sleep(3)  # Brief delay before retry
+                else:
+                    logger.error(f"Observation recording failed after {max_retries} attempts: {e}")
+                    self._status.last_error = str(e)
+                    self._status.error_count += 1
+                    self._status.recent_errors.append(  # type: ignore[union-attr]
+                        f"{datetime.now(UTC).isoformat()}: Observation gap - {e}"
+                    )
+                    return False
+        return False
+
     async def _loop(self) -> None:
         """Main recorder loop."""
         logger.info("Recorder loop starting...")
@@ -119,9 +160,10 @@ class RecorderService:
 
         while self._running:
             try:
-                # Record observation
-                await record_observation_from_current_state(self._config, self._disaggregator)
-                self._status.last_record_at = datetime.now(UTC)
+                # Record observation with retry logic
+                success = await self._record_with_retry()
+                if not success:
+                    logger.warning("Observation gap detected, will backfill on next tick")
 
                 # Daily analyst run at ~6 AM
                 now_local = datetime.now(tz)

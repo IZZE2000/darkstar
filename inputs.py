@@ -351,6 +351,78 @@ async def get_forecast_data(
         return await _get_forecast_data_async(price_slots, config)
 
 
+def _interpolate_small_gaps(
+    db_slots: list[dict[str, Any]],
+    max_gap_slots: int = 2,
+) -> list[dict[str, Any]]:
+    """
+    Interpolate small gaps (1-2 slots) in forecast data.
+
+    Only interpolates if gap is between valid (non-zero) data points.
+    Never extrapolates - gaps at start or end are left as-is.
+    """
+    if not db_slots or len(db_slots) < 3:
+        return db_slots
+
+    result = list(db_slots)
+
+    def is_valid_value(val: Any) -> bool:
+        try:
+            return float(val) > 0.001
+        except (TypeError, ValueError):
+            return False
+
+    i = 0
+    while i < len(result):
+        slot = result[i]
+
+        pv = slot.get("pv_forecast_kwh", 0.0)
+        load = slot.get("load_forecast_kwh", slot.get("base_load_forecast_kwh", 0.0))
+
+        if not is_valid_value(pv) or not is_valid_value(load):
+            gap_start = i
+            gap_end = i
+
+            while gap_end < len(result) and (
+                not is_valid_value(result[gap_end].get("pv_forecast_kwh", 0.0))
+                or not is_valid_value(
+                    result[gap_end].get(
+                        "load_forecast_kwh",
+                        result[gap_end].get("base_load_forecast_kwh", 0.0),
+                    )
+                )
+            ):
+                gap_end += 1
+
+            gap_size = gap_end - gap_start
+
+            if gap_size <= max_gap_slots and gap_start > 0 and gap_end < len(result):
+                prev_pv = float(result[gap_start - 1].get("pv_forecast_kwh", 0.0))
+                prev_load = float(
+                    result[gap_start - 1].get("load_forecast_kwh")
+                    or result[gap_start - 1].get("base_load_forecast_kwh", 0.0)
+                )
+                next_pv = float(result[gap_end].get("pv_forecast_kwh", 0.0))
+                next_load = float(
+                    result[gap_end].get("load_forecast_kwh")
+                    or result[gap_end].get("base_load_forecast_kwh", 0.0)
+                )
+
+                for j in range(gap_start, gap_end):
+                    fraction = (j - gap_start + 1) / (gap_size + 1)
+
+                    result[j]["pv_forecast_kwh"] = prev_pv + fraction * (next_pv - prev_pv)
+                    result[j]["load_forecast_kwh"] = prev_load + fraction * (next_load - prev_load)
+
+                print(f"Info: Interpolated {gap_size} slot gap at index {gap_start}")
+
+            i = gap_end
+        else:
+            i += 1
+
+    return result
+
+
 async def _get_forecast_data_aurora(
     price_slots: list[dict[str, Any]], config: dict[str, Any]
 ) -> dict[str, Any]:
@@ -366,6 +438,12 @@ async def _get_forecast_data_aurora(
 
     # 1. Build slots strictly for the price horizon (0-48h)
     db_slots = await build_db_forecast_for_slots(price_slots, config)
+
+    # 1b. Defensive interpolation for small gaps (1-2 slots / 15-30 min)
+    # Belt-and-suspenders: handles race conditions where ML forecast
+    # generation slightly misaligns with price slot boundaries. Larger gaps
+    # (>2 slots) fall through to HA baseline fallback below.
+    db_slots = _interpolate_small_gaps(db_slots)
 
     # 2. Fetch HA Load Baseline for fallback
     try:
@@ -932,14 +1010,31 @@ async def build_db_forecast_for_slots(
     for slot in price_slots:
         ts = slot["start_time"].astimezone(local_tz)
         rec = indexed.get(ts)
+
+        # Default values in case no forecast is found
+        pv = 0.0
+        load = 0.0
+        pv_p10 = None
+        pv_p90 = None
+        load_p10 = None
+        load_p90 = None
+
         if rec is None:
-            pv = 0.0
-            load = 0.0
-            pv_p10 = None
-            pv_p90 = None
-            load_p10 = None
-            load_p90 = None
-        else:
+            # Defensive fallback: find closest forecast at or before requested slot
+            fallback_ts = None
+            for forecast_ts in sorted(indexed.keys()):
+                if forecast_ts <= ts:
+                    fallback_ts = forecast_ts
+                else:
+                    break
+
+            if fallback_ts is not None:
+                rec = indexed[fallback_ts]
+                print(
+                    f"Warning: No exact forecast match for {ts}, using fallback from {fallback_ts}"
+                )
+
+        if rec is not None:
             # Use new nested structure from ml/api.py get_forecast_slots()
             pv = float(rec["final"]["pv_kwh"])
             load = float(rec["final"]["load_kwh"])

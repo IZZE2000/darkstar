@@ -107,13 +107,13 @@ from inputs import get_all_input_data
 
 ### Process Policy
 - Before implementing any newly drafted revision/plan section (e.g., after we agree on a fix plan), switch to the designated implementation model. Planning and discussion should happen first; code changes should only be made after switching models.
-- **Planning**: Before implementing, ensure the revision is active in `PLAN.md`.
+- **Planning**: Before implementing, ensure the revision is active in `docs/PLAN.md`.
 - **History / Archival**:
-  - A revision may be moved from `PLAN.md` to `CHANGELOG.md` **only** when:
+  - A revision may be moved from `docs/PLAN.md` to `docs/CHANGELOG_PLANS.md` **only** when:
     - The relevant project phase is fully completed and validated, and
     - The Product Owner has explicitly confirmed that the revision is ready to be archived.
-  - Once moved, the revision should live in **one place only** (the changelog), not duplicated in `PLAN.md` (a short pointer is fine if needed).
-  - While a project phase is active, keep its revisions in `PLAN.md` for context; do not archive them without prior confirmation.
+  - Once moved, the revision should live in **one place only** (the changelog), not duplicated in `docs/PLAN.md` (a short pointer is fine if needed).
+  - While a project phase is active, keep its revisions in `docs/PLAN.md` for context; do not archive them without prior confirmation.
 
 ### Git & Data Hygiene
 - Treat `config.yaml` as environment-specific. Do **not** commit server-only edits; keep long-lived defaults in `config.default.yaml` and copy/merge locally.

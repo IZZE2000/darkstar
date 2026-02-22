@@ -1,5 +1,5 @@
 import unittest
-from datetime import datetime, timedelta
+from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pandas as pd
@@ -56,12 +56,10 @@ class TestAuroraForward(unittest.IsolatedAsyncioTestCase):
         mock_models.return_value = {}
 
         # 3. Mock Weather data
-        # Get start time that forward pass will actually use
+        # Get start time that forward pass will actually use (current slot alignment)
         now = datetime.now(pytz.UTC)
         minutes = (now.minute // 15) * 15
         slot_start = now.replace(minute=minutes, second=0, microsecond=0)
-        if slot_start < now:
-            slot_start += timedelta(minutes=15)
 
         mock_weather.return_value = pd.DataFrame(
             {
