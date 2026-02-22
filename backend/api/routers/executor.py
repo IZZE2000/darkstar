@@ -561,19 +561,19 @@ async def get_health(executor: ExecutorDep) -> dict[str, Any]:
     """
     Get executor health status for dashboard.
     """
-    is_alive = executor._thread and executor._thread.is_alive()
+    is_alive = executor._thread and executor._thread.is_alive()  # type: ignore[attr-defined]
     paused = executor.is_paused
     should_be_running = executor.config.enabled and not paused
 
     # Collect warnings
-    warnings = []
+    warnings: list[str] = []
     if executor.config.enabled and not is_alive and not paused:
         warnings.append("Executor is enabled but background thread is not running")
 
     # Profile-driven missing entities (REV F56)
     if executor.inverter_profile:
         # Use existing full config from engine if available
-        config = getattr(executor, "_full_config", {})
+        config: dict[str, Any] = getattr(executor, "_full_config", {})
         for missing_key in executor.inverter_profile.get_missing_entities(config):
             warnings.append(f"Required entity not configured: {missing_key}")
 
@@ -589,7 +589,7 @@ async def get_health(executor: ExecutorDep) -> dict[str, Any]:
         "last_run_status": executor.status.last_run_status,
         "has_error": executor.status.last_run_status == "error",
         "error": executor.status.last_error if executor.status.last_run_status == "error" else None,
-        "recent_errors": list(executor.recent_errors),
+        "recent_errors": list(executor.recent_errors) if executor.recent_errors else [],  # type: ignore[arg-type]
         "warnings": warnings,
         "is_healthy": is_alive == should_be_running and executor.status.last_run_status != "error",
     }
@@ -621,9 +621,9 @@ async def get_profile_suggestions(name: str) -> dict[str, Any]:
         for key, entity_def in profile.entities.items():
             # Standard keys live directly in executor.inverter.*
             # Custom/composite keys go into executor.inverter.custom_entities.*
-            from executor.actions import _STANDARD_INVERTER_KEYS
+            from executor.actions import _STANDARD_INVERTER_KEYS  # type: ignore[import-private]
 
-            if key in _STANDARD_INVERTER_KEYS:
+            if key in _STANDARD_INVERTER_KEYS:  # type: ignore[used-before-def]
                 config_path = f"executor.inverter.{key}"
             else:
                 config_path = f"executor.inverter.custom_entities.{key}"
@@ -634,17 +634,17 @@ async def get_profile_suggestions(name: str) -> dict[str, Any]:
         missing = profile.get_missing_entities(config)
 
         # Build diff to show what's already set and what's suggested
-        diff = []
+        diff: list[dict[str, Any]] = []
         for config_key, suggested_value in suggestions.items():
             parts = config_key.split(".")
-            section: Any = config
+            section: dict[str, Any] | None = config
             for part in parts:
                 if isinstance(section, dict):
                     section = section.get(part)
                 else:
                     section = None
                     break
-            current_value = section
+            current_value: Any = section
             short_key = parts[-1]
 
             diff.append(

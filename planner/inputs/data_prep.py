@@ -7,14 +7,17 @@ Extracted from planner_legacy.py during Rev K13 modularization.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 import pytz
 from pytz.exceptions import AmbiguousTimeError, NonExistentTimeError
 
+if TYPE_CHECKING:
+    from pandas._libs.tslibs.nattype import NaTType
 
-def normalize_timestamp(value: Any, tz_name: str) -> pd.Timestamp:
+
+def normalize_timestamp(value: Any, tz_name: str) -> pd.Timestamp | NaTType:
     """
     Return a timezone-aware timestamp normalized to the requested timezone.
 
@@ -39,7 +42,7 @@ def normalize_timestamp(value: Any, tz_name: str) -> pd.Timestamp:
     return ts.tz_convert(tz)
 
 
-def build_price_dataframe(price_data: list, tz_name: str) -> pd.DataFrame:
+def build_price_dataframe(price_data: list[dict[str, Any]], tz_name: str) -> pd.DataFrame:
     """
     Build the price DataFrame indexed by the localized start_time.
 
@@ -57,7 +60,7 @@ def build_price_dataframe(price_data: list, tz_name: str) -> pd.DataFrame:
             index=empty_idx,
         )
 
-    records = []
+    records: list[dict[str, Any]] = []
     for slot in price_data:
         start = normalize_timestamp(slot.get("start_time"), tz_name)
         end = normalize_timestamp(slot.get("end_time"), tz_name)
@@ -86,7 +89,7 @@ def build_price_dataframe(price_data: list, tz_name: str) -> pd.DataFrame:
     return df
 
 
-def build_forecast_dataframe(forecast_data: list, tz_name: str) -> pd.DataFrame:
+def build_forecast_dataframe(forecast_data: list[dict[str, Any]], tz_name: str) -> pd.DataFrame:
     """
     Build forecast DataFrame indexed by localized start_time with PV/load columns.
 
@@ -104,7 +107,7 @@ def build_forecast_dataframe(forecast_data: list, tz_name: str) -> pd.DataFrame:
             index=empty_idx,
         )
 
-    records = []
+    records: list[dict[str, Any]] = []
     for slot in forecast_data:
         start = normalize_timestamp(slot.get("start_time"), tz_name)
         if start is pd.NaT:
@@ -213,19 +216,19 @@ def apply_safety_margins(
             tz = pytz.timezone("Europe/Stockholm")
 
         try:
-            local_index = df.index.tz_convert(tz)
+            local_index = df.index.tz_convert(tz)  # type: ignore[union-attr]
         except TypeError:
-            local_index = df.index.tz_localize(tz)
+            local_index = df.index.tz_localize(tz)  # type: ignore[union-attr]
 
-        hours = local_index.hour
+        hours = local_index.hour  # type: ignore[union-attr]
         if pv_adj and len(pv_adj) == 24:
             # Apply adjustment and clamp to 0 to prevent negative PV
-            raw_pv = df["adjusted_pv_kwh"] + hours.map(lambda h: float(pv_adj[h])).values
-            df["adjusted_pv_kwh"] = raw_pv.clip(lower=0.0)
+            raw_pv = df["adjusted_pv_kwh"] + hours.map(lambda h: float(pv_adj[h])).values  # type: ignore[union-attr]
+            df["adjusted_pv_kwh"] = raw_pv.clip(lower=0.0)  # type: ignore[union-attr]
         if load_adj and len(load_adj) == 24:
             # Apply adjustment and clamp to 0 to prevent negative load
-            raw_adjusted = df["adjusted_load_kwh"] + hours.map(lambda h: float(load_adj[h])).values
-            df["adjusted_load_kwh"] = raw_adjusted.clip(lower=0.0)
+            raw_adjusted = df["adjusted_load_kwh"] + hours.map(lambda h: float(load_adj[h])).values  # type: ignore[union-attr]
+            df["adjusted_load_kwh"] = raw_adjusted.clip(lower=0.0)  # type: ignore[union-attr]
 
     return df
 

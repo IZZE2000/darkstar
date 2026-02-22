@@ -1,12 +1,13 @@
 import sqlite3
 from pathlib import Path
+from typing import Any
 
 import yaml
 
 
-def fix_load_gaps():
+def fix_load_gaps() -> None:
     with Path("config.yaml").open() as f:
-        config = yaml.safe_load(f)
+        config: dict[str, Any] = yaml.safe_load(f)
     db_path = config.get("learning", {}).get("sqlite_path", "data/planner_learning.db")
 
     print(f"--- Fixing Load/PV Gaps in {db_path} ---")
@@ -24,8 +25,8 @@ def fix_load_gaps():
         )
         rows = cursor.fetchall()
 
-        updates = []
-        last_hour_str = None
+        updates: list[tuple[float, float, str]] = []
+        last_hour_str: str | None = None
         current_hour_load = 0.0
         current_hour_pv = 0.0
 

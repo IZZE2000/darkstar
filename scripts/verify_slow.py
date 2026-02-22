@@ -77,7 +77,12 @@ OLD_ROUTES = [
 BASE_URL = "http://localhost:5000"
 
 
-async def check_route(client, method, path, semaphore):
+async def check_route(
+    client: httpx.AsyncClient,
+    method: str,
+    path: str,
+    semaphore: asyncio.Semaphore,
+) -> tuple[str, str, int, str]:
     async with semaphore:
         url = f"{BASE_URL}{path}"
         try:
@@ -97,13 +102,13 @@ async def check_route(client, method, path, semaphore):
 
 
 async def main():
-    semaphore = asyncio.Semaphore(3)  # Very conservative
+    semaphore = asyncio.Semaphore(3)
     async with httpx.AsyncClient() as client:
         tasks = [check_route(client, m, p, semaphore) for m, p in OLD_ROUTES]
-        results = await asyncio.gather(*tasks)
+        results: list[tuple[str, str, int, str]] = await asyncio.gather(*tasks)  # type: ignore[no-overload]
 
-    ok = []
-    failed = []
+    ok: list[tuple[str, str]] = []
+    failed: list[tuple[str, str, int, str]] = []
     for m, p, s, e in results:
         if s == 200:
             ok.append((m, p))

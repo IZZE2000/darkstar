@@ -138,7 +138,7 @@ async def main():
         # Limit concurrency to avoid overwhelming the server
         sem = asyncio.Semaphore(5)
 
-        async def bounded_check(m, p):
+        async def bounded_check(m: str, p: str) -> tuple[str, str, int, str]:
             async with sem:
                 return await check_route(client, m, p)
 
@@ -146,10 +146,10 @@ async def main():
         results = await asyncio.gather(*tasks)
 
     # Categorize results
-    ok = []
-    not_found = []
-    server_error = []
-    other = []
+    ok: list[tuple[str, str]] = []
+    not_found: list[tuple[str, str]] = []
+    server_error: list[tuple[str, str, int, str]] = []
+    other: list[tuple[str, str, int, str]] = []
 
     for method, path, status, error in results:
         if status == 200:

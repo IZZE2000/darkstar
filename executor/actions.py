@@ -128,9 +128,7 @@ class HAClient:
     def get_state(self, entity_id: str) -> dict[str, Any] | None:
         """Get the current state of an entity."""
         # Early validation: catch None/invalid entity_id before hitting HA API
-        if not entity_id or (
-            isinstance(entity_id, str) and entity_id.strip().lower() in ("", "none")
-        ):
+        if not entity_id or entity_id.strip().lower() in ("", "none"):
             logger.error(
                 "get_state called with invalid entity_id: %r (type: %s) - "
                 "check config.yaml for missing entity configuration",
@@ -434,7 +432,7 @@ class ActionDispatcher:
         except (ValueError, TypeError):
             return str(current).strip().lower() == str(target).strip().lower()
 
-    async def _verify_action(self, entity_id: str, expected: Any) -> tuple[Any, bool]:
+    async def _verify_action(self, entity_id: str, expected: Any) -> tuple[Any, bool | None]:
         """Verify that an action was applied correctly."""
         state = self.ha.get_state_value(entity_id)
         if state is None:
@@ -631,6 +629,16 @@ class ActionDispatcher:
                 error_details=None,
             )
 
+        if entity is None:
+            return ActionResult(
+                action_type="water_temp",
+                success=False,
+                message="Entity is None after validation",
+                skipped=True,
+                duration_ms=int((time.time() - start) * 1000),
+                error_details=None,
+            )
+
         current = self.ha.get_state_value(entity)
         try:
             current_val = int(float(current)) if current else None
@@ -668,7 +676,7 @@ class ActionDispatcher:
 
         error_details = None
         try:
-            success = self.ha.set_input_number(entity, float(target))
+            success = self.ha.set_input_number(entity, float(target))  # type: ignore[arg-type]
         except HACallError as e:
             success = False
             error_details = str(e)
@@ -678,7 +686,7 @@ class ActionDispatcher:
         verified_value = None
         verification_success = None
         if success:
-            v_val, v_ok = await self._verify_action(entity, target)
+            v_val, v_ok = await self._verify_action(entity, target)  # type: ignore[arg-type]
             verification_success = v_ok
             try:
                 verified_value = int(float(v_val)) if v_val else None
@@ -747,6 +755,16 @@ class ActionDispatcher:
             )
 
         # Check current value and apply write threshold to prevent EEPROM wear
+        if entity is None:
+            return ActionResult(
+                action_type="max_export_power",
+                success=False,
+                message="Entity is None after validation",
+                skipped=True,
+                duration_ms=int((time.time() - start) * 1000),
+                error_details=None,
+            )
+
         current = self.ha.get_state_value(entity)
         try:
             current_val = float(current) if current else None
@@ -799,7 +817,7 @@ class ActionDispatcher:
         # If a switch is configured, turn it ON when setting a limit.
         # This ensures that inverter actually enforces the numeric value.
         switch_entity = self.config.inverter.grid_max_export_power_switch
-        if success and _is_entity_configured(switch_entity):
+        if success and _is_entity_configured(switch_entity) and switch_entity is not None:
             logger.info("Enabling export power limit switch: %s", switch_entity)
             try:
                 self.ha.set_switch(switch_entity, True)

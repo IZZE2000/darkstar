@@ -6,11 +6,12 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime, timedelta
+from typing import Any
 
 import pytz
 import requests
-from learning import LearningEngine, get_learning_engine
 
+from backend.learning import LearningEngine, get_learning_engine
 from inputs import load_home_assistant_config, make_ha_headers
 
 
@@ -115,7 +116,7 @@ def _build_cumulative_data(
     end_time: datetime,
 ) -> dict[str, list[tuple[datetime, float]]]:
     """Build cumulative_data dict for etl_cumulative_to_slots from config input_sensors."""
-    sensor_mappings = engine.config.get("input_sensors", {}) or {}
+    sensor_mappings: dict[str, Any] = engine.config.get("input_sensors", {}) or {}
     if not sensor_mappings:
         print("Error: 'input_sensors' section not found in config. Aborting.")
         return {}
@@ -125,6 +126,8 @@ def _build_cumulative_data(
     cumulative_data: dict[str, list[tuple[datetime, float]]] = {}
 
     for canonical_name, entity_id in sensor_mappings.items():
+        canonical_name: str
+        entity_id: str | None
         if not entity_id or "your_total" in str(entity_id):
             print(
                 f"Warning: Skipping placeholder or empty sensor '{canonical_name}': {entity_id!r}",
@@ -201,7 +204,7 @@ def main() -> None:
     print(f"ETL process created {len(slot_df)} slot-level observations.")
 
     try:
-        engine.store_slot_observations(slot_df)
+        engine.store_slot_observations(slot_df)  # type: ignore[unused-coroutine]
     except Exception as exc:  # pragma: no cover - DB safety
         print(f"Error storing slot observations in the database: {exc}")
         return

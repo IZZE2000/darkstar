@@ -1,13 +1,14 @@
 import sqlite3
 from pathlib import Path
+from typing import Any
 
 import yaml
 
 
-def fix_price_gaps():
+def fix_price_gaps() -> None:
     # Load config to find DB
     with Path("config.yaml").open() as f:
-        config = yaml.safe_load(f)
+        config: dict[str, Any] = yaml.safe_load(f)
     db_path = config.get("learning", {}).get("sqlite_path", "data/planner_learning.db")
 
     print(f"--- Fixing Price Gaps in {db_path} ---")
@@ -25,7 +26,7 @@ def fix_price_gaps():
         )
         rows = cursor.fetchall()
 
-        updates = []
+        updates: list[tuple[float | None, float | None, str]] = []
         last_valid_import = None
         last_valid_export = None
         last_valid_hour_str = None

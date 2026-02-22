@@ -1,7 +1,9 @@
 import contextlib
 import json
 import logging
-from typing import Any
+from typing import Any, cast
+
+import pytz
 
 from backend.learning.store import LearningStore
 
@@ -28,19 +30,20 @@ async def load_learning_overlays(learning_config: dict[str, Any]) -> dict[str, A
     path = learning_config.get("sqlite_path", "data/planner_learning.db")
     try:
         # We don't have timezone here easily, but we don't need it for just fetching metrics
-        store = LearningStore(path)
+        store = LearningStore(path, timezone=pytz.UTC)
         metric = await store.get_latest_metrics()
 
         if not metric:
             return {}
 
-        def _parse_series(raw):
+        def _parse_series(raw: Any) -> list[float] | None:
             if raw is None:
                 return None
             try:
-                data = json.loads(raw) if isinstance(raw, str) else raw
+                data: Any = json.loads(raw) if isinstance(raw, str) else raw
                 if isinstance(data, list):
-                    return [float(v) for v in data]
+                    data_list = cast("list[Any]", data)
+                    return [float(v) for v in data_list]
             except (TypeError, ValueError, json.JSONDecodeError):
                 return None
             return None

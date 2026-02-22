@@ -138,7 +138,7 @@ async def main():
                 print(f"  Warning: {endpoint} may not be available")
 
         # Benchmark
-        results = []
+        results: list[BenchmarkResult] = []
         for endpoint in endpoints:
             print(f"\nBenchmarking {endpoint}...")
             result = await benchmark_endpoint(client, endpoint, args.requests, args.concurrency)

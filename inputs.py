@@ -34,35 +34,40 @@ def load_home_assistant_config() -> dict[str, Any]:
     """Read Home Assistant configuration from secrets.yaml."""
     try:
         with Path("secrets.yaml").open() as file:
-            data = yaml.safe_load(file)
-            secrets: dict[str, Any] = data if isinstance(data, dict) else {}
+            raw_data: Any = yaml.safe_load(file)
+            secrets: dict[str, Any] = (
+                cast("dict[str, Any]", raw_data) if isinstance(raw_data, dict) else {}
+            )
     except FileNotFoundError:
         return {}
     except Exception as exc:  # pragma: no cover - defensive logging
         print(f"Warning: Could not load secrets.yaml: {exc}")
         return {}
 
-    ha_config = secrets.get("home_assistant")
+    ha_config: Any = secrets.get("home_assistant")
     if not isinstance(ha_config, dict):
         return {}
-    return ha_config
+    return cast("dict[str, Any]", ha_config)
 
 
 def load_notifications_config() -> dict[str, Any]:
     """Read notification secrets (e.g., Discord webhook) from secrets.yaml."""
     try:
         with Path("secrets.yaml").open() as file:
-            secrets = yaml.safe_load(file) or {}
+            raw_data: Any = yaml.safe_load(file)
+            secrets: dict[str, Any] = (
+                cast("dict[str, Any]", raw_data) if isinstance(raw_data, dict) else {}
+            )
     except FileNotFoundError:
         return {}
     except Exception as exc:  # pragma: no cover - defensive logging
         print(f"Warning: Could not load secrets.yaml: {exc}")
         return {}
 
-    notif_secrets = secrets.get("notifications")
+    notif_secrets: Any = secrets.get("notifications")
     if not isinstance(notif_secrets, dict):
         return {}
-    return notif_secrets
+    return cast("dict[str, Any]", notif_secrets)
 
 
 def make_ha_headers(token: str) -> dict[str, str]:
@@ -76,8 +81,8 @@ def make_ha_headers(token: str) -> dict[str, str]:
 def load_yaml(path: str) -> dict[str, Any]:
     try:
         with Path(path).open() as f:
-            data = yaml.safe_load(f)
-            return data if isinstance(data, dict) else {}
+            raw_data: Any = yaml.safe_load(f)
+            return cast("dict[str, Any]", raw_data) if isinstance(raw_data, dict) else {}
     except FileNotFoundError:
         return {}
 
@@ -352,9 +357,10 @@ async def _get_forecast_data_aurora(
     """Asynchronous logic for Aurora DB-backed forecasts."""
     timezone_name = str(config.get("timezone", "Europe/Stockholm"))
     local_tz = pytz.timezone(timezone_name)
-    forecasting_cfg = config.get("forecasting", {})
-    if not isinstance(forecasting_cfg, dict):
-        forecasting_cfg = {}
+    _fcfg: Any = config.get("forecasting", {})
+    forecasting_cfg: dict[str, Any] = (
+        cast("dict[str, Any]", _fcfg) if isinstance(_fcfg, dict) else {}
+    )
 
     active_version = str(forecasting_cfg.get("active_forecast_version", "aurora"))
 
@@ -501,32 +507,43 @@ async def _get_forecast_data_async(
     """
     Async logic for fallback Open-Meteo forecasts.
     """
-    sys_cfg = config.get("system", {})
-    system_config: dict[str, Any] = sys_cfg if isinstance(sys_cfg, dict) else {}
+    _sys_cfg: Any = config.get("system", {})
+    if isinstance(_sys_cfg, dict):
+        system_config: dict[str, Any] = cast("dict[str, Any]", _sys_cfg)
+    else:
+        system_config = {}
 
-    loc_cfg = system_config.get("location", {})
-    location: dict[str, Any] = loc_cfg if isinstance(loc_cfg, dict) else {}
+    _loc_cfg: Any = system_config.get("location", {})
+    if isinstance(_loc_cfg, dict):
+        location: dict[str, Any] = cast("dict[str, Any]", _loc_cfg)
+    else:
+        location = {}
 
     latitude = float(location.get("latitude", 59.3))
     longitude = float(location.get("longitude", 18.1))
 
     # Support for Multi-Array (REV ARC14 Phase 2)
-    solar_arrays = system_config.get("solar_arrays", [])
-    if not solar_arrays or not isinstance(solar_arrays, list):
+    solar_arrays: list[Any] = system_config.get("solar_arrays", [])
+    azimuth_list: list[float] = []
+    tilt_list: list[float] = []
+    kwp_list: list[float] = []
+    if not solar_arrays or not isinstance(solar_arrays, list):  # type: ignore[unnecessary-isinstance-call]
         # Fallback to legacy single array or default
-        legacy_cfg = system_config.get("solar_array", {})
-        solar_array = legacy_cfg if isinstance(legacy_cfg, dict) else {}
+        _legacy_cfg: Any = system_config.get("solar_array", {})
+        solar_array: dict[str, Any] = (
+            cast("dict[str, Any]", _legacy_cfg) if isinstance(_legacy_cfg, dict) else {}
+        )
         azimuth_list = [float(solar_array.get("azimuth", 180))]
         tilt_list = [float(solar_array.get("tilt", 30))]
         kwp_list = [float(solar_array.get("kwp", 5.0))]
         logger.debug("Falling back to legacy solar_array for forecast")
     else:
-        azimuth_list = []
-        tilt_list = []
-        kwp_list = []
-        for i, array in enumerate(solar_arrays):
+        for i, _array in enumerate(solar_arrays):
             a_idx = i + 1
-            name = array.get("name", f"Array {a_idx}")
+            array: dict[str, Any] = (
+                cast("dict[str, Any]", _array) if isinstance(_array, dict) else {}
+            )
+            name: str = str(array.get("name", f"Array {a_idx}"))
             az = float(array.get("azimuth", 180))
             ti = float(array.get("tilt", 30))
             kp = float(array.get("kwp", 0.0))
@@ -862,8 +879,10 @@ async def get_db_forecast_slots(
     This helper does not change planner behaviour by itself; it simply
     wraps get_forecast_slots using the configured active_forecast_version.
     """
-    forecasting_cfg = config.get("forecasting", {})
-    if not isinstance(forecasting_cfg, dict):
+    _fcfg: Any = config.get("forecasting", {})
+    if isinstance(_fcfg, dict):
+        forecasting_cfg: dict[str, Any] = cast("dict[str, Any]", _fcfg)
+    else:
         forecasting_cfg = {}
 
     version = str(forecasting_cfg.get("active_forecast_version", "baseline_7_day_avg"))
@@ -880,8 +899,10 @@ async def build_db_forecast_for_slots(
     if not price_slots:
         return []
 
-    forecasting_cfg = config.get("forecasting", {})
-    if not isinstance(forecasting_cfg, dict):
+    _fcfg: Any = config.get("forecasting", {})
+    if isinstance(_fcfg, dict):
+        forecasting_cfg: dict[str, Any] = cast("dict[str, Any]", _fcfg)
+    else:
         forecasting_cfg = {}
 
     version = str(forecasting_cfg.get("active_forecast_version", "baseline_7_day_avg"))
@@ -947,13 +968,18 @@ async def build_db_forecast_for_slots(
 async def get_load_profile_from_ha(config: dict[str, Any]) -> list[float]:
     """Fetch actual load profile from Home Assistant historical data (Async)."""
     ha_config = load_home_assistant_config()
-    url = ha_config.get("url")
+    url: str | None = cast("str | None", ha_config.get("url"))
     token = cast("str", ha_config.get("token", ""))
 
-    sensors_cfg = config.get("input_sensors", {})
-    input_sensors: dict[str, Any] = sensors_cfg if isinstance(sensors_cfg, dict) else {}
+    _sensors_cfg: Any = config.get("input_sensors", {})
+    if isinstance(_sensors_cfg, dict):
+        input_sensors: dict[str, Any] = cast("dict[str, Any]", _sensors_cfg)
+    else:
+        input_sensors = {}
 
-    entity_id = input_sensors.get("total_load_consumption", ha_config.get("consumption_entity_id"))
+    entity_id: str | None = input_sensors.get(
+        "total_load_consumption", ha_config.get("consumption_entity_id")
+    )
 
     if not all([url, token, entity_id]):
         print("Warning: Missing Home Assistant configuration for load profile")
@@ -963,7 +989,8 @@ async def get_load_profile_from_ha(config: dict[str, Any]) -> list[float]:
     end_time = datetime.now(pytz.UTC)
     start_time = end_time - timedelta(days=7)
 
-    api_url = f"{url.rstrip('/')}/api/history/period/{start_time.isoformat()}"
+    url_str: str = cast("str", url)
+    api_url = f"{url_str.rstrip('/')}/api/history/period/{start_time.isoformat()}"
     params = {
         "filter_entity_id": entity_id,
         "end_time": end_time.isoformat(),

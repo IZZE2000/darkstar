@@ -16,7 +16,7 @@ import pandas as pd
 
 from backend.learning import LearningEngine, get_learning_engine
 from ml.context_features import get_vacation_mode_series
-from ml.train import _build_time_features
+from ml.train import _build_time_features  # type: ignore[reportPrivateUsage]
 from ml.weather import get_weather_series
 
 
@@ -29,8 +29,6 @@ class GraduationLevel:
 
 def _get_engine() -> LearningEngine:
     engine = get_learning_engine()
-    if not isinstance(engine, LearningEngine):
-        raise TypeError("get_learning_engine() did not return a LearningEngine instance")
     return engine
 
 
@@ -177,7 +175,7 @@ def _train_error_models(
             "seed": 42,  # REV F70: Fixed seed for deterministic training
             "bagging_seed": 42,  # REV F70: Fixed seed for bagging reproducibility
         }
-        booster = lgb.train(params, train_data, num_boost_round=200)
+        booster = lgb.train(params, train_data, num_boost_round=200)  # type: ignore[reportUnknownMemberType]
         booster.save_model(f"{models_dir}/{model_name}")
         models[target] = booster
 
@@ -436,14 +434,14 @@ async def predict_corrections(
         row_features = X.iloc[[idx]]
 
         if "pv_residual" in models:
-            raw_pv = float(models["pv_residual"].predict(row_features)[0])
+            raw_pv = float(models["pv_residual"].predict(row_features)[0])  # type: ignore[reportUnknownMemberType]
             ml_pv_corr = _clamp_correction(rec["final"]["pv_kwh"], raw_pv)
             if abs(ml_pv_corr) <= abs(stats_pv_corr) or stats_pv_corr == 0.0:
                 pv_corr = ml_pv_corr
                 source = "ml"
 
         if "load_residual" in models:
-            raw_load = float(models["load_residual"].predict(row_features)[0])
+            raw_load = float(models["load_residual"].predict(row_features)[0])  # type: ignore[reportUnknownMemberType]
             ml_load_corr = _clamp_correction(rec["final"]["load_kwh"], raw_load)
             if abs(ml_load_corr) <= abs(stats_load_corr) or stats_load_corr == 0.0:
                 load_corr = ml_load_corr

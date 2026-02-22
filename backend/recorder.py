@@ -2,6 +2,7 @@ import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 import pytz
@@ -18,16 +19,19 @@ logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
 logger = logging.getLogger("recorder")
 
 
-def _load_config():
+def _load_config() -> dict[str, Any]:
     try:
         with Path("config.yaml").open(encoding="utf-8") as f:
-            return yaml.safe_load(f) or {}
+            result: Any = yaml.safe_load(f)
+            if isinstance(result, dict):
+                return result  # type: ignore[return-value]
+            return {}
     except FileNotFoundError:
         return {}
 
 
 async def record_observation_from_current_state(
-    config: dict | None = None, disaggregator: LoadDisaggregator | None = None
+    config: dict[str, Any] | None = None, disaggregator: LoadDisaggregator | None = None
 ):
     """Capture current system state and store as an observation."""
     if not config:
@@ -50,7 +54,7 @@ async def record_observation_from_current_state(
     input_sensors = config.get("input_sensors", {})
 
     # Helper to get sensor value and convert W to kW if needed
-    async def get_kw(key, default=0.0):
+    async def get_kw(key: str, default: float = 0.0) -> float:
         entity = input_sensors.get(key)
         if not entity:
             return default
@@ -78,6 +82,9 @@ async def record_observation_from_current_state(
 
     # Grid Metering Logic (REV // UI5)
     meter_type = config.get("system", {}).get("grid_meter_type", "net")
+    import_kw: float = 0.0
+    export_kw: float = 0.0
+    grid_net_kw: float = 0.0
 
     if meter_type == "dual":
         # Dual sensors (Import/Export separate)
@@ -221,7 +228,7 @@ async def _sleep_until_next_quarter() -> None:
     await asyncio.sleep(sleep_seconds)
 
 
-async def _run_analyst() -> None:
+async def run_analyst() -> None:
     """Run the Learning Analyst to update s_index_base_factor and bias adjustments."""
     try:
         from backend.learning.analyst import Analyst
@@ -327,7 +334,7 @@ async def main() -> int:
         print(f"[recorder] Backfill failed: {e}")
 
     # Run Analyst on startup
-    await _run_analyst()
+    await run_analyst()
 
     # Run Price Backfill on startup
     await backfill_missing_prices()
@@ -348,7 +355,7 @@ async def main() -> int:
         now_local = datetime.now(tz)
         if now_local.date() > last_analyst_date and now_local.hour >= 6:
             print(f"[recorder] Daily Analyst run triggered ({now_local.date()})")
-            await _run_analyst()
+            await run_analyst()
             last_analyst_date = now_local.date()
 
         await _sleep_until_next_quarter()

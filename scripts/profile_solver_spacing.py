@@ -4,8 +4,10 @@ import time
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from typing import Any, cast
 
 import pulp
+from pulp import LpProblem
 
 # Add project root to path
 sys.path.append(".")
@@ -31,7 +33,7 @@ def generate_mock_data(slots: int = 96) -> KeplerInput:
     now = datetime.now()
     start = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
 
-    mock_slots = []
+    mock_slots: list[MockSlot] = []
     for i in range(slots):
         s_time = start + timedelta(minutes=30 * i)
         e_time = s_time + timedelta(minutes=30)
@@ -54,7 +56,7 @@ def generate_mock_data(slots: int = 96) -> KeplerInput:
             )
         )
 
-    return KeplerInput(slots=mock_slots, initial_soc_kwh=5.0)
+    return KeplerInput(slots=cast("list[Any]", mock_slots), initial_soc_kwh=5.0)
 
 
 def get_base_config() -> KeplerConfig:
@@ -89,47 +91,57 @@ class OptimizedSolver(KeplerSolver):
         if T == 0:
             return KeplerResult([], 0.0, True, "No slots")
 
-        slot_hours = []
+        slot_hours: list[float] = []
         for s in slots:
             duration = (s.end_time - s.start_time).total_seconds() / 3600.0
             slot_hours.append(duration)
 
-        prob = pulp.LpProblem("KeplerSchedule_Opt", pulp.LpMinimize)
+        prob: LpProblem = pulp.LpProblem("KeplerSchedule_Opt", pulp.LpMinimize)  # type: ignore[assignment]
 
         # Variables
-        charge = pulp.LpVariable.dicts("charge_kwh", range(T), lowBound=0.0)
-        discharge = pulp.LpVariable.dicts("discharge_kwh", range(T), lowBound=0.0)
-        grid_import = pulp.LpVariable.dicts("import_kwh", range(T), lowBound=0.0)
-        grid_export = pulp.LpVariable.dicts("export_kwh", range(T), lowBound=0.0)
-        curtailment = pulp.LpVariable.dicts("curtailment_kwh", range(T), lowBound=0.0)
-        load_shedding = pulp.LpVariable.dicts("load_shedding_kwh", range(T), lowBound=0.0)
+        charge: dict[int, Any] = pulp.LpVariable.dicts("charge_kwh", range(T), lowBound=0.0)  # type: ignore[assignment, misc, attr-defined]
+        discharge: dict[int, Any] = pulp.LpVariable.dicts("discharge_kwh", range(T), lowBound=0.0)  # type: ignore[assignment, misc, attr-defined]
+        grid_import: dict[int, Any] = pulp.LpVariable.dicts("import_kwh", range(T), lowBound=0.0)  # type: ignore[assignment, misc, attr-defined]
+        grid_export: dict[int, Any] = pulp.LpVariable.dicts("export_kwh", range(T), lowBound=0.0)  # type: ignore[assignment, misc, attr-defined]
+        curtailment: dict[int, Any] = pulp.LpVariable.dicts(  # type: ignore[attr-defined]
+            "curtailment_kwh", range(T), lowBound=0.0
+        )
+        load_shedding: dict[int, Any] = pulp.LpVariable.dicts(  # type: ignore[attr-defined]
+            "load_shedding_kwh", range(T), lowBound=0.0
+        )
 
         water_enabled = config.water_heating_power_kw > 0
         if water_enabled:
-            water_heat = pulp.LpVariable.dicts("water_heat", range(T), cat="Binary")
-            water_start = pulp.LpVariable.dicts("water_start", range(T), cat="Binary")
+            water_heat: dict[int, Any] = pulp.LpVariable.dicts("water_heat", range(T), cat="Binary")  # type: ignore[assignment, misc, attr-defined]
+            water_start: dict[int, Any] = pulp.LpVariable.dicts(  # type: ignore[attr-defined]
+                "water_start", range(T), cat="Binary"
+            )
             # NO water_spacing_viol variable needed for Hard Constraint!
         else:
-            water_heat = dict.fromkeys(range(T), 0)
-            water_start = dict.fromkeys(range(T), 0)
+            water_heat: dict[int, int] = dict.fromkeys(range(T), 0)  # type: ignore[assignment]
+            water_start: dict[int, int] = dict.fromkeys(range(T), 0)  # type: ignore[assignment]
 
         min_soc_kwh = config.capacity_kwh * config.min_soc_percent / 100.0
         max_soc_kwh = config.capacity_kwh * config.max_soc_percent / 100.0
-        soc = pulp.LpVariable.dicts(
+        soc: dict[int, Any] = pulp.LpVariable.dicts(  # type: ignore[assignment, misc, attr-defined]
             "soc_kwh", range(T + 1), lowBound=0.0, upBound=config.capacity_kwh
         )
 
-        soc_violation = pulp.LpVariable.dicts("soc_violation_kwh", range(T + 1), lowBound=0.0)
-        target_under = pulp.LpVariable("target_under", lowBound=0.0)
-        target_over = pulp.LpVariable("target_over", lowBound=0.0)
-        import_breach = pulp.LpVariable.dicts("import_breach_kwh", range(T), lowBound=0.0)
-        ramp_up = pulp.LpVariable.dicts("ramp_up", range(T), lowBound=0.0)
-        ramp_down = pulp.LpVariable.dicts("ramp_down", range(T), lowBound=0.0)
+        soc_violation: dict[int, Any] = pulp.LpVariable.dicts(  # type: ignore[attr-defined]
+            "soc_violation_kwh", range(T + 1), lowBound=0.0
+        )
+        target_under: Any = pulp.LpVariable("target_under", lowBound=0.0)  # type: ignore[assignment]
+        target_over: Any = pulp.LpVariable("target_over", lowBound=0.0)  # type: ignore[assignment]
+        import_breach: dict[int, Any] = pulp.LpVariable.dicts(  # type: ignore[attr-defined]
+            "import_breach_kwh", range(T), lowBound=0.0
+        )
+        ramp_up: dict[int, Any] = pulp.LpVariable.dicts("ramp_up", range(T), lowBound=0.0)  # type: ignore[assignment, misc, attr-defined]
+        ramp_down: dict[int, Any] = pulp.LpVariable.dicts("ramp_down", range(T), lowBound=0.0)  # type: ignore[assignment, misc, attr-defined]
 
         initial_soc = max(0.0, min(config.capacity_kwh, input_data.initial_soc_kwh))
-        prob += soc[0] == initial_soc
+        prob += soc[0] == initial_soc  # type: ignore[operator]
 
-        total_cost = []
+        total_cost: list[Any] = []
 
         # Helper map
         slots_ref = slots  # local access
@@ -138,10 +150,10 @@ class OptimizedSolver(KeplerSolver):
             s = slots_ref[t]
             h = slot_hours[t]
 
-            w_load = water_heat[t] * config.water_heating_power_kw * h if water_enabled else 0
+            w_load: Any = water_heat[t] * config.water_heating_power_kw * h if water_enabled else 0  # type: ignore[assignment]
 
             # Balance
-            prob += (
+            prob += (  # type: ignore[operator]
                 s.load_kwh + w_load + charge[t] + grid_export[t] + curtailment[t]
                 == s.pv_kwh + discharge[t] + grid_import[t] + load_shedding[t]
             )
@@ -149,12 +161,12 @@ class OptimizedSolver(KeplerSolver):
             # Water Start
             if water_enabled:
                 if t == 0:
-                    prob += water_start[t] == water_heat[t]
+                    prob += water_start[t] == water_heat[t]  # type: ignore[operator]
                 else:
-                    prob += water_start[t] >= water_heat[t] - water_heat[t - 1]
+                    prob += water_start[t] >= water_heat[t] - water_heat[t - 1]  # type: ignore[operator]
 
             # Battery Logic
-            prob += (
+            prob += (  # type: ignore[operator]
                 soc[t + 1]
                 == soc[t]
                 + charge[t] * config.charge_efficiency
@@ -162,19 +174,19 @@ class OptimizedSolver(KeplerSolver):
             )
 
             # Limits
-            prob += charge[t] <= config.max_charge_power_kw * h
-            prob += discharge[t] <= config.max_discharge_power_kw * h
+            prob += charge[t] <= config.max_charge_power_kw * h  # type: ignore[operator]
+            prob += discharge[t] <= config.max_discharge_power_kw * h  # type: ignore[operator]
             if config.max_export_power_kw:
-                prob += grid_export[t] <= config.max_export_power_kw * h
+                prob += grid_export[t] <= config.max_export_power_kw * h  # type: ignore[operator]
             if config.max_import_power_kw:
-                prob += grid_import[t] <= config.max_import_power_kw * h
+                prob += grid_import[t] <= config.max_import_power_kw * h  # type: ignore[operator]
             if config.grid_import_limit_kw:
-                prob += grid_import[t] <= config.grid_import_limit_kw * h + import_breach[t]
+                prob += grid_import[t] <= config.grid_import_limit_kw * h + import_breach[t]  # type: ignore[operator]
             if not config.enable_export:
-                prob += grid_export[t] == 0
+                prob += grid_export[t] == 0  # type: ignore[operator]
 
             # Costs
-            cost = (
+            cost: Any = (  # type: ignore[assignment]
                 (charge[t] + discharge[t]) * config.wear_cost_sek_per_kwh
                 + grid_import[t] * s.import_price_sek_kwh
                 - grid_export[t] * (s.export_price_sek_kwh - config.export_threshold_sek_per_kwh)
@@ -184,17 +196,17 @@ class OptimizedSolver(KeplerSolver):
             total_cost.append(cost)
 
             # Soft SoC
-            prob += soc[t] >= min_soc_kwh - soc_violation[t]
-            prob += soc[t] <= max_soc_kwh
+            prob += soc[t] >= min_soc_kwh - soc_violation[t]  # type: ignore[operator]
+            prob += soc[t] <= max_soc_kwh  # type: ignore[operator]
 
         # Terminal
-        prob += soc[T] >= min_soc_kwh - soc_violation[T]
-        prob += soc[T] <= max_soc_kwh
+        prob += soc[T] >= min_soc_kwh - soc_violation[T]  # type: ignore[operator]
+        prob += soc[T] <= max_soc_kwh  # type: ignore[operator]
 
         # Target SoC
         if config.target_soc_kwh is not None:
-            prob += soc[T] >= config.target_soc_kwh - target_under
-            prob += soc[T] <= config.target_soc_kwh + target_over
+            prob += soc[T] >= config.target_soc_kwh - target_under  # type: ignore[operator]
+            prob += soc[T] <= config.target_soc_kwh + target_over  # type: ignore[operator]
             total_cost.append(config.target_soc_penalty_sek * target_under)
             if config.target_soc_kwh > 0:
                 total_cost.append(config.target_soc_penalty_sek * target_over)
@@ -203,7 +215,7 @@ class OptimizedSolver(KeplerSolver):
         if water_enabled:
             # Min kWh per day (simplified from original for brevity, assuming full days)
             # Just implement the global min spacing for benchmark
-            avg_slot_hours = sum(slot_hours) / len(slot_hours)
+            avg_slot_hours: float = sum(slot_hours) / len(slot_hours)
 
             # 1. Daily Needs (Simplified: just total need for benchmark duration?)
             # No, lets stick to the loop structure if possible or just simplified.
@@ -211,7 +223,7 @@ class OptimizedSolver(KeplerSolver):
             # Copying daily loop roughly.
             water_kwh_per_slot = config.water_heating_power_kw * avg_slot_hours
             defer_hours = config.defer_up_to_hours
-            slots_by_day = defaultdict(list)
+            slots_by_day: dict[Any, list[int]] = defaultdict(list)
             for t in range(T):
                 dt = slots[t].start_time
                 bucket = dt.date()
@@ -224,7 +236,7 @@ class OptimizedSolver(KeplerSolver):
                 req = config.water_heating_min_kwh
                 if i == 0:
                     req = max(0, req - config.water_heated_today_kwh)
-                prob += pulp.lpSum(water_heat[t] for t in indices) * water_kwh_per_slot >= req
+                prob += pulp.lpSum(water_heat[t] for t in indices) * water_kwh_per_slot >= req  # type: ignore[operator]
 
             # 2. Hard Spacing Constraint (The Optimization)
             if config.water_min_spacing_hours > 0:
@@ -233,25 +245,25 @@ class OptimizedSolver(KeplerSolver):
                 for t in range(T):
                     start_idx = max(0, t - spacing_slots)
                     # If we start at t, previous window sum must be 0
-                    prob += (
+                    prob += (  # type: ignore[operator]
                         pulp.lpSum(water_heat[j] for j in range(start_idx, t)) + water_start[t] * M
                         <= M
                     )
 
         # Objective
-        term_val = soc[T] * config.terminal_value_sek_kwh
-        prob += pulp.lpSum(total_cost) - term_val + 1000.0 * pulp.lpSum(soc_violation)
+        term_val: Any = soc[T] * config.terminal_value_sek_kwh  # type: ignore[assignment]
+        prob += pulp.lpSum(total_cost) - term_val + 1000.0 * pulp.lpSum(soc_violation)  # type: ignore[operator]
 
-        prob.solve(pulp.PULP_CBC_CMD(msg=False))
+        prob.solve(pulp.PULP_CBC_CMD(msg=False))  # type: ignore[attr-defined]
 
-        status = pulp.LpStatus[prob.status]
+        status: str = pulp.LpStatus[prob.status]  # type: ignore[index]
         is_optimal = status == "Optimal"
 
-        cost_val = 0.0
-        res_slots = []
+        _cost_val = 0.0
+        res_slots: list[KeplerResultSlot] = []
         if is_optimal:
             for t in range(T):
-                w_kw = config.water_heating_power_kw if pulp.value(water_heat[t]) > 0.5 else 0.0
+                w_kw = config.water_heating_power_kw if pulp.value(water_heat[t]) > 0.5 else 0.0  # type: ignore[func-call]
                 res_slots.append(
                     KeplerResultSlot(
                         slots[t].start_time,
@@ -266,7 +278,7 @@ class OptimizedSolver(KeplerSolver):
                     )
                 )
 
-        return KeplerResult(res_slots, pulp.value(prob.objective), is_optimal, status)
+        return KeplerResult(res_slots, pulp.value(prob.objective), is_optimal, status)  # type: ignore[func-call]
 
 
 def benchmark(name: str, config: KeplerConfig, input_data: KeplerInput):

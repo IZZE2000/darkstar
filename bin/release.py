@@ -5,7 +5,7 @@ import subprocess
 import sys
 
 
-def sh(cmd, check=True):
+def sh(cmd: list[str], check: bool = True) -> subprocess.CompletedProcess[str]:
     return subprocess.run(cmd, check=check, text=True, capture_output=True)
 
 

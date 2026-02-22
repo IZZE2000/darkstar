@@ -69,10 +69,10 @@ async def calculate_dynamic_s_index(
 
     tz = pytz.timezone(timezone_name)
     try:
-        local_index = df.index.tz_convert(tz)
+        local_index: pd.DatetimeIndex = df.index.tz_convert(tz)  # type: ignore[assignment]
     except TypeError:
-        local_index = df.index.tz_localize(tz)
-    local_dates = pd.Series(local_index.date, index=df.index)
+        local_index = df.index.tz_localize(tz)  # type: ignore[assignment]
+    local_dates: pd.Series = pd.Series(local_index.date, index=df.index)  # type: ignore[arg-type]
     today = datetime.now(tz).date()
 
     daily_pv_map = daily_pv_forecast or {}
@@ -115,7 +115,7 @@ async def calculate_dynamic_s_index(
     avg_deficit = sum(deficits) / len(deficits) if deficits else 0.0
 
     temps_map: dict[int, float] = {}
-    mean_temp = None
+    mean_temp: float | None = None
     temp_adjustment = 0.0
     if temp_weight > 0 and fetch_temperature_fn is not None:
         temps_map = await fetch_temperature_fn(considered_days, tz)
@@ -123,23 +123,23 @@ async def calculate_dynamic_s_index(
             temps_map.get(offset) for offset in considered_days if temps_map.get(offset) is not None
         ]
         if temperature_values:
-            mean_temp = sum(temperature_values) / len(temperature_values)
+            mean_temp = sum(temperature_values) / len(temperature_values)  # type: ignore[assignment]
             span = temp_baseline - temp_cold
             if span <= 0:
                 span = 1.0
-            temp_adjustment = max(0.0, min(1.0, (temp_baseline - mean_temp) / span))
+            temp_adjustment = max(0.0, min(1.0, (temp_baseline - mean_temp) / span))  # type: ignore[arg-type]
 
     raw_factor = base_factor + (pv_weight * avg_deficit) + (temp_weight * temp_adjustment)
     factor = min(max_factor, max(0.0, raw_factor))
 
-    debug_data = {
+    debug_data: dict[str, Any] = {
         "mode": "dynamic",
         "base_factor": round(base_factor, 4),
         "avg_deficit": round(avg_deficit, 4),
         "pv_deficit_weight": round(pv_weight, 4),
         "temp_weight": round(temp_weight, 4),
         "temp_adjustment": round(temp_adjustment, 4),
-        "mean_temperature_c": round(mean_temp, 2) if mean_temp is not None else None,
+        "mean_temperature_c": round(mean_temp, 2) if mean_temp is not None else None,  # type: ignore[arg-type]
         "considered_days": considered_days,
         "requested_days": normalized_days,
         "temperatures": {str(k): v for k, v in temps_map.items()} if temps_map else None,
@@ -215,15 +215,15 @@ def calculate_probabilistic_s_index(
 
     # Ensure dataframe has datetime index with correct timezone
     try:
-        local_index = df.index.tz_convert(tz)
+        local_index: pd.DatetimeIndex = df.index.tz_convert(tz)  # type: ignore[assignment]
     except TypeError:
-        local_index = df.index.tz_localize(tz)
-    local_dates = pd.Series(local_index.date, index=df.index)
+        local_index = df.index.tz_localize(tz)  # type: ignore[assignment]
+    local_dates: pd.Series = pd.Series(local_index.date, index=df.index)  # type: ignore[arg-type]
 
     total_uncertainty_kwh = 0.0
     total_load_p50 = 0.0
-    considered_days = []
-    data_source = []  # Track where data came from
+    considered_days: list[int] = []
+    data_source: list[str] = []  # Track where data came from
 
     for offset in normalized_days:
         target_date = today + timedelta(days=offset)
@@ -283,7 +283,7 @@ def calculate_probabilistic_s_index(
     # Note: We explicitly DO NOT floor at 1.0 anymore (User request).
     # But we ensure it's non-negative above.
 
-    debug_data = {
+    debug_data: dict[str, Any] = {
         "mode": "probabilistic_sigma_scaling",
         "risk_appetite": risk_appetite,
         "target_sigma": target_sigma,
@@ -369,10 +369,10 @@ async def calculate_target_soc_risk_factor(
 
     # Ensure dataframe has timezone-aware index
     try:
-        local_index = df.index.tz_convert(tz)
+        local_index: pd.DatetimeIndex = df.index.tz_convert(tz)  # type: ignore[assignment]
     except TypeError:
-        local_index = df.index.tz_localize(tz)
-    local_dates = pd.Series(local_index.date, index=df.index)
+        local_index = df.index.tz_localize(tz)  # type: ignore[assignment]
+    local_dates: pd.Series = pd.Series(local_index.date, index=df.index)  # type: ignore[arg-type]
 
     # Calculate PV deficit for D1 and D2 (weighted: D1 more important)
     d1_date = today + timedelta(days=1)
@@ -724,7 +724,7 @@ def calculate_safety_floor(
 
     # 4. Weather Buffer (Explicit adders)
     weather_buffer_kwh = 0.0
-    weather_debug = {}
+    weather_debug: dict[str, float] = {}
 
     # Needs weather data (Temp, Snow, Cloud)
     # We assume 'snow_prob', 'temperature_c', 'cloud_cover' might be in DF or fetchable
@@ -763,7 +763,7 @@ def calculate_safety_floor(
     # Clamp to physical limits
     safety_floor_kwh = max(min_soc_kwh, min(capacity_kwh, raw_floor))
 
-    debug = {
+    debug: dict[str, Any] = {
         "method": "physical_deficit",
         "total_load": round(total_load, 2),
         "total_pv": round(total_pv, 2),

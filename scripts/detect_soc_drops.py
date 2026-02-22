@@ -3,6 +3,7 @@ import logging
 import sys
 from datetime import datetime
 from pathlib import Path
+from typing import Any, cast
 
 import yaml
 
@@ -21,18 +22,18 @@ logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger("scanner")
 
 
-def load_config():
+def load_config() -> dict[str, Any]:
     try:
         with Path("config.yaml").open(encoding="utf-8") as f:
-            return yaml.safe_load(f) or {}
+            return cast("dict[str, Any]", yaml.safe_load(f) or {})
     except FileNotFoundError:
         return {}
 
 
-async def scan():
-    config = load_config()
-    db_path = config.get("learning", {}).get("sqlite_path", "data/planner_learning.db")
-    tz_name = config.get("timezone", "Europe/Stockholm")
+async def scan() -> None:
+    config: dict[str, Any] = load_config()
+    db_path: str = config.get("learning", {}).get("sqlite_path", "data/planner_learning.db")  # type: ignore[assignment]
+    tz_name: str = config.get("timezone", "Europe/Stockholm")  # type: ignore[assignment]
     tz = pytz.timezone(tz_name)
 
     # Define "Today"

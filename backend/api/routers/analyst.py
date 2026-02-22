@@ -24,7 +24,7 @@ def _get_strategy_advice() -> dict[str, Any]:
         risk_appetite = s_index_cfg.get("risk_appetite", 3)
 
         # Basic rule-based advice
-        advice_items = []
+        advice_items: list[dict[str, Any]] = []
 
         if risk_appetite <= 2:
             advice_items.append(

@@ -21,8 +21,8 @@ class LearningEngine:
     """
 
     def __init__(self, config_path: str = "config.yaml"):
-        self.config = self._load_config(config_path)
-        self.learning_config = self.config.get("learning", {})
+        self.config: dict[str, Any] = self._load_config(config_path)
+        self.learning_config: dict[str, Any] = self.config.get("learning", {})
         self.db_path = self.learning_config.get("sqlite_path", "data/planner_learning.db")
         self.timezone = pytz.timezone(self.config.get("timezone", "Europe/Stockholm"))
 
@@ -32,18 +32,18 @@ class LearningEngine:
         # Initialize Store
         self.store = LearningStore(self.db_path, self.timezone)
 
-        raw_map = self.learning_config.get("sensor_map", {}) or {}
+        raw_map: dict[str, Any] = self.learning_config.get("sensor_map", {}) or {}
         # Corrected: {entity_id: canonical} -> {entity_id: canonical}
         self.sensor_map = {str(k).lower(): str(v).lower() for k, v in raw_map.items()}
 
         # Load inversion flags from input_sensors (REV F55)
-        input_sensors = self.config.get("input_sensors", {})
+        input_sensors: dict[str, Any] = self.config.get("input_sensors", {})
         self.inversion_flags = {
             "battery": input_sensors.get("battery_power_inverted", False),
             "grid": input_sensors.get("grid_power_inverted", False),
         }
 
-    def _load_config(self, config_path: str) -> dict:
+    def _load_config(self, config_path: str) -> dict[str, Any]:
         """Load configuration from YAML file"""
         try:
             with Path(config_path).open(encoding="utf-8") as f:
@@ -60,11 +60,14 @@ class LearningEngine:
     async def store_slot_observations(self, observations_df: pd.DataFrame) -> None:
         await self.store.store_slot_observations(observations_df)
 
-    async def store_forecasts(self, forecasts: list[dict], forecast_version: str) -> None:
+    async def store_forecasts(self, forecasts: list[dict[str, Any]], forecast_version: str) -> None:
         await self.store.store_forecasts(forecasts, forecast_version)
 
     async def log_training_episode(
-        self, input_data: dict, schedule_df: pd.DataFrame, config_overrides: dict | None = None
+        self,
+        input_data: dict[str, Any],
+        schedule_df: pd.DataFrame,
+        config_overrides: dict[str, Any] | None = None,
     ) -> None:
         """
         Log a training episode (inputs + outputs) for RL.
@@ -168,24 +171,25 @@ class LearningEngine:
         if not slot_records:
             return pd.DataFrame()
 
-        all_timestamps = []
+        all_timestamps: list[Any] = []
         for df in slot_records.values():
-            all_timestamps.extend(df["timestamp"].tolist())
+            ts_list: list[Any] = df["timestamp"].tolist()
+            all_timestamps.extend(ts_list)
 
         if not all_timestamps:
             return pd.DataFrame()
 
-        min_ts = min(all_timestamps)
-        max_ts = max(all_timestamps)
+        min_ts: Any = min(all_timestamps)
+        max_ts: Any = max(all_timestamps)
 
         if min_ts.tzinfo is None:
             min_ts = min_ts.replace(tzinfo=self.timezone)
         else:
             min_ts = min_ts.astimezone(self.timezone)
 
-        floored_minute = (min_ts.minute // resolution_minutes) * resolution_minutes
-        start_time = min_ts.replace(minute=floored_minute, second=0, microsecond=0)
-        end_time = max_ts
+        floored_minute: int = (min_ts.minute // resolution_minutes) * resolution_minutes
+        start_time: Any = min_ts.replace(minute=floored_minute, second=0, microsecond=0)
+        end_time: Any = max_ts
 
         slots = pd.date_range(
             start=start_time, end=end_time, freq=f"{resolution_minutes}min", tz=self.timezone
@@ -270,22 +274,23 @@ class LearningEngine:
         if not slot_records:
             return pd.DataFrame()
 
-        all_timestamps = []
+        all_timestamps: list[Any] = []
         for df in slot_records.values():
-            all_timestamps.extend(df["timestamp"].tolist())
+            ts_list: list[Any] = df["timestamp"].tolist()
+            all_timestamps.extend(ts_list)
 
         if not all_timestamps:
             return pd.DataFrame()
 
-        min_ts = min(all_timestamps)
-        max_ts = max(all_timestamps)
+        min_ts: Any = min(all_timestamps)
+        max_ts: Any = max(all_timestamps)
         min_ts = min_ts.astimezone(self.timezone)
 
-        floored_minute = (min_ts.minute // resolution_minutes) * resolution_minutes
-        start_time = min_ts.replace(minute=floored_minute, second=0, microsecond=0)
+        floored_minute: int = (min_ts.minute // resolution_minutes) * resolution_minutes
+        start_time: Any = min_ts.replace(minute=floored_minute, second=0, microsecond=0)
 
-        rem = max_ts.minute % resolution_minutes
-        end_time = max_ts.replace(second=0, microsecond=0)
+        rem: int = max_ts.minute % resolution_minutes
+        end_time: Any = max_ts.replace(second=0, microsecond=0)
         if rem != 0 or max_ts.second > 0:
             end_time += timedelta(minutes=(resolution_minutes - rem))
 
@@ -385,6 +390,6 @@ class LearningEngine:
         slot_df["duration_minutes"] = resolution_minutes
         return slot_df
 
-    async def get_performance_series(self, days_back: int = 7) -> dict[str, list[dict]]:
+    async def get_performance_series(self, days_back: int = 7) -> dict[str, list[dict[str, Any]]]:
         """Get time-series data for performance visualization using the store."""
         return await self.store.get_performance_series(days_back)

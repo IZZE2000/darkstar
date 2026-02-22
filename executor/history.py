@@ -253,7 +253,7 @@ class ExecutionHistory:
         with self.Session() as session:
             stmt = delete(ExecutionLog).where(ExecutionLog.executed_at < cutoff)
             result = session.execute(stmt)
-            deleted = result.rowcount
+            deleted: int = int(getattr(result, "rowcount", 0) or 0)
             session.commit()
 
             if deleted > 0:

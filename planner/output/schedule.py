@@ -100,10 +100,10 @@ async def save_schedule_to_json(
         await record_debug_payload(debug_payload, learning_config)
 
     class DateTimeEncoder(json.JSONEncoder):
-        def default(self, obj):
-            if isinstance(obj, datetime | pd.Timestamp):
-                return obj.isoformat()
-            return super().default(obj)
+        def default(self, o: Any) -> Any:
+            if isinstance(o, datetime | pd.Timestamp):
+                return o.isoformat()
+            return super().default(o)
 
     with Path(output_path).open("w", encoding="utf-8") as f:
         json.dump(output, f, indent=2, cls=DateTimeEncoder)

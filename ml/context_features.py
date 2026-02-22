@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 import pytz
@@ -15,7 +16,7 @@ import yaml
 from inputs import load_home_assistant_config, make_ha_headers
 
 
-def _load_config(config_path: str = "config.yaml") -> dict:
+def _load_config(config_path: str = "config.yaml") -> dict[str, Any]:
     with Path(config_path).open(encoding="utf-8") as f:
         return yaml.safe_load(f) or {}
 
@@ -23,32 +24,32 @@ def _load_config(config_path: str = "config.yaml") -> dict:
 def get_vacation_mode_series(
     start_time: datetime,
     end_time: datetime,
-    config: dict | None = None,
+    config: dict[str, Any] | None = None,
     *,
     config_path: str = "config.yaml",
-) -> pd.Series:
+) -> pd.Series[float]:
     """
     Fetch historic vacation_mode state as a 15-minute series (1.0 on, 0.0 off).
 
     Returns a Series indexed by tz-aware datetimes in the planner timezone.
     If anything fails (no config, no HA, no data), returns an empty Series.
     """
-    cfg = config or _load_config(config_path)
+    cfg: dict[str, Any] = config if config is not None else _load_config(config_path)
     tz = pytz.timezone(cfg.get("timezone", "Europe/Stockholm"))
-    sensors = cfg.get("input_sensors", {}) or {}
-    entity_id = sensors.get("vacation_mode")
+    sensors: dict[str, Any] = cfg.get("input_sensors", {}) or {}
+    entity_id: str | None = sensors.get("vacation_mode")
     if not entity_id:
         return pd.Series(dtype="float32")
 
-    ha_cfg = load_home_assistant_config()
-    url = ha_cfg.get("url")
-    token = ha_cfg.get("token")
+    ha_cfg: dict[str, Any] = load_home_assistant_config()
+    url: str | None = ha_cfg.get("url")
+    token: str | None = ha_cfg.get("token")
     if not url or not token:
         return pd.Series(dtype="float32")
 
     headers = make_ha_headers(token)
     api_url = f"{url.rstrip('/')}/api/history/period/{start_time.isoformat()}"
-    params = {
+    params: dict[str, Any] = {
         "filter_entity_id": entity_id,
         "end_time": end_time.isoformat(),
         "significant_changes_only": False,
@@ -107,31 +108,31 @@ def get_vacation_mode_series(
 def get_alarm_armed_series(
     start_time: datetime,
     end_time: datetime,
-    config: dict | None = None,
+    config: dict[str, Any] | None = None,
     *,
     config_path: str = "config.yaml",
-) -> pd.Series:
+) -> pd.Series[float]:
     """
     Fetch historic alarm armed state as a 15-minute series (1.0 armed, 0.0 disarmed).
 
     Uses the `input_sensors.alarm_state` entity (e.g. alarm_control_panel.alarmo).
     """
-    cfg = config or _load_config(config_path)
+    cfg: dict[str, Any] = config if config is not None else _load_config(config_path)
     tz = pytz.timezone(cfg.get("timezone", "Europe/Stockholm"))
-    sensors = cfg.get("input_sensors", {}) or {}
-    entity_id = sensors.get("alarm_state")
+    sensors: dict[str, Any] = cfg.get("input_sensors", {}) or {}
+    entity_id: str | None = sensors.get("alarm_state")
     if not entity_id:
         return pd.Series(dtype="float32")
 
-    ha_cfg = load_home_assistant_config()
-    url = ha_cfg.get("url")
-    token = ha_cfg.get("token")
+    ha_cfg: dict[str, Any] = load_home_assistant_config()
+    url: str | None = ha_cfg.get("url")
+    token: str | None = ha_cfg.get("token")
     if not url or not token:
         return pd.Series(dtype="float32")
 
     headers = make_ha_headers(token)
     api_url = f"{url.rstrip('/')}/api/history/period/{start_time.isoformat()}"
-    params = {
+    params: dict[str, Any] = {
         "filter_entity_id": entity_id,
         "end_time": end_time.isoformat(),
         "significant_changes_only": False,

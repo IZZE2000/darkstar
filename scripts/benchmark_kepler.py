@@ -80,7 +80,7 @@ def generate_scenario(sc_config: dict[str, Any]) -> dict[str, Any]:
     profile = sc_config.get("profile", "default")
 
     start = datetime(2025, 1, 1, 0, 0)
-    input_slots = []
+    input_slots: list[KeplerInputSlot] = []
 
     # Heavy Home Random Seed (deterministic for benchmark)
     rng = random.Random(42)
@@ -156,7 +156,7 @@ def generate_scenario(sc_config: dict[str, Any]) -> dict[str, Any]:
     )
 
     # Feature Matrix [W|S|E]
-    f_list = []
+    f_list: list[str] = []
     if water_enabled:
         f_list.append("W")
     if spacing_enabled:
@@ -258,7 +258,7 @@ def run_benchmark():
 
     py_solver = KeplerSolver()
 
-    progress_results = []
+    progress_results: list[dict[str, Any]] = []
     total_time_py = 0.0
 
     with Progress(
@@ -289,7 +289,7 @@ def run_benchmark():
                 pass
 
             # Formatting Time
-            def fmt_t(t):
+            def fmt_t(t: float) -> str:
                 if t < 0:
                     return "[red]FAIL[/]"
                 color = "green" if t < 0.2 else ("yellow" if t < 1.0 else "red")

@@ -235,14 +235,15 @@ class SchedulerService:
         try:
             # Load timezone from global config or default
             with Path("config.yaml").open() as f:
-                glob_cfg = yaml.safe_load(f) or {}
-            tz_str = glob_cfg.get("timezone", "Europe/Stockholm")
+                glob_cfg: dict[str, Any] = yaml.safe_load(f) or {}
+            tz_str: str = glob_cfg.get("timezone", "Europe/Stockholm")
             tz = pytz.timezone(tz_str)
 
             # Validate run_days (0-6)
             run_days = config.get("run_days", [1, 4])
             if not isinstance(run_days, list) or not all(
-                isinstance(d, int) and 0 <= d <= 6 for d in run_days
+                isinstance(d, int) and 0 <= d <= 6
+                for d in run_days  # type: ignore[arg-type]
             ):
                 logger.warning(f"Invalid run_days {run_days}, using default [1, 4]")
                 run_days = [1, 4]
@@ -297,10 +298,10 @@ class SchedulerService:
         """Load scheduler config from config.yaml."""
         try:
             with Path("config.yaml").open() as f:
-                cfg = yaml.safe_load(f) or {}
+                cfg: dict[str, Any] = yaml.safe_load(f) or {}
 
-            automation = cfg.get("automation", {})
-            schedule = automation.get("schedule", {})
+            automation: dict[str, Any] = cfg.get("automation", {})
+            schedule: dict[str, Any] = automation.get("schedule", {})
 
             return {
                 "enabled": bool(automation.get("enable_scheduler", False)),

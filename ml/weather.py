@@ -7,6 +7,7 @@ from __future__ import annotations
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 import pytz
@@ -18,16 +19,17 @@ _weather_cache: dict[str, tuple[float, pd.DataFrame]] = {}
 _CACHE_TTL_SECONDS = 300.0  # 5 minutes
 
 
-def _load_config(config_path: str = "config.yaml") -> dict:
+def _load_config(config_path: str = "config.yaml") -> dict[str, Any]:
     """Load configuration from YAML file."""
     with Path(config_path).open(encoding="utf-8") as handle:
-        return yaml.safe_load(handle) or {}
+        result: dict[str, Any] = yaml.safe_load(handle) or {}
+        return result
 
 
 def get_weather_series(
     start_time: datetime,
     end_time: datetime,
-    config: dict | None = None,
+    config: dict[str, Any] | None = None,
     *,
     config_path: str = "config.yaml",
 ) -> pd.DataFrame:
@@ -43,13 +45,13 @@ def get_weather_series(
     This helper is best-effort and will return an empty DataFrame if the
     request fails or contains no usable data.
     """
-    cfg = config or _load_config(config_path)
-    system_cfg = cfg.get("system", {}) or {}
-    loc_cfg = system_cfg.get("location", {}) or {}
+    cfg: dict[str, Any] = config or _load_config(config_path)
+    system_cfg: dict[str, Any] = cfg.get("system", {}) or {}
+    loc_cfg: dict[str, Any] = system_cfg.get("location", {}) or {}
 
     latitude = float(loc_cfg.get("latitude", 59.3))
     longitude = float(loc_cfg.get("longitude", 18.1))
-    timezone_name = cfg.get("timezone", "Europe/Stockholm")
+    timezone_name: str = cfg.get("timezone", "Europe/Stockholm")
     tz = pytz.timezone(timezone_name)
 
     start_local = start_time.astimezone(tz)
@@ -102,16 +104,16 @@ def get_weather_series(
         # Reduced timeout from 20s to 5s to fail fast
         response = requests.get(url, params=params, timeout=5)
         response.raise_for_status()
-        payload = response.json()
+        payload: dict[str, Any] = response.json()  # type: ignore[assignment]
     except Exception as exc:  # pragma: no cover - defensive logging
         print(f"Warning: Failed to fetch weather data from Open-Meteo: {exc}")
         return pd.DataFrame(dtype="float64")
 
-    hourly = payload.get("hourly") or {}
-    times = hourly.get("time") or []
-    temps = hourly.get("temperature_2m") or []
-    clouds = hourly.get("cloud_cover") or []
-    sw_rad = hourly.get("shortwave_radiation") or []
+    hourly: dict[str, Any] = payload.get("hourly") or {}
+    times: list[Any] = hourly.get("time") or []
+    temps: list[Any] = hourly.get("temperature_2m") or []
+    clouds: list[Any] = hourly.get("cloud_cover") or []
+    sw_rad: list[Any] = hourly.get("shortwave_radiation") or []
 
     if not times:
         return pd.DataFrame(dtype="float64")
@@ -151,7 +153,7 @@ def get_weather_series(
 def get_weather_volatility(
     start_time: datetime,
     end_time: datetime,
-    config: dict | None = None,
+    config: dict[str, Any] | None = None,
     *,
     config_path: str = "config.yaml",
 ) -> dict[str, float]:
@@ -199,7 +201,7 @@ def get_weather_volatility(
 def get_temperature_series(
     start_time: datetime,
     end_time: datetime,
-    config: dict | None = None,
+    config: dict[str, Any] | None = None,
     *,
     config_path: str = "config.yaml",
 ) -> pd.Series:

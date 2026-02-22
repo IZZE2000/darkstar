@@ -148,7 +148,7 @@ def _train_regressor(
         verbosity=-1,
     )
 
-    model.fit(features, target)
+    model.fit(features, target)  # type: ignore[reportUnknownMemberType]
     return model
 
 

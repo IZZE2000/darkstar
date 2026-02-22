@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 
 
-def check_file_exists(path, description):
+def check_file_exists(path: str, description: str) -> bool:
     if Path(path).exists():
         print(f"✅ {description} found: {path}")
         return True
@@ -12,7 +12,13 @@ def check_file_exists(path, description):
     return False
 
 
-def check_content(path, pattern, description, expected_count=None, invert=False):
+def check_content(
+    path: str,
+    pattern: str,
+    description: str,
+    expected_count: int | None = None,
+    invert: bool = False,
+) -> bool:
     if not Path(path).exists():
         print(f"❌ {description} SKIPPED (File missing): {path}")
         return False

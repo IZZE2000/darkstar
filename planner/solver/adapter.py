@@ -5,6 +5,7 @@ Convert between Planner DataFrame format and Kepler solver types.
 Migrated from backend/kepler/adapter.py during Rev K13 modularization.
 """
 
+from datetime import datetime  # noqa: TC003
 from typing import Any
 
 import pandas as pd
@@ -18,7 +19,7 @@ def _get_config_version(config: dict[str, Any]) -> int:
 
 
 def _aggregate_water_heaters(
-    water_heaters: list[dict], legacy_wh: dict | None = None
+    water_heaters: list[dict[str, Any]], legacy_wh: dict[str, Any] | None = None
 ) -> dict[str, Any]:
     """
     Aggregate multiple water heaters into single KeplerConfig parameters.
@@ -28,7 +29,7 @@ def _aggregate_water_heaters(
         water_heaters: List of water heater configs from new structure
         legacy_wh: Legacy water_heating section for fallback comfort settings
     """
-    enabled_wh = [wh for wh in water_heaters if wh.get("enabled", True)]
+    enabled_wh: list[dict[str, Any]] = [wh for wh in water_heaters if wh.get("enabled", True)]
 
     if not enabled_wh:
         return {
@@ -46,11 +47,13 @@ def _aggregate_water_heaters(
     total_min_kwh = sum(float(wh.get("min_kwh_per_day", 0.0)) for wh in enabled_wh)
 
     # Use first enabled heater's timing settings (device-specific)
-    first_wh = enabled_wh[0]
+    first_wh: dict[str, Any] = enabled_wh[0]
 
     # Comfort settings: use legacy water_heating section if available, otherwise heater's values
     # The water_heaters array has 'water_min_spacing_hours' not 'min_spacing_hours'
-    spacing_hours = first_wh.get("water_min_spacing_hours") or first_wh.get("min_spacing_hours")
+    spacing_hours: Any = first_wh.get("water_min_spacing_hours") or first_wh.get(
+        "min_spacing_hours"
+    )
 
     if legacy_wh:
         # Use legacy section for comfort settings (global user preferences)
@@ -76,12 +79,12 @@ def _aggregate_water_heaters(
         }
 
 
-def _aggregate_ev_chargers(ev_chargers: list[dict]) -> dict[str, Any]:
+def _aggregate_ev_chargers(ev_chargers: list[dict[str, Any]]) -> dict[str, Any]:
     """
     Aggregate multiple EV chargers into single KeplerConfig parameters.
     ARC15: Sum max power, use largest battery capacity, merge incentive buckets.
     """
-    enabled_ev = [ev for ev in ev_chargers if ev.get("enabled", True)]
+    enabled_ev: list[dict[str, Any]] = [ev for ev in ev_chargers if ev.get("enabled", True)]
 
     if not enabled_ev:
         return {
@@ -97,14 +100,14 @@ def _aggregate_ev_chargers(ev_chargers: list[dict]) -> dict[str, Any]:
     max_battery_capacity = max(float(ev.get("battery_capacity_kwh", 0.0)) for ev in enabled_ev)
 
     # Merge incentive buckets from all EVs (take the most conservative penalties)
-    all_buckets = []
+    all_buckets: list[dict[str, Any]] = []
     for ev in enabled_ev:
-        levels = ev.get("penalty_levels", [])
+        levels: list[dict[str, Any]] = ev.get("penalty_levels", [])
         if levels:
             all_buckets.extend(levels)
 
     # If multiple EVs have penalty levels, merge by taking max penalty at each threshold
-    merged_buckets = []
+    merged_buckets: list[dict[str, Any]] = []
     if all_buckets:
         # Group by threshold SoC and take highest penalty
         threshold_map: dict[float, float] = {}
@@ -135,7 +138,7 @@ def planner_to_kepler_input(df: pd.DataFrame, initial_soc_kwh: float) -> KeplerI
     Convert Planner DataFrame to KeplerInput.
     Expects DataFrame index to be timestamps (start_time).
     """
-    slots = []
+    slots: list[KeplerInputSlot] = []
 
     # Ensure required columns exist
     required_cols = ["load_forecast_kwh", "pv_forecast_kwh", "import_price_sek_kwh"]
@@ -146,9 +149,10 @@ def planner_to_kepler_input(df: pd.DataFrame, initial_soc_kwh: float) -> KeplerI
     if "export_price_sek_kwh" not in df.columns:
         df["export_price_sek_kwh"] = df["import_price_sek_kwh"]
 
-    for start_time, row in df.iterrows():
+    for idx, row in df.iterrows():
+        start_time: datetime = idx  # type: ignore[assignment]
         if "end_time" in df.columns:
-            end_time = row["end_time"]
+            end_time: datetime = row["end_time"]  # type: ignore[assignment]
         else:
             end_time = start_time + pd.Timedelta(minutes=15)
 
@@ -167,7 +171,7 @@ def planner_to_kepler_input(df: pd.DataFrame, initial_soc_kwh: float) -> KeplerI
             )
         )
 
-    return KeplerInput(slots=slots, initial_soc_kwh=initial_soc_kwh)
+    return KeplerInput(slots=slots, initial_soc_kwh=initial_soc_kwh)  # type: ignore[arg-type]
 
 
 def _comfort_level_to_penalty(
@@ -291,7 +295,7 @@ def config_to_kepler_config(
     system = planner_config.get("system", {})
     battery = system.get("battery", planner_config.get("battery", {}))
 
-    kepler_overrides = {}
+    kepler_overrides: dict[str, Any] = {}
     if overrides and "kepler" in overrides:
         kepler_overrides = overrides["kepler"]
 
@@ -408,6 +412,7 @@ def config_to_kepler_config(
         water_heated_today_kwh=0.0,  # Set in pipeline from HA sensor
         # Rev K23: Multi-Parameter Comfort Control (ALWAYS applied)
         # Rev K24: Apply bulk mode override if enable_top_ups=false
+        # type: ignore[arg-type]
         **(
             _apply_bulk_mode_override(
                 _comfort_level_to_penalty(
@@ -441,6 +446,8 @@ def config_to_kepler_config(
         ev_battery_capacity_kwh=float(ev_cfg.get("battery_capacity_kwh", 0.0)),
         ev_current_soc_percent=0.0,  # Set by pipeline from HA sensor
         ev_plugged_in=False,  # Set by pipeline from HA sensor
+        ev_deadline=None,  # Set by pipeline from HA sensor
+        ev_deadline_urgent=False,  # Set by pipeline from HA sensor
         ev_incentive_buckets=[
             IncentiveBucket(
                 threshold_soc=float(p.get("max_soc", 100.0)),
@@ -463,7 +470,7 @@ def kepler_result_to_dataframe(
     Convert KeplerResult to a DataFrame suitable for logging/comparison.
     Matches the column structure expected by the UI.
     """
-    records = []
+    records: list[dict[str, Any]] = []
     prev_soc_kwh = initial_soc_kwh
 
     for s in result.slots:
@@ -484,7 +491,7 @@ def kepler_result_to_dataframe(
         entry_soc_percent = (entry_soc_kwh / capacity_kwh * 100.0) if capacity_kwh > 0 else 0.0
         prev_soc_kwh = s.soc_kwh
 
-        records.append(
+        records.append(  # type: ignore[arg-type]
             {
                 "start_time": s.start_time,
                 "end_time": s.end_time,
@@ -519,7 +526,7 @@ def kepler_result_to_dataframe(
             }
         )
 
-    df = pd.DataFrame(records)
+    df = pd.DataFrame(records)  # type: ignore[arg-type]
     if not df.empty:
         df.set_index("start_time", inplace=True)
     return df

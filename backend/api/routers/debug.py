@@ -226,17 +226,17 @@ async def socketio_debug_status(request: Request) -> dict[str, Any]:
     # Get connected clients
     try:
         # Socket.IO manager tracks rooms/sids
-        manager = sio.manager
-        connected_sids = (
-            list(manager.rooms.get("/", {}).keys()) if hasattr(manager, "rooms") else []
+        manager: Any = sio.manager  # type: ignore[attr-defined]
+        connected_sids: list[str] = (
+            list(manager.rooms.get("/", {}).keys()) if hasattr(manager, "rooms") else []  # type: ignore[attr-defined]
         )
     except Exception as e:
         connected_sids = [f"error: {e}"]
 
     return {
         "server_status": "initialized",
-        "async_mode": sio.async_mode,
-        "connected_clients": len(connected_sids) if isinstance(connected_sids, list) else 0,
+        "async_mode": sio.async_mode,  # type: ignore[attr-defined]
+        "connected_clients": len(connected_sids),
         "client_sids": connected_sids[:10],  # Limit to 10
         "event_loop_captured": ws_manager.loop is not None,
         "cors_allowed_origins": "*",  # hardcoded in ws_manager
@@ -256,7 +256,7 @@ async def socketio_debug_status(request: Request) -> dict[str, Any]:
     }
 
 
-def _get_socketio_diagnostic_message(connected_sids: list, ws_manager: Any) -> str:
+def _get_socketio_diagnostic_message(connected_sids: list[str], ws_manager: Any) -> str:
     """Generate a human-readable diagnostic message for Socket.IO state."""
     if ws_manager.loop is None:
         return "⚠️ Event loop not captured - Socket.IO may not be initialized"
@@ -392,7 +392,7 @@ async def executor_debug_status() -> dict[str, Any]:
             "override_active": executor.status.override_active,
             "quick_action": executor.get_active_quick_action(),
         },
-        "recent_errors": list(executor.recent_errors) if executor.recent_errors else [],
+        "recent_errors": list(executor.recent_errors) if executor.recent_errors else [],  # type: ignore[arg-type]
         "diagnostics": {
             "now": datetime.now(UTC).isoformat(),
             "message": _get_executor_diagnostic_message(

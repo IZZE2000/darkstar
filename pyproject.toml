@@ -70,7 +70,9 @@ include = [
     "backend",
     "ml",
     "bin",
-    "*.py",  # Root level Python files
+    "planner",    # Core planning engine
+    "executor",   # Executor engine
+    "*.py",       # Root level Python files
 ]
 
 # Exclude non-source directories
@@ -80,6 +82,7 @@ exclude = [
     "venv",
     "__pycache__",
     "reference",
+    "scripts",    # Manual tests, benchmarks, debugging tools
 ]
 
 # Report settings for strict mode

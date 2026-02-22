@@ -40,8 +40,8 @@ def simulate_schedule(
         current_soc_kwh = (float(initial_state["battery_soc_percent"]) / 100.0) * capacity_kwh
 
     # Iterate and update state
-    projected_soc_kwh = []
-    projected_soc_pct = []
+    projected_soc_kwh: list[float] = []
+    projected_soc_pct: list[float] = []
 
     for idx, row in df.iterrows():
         # Determine slot duration

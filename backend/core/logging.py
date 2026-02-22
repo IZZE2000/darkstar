@@ -65,7 +65,7 @@ def setup_logging():
     )
 
     # Custom JSON Formatter
-    json_formatter = jsonlogger.JsonFormatter(
+    json_formatter = jsonlogger.JsonFormatter(  # type: ignore[no-untyped-call]
         "%(asctime)s %(levelname)s %(name)s %(message)s %(module)s %(lineno)d"
     )
     file_handler.setFormatter(json_formatter)

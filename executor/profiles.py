@@ -62,7 +62,7 @@ class ModeDefinition:
     """A complete mode definition with ordered actions."""
 
     description: str
-    actions: list[ModeAction] = field(default_factory=list)
+    actions: list[ModeAction] = field(default_factory=list[ModeAction])
 
 
 @dataclass
@@ -88,7 +88,7 @@ class ProfileMetadata:
     version: str
     schema_version: int = 1
     description: str = ""
-    supported_brands: list[str] = field(default_factory=list)
+    supported_brands: list[str] = field(default_factory=list[str])
 
 
 @dataclass
@@ -100,8 +100,8 @@ class InverterProfile:
     """
 
     metadata: ProfileMetadata
-    entities: dict[str, EntityDefinition] = field(default_factory=dict)
-    modes: dict[str, ModeDefinition] = field(default_factory=dict)
+    entities: dict[str, EntityDefinition] = field(default_factory=dict[str, EntityDefinition])
+    modes: dict[str, ModeDefinition] = field(default_factory=dict[str, ModeDefinition])
     behavior: ProfileBehavior = field(default_factory=ProfileBehavior)
 
     def get_mode(self, mode_intent: str) -> ModeDefinition:
@@ -126,14 +126,14 @@ class InverterProfile:
         """Return all entities in a specific category."""
         return {k: v for k, v in self.entities.items() if v.category == category}
 
-    def get_missing_entities(self, config: dict) -> list[str]:
+    def get_missing_entities(self, config: dict[str, Any]) -> list[str]:
         """
         Check config for missing required entities.
 
         Returns list of missing entity keys (not full config paths).
         Uses entity resolution order: user override > standard config > profile default.
         """
-        missing = []
+        missing: list[str] = []
 
         for key, entity_def in self.entities.items():
             if not entity_def.required:
@@ -152,7 +152,7 @@ class InverterProfile:
         Returns:
             Tuple of (is_valid, error_messages)
         """
-        errors = []
+        errors: list[str] = []
 
         if self.metadata.schema_version != 2:
             errors.append(f"Invalid schema_version: {self.metadata.schema_version}. Must be 2.")
@@ -195,7 +195,7 @@ class InverterProfile:
         return len(errors) == 0, errors
 
 
-def _resolve_entity_id_from_config(key: str, config: dict) -> str | None:
+def _resolve_entity_id_from_config(key: str, config: dict[str, Any]) -> str | None:
     """
     Resolve entity key to actual HA entity ID from config.
 
@@ -204,13 +204,15 @@ def _resolve_entity_id_from_config(key: str, config: dict) -> str | None:
     2. Standard config: executor.inverter[key]
     3. None if not found
     """
-    inverter_config = config.get("executor", {}).get("inverter", {})
+    executor_config: dict[str, Any] = config.get("executor", {})
+    inverter_config: dict[str, Any] = executor_config.get("inverter", {})
 
-    override = inverter_config.get("custom_entities", {}).get(key)
+    custom_entities: dict[str, Any] = inverter_config.get("custom_entities", {})
+    override: str | None = custom_entities.get(key)
     if override:
         return override
 
-    standard = inverter_config.get(key)
+    standard: str | None = inverter_config.get(key)
     if standard:
         return standard
 
@@ -256,16 +258,22 @@ def _parse_entity(key: str, data: dict[str, Any]) -> EntityDefinition:
 
 def _parse_mode_action(data: dict[str, Any]) -> ModeAction:
     """Parse a single mode action from YAML data."""
+    raw_value: Any = data.get("value")
+    value: str | int | float | bool
+    if raw_value is None:  # noqa: SIM108
+        value = ""
+    else:
+        value = raw_value
     return ModeAction(
         entity=data.get("entity", ""),
-        value=data.get("value"),
+        value=value,
         settle_ms=data.get("settle_ms"),
     )
 
 
 def _parse_mode_definition(data: dict[str, Any]) -> ModeDefinition:
     """Parse a complete mode definition from YAML data."""
-    actions = []
+    actions: list[ModeAction] = []
     for action_data in data.get("actions", []):
         actions.append(_parse_mode_action(action_data))
 
@@ -415,7 +423,7 @@ def list_profiles(profiles_dir: str | Path = "profiles") -> list[dict[str, Any]]
         List of profile metadata dictionaries
     """
     profiles_path = Path(profiles_dir)
-    profiles = []
+    profiles: list[dict[str, Any]] = []
 
     if not profiles_path.exists():
         logger.warning("Profiles directory not found: %s", profiles_path)

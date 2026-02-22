@@ -1,5 +1,7 @@
 """Custom exceptions for Darkstar Energy Manager."""
 
+from typing import Any
+
 
 class PVForecastError(Exception):
     """Raised when PV forecast generation fails.
@@ -20,7 +22,7 @@ class PVForecastError(Exception):
         message: str,
         original_exception: Exception | None = None,
         solar_arrays: int = 0,
-        details: dict | None = None,
+        details: dict[str, Any] | None = None,
     ):
         super().__init__(message)
         self.message = message

@@ -12,6 +12,7 @@ Algorithm (weighted average):
 
 import logging
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
@@ -63,7 +64,7 @@ class BatteryCostTracker:
 
         return DEFAULT_BATTERY_COST_SEK_PER_KWH
 
-    def get_state(self) -> dict:
+    def get_state(self) -> dict[str, Any]:
         """
         Get full battery cost state for debugging.
 
@@ -109,7 +110,7 @@ class BatteryCostTracker:
         """
         # Get current state
         state = self.get_state()
-        old_cost = state["avg_cost_sek_per_kwh"]
+        old_cost: float = state["avg_cost_sek_per_kwh"]
 
         # Calculate current energy from SoC
         current_energy_kwh = (current_soc_percent / 100.0) * self.capacity_kwh
@@ -118,9 +119,10 @@ class BatteryCostTracker:
         new_energy_kwh = current_energy_kwh
 
         # Calculate new weighted average cost
+        new_cost: float
         if grid_charge_kwh > 0.01:
             # Grid charging: add expensive energy
-            old_total_cost = (current_energy_kwh - grid_charge_kwh) * old_cost
+            old_total_cost: float = (current_energy_kwh - grid_charge_kwh) * old_cost
             new_cost_added = grid_charge_kwh * import_price_sek
 
             if new_energy_kwh > 0.01:
@@ -132,7 +134,7 @@ class BatteryCostTracker:
             # The energy before PV was added
             energy_before_pv = current_energy_kwh - pv_charge_kwh
             if energy_before_pv > 0.01:
-                old_total_cost = energy_before_pv * old_cost
+                old_total_cost: float = energy_before_pv * old_cost
                 # New energy is higher, cost stays same -> cost per kWh drops
                 new_cost = old_total_cost / new_energy_kwh
             else:

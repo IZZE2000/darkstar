@@ -71,7 +71,7 @@ def list_episodes(conn: sqlite3.Connection, limit: int = 50) -> None:
         episode_id, created_at, inputs_size, schedule_size = row
 
         # Format sizes
-        def fmt_size(b):
+        def fmt_size(b: int) -> str:
             if b < 1024:
                 return f"{b}B"
             elif b < 1024 * 1024:

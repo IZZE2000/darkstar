@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import asyncio
 import sys
 from pathlib import Path
 
@@ -27,11 +28,12 @@ def main():
             print("Aurora Reflex is disabled in config. Use --force to override.")
             return
 
-        report = reflex.run(dry_run=args.dry_run)
+        report = asyncio.run(reflex.run(dry_run=args.dry_run))
 
         print("\n--- Report ---")
         for line in report:
-            print(f"- {line}")
+            line_str: str = line
+            print(f"- {line_str}")
 
     except Exception as e:
         print(f"Error: {e}")

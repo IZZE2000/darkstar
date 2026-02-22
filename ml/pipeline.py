@@ -15,9 +15,7 @@ from ml.forward import generate_forward_slots
 
 
 def _get_engine() -> LearningEngine:
-    engine = get_learning_engine()
-    if not isinstance(engine, LearningEngine):
-        raise TypeError("get_learning_engine() did not return a LearningEngine instance")
+    engine: LearningEngine = get_learning_engine()
     return engine
 
 
@@ -31,15 +29,18 @@ async def _apply_corrections_to_db(
 
     async with engine.store.AsyncSession() as session:
         for row in corrections:
-            slot_start = row.get("slot_start")
+            slot_start: Any = row.get("slot_start")
             if slot_start is None:
                 continue
 
             # Normalize timestamp exactly like learning.py (store_forecasts)
+            ts_str: str
             if hasattr(slot_start, "astimezone"):
-                ts_str = slot_start.astimezone(engine.timezone).isoformat()
+                # slot_start has astimezone method (datetime-like object)
+                ts_str = slot_start.astimezone(engine.timezone).isoformat()  # type: ignore[union-attr]
             else:
-                ts_str = pd.to_datetime(slot_start).astimezone(engine.timezone).isoformat()
+                ts_dt = pd.to_datetime(slot_start)  # type: ignore[assignment]
+                ts_str = ts_dt.astimezone(engine.timezone).isoformat()  # type: ignore[attr-defined]
 
             pv_corr = float(row.get("pv_correction_kwh") or 0.0)
             load_corr = float(row.get("load_correction_kwh") or 0.0)

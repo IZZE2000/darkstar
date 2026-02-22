@@ -36,7 +36,7 @@ async def get_dashboard_bundle() -> dict[str, Any]:
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
     # helper to handle failure in one sub-task gracefully
-    def val(res):
+    def val(res: Any) -> Any:
         if isinstance(res, Exception):
             logger.error(f"Bundle sub-task failed: {res}")
             return None

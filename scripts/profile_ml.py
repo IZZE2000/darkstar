@@ -1,6 +1,8 @@
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 # Add project root to sys.path
 sys.path.append(str(Path(__file__).parent.parent.resolve()))
@@ -9,11 +11,13 @@ from datetime import datetime, timedelta
 
 from backend.learning import LearningEngine
 from ml.corrector import predict_corrections
-from ml.forward import _load_models, generate_forward_slots
+from ml.forward import _load_models, generate_forward_slots  # type: ignore[reportPrivateUsage]
 from ml.weather import get_weather_series
 
 
-def profile(name, func, *args, **kwargs):
+def profile(
+    name: str, func: Callable[..., Any], *args: Any, **kwargs: Any
+) -> tuple[Any | None, float]:
     start = time.time()
     try:
         res = func(*args, **kwargs)

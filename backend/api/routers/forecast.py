@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytz
 from fastapi import APIRouter, HTTPException, Request
@@ -56,7 +56,9 @@ def _get_engine_and_config() -> tuple[LearningEngine | None, dict[str, Any]]:
 
 
 # Missing function implementation
-def get_aurora_briefing_text(dashboard: dict, config: dict, secrets: dict) -> str:
+def get_aurora_briefing_text(
+    dashboard: dict[str, Any], config: dict[str, Any], secrets: dict[str, Any]
+) -> str:
     """Mock implementation of the briefing text generator."""
     return "Aurora briefing system is active. Detailed summary logic to be restored."
 
@@ -115,7 +117,7 @@ async def _fetch_correction_history(
     cutoff_date = (now - timedelta(days=14)).strftime("%Y-%m-%d")
     active_version = config.get("forecasting", {}).get("active_forecast_version", "aurora")
 
-    rows = []
+    rows: list[dict[str, Any]] = []
     try:
         async with engine.store.AsyncSession() as session:
             stmt = (
@@ -258,14 +260,12 @@ async def aurora_dashboard() -> dict[str, Any]:
 
         # Filter for relevant range (today + tomorrow)
         # Using list comprehension for speed
-        if prices and isinstance(prices, list):
+        if prices:
             start_check = now.replace(hour=0, minute=0, second=0, microsecond=0)
             relevant_prices = [
                 p
                 for p in prices
-                if isinstance(p, dict)
-                and p.get("start_time")
-                and p["start_time"].astimezone(tz) >= start_check
+                if p.get("start_time") and p["start_time"].astimezone(tz) >= start_check
             ]
 
             if relevant_prices:
@@ -348,17 +348,19 @@ async def toggle_reflex(payload: ToggleReflexRequest):
             raise HTTPException(500, "Config file not found")
 
         with config_path.open("r", encoding="utf-8") as f:
-            data = yaml_handler.load(f) or {}
+            loaded_yaml: Any = yaml_handler.load(f)  # type: ignore[no-untyped-call]
+            data: dict[str, Any] = cast("dict[str, Any]", loaded_yaml) if loaded_yaml else {}
 
         # 2. Update data
-        data.setdefault("learning", {})["reflex_enabled"] = payload.enabled
+        learning_dict: dict[str, Any] = cast("dict[str, Any]", data.setdefault("learning", {}))
+        learning_dict["reflex_enabled"] = payload.enabled
 
         # 3. Atomic Write: Write to temp file then move
         # Create temp file in same directory to ensure atomic move works
         with tempfile.NamedTemporaryFile(
             "w", delete=False, dir=config_path.parent, encoding="utf-8", suffix=".tmp"
         ) as tmp_f:
-            yaml_handler.dump(data, tmp_f)
+            yaml_handler.dump(data, tmp_f)  # type: ignore[arg-type]
             tmp_path = Path(tmp_f.name)
 
         # Renaissance Move (Atomic Replace)
@@ -472,7 +474,7 @@ async def forecast_day(date: str | None = None) -> dict[str, Any]:
             f_results = (await session.execute(f_stmt)).all()
 
         # Build response
-        slots = {}
+        slots: dict[str, dict[str, Any]] = {}
         for row in obs_results:
             slot_s = row[0]
             slots[slot_s] = {"slot_start": slot_s, "actual_pv": row[1], "actual_load": row[2]}

@@ -197,7 +197,7 @@ class Analyst:
                 import asyncio
 
                 def build_df():
-                    df = pd.DataFrame([r._asdict() for r in rows])
+                    df = pd.DataFrame([r.__dict__.copy() for r in rows])
                     df["slot_start"] = pd.to_datetime(df["slot_start"], utc=True)
                     start_utc = start.astimezone(UTC) if start.tzinfo else start.replace(tzinfo=UTC)
                     end_utc = end.astimezone(UTC) if end.tzinfo else end.replace(tzinfo=UTC)
@@ -228,7 +228,7 @@ class Analyst:
                 import asyncio
 
                 def build_df():
-                    df = pd.DataFrame([r._asdict() for r in rows])
+                    df = pd.DataFrame([r.__dict__.copy() for r in rows])
                     df["slot_start"] = pd.to_datetime(df["slot_start"], utc=True)
                     start_utc = start.astimezone(UTC) if start.tzinfo else start.replace(tzinfo=UTC)
                     end_utc = end.astimezone(UTC) if end.tzinfo else end.replace(tzinfo=UTC)

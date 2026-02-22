@@ -10,6 +10,7 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from backend.core.cache import cache
 from backend.core.websockets import ws_manager
@@ -57,7 +58,7 @@ class PlannerService:
         except Exception as e:
             logger.warning(f"Failed to emit progress for phase '{phase}': {e}")
 
-    def get_status(self) -> dict:
+    def get_status(self) -> dict[str, Any]:
         """Get current planner status (for HTTP fallback)."""
         if not self._current_phase:
             return {"phase": "idle", "elapsed_ms": 0, "is_running": False}

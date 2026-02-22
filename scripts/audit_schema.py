@@ -7,6 +7,7 @@ Compares SQLAlchemy models against latest Alembic migration schema.
 import sqlite3
 import sys
 from pathlib import Path
+from typing import Any
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -15,9 +16,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from backend.learning.models import Base
 
 
-def get_model_tables():
+def get_model_tables() -> dict[str, Any]:
     """Extract all table definitions from SQLAlchemy models."""
-    tables = {}
+    tables: dict[str, Any] = {}
     for mapper in Base.registry.mappers:
         table = mapper.class_.__table__
         tables[table.name] = {
@@ -27,7 +28,7 @@ def get_model_tables():
     return tables
 
 
-def get_db_tables(db_path: str):
+def get_db_tables(db_path: str) -> dict[str, Any]:
     """Extract all table definitions from SQLite database."""
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
@@ -36,10 +37,10 @@ def get_db_tables(db_path: str):
     cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'alembic%'")
     table_names = [row[0] for row in cursor.fetchall()]
 
-    tables = {}
+    tables: dict[str, Any] = {}
     for table_name in table_names:
         cursor.execute(f"PRAGMA table_info({table_name})")
-        columns = {}
+        columns: dict[str, str] = {}
         for row in cursor.fetchall():
             col_name = row[1]
             col_type = row[2]
@@ -65,15 +66,15 @@ def normalize_type(sqlalchemy_type: str) -> str:
     return type_map.get(base_type, base_type)
 
 
-def audit_schema(db_path: str):
+def audit_schema(db_path: str) -> int:
     """Compare models against database schema."""
     print("=" * 80)
     print("SCHEMA DRIFT AUDIT - REV // F40 Phase 4")
     print("=" * 80)
     print()
 
-    model_tables = get_model_tables()
-    db_tables = get_db_tables(db_path)
+    model_tables: dict[str, Any] = get_model_tables()
+    db_tables: dict[str, Any] = get_db_tables(db_path)
 
     print(f"📊 Models: {len(model_tables)} tables")
     print(f"💾 Database: {len(db_tables)} tables")
@@ -82,7 +83,7 @@ def audit_schema(db_path: str):
     drift_found = False
 
     # Check for missing tables
-    missing_tables = set(model_tables.keys()) - set(db_tables.keys())
+    missing_tables: set[str] = set(model_tables.keys()) - set(db_tables.keys())
     if missing_tables:
         drift_found = True
         print("❌ MISSING TABLES IN DATABASE:")
@@ -91,7 +92,7 @@ def audit_schema(db_path: str):
         print()
 
     # Check for extra tables
-    extra_tables = set(db_tables.keys()) - set(model_tables.keys())
+    extra_tables: set[str] = set(db_tables.keys()) - set(model_tables.keys())
     if extra_tables:
         print("⚠️  EXTRA TABLES IN DATABASE (not in models):")
         for table in sorted(extra_tables):
@@ -100,11 +101,11 @@ def audit_schema(db_path: str):
 
     # Check columns for each table
     for table_name in sorted(set(model_tables.keys()) & set(db_tables.keys())):
-        model_cols = model_tables[table_name]["columns"]
-        db_cols = db_tables[table_name]["columns"]
+        model_cols: dict[str, str] = model_tables[table_name]["columns"]  # type: ignore[index]
+        db_cols: dict[str, str] = db_tables[table_name]["columns"]  # type: ignore[index]
 
-        missing_cols = set(model_cols.keys()) - set(db_cols.keys())
-        extra_cols = set(db_cols.keys()) - set(model_cols.keys())
+        missing_cols: set[str] = set(model_cols.keys()) - set(db_cols.keys())
+        extra_cols: set[str] = set(db_cols.keys()) - set(model_cols.keys())
 
         if missing_cols or extra_cols:
             drift_found = True

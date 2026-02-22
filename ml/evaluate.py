@@ -9,14 +9,18 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Any, cast
 
 import lightgbm as lgb
 import numpy as np
 import pandas as pd
-from learning import LearningEngine, get_learning_engine
 
+from backend.learning import LearningEngine, get_learning_engine
 from ml.context_features import get_alarm_armed_series, get_vacation_mode_series
-from ml.train import _build_time_features, _load_slot_observations
+from ml.train import (
+    _build_time_features,  # type: ignore[reportPrivateUsage]
+    _load_slot_observations,  # type: ignore[reportPrivateUsage]
+)
 from ml.weather import get_weather_series
 
 AURORA_VERSION = "aurora"
@@ -70,12 +74,12 @@ def _load_model(path: Path) -> lgb.Booster | None:
 def _generate_baseline_forecasts(
     observations: pd.DataFrame,
     engine: LearningEngine,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """Simple baseline: 7-day average by hour-of-day for load and PV."""
     if observations.empty:
         return []
 
-    df = observations.copy()
+    df: pd.DataFrame = observations.copy()
     df["slot_start"] = pd.to_datetime(df["slot_start"])
     if df["slot_start"].dt.tz is None:
         df["slot_start"] = df["slot_start"].dt.tz_localize(engine.timezone)
@@ -87,7 +91,9 @@ def _generate_baseline_forecasts(
     # Use a 7-day window prior to the evaluation horizon for averaging
     end_time = df["slot_start"].max()
     start_time = end_time - timedelta(days=7)
-    history = df[(df["slot_start"] >= start_time) & (df["slot_start"] < end_time)]
+    history = cast(
+        "pd.DataFrame", df[(df["slot_start"] >= start_time) & (df["slot_start"] < end_time)]
+    )
     if history.empty:
         print("Warning: No history available for baseline computation.")
         return []
@@ -98,15 +104,16 @@ def _generate_baseline_forecasts(
         temp_c=("temp_c", "mean") if "temp_c" in history.columns else ("load_kwh", "mean"),
     )
 
-    forecasts: list[dict] = []
+    forecasts: list[dict[str, Any]] = []
     for _, row in df.iterrows():
         hour = int(row["hour"])
-        slot_start_dt = row["slot_start"].astimezone(engine.timezone)
+        slot_start_dt: datetime = row["slot_start"]
+        slot_start_dt = slot_start_dt.astimezone(engine.timezone)
         slot_start = slot_start_dt.isoformat()
         if hour in grouped.index:
-            load_forecast = float(grouped.loc[hour, "load_kwh"] or 0.0)
-            pv_forecast = float(grouped.loc[hour, "pv_kwh"] or 0.0)
-            temp_c = None if "temp_c" not in grouped.columns else float(grouped.loc[hour, "temp_c"])
+            load_forecast = float(grouped.loc[hour, "load_kwh"] or 0.0)  # type: ignore[arg-type]
+            pv_forecast = float(grouped.loc[hour, "pv_kwh"] or 0.0)  # type: ignore[arg-type]
+            temp_c = None if "temp_c" not in grouped.columns else float(grouped.loc[hour, "temp_c"])  # type: ignore[arg-type]
         else:
             load_forecast = 0.0
             pv_forecast = 0.0
@@ -129,7 +136,7 @@ def _predict_with_boosters(
     observations: pd.DataFrame,
     engine: LearningEngine,
     aurora_version: str,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """Generate AURORA forecasts given boosters and features."""
     if features.empty or observations.empty:
         return []
@@ -159,23 +166,23 @@ def _predict_with_boosters(
 
     X = features[feature_cols]
 
-    load_pred = None
-    pv_pred = None
+    load_pred: np.ndarray | None = None
+    pv_pred: np.ndarray | None = None
 
     if boosters.get("load") is not None:
-        load_pred = boosters["load"].predict(X)
+        load_pred = cast("np.ndarray", boosters["load"].predict(X))  # type: ignore[arg-type]
     if boosters.get("pv") is not None:
-        pv_pred = boosters["pv"].predict(X)
+        pv_pred = cast("np.ndarray", boosters["pv"].predict(X))  # type: ignore[arg-type]
 
-    forecasts: list[dict] = []
+    forecasts: list[dict[str, Any]] = []
     for idx, row in observations.iterrows():
-        slot_start = pd.to_datetime(row["slot_start"])
+        slot_start = cast("pd.Timestamp", pd.to_datetime(row["slot_start"]))
         if slot_start.tzinfo is None:
             slot_start = engine.timezone.localize(slot_start)
         else:
             slot_start = slot_start.astimezone(engine.timezone)
 
-        record: dict = {
+        record: dict[str, Any] = {
             "slot_start": slot_start.isoformat(),
             "pv_forecast_kwh": 0.0,
             "load_forecast_kwh": 0.0,
@@ -237,7 +244,7 @@ def _calculate_mae(
 def _print_segmented_mae(
     label: str,
     observations: pd.DataFrame,
-    forecasts: list[dict],
+    forecasts: list[dict[str, Any]],
 ) -> None:
     """Print MAE segmented by simple context bands (weather/occupancy)."""
     if not forecasts or observations.empty:
@@ -358,7 +365,7 @@ def main() -> None:
         f"({cfg.days_back} days back).",
     )
 
-    observations = _load_slot_observations(engine, start_time, now)
+    observations: pd.DataFrame = _load_slot_observations(engine, start_time, now)
     if observations.empty:
         print("Error: No slot_observations found for evaluation window.")
         return
@@ -406,7 +413,7 @@ def main() -> None:
         observations["alarm_armed_flag"] = 0.0
 
     # Build features consistent with training
-    features = _build_time_features(observations)
+    features: pd.DataFrame = _build_time_features(observations)
 
     # Load trained models (as boosters)
     load_model_path = cfg.models_dir / cfg.load_model_name
@@ -419,7 +426,7 @@ def main() -> None:
     # Generate and store baseline forecasts (simple 7-day average)
     baseline_forecasts = _generate_baseline_forecasts(observations, engine)
     if baseline_forecasts:
-        engine.store_forecasts(baseline_forecasts, cfg.baseline_version)
+        engine.store_forecasts(baseline_forecasts, cfg.baseline_version)  # type: ignore[unused-coroutine]
         print(
             f"Stored {len(baseline_forecasts)} baseline forecasts "
             f"as version '{cfg.baseline_version}'.",
@@ -436,7 +443,7 @@ def main() -> None:
         cfg.aurora_version,
     )
     if aurora_forecasts:
-        engine.store_forecasts(aurora_forecasts, cfg.aurora_version)
+        engine.store_forecasts(aurora_forecasts, cfg.aurora_version)  # type: ignore[unused-coroutine]
         print(
             f"Stored {len(aurora_forecasts)} AURORA forecasts as version '{cfg.aurora_version}'.",
         )

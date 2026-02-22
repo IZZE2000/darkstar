@@ -18,6 +18,7 @@ import asyncio
 import sys
 from datetime import datetime
 from pathlib import Path
+from typing import Any, cast
 
 # Add parent dir to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -55,7 +56,7 @@ def run_migration(config_path: Path) -> bool:
         return False
 
 
-def load_config(path: Path) -> dict:
+def load_config(path: Path) -> dict[str, Any]:
     """Load config using ruamel.yaml to preserve structure."""
     yaml = YAML()
     yaml.preserve_quotes = True
@@ -63,51 +64,51 @@ def load_config(path: Path) -> dict:
     yaml.width = 4096
 
     with path.open(encoding="utf-8") as f:
-        return yaml.load(f)
+        return cast("dict[str, Any]", yaml.load(f))  # type: ignore[no-any-return]
 
 
-def get_all_keys(d: dict, parent: str = "") -> set:
+def get_all_keys(d: dict[str, Any], parent: str = "") -> set[str]:
     """Recursively get all keys from a nested dict."""
-    keys = set()
+    keys: set[str] = set()
     for key, value in d.items():
         full_key = f"{parent}.{key}" if parent else key
         keys.add(full_key)
         if isinstance(value, dict):
-            keys.update(get_all_keys(value, full_key))
+            keys.update(get_all_keys(cast("dict[str, Any]", value), full_key))
     return keys
 
 
-def check_structure(migrated: dict, default: dict) -> list[str]:
+def check_structure(migrated: dict[str, Any], default: dict[str, Any]) -> list[str]:
     """Check if migrated config has all required keys from default.
 
     Note: Extra keys are NOT necessarily deprecated - they may be user-specific
     values (entity IDs, custom settings). We only fail on MISSING keys.
     """
-    issues = []
+    issues: list[str] = []
 
-    default_keys = get_all_keys(default)
-    migrated_keys = get_all_keys(migrated)
+    default_keys: set[str] = get_all_keys(default)
+    migrated_keys: set[str] = get_all_keys(migrated)
 
     # Find missing keys (these are actual problems)
-    missing = default_keys - migrated_keys
+    missing: set[str] = default_keys - migrated_keys
     if missing:
         issues.append(f"Missing required keys: {sorted(missing)}")
 
     # Extra keys are OK - they're user-specific values (entities, etc.)
     # We just report them for visibility
-    extra = migrated_keys - default_keys
+    extra: set[str] = migrated_keys - default_keys
     if extra:
         print(f"   i  Extra user-specific keys (OK): {len(extra)} keys")
 
     return issues
 
 
-def check_custom_entities(config: dict, profile_name: str | None = None) -> list[str]:
+def check_custom_entities(config: dict[str, Any], profile_name: str | None = None) -> list[str]:
     """Check that custom_entities has the correct keys for the profile."""
-    issues = []
+    issues: list[str] = []
 
-    inverter = config.get("executor", {}).get("inverter", {})
-    custom_entities = inverter.get("custom_entities", {})
+    inverter: dict[str, Any] = config.get("executor", {}).get("inverter", {})  # type: ignore[assignment]
+    custom_entities: dict[str, Any] = inverter.get("custom_entities", {})  # type: ignore[assignment]
 
     # Check that profile-specific keys are NOT at top level
     legacy_keys = [
@@ -139,7 +140,7 @@ def compare_comments(original: Path, migrated: Path) -> list[str]:
     - Reordering of keys to match default
     - Comment normalization
     """
-    issues = []
+    issues: list[str] = []
 
     orig_lines = len(original.read_text().splitlines())
     migr_lines = len(migrated.read_text().splitlines())
@@ -178,7 +179,7 @@ def main():
 
     # Step 2: Load original for comparison
     print("\n[2/4] Loading original config...")
-    original = load_config(config_path)
+    original: dict[str, Any] = load_config(config_path)
     print(f"   ✅ Loaded {len(get_all_keys(original))} keys")
 
     # Step 3: Run migration
@@ -191,10 +192,10 @@ def main():
     print("\n[4/4] Comparing to default config...")
 
     default_path = Path("config.default.yaml")
-    migrated = load_config(config_path)
-    default = load_config(default_path)
+    migrated: dict[str, Any] = load_config(config_path)
+    default: dict[str, Any] = load_config(default_path)
 
-    all_issues = []
+    all_issues: list[str] = []
 
     # Check structure
     print("\n📋 Structure Check:")

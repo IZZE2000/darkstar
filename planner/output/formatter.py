@@ -8,7 +8,7 @@ Extracted from planner_legacy.py during Rev K13 modularization.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 
 import pandas as pd
 import pytz
@@ -94,7 +94,7 @@ def dataframe_to_json_response(
         future_df = df_copy
     df_copy = future_df
 
-    records = df_copy.to_dict("records")
+    records: list[dict[str, Any]] = cast("list[dict[str, Any]]", df_copy.to_dict("records"))
 
     for i, record in enumerate(records):
         record["slot_number"] = i + 1

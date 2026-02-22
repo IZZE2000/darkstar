@@ -142,7 +142,7 @@ class HealthChecker:
 
         # Print rows
         for row in rows:
-            formatted_row = []
+            formatted_row: list[str] = []
             for i, cell in enumerate(row):
                 cell_str = str(cell)
                 if i < len(widths):
@@ -180,7 +180,7 @@ class HealthChecker:
             ("GET", "/api/performance/data", "Performance Data"),
         ]
 
-        results = []
+        results: list[list[str]] = []
         async with httpx.AsyncClient(timeout=10.0) as client:
             for i, (method, path, name) in enumerate(endpoints):
                 self.print_progress_bar(i, len(endpoints), "Checking endpoints")
@@ -251,7 +251,7 @@ class HealthChecker:
                     ("training_episodes", "Training Episodes"),
                 ]
 
-                results = []
+                results: list[list[str]] = []
                 total_records = 0
 
                 for table, display_name in tables_to_check:
@@ -340,7 +340,7 @@ class HealthChecker:
             "load_error.lgb",
         ]
 
-        results = []
+        results: list[list[str]] = []
         found_models = 0
 
         # Check core models
@@ -391,7 +391,7 @@ class HealthChecker:
             ("data/ml/models/", "ML Models Directory"),
         ]
 
-        results = []
+        results: list[list[str]] = []
         files_ok = 0
 
         for file_path, description in critical_files:
@@ -498,12 +498,11 @@ class HealthChecker:
             )
             return {"status": "error", "message": str(e)}
 
-    def print_summary(self, all_results: dict[str, Any]):
+    def print_summary(self, all_results: dict[str, Any]) -> dict[str, Any]:
         """Print comprehensive summary."""
         self.print_section("Health Summary", Symbols.SHIELD)
 
-        # Calculate overall health
-        health_scores = []
+        health_scores: list[float] = []
         for _component, result in all_results.items():
             if isinstance(result, dict) and "status" in result:
                 if result["status"] in ["healthy", "success"]:
@@ -513,7 +512,7 @@ class HealthChecker:
                 else:
                     health_scores.append(0)
             elif isinstance(result, dict) and "health_percentage" in result:
-                health_scores.append(result["health_percentage"])
+                health_scores.append(result["health_percentage"])  # type: ignore[arg-type]
 
         overall_health = sum(health_scores) / len(health_scores) if health_scores else 0
 
@@ -529,7 +528,7 @@ class HealthChecker:
             status_icon = Symbols.CROSS
 
         # Summary table
-        summary_rows = []
+        summary_rows: list[list[str]] = []
         for component, result in all_results.items():
             if isinstance(result, dict):
                 if "health_percentage" in result:
@@ -587,7 +586,7 @@ class HealthChecker:
         self.print_header()
 
         # Initialize results
-        all_results = {}
+        all_results: dict[str, Any] = {}
 
         # Run checks
         self.print_spinner("Initializing health check...", 0.5)

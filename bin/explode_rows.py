@@ -1,15 +1,16 @@
 import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import pytz
 import yaml
 
 
-def explode_rows():
+def explode_rows() -> None:
     config_path = Path("config.yaml")
     with config_path.open() as f:
-        config = yaml.safe_load(f)
+        config: dict[str, Any] = yaml.safe_load(f)
     db_path = config.get("learning", {}).get("sqlite_path", "data/planner_learning.db")
     pytz.timezone(config.get("timezone", "Europe/Stockholm"))
 
@@ -29,7 +30,7 @@ def explode_rows():
         )
         hourly_rows = cursor.fetchall()
 
-        new_rows = []
+        new_rows: list[tuple[str, str, float | None, float | None, float | None, float | None]] = []
 
         print(f"Found {len(hourly_rows)} hourly rows. Processing...")
 

@@ -5,13 +5,13 @@ import shutil
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 try:
     from ruamel.yaml import YAML
 except ImportError:
     # Fallback if ruamel.yaml is not available (should be in requirements.txt)
-    YAML = None
+    YAML = None  # type: ignore[misc,assignment]
 
 logger = logging.getLogger("darkstar.config_migration")
 
@@ -67,7 +67,7 @@ def _get_persistent_backup_dir(config_path: Path) -> Path:
 
 # Type alias for migration functions
 # Returns: (modified_config, changed_bool)
-MigrationStep = Callable[[Any], tuple[Any, bool]]
+MigrationStep = Callable[[dict[str, Any]], tuple[dict[str, Any], bool]]
 
 
 # =============================================================================
@@ -116,7 +116,7 @@ DEPRECATED_NESTED_KEYS = {
 }
 
 
-def remove_deprecated_keys(config: Any) -> tuple[Any, bool]:
+def remove_deprecated_keys(config: dict[str, Any]) -> tuple[dict[str, Any], bool]:
     """Remove all deprecated keys from config.
 
     REV F57: Centralized cleanup to prevent corrupted configs with legacy keys.
@@ -128,9 +128,6 @@ def remove_deprecated_keys(config: Any) -> tuple[Any, bool]:
         Tuple of (cleaned_config, changed_flag)
     """
     changed = False
-
-    if not isinstance(config, dict):
-        return config, False
 
     # Root-level deprecated keys
     for key in DEPRECATED_KEYS:
@@ -162,7 +159,7 @@ def remove_deprecated_keys(config: Any) -> tuple[Any, bool]:
     return config, changed
 
 
-def heal_orphaned_array_keys(config: Any) -> tuple[Any, bool]:
+def heal_orphaned_array_keys(config: dict[str, Any]) -> tuple[dict[str, Any], bool]:
     """Heal keys that ended up at wrong indentation levels after merge.
 
     REV F66b: Fixes malformed YAML where keys like `name:` appear between
@@ -180,26 +177,23 @@ def heal_orphaned_array_keys(config: Any) -> tuple[Any, bool]:
     """
     changed = False
 
-    if not isinstance(config, dict):
-        return config, False
-
     # Pattern 1: Fix solar_arrays[].name appearing at root level
     # If there's a 'name' key at root that looks like a solar array name, move it
     if "name" in config and "solar_arrays" in config:
-        name_val = config.get("name")
+        name_val: Any = config.get("name")
         if isinstance(name_val, str) and name_val in ["Main Array", "Secondary Array"]:
-            solar_arrays = config.get("solar_arrays", [])
-            if solar_arrays and isinstance(solar_arrays, list):
-                first_array = solar_arrays[0]
-                if isinstance(first_array, dict) and "name" not in first_array:
+            solar_arrays: list[Any] = config.get("solar_arrays", [])
+            if solar_arrays and len(solar_arrays) > 0:
+                first_array: dict[str, Any] = solar_arrays[0]
+                if "name" not in first_array:
                     first_array["name"] = name_val
                     del config["name"]
                     logger.info(f"Healed orphaned 'name' into solar_arrays[0]: {name_val}")
                     changed = True
 
     # Pattern 2: Fix water_heating flat keys that should be in water_heaters[]
-    water_heating = config.get("water_heating", {})
-    if isinstance(water_heating, dict):
+    water_heating: dict[str, Any] = config.get("water_heating", {})
+    if water_heating:
         water_heater_keys = [
             "power_kw",
             "min_kwh_per_day",
@@ -213,23 +207,22 @@ def heal_orphaned_array_keys(config: Any) -> tuple[Any, bool]:
         orphaned_keys = [k for k in water_heater_keys if k in water_heating]
 
         if orphaned_keys:
-            water_heaters = config.get("water_heaters", [])
-            if water_heaters and isinstance(water_heaters, list):
-                first_heater = water_heaters[0]
-                if isinstance(first_heater, dict):
-                    for key in orphaned_keys:
-                        val = water_heating.pop(key)
-                        if key not in first_heater:
-                            first_heater[key] = val
-                            logger.info(
-                                f"Healed orphaned key '{key}' from water_heating to water_heaters[0]"
-                            )
-                            changed = True
+            water_heaters: list[Any] = config.get("water_heaters", [])
+            if water_heaters and len(water_heaters) > 0:
+                first_heater: dict[str, Any] = water_heaters[0]
+                for key in orphaned_keys:
+                    val: Any = water_heating.pop(key)
+                    if key not in first_heater:
+                        first_heater[key] = val
+                        logger.info(
+                            f"Healed orphaned key '{key}' from water_heating to water_heaters[0]"
+                        )
+                        changed = True
 
     return config, changed
 
 
-def migrate_version_key(config: Any) -> tuple[Any, bool]:
+def migrate_version_key(config: dict[str, Any]) -> tuple[dict[str, Any], bool]:
     """Migration: Rename 'version' to 'config_version'.
 
     REV F57: Old configs used 'version' (string like "2.4.21-beta").
@@ -242,9 +235,6 @@ def migrate_version_key(config: Any) -> tuple[Any, bool]:
         Tuple of (migrated_config, changed_flag)
     """
     changed = False
-
-    if not isinstance(config, dict):
-        return config, False
 
     if "version" in config:
         old_version = config.pop("version")
@@ -263,7 +253,7 @@ def migrate_version_key(config: Any) -> tuple[Any, bool]:
     return config, changed
 
 
-def migrate_battery_config(config: Any) -> tuple[Any, bool]:
+def migrate_battery_config(config: dict[str, Any]) -> tuple[dict[str, Any], bool]:
     """
     Migration for REV F17: Unify Battery & Control Configuration.
     Moves hardware limits from executor.controller to root battery section.
@@ -273,11 +263,11 @@ def migrate_battery_config(config: Any) -> tuple[Any, bool]:
     # Target section
     if "battery" not in config:
         config["battery"] = {}
-    battery = config["battery"]
+    battery: dict[str, Any] = config.get("battery", {})
 
     # Source section
-    executor = config.get("executor", {})
-    controller = executor.get("controller", {})
+    executor: dict[str, Any] = config.get("executor", {})
+    controller: dict[str, Any] = executor.get("controller", {})
 
     if not controller:
         return config, False
@@ -309,7 +299,7 @@ def migrate_battery_config(config: Any) -> tuple[Any, bool]:
     return config, changed
 
 
-def cleanup_obsolete_keys(config: Any) -> tuple[Any, bool]:
+def cleanup_obsolete_keys(config: dict[str, Any]) -> tuple[dict[str, Any], bool]:
     """
     Migration for REV F19: Cleanup obsolete keys and move end_date.
     Matches the actual observed nesting in config.yaml.
@@ -322,30 +312,27 @@ def cleanup_obsolete_keys(config: Any) -> tuple[Any, bool]:
         logger.info("Removed root level obsolete key: schedule_future_only")
         changed = True
 
-    if (
-        "water_heating" in config
-        and isinstance(config["water_heating"], dict)
-        and "schedule_future_only" in config["water_heating"]
-    ):
-        config["water_heating"].pop("schedule_future_only")
+    wh_check: dict[str, Any] = config.get("water_heating", {})
+    if wh_check and "schedule_future_only" in wh_check:
+        wh_check.pop("schedule_future_only")
         logger.info("Removed water_heating level obsolete key: schedule_future_only")
         changed = True
 
     # 2. Re-anchor end_date if it is "leaking" past comments
-    end_date_val = None
-    source_parent = None
+    end_date_val: Any = None
+    source_parent: str | None = None
 
     if "end_date" in config:
         end_date_val = config.pop("end_date")
         source_parent = "root"
-    elif "water_heating" in config and isinstance(config["water_heating"], dict):
-        wh = config["water_heating"]
+    elif wh_check:
+        wh: dict[str, Any] = wh_check
         if "end_date" in wh:
             end_date_val = wh.pop("end_date")
             source_parent = "water_heating"
-        elif "vacation_mode" in wh and isinstance(wh["vacation_mode"], dict):
-            vm = wh["vacation_mode"]
-            if "end_date" in vm:
+        elif "vacation_mode" in wh:
+            vm: dict[str, Any] = wh.get("vacation_mode", {})
+            if vm and "end_date" in vm:
                 end_date_val = vm.pop("end_date")
                 source_parent = "vacation_mode"
 
@@ -362,7 +349,7 @@ def cleanup_obsolete_keys(config: Any) -> tuple[Any, bool]:
     return config, changed
 
 
-def migrate_soc_target_entity(config: Any) -> tuple[Any, bool]:
+def migrate_soc_target_entity(config: dict[str, Any]) -> tuple[dict[str, Any], bool]:
     """
     Migration for soc_target_entity: Move from root executor to executor.inverter.
     """
@@ -397,42 +384,59 @@ def migrate_soc_target_entity(config: Any) -> tuple[Any, bool]:
     return config, changed
 
 
-def migrate_solar_arrays(config: Any) -> tuple[Any, bool]:
+def migrate_solar_arrays(config: dict[str, Any]) -> tuple[dict[str, Any], bool]:
     """
     Migration for REV ARC14: Multi-Array PV Support.
     Converts legacy 'solar_array' object to 'solar_arrays' list.
     """
     changed = False
 
-    if "system" not in config or not isinstance(config["system"], dict):
+    if "system" not in config:
         return config, False
 
-    system = config["system"]
+    system: dict[str, Any] = config.get("system", {})
 
     if "solar_array" in system:
-        legacy_array = system.pop("solar_array")
-        if isinstance(legacy_array, dict):
+        legacy_array_raw: Any = system.pop("solar_array")
+        if isinstance(legacy_array_raw, dict):
+            legacy_array: dict[str, Any] = cast("dict[str, Any]", legacy_array_raw)
             # Ensure name is present for migrated array
             if "name" not in legacy_array:
                 legacy_array["name"] = "Main Array"
 
             # Check for duplicate name before appending
-            existing_arrays = system.get("solar_arrays", [])
-            existing_names = {arr.get("name") for arr in existing_arrays if isinstance(arr, dict)}
-            if legacy_array["name"] in existing_names:
+            existing_arrays_raw: Any = system.get("solar_arrays", [])
+            existing_arrays: list[dict[str, Any]] = (
+                cast("list[dict[str, Any]]", existing_arrays_raw)
+                if isinstance(existing_arrays_raw, list)
+                else []
+            )
+            existing_names: set[str] = {
+                str(arr.get("name")) for arr in existing_arrays if arr.get("name")
+            }
+            legacy_name_raw: Any = legacy_array.get("name", "Main Array")
+            legacy_name: str = str(legacy_name_raw)
+            if legacy_name in existing_names:
                 logger.warning(
                     "Skipping legacy solar_array migration: name '%s' already exists",
-                    legacy_array["name"],
+                    legacy_name,
                 )
             else:
                 # Append instead of overwrite to preserve user arrays
+                solar_arrays_list_raw: Any = system.get("solar_arrays", [])
+                solar_arrays_list: list[dict[str, Any]] = (
+                    cast("list[dict[str, Any]]", solar_arrays_list_raw)
+                    if isinstance(solar_arrays_list_raw, list)
+                    else []
+                )
                 if "solar_arrays" not in system:
                     system["solar_arrays"] = []
-                system["solar_arrays"].append(legacy_array)
+                    solar_arrays_list = cast("list[dict[str, Any]]", system["solar_arrays"])
+                solar_arrays_list.append(legacy_array)
                 logger.info(
                     "Migrated system.solar_array -> appended to system.solar_arrays "
                     "(total arrays: %d)",
-                    len(system["solar_arrays"]),
+                    len(solar_arrays_list),
                 )
                 changed = True
         else:
@@ -447,7 +451,7 @@ def migrate_solar_arrays(config: Any) -> tuple[Any, bool]:
     return config, changed
 
 
-def migrate_inverter_profile_keys(config: Any) -> tuple[Any, bool]:
+def migrate_inverter_profile_keys(config: dict[str, Any]) -> tuple[dict[str, Any], bool]:
     """
     Migration for REV IP4: Standardize Inverter Profile Keys.
     Removes `_entity` suffixes to match new profile schema.
@@ -490,7 +494,7 @@ def migrate_inverter_profile_keys(config: Any) -> tuple[Any, bool]:
     return config, changed
 
 
-def migrate_root_inverter_profile(config: Any) -> tuple[Any, bool]:
+def migrate_root_inverter_profile(config: dict[str, Any]) -> tuple[dict[str, Any], bool]:
     """
     Migration for REV F68: Move inverter_profile from root level to system.inverter_profile.
 
@@ -520,7 +524,7 @@ def migrate_root_inverter_profile(config: Any) -> tuple[Any, bool]:
     return config, changed
 
 
-def migrate_arc15_entity_config(config: Any) -> tuple[Any, bool]:
+def migrate_arc15_entity_config(config: dict[str, Any]) -> tuple[dict[str, Any], bool]:
     """
     Migration for REV ARC15: Entity-Centric Config Restructure.
 
@@ -558,8 +562,8 @@ def migrate_arc15_entity_config(config: Any) -> tuple[Any, bool]:
 
     input_sensors = config.get("input_sensors", {})
     water_heating = config.get("water_heating", {})
-    ev_charger = config.get("ev_charger", {})
-    system = config.get("system", {})
+    ev_charger: dict[str, Any] = config.get("ev_charger", {})
+    system: dict[str, Any] = config.get("system", {})
 
     # Initialize new arrays if they don't exist
     if "water_heaters" not in config:
@@ -567,12 +571,12 @@ def migrate_arc15_entity_config(config: Any) -> tuple[Any, bool]:
     if "ev_chargers" not in config:
         config["ev_chargers"] = []
 
-    water_heaters = config["water_heaters"]
-    ev_chargers = config["ev_chargers"]
+    water_heaters: list[dict[str, Any]] = config.get("water_heaters", [])
+    ev_chargers: list[dict[str, Any]] = config.get("ev_chargers", [])
 
     # Track existing IDs to avoid duplicates
-    existing_water_ids = {wh.get("id") for wh in water_heaters if wh.get("id")}
-    existing_ev_ids = {ev.get("id") for ev in ev_chargers if ev.get("id")}
+    existing_water_ids: set[Any] = {wh.get("id") for wh in water_heaters if wh.get("id")}
+    existing_ev_ids: set[Any] = {ev.get("id") for ev in ev_chargers if ev.get("id")}
 
     for load in deferrable_loads:
         load_id = load.get("id", "")
@@ -688,7 +692,7 @@ def migrate_arc15_entity_config(config: Any) -> tuple[Any, bool]:
     return config, changed
 
 
-def cleanup_water_heating_duplicates(config: Any) -> tuple[Any, bool]:
+def cleanup_water_heating_duplicates(config: dict[str, Any]) -> tuple[dict[str, Any], bool]:
     """
     Cleanup: Remove duplicate keys from water_heating that now exist in water_heaters[].
 
@@ -725,7 +729,7 @@ def cleanup_water_heating_duplicates(config: Any) -> tuple[Any, bool]:
     return config, changed
 
 
-def fix_s_index_horizon_days_type(config: Any) -> tuple[Any, bool]:
+def fix_s_index_horizon_days_type(config: dict[str, Any]) -> tuple[dict[str, Any], bool]:
     """Fix s_index_horizon_days type from string to integer.
 
     REV F66b: Fixes configs where s_index_horizon_days was saved as string '4' instead of integer 4.
@@ -738,15 +742,12 @@ def fix_s_index_horizon_days_type(config: Any) -> tuple[Any, bool]:
     """
     changed = False
 
-    if not isinstance(config, dict):
-        return config, False
-
-    s_index = config.get("s_index", {})
-    if not isinstance(s_index, dict):
+    s_index: dict[str, Any] = config.get("s_index", {})
+    if not s_index:
         s_index = {}
         config["s_index"] = s_index
 
-    horizon = s_index.get("s_index_horizon_days")
+    horizon: Any = s_index.get("s_index_horizon_days")
     if horizon is not None and not isinstance(horizon, int):
         try:
             s_index["s_index_horizon_days"] = int(horizon)
@@ -758,7 +759,7 @@ def fix_s_index_horizon_days_type(config: Any) -> tuple[Any, bool]:
     return config, changed
 
 
-def _validate_config_structure(config: Any, strict: bool = True) -> bool:
+def _validate_config_structure(config: dict[str, Any], strict: bool = True) -> bool:
     """
     Validates that the config has minimum expected structure.
     Prevents merging empty/corrupted configs with defaults.
@@ -770,11 +771,6 @@ def _validate_config_structure(config: Any, strict: bool = True) -> bool:
 
     Returns True if config passes validation, False otherwise.
     """
-    # Must be a dictionary
-    if not isinstance(config, dict):
-        logger.error("Config is not a dictionary")
-        return False
-
     # Lenient mode: just ensure config is a non-empty dict with some keys
     if not strict:
         if len(config) == 0:
@@ -799,8 +795,11 @@ def _validate_config_structure(config: Any, strict: bool = True) -> bool:
         return False
 
     # Additional check: verify location section exists (strong indicator of user config)
-    location = system.get("location")
-    if not isinstance(location, dict):
+    location_raw: Any = system.get("location")  # type: ignore[reportUnknownMemberType]
+    location: dict[str, Any] = (
+        cast("dict[str, Any]", location_raw) if isinstance(location_raw, dict) else {}
+    )
+    if not location:
         logger.error("Config missing 'system.location' section")
         return False
 
@@ -812,7 +811,7 @@ def _validate_config_structure(config: Any, strict: bool = True) -> bool:
     return True
 
 
-def validate_config_for_write(config: Any, strict: bool = True) -> bool:
+def validate_config_for_write(config: dict[str, Any], strict: bool = True) -> bool:
     """Enhanced validation before writing config to disk.
 
     REV F57: Ensures no deprecated keys survive and structure is intact.
@@ -825,10 +824,6 @@ def validate_config_for_write(config: Any, strict: bool = True) -> bool:
     Returns:
         True if config is safe to write, False otherwise.
     """
-    if not isinstance(config, dict):
-        logger.error("❌ Validation failed: Config is not a dictionary")
-        return False
-
     # Lenient mode: check for deprecated keys at all levels, allow minimal configs
     if not strict:
         # Check root-level deprecated keys
@@ -884,7 +879,7 @@ def validate_config_for_write(config: Any, strict: bool = True) -> bool:
     return True
 
 
-def template_aware_merge(default_cfg: dict, user_cfg: dict) -> None:
+def template_aware_merge(default_cfg: dict[str, Any], user_cfg: dict[str, Any]) -> None:
     """
     Uses default_cfg as the BASE (template).
     Overwrites values from user_cfg.
@@ -900,22 +895,15 @@ def template_aware_merge(default_cfg: dict, user_cfg: dict) -> None:
         "ev_chargers": "id",
     }
 
-    def get_unique_key(item: Any, key_name: str) -> str | None:
-        if isinstance(item, dict):
-            return item.get(key_name)
-        return None
-
-    def merge_arrays(target_arr: list, source_arr: list, unique_key: str) -> None:
+    def merge_arrays(
+        target_arr: list[dict[str, Any]], source_arr: list[dict[str, Any]], unique_key: str
+    ) -> None:
         """Merge source array into target array by matching unique key.
 
         Strategy: Use user entries as base, merge in default fields for matched entries.
         - If user has entries: use user entries, but fill missing fields from defaults
         - If user has no entries: keep default entries
         """
-        if not isinstance(target_arr, list) or not isinstance(source_arr, list):
-            target_arr[:] = source_arr
-            return
-
         if not source_arr:
             # User has no entries, keep defaults
             return
@@ -926,26 +914,26 @@ def template_aware_merge(default_cfg: dict, user_cfg: dict) -> None:
             return
 
         # Build index of target items by unique_key (for default field lookup)
-        target_by_key: dict[str, dict] = {}
-        for item in target_arr:
-            if isinstance(item, dict):
-                key_val = item.get(unique_key)
-                if key_val is not None:
-                    target_by_key[str(key_val)] = item
+        target_by_key: dict[str, dict[str, Any]] = {}
+        for target_item in target_arr:
+            key_val_raw: Any = target_item.get(unique_key)
+            key_val: str | None = str(key_val_raw) if key_val_raw is not None else None
+            if key_val is not None:
+                target_by_key[key_val] = target_item
 
         # Merge: source entries override, but preserve default fields from target
-        result: list = []
+        result: list[dict[str, Any]] = []
         for source_item in source_arr:
-            if not isinstance(source_item, dict):
+            if not source_item:
                 result.append(source_item)
                 continue
 
-            key_val = source_item.get(unique_key)
-            key_str = str(key_val) if key_val is not None else None
+            key_val_raw: Any = source_item.get(unique_key)
+            key_str: str | None = str(key_val_raw) if key_val_raw is not None else None
 
             if key_str and key_str in target_by_key:
                 # Merge: start with target's defaults, overlay source values
-                merged = dict(target_by_key[key_str])  # copy defaults
+                merged: dict[str, Any] = dict(target_by_key[key_str])  # copy defaults
                 merged.update(source_item)  # source overrides
                 result.append(merged)
             else:
@@ -957,15 +945,30 @@ def template_aware_merge(default_cfg: dict, user_cfg: dict) -> None:
 
         target_arr[:] = result
 
-    def recursive_merge(target, source):
+    def recursive_merge(target: dict[str, Any], source: dict[str, Any]) -> None:
         for key, value in source.items():
             if key in target:
-                if isinstance(target[key], dict) and isinstance(value, dict):
-                    recursive_merge(target[key], value)
-                elif isinstance(target[key], list) and isinstance(value, list):
+                target_val: Any = target[key]
+                if isinstance(target_val, dict) and isinstance(value, dict):
+                    recursive_merge(
+                        cast("dict[str, Any]", target_val), cast("dict[str, Any]", value)
+                    )
+                elif isinstance(target_val, list) and isinstance(value, list):
                     unique_key = ARRAY_UNIQUE_KEYS.get(key)
                     if unique_key:
-                        merge_arrays(target[key], value, unique_key)
+                        # Type safety: ensure lists contain dicts
+                        target_list: list[dict[str, Any]] = [
+                            cast("dict[str, Any]", item)
+                            for item in cast("list[Any]", target_val)
+                            if isinstance(item, dict)
+                        ]
+                        source_list: list[dict[str, Any]] = [
+                            cast("dict[str, Any]", item)
+                            for item in cast("list[Any]", value)
+                            if isinstance(item, dict)
+                        ]
+                        merge_arrays(target_list, source_list, unique_key)
+                        target[key] = target_list
                     else:
                         target[key] = value
                 else:
@@ -976,12 +979,9 @@ def template_aware_merge(default_cfg: dict, user_cfg: dict) -> None:
     recursive_merge(default_cfg, user_cfg)
 
 
-def _extract_critical_values(config: Any) -> dict:
+def _extract_critical_values(config: dict[str, Any]) -> dict[str, Any]:
     """Extract critical user values that should never be lost."""
-    if not isinstance(config, dict):
-        return {}
-
-    system = config.get("system", {})
+    system: dict[str, Any] = config.get("system", {})
     inverter_profile = system.get("inverter_profile")
 
     # REV F66: Also check root level for misplaced inverter_profile
@@ -1005,7 +1005,7 @@ def _extract_critical_values(config: Any) -> dict:
     }
 
 
-def _validate_critical_values_preserved(before: dict, after: dict) -> bool:
+def _validate_critical_values_preserved(before: dict[str, Any], after: dict[str, Any]) -> bool:
     """
     Verify that critical user values were preserved during merge.
     Returns True if all values are preserved, False otherwise.
@@ -1020,7 +1020,7 @@ def _validate_critical_values_preserved(before: dict, after: dict) -> bool:
         "min_soc",
     ]
 
-    issues = []
+    issues: list[str] = []
     for key in critical_keys:
         before_val = before.get(key)
         after_val = after.get(key)
@@ -1043,7 +1043,7 @@ def _validate_critical_values_preserved(before: dict, after: dict) -> bool:
     return True
 
 
-def migrate_inverter_custom_entities(config: Any) -> tuple[Any, bool]:
+def migrate_inverter_custom_entities(config: dict[str, Any]) -> tuple[dict[str, Any], bool]:
     """
     Migration for REV F69: Move profile-specific entity keys to custom_entities.
 
@@ -1061,16 +1061,8 @@ def migrate_inverter_custom_entities(config: Any) -> tuple[Any, bool]:
     """
     changed = False
 
-    if not isinstance(config, dict):
-        return config, False
-
-    executor = config.get("executor", {})
-    if not isinstance(executor, dict):
-        return config, False
-
-    inverter = executor.get("inverter", {})
-    if not isinstance(inverter, dict):
-        return config, False
+    executor: dict[str, Any] = config.get("executor", {})
+    inverter: dict[str, Any] = executor.get("inverter", {})
 
     # Profile-specific keys that should be in custom_entities
     profile_keys = [
@@ -1084,7 +1076,7 @@ def migrate_inverter_custom_entities(config: Any) -> tuple[Any, bool]:
     if "custom_entities" not in inverter:
         inverter["custom_entities"] = {}
 
-    custom_entities = inverter["custom_entities"]
+    custom_entities: dict[str, Any] = inverter.get("custom_entities", {})
 
     for key in profile_keys:
         if key in inverter:
@@ -1105,7 +1097,7 @@ def migrate_inverter_custom_entities(config: Any) -> tuple[Any, bool]:
     return config, changed
 
 
-def migrate_ev_charger_legacy_fields(config: Any) -> tuple[Any, bool]:
+def migrate_ev_charger_legacy_fields(config: dict[str, Any]) -> tuple[dict[str, Any], bool]:
     """
     Migration for REV K25 Phase 1: Remove legacy min_soc/target_soc fields from EV chargers.
 
@@ -1120,22 +1112,18 @@ def migrate_ev_charger_legacy_fields(config: Any) -> tuple[Any, bool]:
     """
     changed = False
 
-    if not isinstance(config, dict):
-        return config, False
-
-    ev_chargers = config.get("ev_chargers", [])
-    if not isinstance(ev_chargers, list):
-        return config, False
+    ev_chargers: list[Any] = config.get("ev_chargers", [])
 
     legacy_fields = ["min_soc_percent", "target_soc_percent"]
 
-    for i, ev in enumerate(ev_chargers):
-        if not isinstance(ev, dict):
+    for i, ev_item in enumerate(ev_chargers):
+        if not isinstance(ev_item, dict):
             continue
+        ev_dict: dict[str, Any] = cast("dict[str, Any]", ev_item)
 
         for field in legacy_fields:
-            if field in ev:
-                del ev[field]
+            if field in ev_dict:
+                del ev_dict[field]
                 logger.info(f"✂️  REV K25: Removed legacy field '{field}' from ev_chargers[{i}]")
                 changed = True
 
@@ -1176,11 +1164,12 @@ async def migrate_config(
         yaml.width = 4096
 
         with path.open("r", encoding="utf-8") as f:
-            user_config = yaml.load(f)
+            user_config_raw = yaml.load(f)  # type: ignore[reportUnknownMemberType]
 
-        if user_config is None or not isinstance(user_config, dict):
+        if user_config_raw is None or not isinstance(user_config_raw, dict):
             logger.error(f"❌ Config {config_path} is invalid or empty.")
             return
+        user_config: dict[str, Any] = cast("dict[str, Any]", user_config_raw)
 
         # SAFETY CHECK: Verify config has minimum expected structure
         # This prevents merging an empty/corrupted config with defaults
@@ -1235,7 +1224,13 @@ async def migrate_config(
 
     try:
         with def_path_obj.open("r", encoding="utf-8") as f:
-            default_config = yaml.load(f)
+            default_config_raw = yaml.load(f)  # type: ignore[reportUnknownMemberType]
+        if default_config_raw is None or not isinstance(default_config_raw, dict):
+            logger.error(f"❌ Default config {default_path} is invalid or empty.")
+            if pre_merge_changes:
+                _write_config(path, user_config, yaml, strict_validation=strict_validation)
+            return
+        default_config: dict[str, Any] = cast("dict[str, Any]", default_config_raw)
     except Exception as e:
         logger.error(f"❌ Failed to read default config: {e}")
         if pre_merge_changes:
@@ -1256,7 +1251,7 @@ async def migrate_config(
 
         # We clone default_config to 'final_config' to be safe?
         # No, yaml.load() already gave us a fresh object.
-        final_config = default_config
+        final_config: dict[str, Any] = default_config
 
         # Sync Version explicitly
         if "version" in user_config:
@@ -1438,14 +1433,15 @@ def _verify_written_config(path: Path, yaml_instance: Any) -> bool:
         if loaded is None or not isinstance(loaded, dict):
             logger.error("❌ Post-write validation failed: config is empty or not a dict")
             return False
+        loaded_dict: dict[str, Any] = cast("dict[str, Any]", loaded)
 
         # Check for basic expected structure
-        if "system" not in loaded:
+        if "system" not in loaded_dict:
             logger.error("❌ Post-write validation failed: missing 'system' section")
             return False
 
         # Check inverter_profile is in correct location
-        system = loaded.get("system", {})
+        system: dict[str, Any] = loaded_dict.get("system", {})
         if "inverter_profile" not in system:
             # Check if it's misplaced at root level
             if "inverter_profile" in loaded:

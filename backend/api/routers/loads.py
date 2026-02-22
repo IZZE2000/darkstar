@@ -1,5 +1,5 @@
 import logging
-from typing import Any
+from typing import Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -14,11 +14,14 @@ logger = logging.getLogger("darkstar.api.loads")
 _disaggregator: LoadDisaggregator | None = None
 
 
-def get_disaggregator(config: dict = Depends(get_config)) -> LoadDisaggregator:
+def get_disaggregator(config: dict[str, Any] = Depends(get_config)) -> LoadDisaggregator:
     global _disaggregator
     if _disaggregator is None:
         _disaggregator = LoadDisaggregator(config)
-    elif len(_disaggregator.loads_registry) == 0 and len(config.get("deferrable_loads", [])) > 0:
+    elif (
+        len(_disaggregator.loads_registry) == 0
+        and len(cast("list[Any]", config.get("deferrable_loads", []))) > 0
+    ):
         # Re-initialize if the registry is empty but config now has loads (e.g. after first setup)
         _disaggregator = LoadDisaggregator(config)
     return _disaggregator
@@ -39,7 +42,7 @@ async def get_loads_debug(
         # We don't have total_load_kw here easily without fetching it from HA.
         # However, the registry and metrics are already populated if the system is running.
 
-        loads_breakdown = []
+        loads_breakdown: list[dict[str, Any]] = []
         for load in disaggregator.list_active_loads():
             loads_breakdown.append(
                 {

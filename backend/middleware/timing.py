@@ -10,7 +10,7 @@ Usage:
 
 import logging
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -25,7 +25,9 @@ SLOW_REQUEST_THRESHOLD_MS = 500
 class TimingMiddleware(BaseHTTPMiddleware):
     """Middleware that adds timing headers and logs slow requests."""
 
-    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+    async def dispatch(
+        self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
         start_time = time.perf_counter()
 
         response: Response = await call_next(request)

@@ -9,6 +9,8 @@ from pathlib import Path
 # Add project root to path
 sys.path.append(str(Path.cwd()))
 
+from typing import Any, cast
+
 import pytz
 import yaml
 
@@ -19,39 +21,41 @@ except ImportError:
     exit(1)
 
 
-def load_config():
+def load_config() -> dict[str, Any]:
     # Assuming config.yaml is in the current working directory or script directory
     # The instruction provided `Path(config_path)` but `config_path` was not defined.
     # Using Path("config.yaml") directly as it was `open("config.yaml")` previously.
     with Path("config.yaml").open(encoding="utf-8") as f:
-        return yaml.safe_load(f)
+        raw_data: Any = yaml.safe_load(f)
+    return cast("dict[str, Any]", raw_data) if isinstance(raw_data, dict) else {}
 
 
 def load_secrets():
     # Assuming secrets.yaml is in the current working directory or script directory
     with Path("secrets.yaml").open(encoding="utf-8") as f:
-        return yaml.safe_load(f)
+        raw_data: Any = yaml.safe_load(f)
+    return cast("dict[str, Any]", raw_data) if isinstance(raw_data, dict) else {}
 
 
-async def fetch_and_backfill(start_str, end_str):
+async def fetch_and_backfill(start_str: str, end_str: str) -> None:
     config = load_config()
     secrets = load_secrets()
-    db_path = config.get("learning", {}).get("sqlite_path", "data/planner_learning.db")
-    tz_name = config.get("timezone", "Europe/Stockholm")
+    db_path: str = config.get("learning", {}).get("sqlite_path", "data/planner_learning.db")
+    tz_name: str = config.get("timezone", "Europe/Stockholm")
     tz = pytz.timezone(tz_name)
 
-    ha = secrets.get("home_assistant", {})
-    base_url = ha.get("url", "").rstrip("/")
-    token = ha.get("token")
+    ha: dict[str, Any] = secrets.get("home_assistant", {}) or {}
+    base_url: str = ha.get("url", "").rstrip("/")
+    token: str | None = ha.get("token")
 
-    input_sensors = config.get("input_sensors", {}) or {}
+    input_sensors: dict[str, Any] = config.get("input_sensors", {}) or {}
 
-    load_id = input_sensors.get("total_load_consumption")
-    pv_id = input_sensors.get("total_pv_production")
-    import_id = input_sensors.get("total_grid_import")
-    export_id = input_sensors.get("total_grid_export")
-    batt_charge_id = input_sensors.get("total_battery_charge")
-    batt_discharge_id = input_sensors.get("total_battery_discharge")
+    load_id: str | None = input_sensors.get("total_load_consumption")
+    pv_id: str | None = input_sensors.get("total_pv_production")
+    import_id: str | None = input_sensors.get("total_grid_import")
+    export_id: str | None = input_sensors.get("total_grid_export")
+    batt_charge_id: str | None = input_sensors.get("total_battery_charge")
+    batt_discharge_id: str | None = input_sensors.get("total_battery_discharge")
 
     if base_url.startswith("https://"):
         ws_url = base_url.replace("https://", "wss://") + "/api/websocket"
@@ -107,7 +111,7 @@ async def fetch_and_backfill(start_str, end_str):
             resp = json.loads(await ws.recv())
             result = resp.get("result", {})
 
-            updates_map = {}
+            updates_map: dict[str, list[float]] = {}
 
             # Index mapping for updates_map values
             # 0: load_kwh, 1: pv_kwh, 2: import_kwh, 3: export_kwh,
@@ -150,7 +154,9 @@ async def fetch_and_backfill(start_str, end_str):
                             if idx is not None:
                                 updates_map[t_str][idx] = val_15m
 
-            db_rows = []
+            db_rows: list[tuple[float, float, float, float, float, float, str]] = []
+            t_str: str
+            values: list[float]
             for t_str, values in updates_map.items():
                 db_rows.append(
                     (

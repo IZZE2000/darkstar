@@ -7,10 +7,11 @@ Extracted from planner_legacy.py during Rev K13 modularization.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 import pandas as pd
 import pytz
+from pandas import Timestamp
 
 
 def apply_manual_plan(
@@ -50,16 +51,22 @@ def apply_manual_plan(
     if "manual_action" not in working_df.columns:
         working_df["manual_action"] = pd.Series([None] * len(working_df), index=working_df.index)
 
+    manual_items: list[dict[str, Any]]
     if isinstance(manual_plan, dict):
-        manual_items = (
-            manual_plan.get("plan") or manual_plan.get("schedule") or manual_plan.get("items") or []
+        raw_items: list[dict[str, Any]] = cast(
+            "list[dict[str, Any]]",
+            manual_plan.get("plan")  # type: ignore
+            or manual_plan.get("schedule")  # type: ignore
+            or manual_plan.get("items")  # type: ignore
+            or [],
         )
+        manual_items = raw_items
     elif isinstance(manual_plan, list):
-        manual_items = manual_plan
+        manual_items = cast("list[dict[str, Any]]", manual_plan)
     else:
         manual_items = []
 
-    def _infer_action(entry: dict) -> str | None:
+    def _infer_action(entry: dict[str, Any]) -> str | None:
         action = entry.get("content") or entry.get("action") or entry.get("title")
         if action:
             return str(action).strip()
@@ -87,33 +94,36 @@ def apply_manual_plan(
             return "Hold"
         return None
 
-    for entry in manual_items:
-        _id = str(entry.get("id") or "")
-        _type = (entry.get("type") or "").lower()
-        _class = (entry.get("className") or "").lower()
+    for raw_entry in manual_items:
+        entry: dict[str, Any] = raw_entry
+        _id: str = str(entry.get("id") or "")
+        _type_raw: Any = entry.get("type")
+        _type: str = str(_type_raw or "").lower()
+        _class_raw: Any = entry.get("className")
+        _class: str = str(_class_raw or "").lower()
         if _type == "background" or _id.startswith("lane-spacer-") or "lane-spacer" in _class:
             continue
 
-        action = _infer_action(entry)
+        action: str | None = _infer_action(entry)
         if not action:
             continue
-        normalized = action.strip().lower()
+        normalized: str = action.strip().lower()
 
-        start_raw = entry.get("start") or entry.get("start_time")
-        end_raw = entry.get("end") or entry.get("end_time")
+        start_raw: Any = entry.get("start") or entry.get("start_time")
+        end_raw: Any = entry.get("end") or entry.get("end_time")
         if not start_raw or not end_raw:
             continue
 
-        start_time = pd.to_datetime(start_raw)
-        end_time = pd.to_datetime(end_raw)
-        if start_time.tzinfo is None:
-            start_time = tz.localize(start_time)
+        start_time: Timestamp = pd.to_datetime(start_raw)  # type: ignore
+        end_time: Timestamp = pd.to_datetime(end_raw)  # type: ignore
+        if start_time.tzinfo is None:  # type: ignore
+            start_time = tz.localize(start_time)  # type: ignore
         else:
-            start_time = start_time.tz_convert(tz)
-        end_time = tz.localize(end_time) if end_time.tzinfo is None else end_time.tz_convert(tz)
+            start_time = start_time.tz_convert(tz)  # type: ignore
+        end_time = tz.localize(end_time) if end_time.tzinfo is None else end_time.tz_convert(tz)  # type: ignore
 
-        mask = (working_df.index >= start_time) & (working_df.index < end_time)
-        if not mask.any():
+        mask: Any = (working_df.index >= start_time) & (working_df.index < end_time)  # type: ignore
+        if not mask.any():  # type: ignore
             continue
 
         if normalized == "charge":

@@ -43,7 +43,9 @@ class LoadDisaggregator:
             # Fall back to legacy deferrable_loads format
             self._initialize_from_deferrable_loads(input_sensors)
 
-    def _initialize_from_entity_arrays(self, water_heaters: list[dict], ev_chargers: list[dict]):
+    def _initialize_from_entity_arrays(
+        self, water_heaters: list[dict[str, Any]], ev_chargers: list[dict[str, Any]]
+    ):
         """Initialize loads from new entity-centric arrays (ARC15)."""
         # Ensure input_sensors dict exists in config
         if "input_sensors" not in self.config:
@@ -130,7 +132,7 @@ class LoadDisaggregator:
             # REV F63: soc_sensor and plug_sensor are read directly from ev_chargers[]
             # in ha_socket.py and inputs.py - no need to add to input_sensors
 
-    def _initialize_from_deferrable_loads(self, input_sensors: dict):
+    def _initialize_from_deferrable_loads(self, input_sensors: dict[str, Any]) -> None:
         """Initialize loads from legacy deferrable_loads format."""
         load_configs = self.config.get("deferrable_loads", [])
 
@@ -159,7 +161,7 @@ class LoadDisaggregator:
                 l_type = LoadType.VARIABLE
 
             # Use entity ID from input_sensors if sensor_key is a key, else assume it's an entity ID
-            entity_id = input_sensors.get(sensor_key)
+            entity_id: str | None = input_sensors.get(sensor_key)
             if not entity_id:
                 if sensor_key and "." in sensor_key:
                     entity_id = sensor_key
@@ -172,7 +174,7 @@ class LoadDisaggregator:
             load = DeferrableLoad(
                 load_id=load_id,
                 name=name,
-                sensor_key=entity_id,
+                sensor_key=str(entity_id),
                 load_type=l_type,
                 nominal_power_kw=nominal_power,
             )

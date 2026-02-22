@@ -3,8 +3,11 @@ import logging
 from typing import Any
 
 import socketio
+from socketio import AsyncServer
 
 logger = logging.getLogger("darkstar.websockets")
+
+# The connect/disconnect handlers are registered with Socket.IO and called implicitly
 
 
 class WebSocketManager:
@@ -14,7 +17,7 @@ class WebSocketManager:
     """
 
     _instance: "WebSocketManager | None" = None
-    sio: socketio.AsyncServer
+    sio: AsyncServer
     loop: asyncio.AbstractEventLoop | None = None
 
     def __new__(cls):
@@ -37,8 +40,8 @@ class WebSocketManager:
     def _register_debug_handlers(self):
         """Register Socket.IO event handlers for debugging."""
 
-        @self.sio.event
-        async def connect(sid, environ):
+        @self.sio.event  # type: ignore[misc]
+        async def connect(sid: str, environ: dict[str, Any]) -> None:  # type: ignore[reportUnusedFunction]
             """Log client connections with request details."""
             path = environ.get("PATH_INFO", "unknown")
             query = environ.get("QUERY_STRING", "")
@@ -50,8 +53,8 @@ class WebSocketManager:
                 f"   Headers: X-Ingress-Path={headers.get('HTTP_X_INGRESS_PATH', 'not present')}"
             )
 
-        @self.sio.event
-        async def disconnect(sid):
+        @self.sio.event  # type: ignore[misc]
+        async def disconnect(sid: str) -> None:  # type: ignore[reportUnusedFunction]
             """Log client disconnections."""
             logger.info(f"🔌 Socket.IO client DISCONNECTED: sid={sid}")
 
@@ -60,12 +63,12 @@ class WebSocketManager:
         self.loop = loop
         logger.info("WebSocketManager: Event loop captured.")
 
-    async def emit(self, event: str, data: Any, to: str | None = None):
+    async def emit(self, event: str, data: Any, to: str | None = None) -> None:
         """
         Emit an event from an async context (e.g. FastAPI route).
         """
         try:
-            await self.sio.emit(event, data, to=to)  # pyright: ignore [reportUnknownMemberType]
+            await self.sio.emit(event, data, to=to)  # type: ignore[reportUnknownMemberType]
         except Exception as e:
             logger.error(f"WebSocketManager: Failed to emit '{event}': {e}", exc_info=True)
 
@@ -84,8 +87,8 @@ class WebSocketManager:
 
         try:
             asyncio.run_coroutine_threadsafe(
-                self.sio.emit(event, data, to=to),
-                self.loop,  # pyright: ignore [reportUnknownMemberType, reportUnknownArgumentType]
+                self.sio.emit(event, data, to=to),  # type: ignore[reportUnknownMemberType]
+                self.loop,  # type: ignore[reportUnknownArgumentType]
             )
         except Exception as e:
             logger.error(f"WebSocketManager: Failed to schedule emit_sync('{event}'): {e}")

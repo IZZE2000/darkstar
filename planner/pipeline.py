@@ -180,10 +180,10 @@ class PlannerPipeline:
         """Apply configuration overrides recursively."""
         new_config = copy.deepcopy(config)
 
-        def update_recursive(d, u):
+        def update_recursive(d: dict[str, Any], u: dict[str, Any]) -> dict[str, Any]:
             for k, v in u.items():
                 if isinstance(v, dict):
-                    d[k] = update_recursive(d.get(k, {}), v)
+                    d[k] = update_recursive(d.get(k, {}), v)  # type: ignore[arg-type]
                 else:
                     d[k] = v
             return d
@@ -241,7 +241,7 @@ class PlannerPipeline:
             learning_overlays = await load_learning_overlays(active_config.get("learning", {}))
 
         # Rev WH2: Load previous schedule to check for active water heating (Mid-block locking)
-        previous_schedule = []
+        previous_schedule: list[dict[str, Any]] = []
         try:
             import json
 
@@ -275,30 +275,32 @@ class PlannerPipeline:
             now_slot = pd.Timestamp.now(tz=tz).floor("15min")
 
         # Rev WH2: Determine forced water slots from previous schedule
-        force_water_timestamps = set()
+        force_water_timestamps: set[pd.Timestamp] = set()
         if previous_schedule:
             try:
                 # Find current slot in previous schedule
                 now_iso = now_slot.isoformat()
                 current_idx = -1
+                i: int = 0
+                s: dict[str, Any]
                 for i, s in enumerate(previous_schedule):
-                    if s["start_time"].startswith(now_iso[:16]):  # Match up to minute
+                    if s["start_time"].startswith(now_iso[:16]):  # type: ignore[union-attr]
                         current_idx = i
                         break
 
                 # If we are currently heating (water_heating_kw > 0), force the rest of the block
                 if current_idx >= 0:
-                    curr = previous_schedule[current_idx]
+                    curr: dict[str, Any] = previous_schedule[current_idx]
                     if float(curr.get("water_heating_kw", 0.0)) > 0:
                         logger.info(
                             "Rev WH2: Currently inside a water heating block - locking remaining slots."
                         )
                         # Look ahead until heating stops
-                        for i in range(current_idx, len(previous_schedule)):
+                        for i in range(current_idx, len(previous_schedule)):  # type: ignore[arg-type]
                             s = previous_schedule[i]
                             if float(s.get("water_heating_kw", 0.0)) > 0:
                                 # Parse ISO timestamp to match future_df index
-                                ts = pd.Timestamp(s["start_time"]).astimezone(tz)
+                                ts = pd.Timestamp(s["start_time"]).astimezone(tz)  # type: ignore[arg-type,index]
                                 force_water_timestamps.add(ts)
                             else:
                                 break  # End of block
@@ -306,16 +308,18 @@ class PlannerPipeline:
                 logger.warning("Rev WH2: Failed to determine forced water slots: %s", e)
 
         # 3. Strategy (S-Index & Safety Margins)
-        s_index_debug = {}
+        s_index_debug: dict[str, Any] = {}
         effective_load_margin = 1.0
         target_soc_kwh = 0.0
+        target_soc_pct = 0.0
+        s_index_cfg: dict[str, Any] = {}
 
         if mode == "full":
             # Calculate S-Index / Load Inflation
             # Note: Legacy uses static/base factor for load inflation (D1 safety)
             # and dynamic risk factor for target SoC (D2 strategy)
 
-            s_index_cfg = active_config.get("s_index", {})
+            s_index_cfg = active_config.get("s_index", {}) or {}
             base_factor = float(s_index_cfg.get("base_factor", 1.05))
 
             # Apply learned base factor
@@ -326,6 +330,7 @@ class PlannerPipeline:
                 s_index_cfg["base_factor"] = base_factor
 
             # Mode Check: Probabilistic vs Dynamic
+            s_debug: dict[str, Any] = {}
             if s_index_cfg.get("mode") == "probabilistic":
                 factor, s_debug = calculate_probabilistic_s_index(
                     df,
@@ -358,6 +363,7 @@ class PlannerPipeline:
 
             # Rev K23 Phase 3: Physical Deficit Logic
             # Replaces legacy Risk Factor + Dynamic Target SoC logic
+            soc_debug: dict[str, Any] = {}
             target_soc_kwh, soc_debug = calculate_safety_floor(
                 df,
                 active_config.get("battery", {}),
@@ -371,6 +377,7 @@ class PlannerPipeline:
             # Derive percentage for UI/Legacy compatibility
             battery_cap = float(active_config.get("battery", {}).get("capacity_kwh", 13.5) or 13.5)
             target_soc_pct = (target_soc_kwh / battery_cap) * 100.0 if battery_cap > 0 else 0.0
+            raw_factor: float | None = None
 
             logger.info(
                 "S-Index: Mode=physical_deficit, Deficit=%.3f, Floor=%.2f kWh (Start: %.2f%%), Risk=%d",
@@ -381,7 +388,7 @@ class PlannerPipeline:
             )
 
             # Extract raw factor from s_debug (handle both naming conventions)
-            raw_factor = s_index_debug.get("raw_factor", s_index_debug.get("factor_unclamped"))
+            raw_factor = s_index_debug.get("raw_factor", s_index_debug.get("factor_unclamped"))  # type: ignore[assignment]
 
             s_index_debug = {
                 "mode": "physical_deficit",
@@ -432,7 +439,7 @@ class PlannerPipeline:
             )
 
         # Rev WH2: Map forced timestamps to Kepler indices
-        force_water_slots_indices = []
+        force_water_slots_indices: list[int] = []
         if force_water_timestamps:
             for i, (ts, _) in enumerate(future_df.iterrows()):
                 if ts in force_water_timestamps:
@@ -520,10 +527,11 @@ class PlannerPipeline:
                     ev_plugged,
                 )
 
-        # Rev K19: Vacation Mode Anti-Legionella
+            # Rev K19: Vacation Mode Anti-Legionella
         vacation_cfg = water_cfg.get("vacation_mode", {})
         vacation_enabled = vacation_cfg.get("enabled", False)
         schedule_anti_legionella = False
+        sqlite_path: str = ""
 
         # HA entity can override config when ON
         ha_vacation = initial_state.get("vacation_mode", False)
@@ -678,7 +686,7 @@ class PlannerPipeline:
         if save_to_file:
             # Prepare window responsibilities (placeholder, Kepler doesn't return windows yet)
             # We can infer them or leave empty.
-            window_responsibilities = []
+            window_responsibilities: list[dict[str, Any]] = []
 
             # Planner State for debug
             planner_state_debug = {
@@ -693,9 +701,7 @@ class PlannerPipeline:
             # Add soc_target to s_index_debug for output
             if mode == "full":
                 s_index_debug["soc_target_kwh"] = target_soc_kwh
-                s_index_debug["soc_target_percent"] = (
-                    target_soc_pct if "target_soc_pct" in dir() else 0.0
-                )
+                s_index_debug["soc_target_percent"] = target_soc_pct
 
             await save_schedule_to_json(
                 final_df,
@@ -750,5 +756,6 @@ async def generate_schedule(
         with Path("config.yaml").open() as f:
             config = yaml.safe_load(f)
 
-    pipeline = PlannerPipeline(config)
+    config_dict: dict[str, Any] = config or {}
+    pipeline = PlannerPipeline(config_dict)
     return await pipeline.generate_schedule(input_data, mode=mode, save_to_file=save_to_file)

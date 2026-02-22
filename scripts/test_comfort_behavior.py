@@ -8,22 +8,26 @@ due to hardcoded 2.0h windows and inadequate penalty scaling.
 import sys
 import time
 from pathlib import Path
+from typing import Any, cast
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import yaml
 
-from planner.solver.adapter import _comfort_level_to_penalty, config_to_kepler_config
+from planner.solver.adapter import (  # type: ignore[reportPrivateUsage]
+    _comfort_level_to_penalty,
+    config_to_kepler_config,
+)
 from planner.solver.kepler import KeplerSolver
 
 
-def create_test_config():
+def create_test_config() -> dict[str, Any]:
     """Create minimal config for testing."""
     from pathlib import Path
 
     with Path("config.yaml").open() as f:
-        config = yaml.safe_load(f)
+        config = cast("dict[str, Any]", yaml.safe_load(f))
 
     # Override for consistent testing
     config["water_heating"]["daily_kwh"] = 8.0
@@ -32,7 +36,7 @@ def create_test_config():
     return config
 
 
-def test_comfort_level(level: int, scenario_name: str):
+def test_comfort_level(level: int, scenario_name: str) -> dict[str, Any] | None:
     """Test a specific comfort level and return heating pattern."""
     print(f"\n=== Testing Comfort Level {level} ({scenario_name}) ===")
 
@@ -56,7 +60,7 @@ def test_comfort_level(level: int, scenario_name: str):
     kepler_config = config_to_kepler_config(config)
 
     # Create simple price scenario (cheap morning, expensive evening)
-    prices = []
+    prices: list[float] = []
     for hour in range(48):
         if 2 <= hour % 24 <= 6:  # Cheap 02:00-06:00
             prices.extend([0.5, 0.5, 0.5, 0.5])  # 4 slots per hour
@@ -68,18 +72,18 @@ def test_comfort_level(level: int, scenario_name: str):
 
     from planner.solver.types import KeplerInput, KeplerInputSlot
 
-    slots = []
+    slots: list[KeplerInputSlot] = []
     start_time = datetime.now()
     for i, price in enumerate(prices):
         s = start_time + timedelta(minutes=15 * i)
         e = s + timedelta(minutes=15)
-        slots.append(
+        slots.append(  # type: ignore[arg-type]
             KeplerInputSlot(
                 start_time=s,
                 end_time=e,
                 load_kwh=1.0,
                 pv_kwh=0.0,
-                import_price_sek_kwh=price,
+                import_price_sek_kwh=price,  # type: ignore[arg-type]
                 export_price_sek_kwh=0.0,
             )
         )
@@ -105,12 +109,12 @@ def test_comfort_level(level: int, scenario_name: str):
         return None
 
     # Find heating blocks
-    blocks = []
-    current_block = [water_slots[0]]
+    blocks: list[list[int]] = []
+    current_block: list[int] = [water_slots[0]]
 
     for slot in water_slots[1:]:
         if slot == current_block[-1] + 1:  # Consecutive
-            current_block.append(slot)
+            current_block.append(slot)  # type: ignore[arg-type]
         else:  # New block
             blocks.append(current_block)
             current_block = [slot]
@@ -118,9 +122,9 @@ def test_comfort_level(level: int, scenario_name: str):
 
     print(f"✅ Heating blocks: {len(blocks)} blocks")
     for i, block in enumerate(blocks):
-        start_hour = block[0] // 4
-        end_hour = block[-1] // 4
-        duration = len(block) * 0.25
+        start_hour: int = block[0] // 4
+        end_hour: int = block[-1] // 4
+        duration: float = len(block) * 0.25
         print(
             f"  Block {i + 1}: Hours {start_hour:02d}-{end_hour:02d} ({duration:.2f}h, {len(block)} slots)"
         )
@@ -143,8 +147,14 @@ def main():
     print("🔍 Testing Water Comfort Level Behavior")
     print("=" * 50)
 
-    results = []
-    level_names = {1: "Economy", 2: "Balanced", 3: "Neutral", 4: "Priority", 5: "Maximum"}
+    results: list[dict[str, Any] | None] = []
+    level_names: dict[int, str] = {
+        1: "Economy",
+        2: "Balanced",
+        3: "Neutral",
+        4: "Priority",
+        5: "Maximum",
+    }
 
     # Test all levels
     for level in [1, 2, 3, 4, 5]:
@@ -158,8 +168,9 @@ def main():
     print("📊 COMPARISON RESULTS")
     print(f"{'=' * 50}")
 
-    if all(r for r in results):
-        for r in results:
+    valid_results: list[dict[str, Any]] = [r for r in results if r is not None]  # type: ignore[assignment]
+    if valid_results and all(r for r in results):
+        for r in valid_results:
             level_name = level_names[r["level"]]
             print(
                 f"Level {r['level']} ({level_name:8s}): {r['blocks']} blocks, "
@@ -167,7 +178,7 @@ def main():
             )
 
         # Check for smooth progression
-        block_counts = [r["blocks"] for r in results]
+        block_counts: list[int] = [r["blocks"] for r in valid_results]
         if block_counts == sorted(block_counts):
             print("\n✅ Smooth progression detected (fewer → more blocks)")
         else:

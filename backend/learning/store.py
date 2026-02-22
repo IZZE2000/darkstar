@@ -1,11 +1,10 @@
 import logging
 from collections.abc import Iterable
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
-import pytz
 from sqlalchemy import Integer, case, cast, desc, func, select, text
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -30,7 +29,7 @@ class LearningStore:
     Handles all database interactions for the Learning Engine using SQLAlchemy.
     """
 
-    def __init__(self, db_path: str, timezone: pytz.timezone):
+    def __init__(self, db_path: str, timezone: Any):
         self.db_path = db_path
         self.timezone = timezone
 
@@ -64,8 +63,12 @@ class LearningStore:
 
         async with self.AsyncSession() as session:
             for row in rows:
-                slot_start = row.get("slot_start") or row.get("start_time")
-                slot_end = row.get("slot_end") or row.get("end_time")
+                slot_start: datetime | pd.Timestamp | str | None = row.get("slot_start") or row.get(
+                    "start_time"
+                )
+                slot_end: datetime | pd.Timestamp | str | None = row.get("slot_end") or row.get(
+                    "end_time"
+                )
                 if slot_start is None:
                     continue
 
@@ -113,19 +116,24 @@ class LearningStore:
             records = observations_df.to_dict("records")
 
             for record in records:
-                slot_start = record["slot_start"]
-                slot_end = record.get("slot_end")
+                slot_start_raw: Any = record.get("slot_start")
+                slot_end_raw: Any = record.get("slot_end")
 
-                if isinstance(slot_start, datetime | pd.Timestamp):
-                    slot_start = slot_start.astimezone(self.timezone).isoformat()
+                slot_start: str
+                if isinstance(slot_start_raw, datetime | pd.Timestamp):
+                    slot_start = slot_start_raw.astimezone(self.timezone).isoformat()
                 else:
-                    slot_start = pd.to_datetime(slot_start).astimezone(self.timezone).isoformat()
+                    slot_start = (  # type: ignore[reportUnknownVariableType]
+                        pd.to_datetime(slot_start_raw).astimezone(self.timezone).isoformat()  # type: ignore[reportUnknownMemberType]
+                    )
 
-                if slot_end is not None:
-                    if isinstance(slot_end, datetime | pd.Timestamp):
-                        slot_end = slot_end.astimezone(self.timezone).isoformat()
+                slot_end: str | None = None
+                if slot_end_raw is not None:
+                    if isinstance(slot_end_raw, datetime | pd.Timestamp):
+                        slot_end = slot_end_raw.astimezone(self.timezone).isoformat()
                     else:
-                        slot_end = pd.to_datetime(slot_end).astimezone(self.timezone).isoformat()
+                        slot_end_dt: pd.Timestamp = pd.to_datetime(slot_end_raw)  # type: ignore[reportUnknownMemberType]
+                        slot_end = slot_end_dt.astimezone(self.timezone).isoformat()  # type: ignore[reportUnknownMemberType]
 
                 stmt = sqlite_insert(SlotObservation).values(
                     slot_start=slot_start,
@@ -198,7 +206,7 @@ class LearningStore:
                 await session.execute(stmt)
             await session.commit()
 
-    async def store_forecasts(self, forecasts: list[dict], forecast_version: str) -> None:
+    async def store_forecasts(self, forecasts: list[dict[str, Any]], forecast_version: str) -> None:
         """Store forecast data using Async SQLAlchemy."""
         if not forecasts:
             return
@@ -253,14 +261,17 @@ class LearningStore:
         async with self.AsyncSession() as session:
             records = plan_df.to_dict("records")
             for row in records:
-                slot_start = row.get("start_time") or row.get("slot_start")
-                if not slot_start:
+                slot_start_raw = row.get("start_time") or row.get("slot_start")
+                if not slot_start_raw:
                     continue
 
-                if isinstance(slot_start, datetime | pd.Timestamp):
-                    slot_start = slot_start.astimezone(self.timezone).isoformat()
+                slot_start: str
+                if isinstance(slot_start_raw, datetime | pd.Timestamp):
+                    slot_start = slot_start_raw.astimezone(self.timezone).isoformat()
                 else:
-                    slot_start = pd.to_datetime(slot_start).astimezone(self.timezone).isoformat()
+                    slot_start = (  # type: ignore[reportUnknownVariableType]
+                        pd.to_datetime(slot_start_raw).astimezone(self.timezone).isoformat()  # type: ignore[reportUnknownMemberType]
+                    )
 
                 stmt = sqlite_insert(SlotPlan).values(
                     slot_start=slot_start,
@@ -482,7 +493,7 @@ class LearningStore:
                 return pd.DataFrame()
 
             # Return as DataFrame
-            return pd.DataFrame([row._asdict() for row in rows])
+            return pd.DataFrame([row._asdict() for row in rows])  # type: ignore
 
     async def get_arbitrage_stats(self, days_back: int = 30) -> dict[str, Any]:
         """
@@ -504,6 +515,15 @@ class LearningStore:
 
             result = await session.execute(stmt)
             row = result.fetchone()
+
+            if row is None:
+                return {
+                    "total_export_revenue": 0.0,
+                    "total_import_cost": 0.0,
+                    "total_charge_kwh": 0.0,
+                    "total_discharge_kwh": 0.0,
+                    "net_profit": 0.0,
+                }
 
             export_revenue = row[0] or 0.0
             import_cost = row[1] or 0.0
@@ -545,11 +565,14 @@ class LearningStore:
                 return None
 
             # Calculate effective capacity from each observation
-            estimates = []
-            for soc_start, soc_end, discharge_kwh in rows:
-                soc_drop = soc_start - soc_end
+            estimates: list[float] = []
+            for row in rows:
+                soc_start: float = row[0]
+                soc_end: float = row[1]
+                discharge_kwh: float = row[2]
+                soc_drop: float = soc_start - soc_end
                 if soc_drop > 0.5:  # At least 0.5% drop
-                    estimated_cap = discharge_kwh / (soc_drop / 100.0)
+                    estimated_cap: float = discharge_kwh / (soc_drop / 100.0)
                     if 10 < estimated_cap < 100:  # Sanity check
                         estimates.append(estimated_cap)
 
@@ -558,13 +581,13 @@ class LearningStore:
 
             # Use median to be robust to outliers
             estimates.sort()
-            median_idx = len(estimates) // 2
+            median_idx: int = len(estimates) // 2
             return round(estimates[median_idx], 1)
 
     async def calculate_metrics(self, days_back: int = 7) -> dict[str, Any]:
         """Calculate learning metrics using Async SQLAlchemy."""
         cutoff_date = (datetime.now(self.timezone) - timedelta(days=days_back)).date().isoformat()
-        metrics = {}
+        metrics: dict[str, Any] = {}
 
         async with self.AsyncSession() as session:
             # 1. Forecast Accuracy
@@ -663,7 +686,7 @@ class LearningStore:
 
         return metrics
 
-    async def get_performance_series(self, days_back: int = 7) -> dict[str, list[dict]]:
+    async def get_performance_series(self, days_back: int = 7) -> dict[str, list[dict[str, Any]]]:
         """Get performance time-series data using Async SQLAlchemy."""
         cutoff_date = (datetime.now(self.timezone) - timedelta(days=days_back)).date().isoformat()
 
@@ -762,7 +785,7 @@ class LearningStore:
             )
 
             result = await session.execute(stmt)
-            return [row._asdict() for row in result.all()]
+            return [row._asdict() for row in result.all()]  # type: ignore
 
     async def get_forecasts_range(self, start: datetime, version: str) -> list[dict[str, Any]]:
         """Get forecasts for a specific range and version."""
@@ -787,7 +810,7 @@ class LearningStore:
                 SlotForecast.correction_source,
             ).where(SlotForecast.slot_start >= start_iso, SlotForecast.forecast_version == version)
             result = await session.execute(stmt)
-            return [row._asdict() for row in result.all()]
+            return [row._asdict() for row in result.all()]  # type: ignore
 
     async def get_plans_range(self, start: datetime) -> list[dict[str, Any]]:
         """Get planned slots from a specific start time."""
@@ -808,7 +831,7 @@ class LearningStore:
             )
 
             result = await session.execute(stmt)
-            return [row._asdict() for row in result.all()]
+            return [row._asdict() for row in result.all()]  # type: ignore
 
     async def get_observations_range(self, start: datetime, end: datetime) -> list[dict[str, Any]]:
         """Get actual observations (PV, Load, Water) from slot_observations for a date range."""
@@ -831,7 +854,7 @@ class LearningStore:
             )
 
             result = await session.execute(stmt)
-            return [row._asdict() for row in result.all()]
+            return [row._asdict() for row in result.all()]  # type: ignore
 
     async def get_executions_range(self, start: datetime) -> list[dict[str, Any]]:
         """Get execution history from execution_log table, grouped by slot_start."""
@@ -855,7 +878,7 @@ class LearningStore:
                     slots[ss] = []
                 slots[ss].append(r)
 
-            results = []
+            results: list[dict[str, Any]] = []
             for ss, entries in slots.items():
                 if not entries:
                     continue
@@ -971,7 +994,7 @@ class LearningStore:
     ) -> None:
         """Log a learning run execution (ARC11)."""
         if started_at is None:
-            started_at = datetime.utcnow()
+            started_at = datetime.now(UTC)
 
         import json
 
@@ -986,7 +1009,7 @@ class LearningStore:
                 training_duration_seconds=duration_seconds,
                 partial_failure=partial_failure,
                 error_message=error_message,
-                completed_at=datetime.utcnow()
+                completed_at=datetime.now(UTC)
                 if status in ["success", "error", "failed"]
                 else None,
             )
@@ -995,14 +1018,14 @@ class LearningStore:
 
     async def cleanup_learning_runs(self, days_back: int = 30) -> int:
         """Delete learning run records older than days_back (ARC11)."""
-        cutoff = datetime.utcnow() - timedelta(days=days_back)
+        cutoff = datetime.now(UTC) - timedelta(days=days_back)
         async with self.AsyncSession() as session:
             from sqlalchemy import delete
 
             stmt = delete(LearningRun).where(LearningRun.started_at < cutoff)
             result = await session.execute(stmt)
             await session.commit()
-            return result.rowcount
+            return result.rowcount  # type: ignore
 
     async def get_latest_metrics(self) -> dict[str, Any] | None:
         """Get the latest daily metrics for overlays using Async SQLAlchemy."""

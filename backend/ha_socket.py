@@ -3,6 +3,7 @@ import json
 import logging
 import threading
 from datetime import UTC, datetime
+from typing import Any
 
 import websockets
 
@@ -17,13 +18,17 @@ class HAWebSocketClient:
         self._load_config()
         self.id_counter = 1
         self.inversion_flags: dict[str, bool] = {}
-        self.ev_charger_configs: list[dict] = []  # Rev F64: Store EV config with index and name
-        self.latest_values = {}  # Must init before _get_monitored_entities (F64 writes ev_chargers here)
+        self.ev_charger_configs: list[
+            dict[str, Any]
+        ] = []  # Rev F64: Store EV config with index and name
+        self.latest_values: dict[
+            str, Any
+        ] = {}  # Must init before _get_monitored_entities (F64 writes ev_chargers here)
         self.monitored_entities = self._get_monitored_entities()
         self.running = False
 
         # Runtime Statistics (Production Observability)
-        self.stats = {
+        self.stats: dict[str, Any] = {
             "connected_at": None,
             "disconnected_at": None,
             "messages_received": 0,
@@ -75,13 +80,13 @@ class HAWebSocketClient:
     def _get_monitored_entities(self) -> dict[str, str]:
         # Load config to map entity_id -> metric_key
         try:
-            cfg = load_yaml("config.yaml")
-            sensors = cfg.get("input_sensors", {})
-            system = cfg.get("system", {})
+            cfg: dict[str, Any] = load_yaml("config.yaml")
+            sensors: dict[str, Any] = cfg.get("input_sensors", {})
+            system: dict[str, Any] = cfg.get("system", {})
             meter_type = system.get("grid_meter_type", "net")
 
             # Map: entity_id -> key (e.g. 'sensor.inverter_battery' -> 'soc')
-            mapping = {}
+            mapping: dict[str, str] = {}
             if "battery_soc" in sensors:
                 mapping[sensors["battery_soc"]] = "soc"
             if "pv_power" in sensors:
@@ -109,9 +114,9 @@ class HAWebSocketClient:
                 ev_chargers = cfg.get("ev_chargers", [])
                 self.ev_charger_configs = []
                 # Phase 7: Separate tracking per sensor type to avoid cross-type collisions
-                used_power_sensors = set()
-                used_soc_sensors = set()
-                used_plug_sensors = set()
+                used_power_sensors: set[str] = set()
+                used_soc_sensors: set[str] = set()
+                used_plug_sensors: set[str] = set()
                 for idx, ev in enumerate(ev_chargers):
                     if ev.get("enabled", True):
                         ev_name = ev.get("name", f"EV {idx + 1}")
@@ -236,32 +241,26 @@ class HAWebSocketClient:
                                 from backend.events import emit_live_metrics
 
                                 # Initialize ev_chargers if not already done
-                                if "ev_chargers" not in self.latest_values:
-                                    self.latest_values["ev_chargers"] = []
-                                    while len(self.latest_values["ev_chargers"]) < len(
-                                        self.ev_charger_configs
-                                    ):
-                                        self.latest_values["ev_chargers"].append(
-                                            {
-                                                "name": self.ev_charger_configs[
-                                                    len(self.latest_values["ev_chargers"])
-                                                ].get(
-                                                    "name",
-                                                    f"EV {len(self.latest_values['ev_chargers']) + 1}",
-                                                ),
-                                                "kw": 0.0,
-                                                "soc": None,
-                                                "plugged_in": False,
-                                            }
-                                        )
+                                ev_chargers: list[dict[str, Any]] = self.latest_values.get(
+                                    "ev_chargers", []
+                                )
+                                if not ev_chargers:
+                                    self.latest_values["ev_chargers"] = ev_chargers = []
+                                while len(ev_chargers) < len(self.ev_charger_configs):
+                                    ev_chargers.append(
+                                        {
+                                            "name": self.ev_charger_configs[len(ev_chargers)].get(
+                                                "name",
+                                                f"EV {len(ev_chargers) + 1}",
+                                            ),
+                                            "kw": 0.0,
+                                            "soc": None,
+                                            "plugged_in": False,
+                                        }
+                                    )
 
-                                total_ev_kw = sum(
-                                    ev.get("kw", 0.0) for ev in self.latest_values["ev_chargers"]
-                                )
-                                any_plugged = any(
-                                    ev.get("plugged_in", False)
-                                    for ev in self.latest_values["ev_chargers"]
-                                )
+                                total_ev_kw = sum(ev.get("kw", 0.0) for ev in ev_chargers)
+                                any_plugged = any(ev.get("plugged_in", False) for ev in ev_chargers)
                                 emit_live_metrics(
                                     {
                                         "ev_chargers": self.latest_values["ev_chargers"],
@@ -289,7 +288,7 @@ class HAWebSocketClient:
                 logger.error(f"HA WebSocket error: {e}")
                 await asyncio.sleep(5)
 
-    def _handle_state_change(self, entity_id, new_state):
+    def _handle_state_change(self, entity_id: str, new_state: dict[str, Any] | None) -> None:
         if not new_state:
             return
         key = self.monitored_entities[entity_id]
@@ -314,7 +313,9 @@ class HAWebSocketClient:
 
                 logger.debug(f"DIAG: Emitting vacation_mode {entity_id}={state_val}")
                 emit_ha_entity_change(
-                    entity_id=entity_id, state=state_val, attributes=filtered_attrs
+                    entity_id=entity_id,
+                    state=str(state_val) if state_val is not None else "unknown",
+                    attributes=filtered_attrs,
                 )
             except Exception as e:
                 logger.error(f"Failed to emit vacation_mode change: {e}")
@@ -330,16 +331,17 @@ class HAWebSocketClient:
                 is_plugged = state_val in ("on", "true", "1", "connected")
 
                 # Initialize ev_chargers data structure if needed
-                if "ev_chargers" not in self.latest_values:
-                    self.latest_values["ev_chargers"] = []
+                ev_chargers: list[dict[str, Any]] = self.latest_values.get("ev_chargers", [])
+                if not ev_chargers:
+                    self.latest_values["ev_chargers"] = ev_chargers = []
 
                 # Ensure we have entries for all configured EVs
-                while len(self.latest_values["ev_chargers"]) < len(self.ev_charger_configs):
-                    self.latest_values["ev_chargers"].append(
+                while len(ev_chargers) < len(self.ev_charger_configs):
+                    ev_chargers.append(
                         {
-                            "name": self.ev_charger_configs[
-                                len(self.latest_values["ev_chargers"])
-                            ].get("name", f"EV {len(self.latest_values['ev_chargers']) + 1}"),
+                            "name": self.ev_charger_configs[len(ev_chargers)].get(
+                                "name", f"EV {len(ev_chargers) + 1}"
+                            ),
                             "kw": 0.0,
                             "soc": None,
                             "plugged_in": False,
@@ -347,13 +349,11 @@ class HAWebSocketClient:
                     )
 
                 # Update this EV's plug status
-                if ev_idx < len(self.latest_values["ev_chargers"]):
-                    self.latest_values["ev_chargers"][ev_idx]["plugged_in"] = is_plugged
+                if ev_idx < len(ev_chargers):
+                    ev_chargers[ev_idx]["plugged_in"] = is_plugged
 
                 # Build aggregate for backward compat
-                any_plugged = any(
-                    ev.get("plugged_in", False) for ev in self.latest_values["ev_chargers"]
-                )
+                any_plugged = any(ev.get("plugged_in", False) for ev in ev_chargers)
 
                 # Trigger immediate re-plan when car plugs in
                 if is_plugged:
@@ -371,7 +371,7 @@ class HAWebSocketClient:
                 # Emit full ev_chargers array plus aggregate for backward compat
                 emit_live_metrics(
                     {
-                        "ev_chargers": self.latest_values["ev_chargers"],
+                        "ev_chargers": ev_chargers,
                         "ev_plugged_in": any_plugged,
                     }
                 )
@@ -392,16 +392,17 @@ class HAWebSocketClient:
                 )
 
                 # Initialize ev_chargers data structure if needed
-                if "ev_chargers" not in self.latest_values:
-                    self.latest_values["ev_chargers"] = []
+                ev_chargers: list[dict[str, Any]] = self.latest_values.get("ev_chargers", [])
+                if not ev_chargers:
+                    self.latest_values["ev_chargers"] = ev_chargers = []
 
                 # Ensure we have entries for all configured EVs
-                while len(self.latest_values["ev_chargers"]) < len(self.ev_charger_configs):
-                    self.latest_values["ev_chargers"].append(
+                while len(ev_chargers) < len(self.ev_charger_configs):
+                    ev_chargers.append(
                         {
-                            "name": self.ev_charger_configs[
-                                len(self.latest_values["ev_chargers"])
-                            ].get("name", f"EV {len(self.latest_values['ev_chargers']) + 1}"),
+                            "name": self.ev_charger_configs[len(ev_chargers)].get(
+                                "name", f"EV {len(ev_chargers) + 1}"
+                            ),
                             "kw": 0.0,
                             "soc": None,
                             "plugged_in": False,
@@ -409,18 +410,18 @@ class HAWebSocketClient:
                     )
 
                 # Update this EV's SoC
-                if ev_idx < len(self.latest_values["ev_chargers"]):
-                    self.latest_values["ev_chargers"][ev_idx]["soc"] = soc_val
+                if ev_idx < len(ev_chargers):
+                    ev_chargers[ev_idx]["soc"] = soc_val
 
                 # Build aggregate ev_kw for backward compat
-                total_ev_kw = sum(ev.get("kw", 0.0) for ev in self.latest_values["ev_chargers"])
+                total_ev_kw = sum(ev.get("kw", 0.0) for ev in ev_chargers)
 
                 # Emit via live_metrics for UI display
                 from backend.events import emit_live_metrics
 
                 emit_live_metrics(
                     {
-                        "ev_chargers": self.latest_values["ev_chargers"],
+                        "ev_chargers": ev_chargers,
                         "ev_kw": total_ev_kw,
                     }
                 )
@@ -464,16 +465,17 @@ class HAWebSocketClient:
                         value = 0.0
 
                 # Initialize ev_chargers data structure if needed
-                if "ev_chargers" not in self.latest_values:
-                    self.latest_values["ev_chargers"] = []
+                ev_chargers: list[dict[str, Any]] = self.latest_values.get("ev_chargers", [])
+                if not ev_chargers:
+                    self.latest_values["ev_chargers"] = ev_chargers = []
 
                 # Ensure we have entries for all configured EVs
-                while len(self.latest_values["ev_chargers"]) < len(self.ev_charger_configs):
-                    self.latest_values["ev_chargers"].append(
+                while len(ev_chargers) < len(self.ev_charger_configs):
+                    ev_chargers.append(
                         {
-                            "name": self.ev_charger_configs[
-                                len(self.latest_values["ev_chargers"])
-                            ].get("name", f"EV {len(self.latest_values['ev_chargers']) + 1}"),
+                            "name": self.ev_charger_configs[len(ev_chargers)].get(
+                                "name", f"EV {len(ev_chargers) + 1}"
+                            ),
                             "kw": 0.0,
                             "soc": None,
                             "plugged_in": False,
@@ -481,21 +483,19 @@ class HAWebSocketClient:
                     )
 
                 # Update this EV's power
-                if ev_idx < len(self.latest_values["ev_chargers"]):
-                    self.latest_values["ev_chargers"][ev_idx]["kw"] = value
+                if ev_idx < len(ev_chargers):
+                    ev_chargers[ev_idx]["kw"] = value
 
                 # Build aggregate for backward compat
-                total_ev_kw = sum(ev.get("kw", 0.0) for ev in self.latest_values["ev_chargers"])
-                any_plugged = any(
-                    ev.get("plugged_in", False) for ev in self.latest_values["ev_chargers"]
-                )
+                total_ev_kw = sum(ev.get("kw", 0.0) for ev in ev_chargers)
+                any_plugged = any(ev.get("plugged_in", False) for ev in ev_chargers)
 
                 # Emit via live_metrics
                 from backend.events import emit_live_metrics
 
                 emit_live_metrics(
                     {
-                        "ev_chargers": self.latest_values["ev_chargers"],
+                        "ev_chargers": ev_chargers,
                         "ev_kw": total_ev_kw,
                         "ev_plugged_in": any_plugged,
                     }
@@ -505,6 +505,7 @@ class HAWebSocketClient:
             return
 
         # Handle numeric sensors (existing logic)
+        state_val: Any = None
         try:
             state_val = new_state.get("state")
             if state_val is None or str(state_val).lower() in (
@@ -644,7 +645,7 @@ def reload_ha_socket_client():
         _ha_client.reload_monitored_entities()
 
 
-def get_ha_socket_status() -> dict:
+def get_ha_socket_status() -> dict[str, Any]:
     """Return diagnostic info about HA WebSocket connection."""
     if _ha_client is None:
         return {"status": "not_started", "monitored_entities": {}}

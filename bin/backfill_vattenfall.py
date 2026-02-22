@@ -2,6 +2,7 @@ import sqlite3
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Any, cast
 
 import pytz
 import requests
@@ -11,36 +12,37 @@ import yaml
 VATTENFALL_API = "https://www.vattenfall.se/api/price/spot/pricearea/{start}/{end}/{area}"
 
 
-def load_config(path="config.yaml"):
+def load_config(path: str = "config.yaml") -> dict[str, Any]:
     with Path(path).open(encoding="utf-8") as f:
-        return yaml.safe_load(f)
+        raw_data: Any = yaml.safe_load(f)
+    return cast("dict[str, Any]", raw_data) if isinstance(raw_data, dict) else {}
 
 
-def get_db_path(config):
+def get_db_path(config: dict[str, Any]) -> str:
     return config.get("learning", {}).get("sqlite_path", "data/planner_learning.db")
 
 
-def calculate_final_prices(spot_ore, config):
+def calculate_final_prices(spot_ore: float, config: dict[str, Any]) -> tuple[float, float]:
     """
     Convert Spot (öre/kWh) to Import/Export (SEK/kWh) using config taxes.
     """
-    pricing = config.get("pricing", {})
-    vat_percent = pricing.get("vat_percent", 25.0)
-    grid_fee = pricing.get("grid_transfer_fee_sek", 0.2456)
-    energy_tax = pricing.get("energy_tax_sek", 0.439)
+    pricing: dict[str, Any] = config.get("pricing", {}) or {}
+    vat_percent: float = pricing.get("vat_percent", 25.0)
+    grid_fee: float = pricing.get("grid_transfer_fee_sek", 0.2456)
+    energy_tax: float = pricing.get("energy_tax_sek", 0.439)
 
-    spot_sek = spot_ore / 100.0
+    spot_sek: float = spot_ore / 100.0
 
     # Import: (Spot + Grid + Tax) * VAT
-    import_price = (spot_sek + grid_fee + energy_tax) * (1.0 + (vat_percent / 100.0))
+    import_price: float = (spot_sek + grid_fee + energy_tax) * (1.0 + (vat_percent / 100.0))
 
     # Export: Spot
-    export_price = spot_sek
+    export_price: float = spot_sek
 
     return round(import_price, 4), round(export_price, 4)
 
 
-def backfill_vattenfall(start_date_str, end_date_str, area="SN4"):
+def backfill_vattenfall(start_date_str: str, end_date_str: str, area: str = "SN4") -> None:
     config = load_config()
     db_path = get_db_path(config)
     tz = pytz.timezone(config.get("timezone", "Europe/Stockholm"))
@@ -70,9 +72,10 @@ def backfill_vattenfall(start_date_str, end_date_str, area="SN4"):
                 headers = {"User-Agent": "DarkstarEnergyManager/1.0"}
                 resp = requests.get(url, headers=headers, timeout=20)
                 resp.raise_for_status()
-                data = resp.json()
+                data: list[dict[str, Any]] = resp.json()
 
-                rows_to_insert = []
+                rows_to_insert: list[tuple[str, str, float, float]] = []
+                item: dict[str, Any]
                 for item in data:
                     # Item: {"TimeStamp": "2025-08-01T00:00:00", "Value": 83.64, ...}
 

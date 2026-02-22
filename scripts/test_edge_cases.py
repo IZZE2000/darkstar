@@ -50,7 +50,7 @@ def test_extreme_prices(comfort_level: int, scenario: str):
     else:
         prices = [1.5] * 192
 
-    slots = []
+    slots: list[KeplerInputSlot] = []
     start_time = datetime.now()
     for i, price in enumerate(prices):
         s = start_time + timedelta(minutes=15 * i)

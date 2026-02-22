@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import traceback
+from collections.abc import Coroutine  # noqa: TC003
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
@@ -419,7 +420,7 @@ async def get_energy_today() -> dict[str, float]:
     ]
 
     # Map keys to entity IDs
-    tasks = []
+    tasks: list[Coroutine[Any, Any, float | None]] = []
     for key in keys:
         eid = sensors.get(key)
         if eid:
@@ -428,7 +429,7 @@ async def get_energy_today() -> dict[str, float]:
             tasks.append(asyncio.sleep(0, result=0.0))  # Placeholder for missing config
 
     # Fetch all in parallel!
-    results = await asyncio.gather(*tasks)
+    results: list[float | None] = await asyncio.gather(*tasks)
 
     # Map back to variables
     grid_imp_kwh = results[0] or 0.0

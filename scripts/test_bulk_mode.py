@@ -51,7 +51,7 @@ def test_bulk_mode(comfort_level: int, enable_top_ups: bool):
     prices[8:16] = [0.5] * 8  # Cheap period at hour 2-4
     prices[104:112] = [0.5] * 8  # Cheap period at hour 26-28
 
-    slots = []
+    slots: list[KeplerInputSlot] = []
     start_time = datetime.now()
     for i, price in enumerate(prices):
         s = start_time + timedelta(minutes=15 * i)
@@ -86,8 +86,8 @@ def test_bulk_mode(comfort_level: int, enable_top_ups: bool):
         return None
 
     # Find heating blocks
-    blocks = []
-    current_block = [water_slots[0]]
+    blocks: list[list[int]] = []
+    current_block: list[int] = [water_slots[0]]
 
     for slot in water_slots[1:]:
         if slot == current_block[-1] + 1:

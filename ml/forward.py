@@ -14,8 +14,8 @@ import pandas as pd
 from backend.health import clear_load_forecast_status, set_load_forecast_status
 from backend.learning import LearningEngine, get_learning_engine
 from ml.context_features import get_alarm_armed_series, get_vacation_mode_series
-from ml.corrector import _determine_graduation_level
-from ml.train import _build_time_features
+from ml.corrector import _determine_graduation_level  # type: ignore[reportPrivateUsage]
+from ml.train import _build_time_features  # type: ignore[reportPrivateUsage]
 from ml.weather import get_weather_series
 
 logger = logging.getLogger("darkstar.ml.forward")
@@ -191,7 +191,7 @@ async def generate_forward_slots(
         for q in quantiles:
             model_key = f"load_{q}"
             if model_key in models:
-                raw_pred = models[model_key].predict(X)
+                raw_pred: Any = models[model_key].predict(X)  # type: ignore[reportUnknownMemberType]
                 # Apply guardrails (same for all bands)
                 # Floor at 0.01, Ceiling at 16kW
                 cleaned = [max(0.01, min(float(x), 16.0)) for x in raw_pred]
@@ -229,29 +229,31 @@ async def generate_forward_slots(
     try:
         from backend.astro import SunCalculator
 
-        lat = engine.config.get("system", {}).get("location", {}).get("latitude", 59.3293)
-        lon = engine.config.get("system", {}).get("location", {}).get("longitude", 18.0686)
+        system_cfg: dict[str, Any] = engine.config.get("system", {})
+        location_cfg: dict[str, Any] = system_cfg.get("location", {})
+        lat: float = location_cfg.get("latitude", 59.3293)
+        lon: float = location_cfg.get("longitude", 18.0686)
         sun_calc = SunCalculator(latitude=lat, longitude=lon, timezone=str(tz))
     except Exception as e:
         logger.warning(f"⚠️ Astro init failed: {e}")
 
     # Get total PV capacity for fallback scaling (REV ARC14)
-    system_config = engine.config.get("system", {})
-    solar_arrays = system_config.get("solar_arrays", [])
-    if solar_arrays and isinstance(solar_arrays, list):
+    system_config: dict[str, Any] = engine.config.get("system", {})
+    solar_arrays: list[Any] = system_config.get("solar_arrays", [])
+    if solar_arrays and isinstance(solar_arrays, list):  # type: ignore[reportUnnecessaryIsInstance]
         pv_capacity_kw = sum(float(a.get("kwp", 0.0)) for a in solar_arrays)
     else:
         # Fallback to legacy single array or default
-        solar_cfg = system_config.get("solar_array", {})
+        solar_cfg: dict[str, Any] = system_config.get("solar_array", {})
         pv_capacity_kw = float(solar_cfg.get("kwp", 10.0))
 
     if has_pv_models:
         for q in quantiles:
             model_key = f"pv_{q}"
             if model_key in models:
-                raw_pred = models[model_key].predict(X)
+                raw_pred: Any = models[model_key].predict(X)  # type: ignore[reportUnknownMemberType]
 
-                series = pd.Series(0.0, index=df.index)
+                series: pd.Series = pd.Series(0.0, index=df.index)
                 for idx, row in df.iterrows():
                     val = float(max(raw_pred[idx], 0.0))
                     slot_ts = row["slot_start"]
@@ -273,7 +275,7 @@ async def generate_forward_slots(
                     if rad is not None and rad < 1.0:
                         val = 0.0
 
-                    series[idx] = val
+                    series.loc[idx] = val  # type: ignore[reportIndexIssue]
 
                 # 3. Smoothing (Rolling Average)
                 # Apply to all bands to prevent sawtooth
@@ -297,7 +299,7 @@ async def generate_forward_slots(
                     is_sun_up = 5 <= h < 22
 
                 if not is_sun_up:
-                    series[idx] = 0.0
+                    series.loc[idx] = 0.0  # type: ignore[reportIndexIssue]
                     continue
 
                 # Use radiation to estimate PV output
@@ -312,11 +314,11 @@ async def generate_forward_slots(
 
                 # Apply uncertainty bands
                 if q == "p10":
-                    series[idx] = max(0.0, pv_kwh * 0.7)
+                    series.loc[idx] = max(0.0, pv_kwh * 0.7)  # type: ignore[reportIndexIssue]
                 elif q == "p50":
-                    series[idx] = max(0.0, pv_kwh)
+                    series.loc[idx] = max(0.0, pv_kwh)  # type: ignore[reportIndexIssue]
                 else:  # p90
-                    series[idx] = max(0.0, pv_kwh * 1.3)
+                    series.loc[idx] = max(0.0, pv_kwh * 1.3)  # type: ignore[reportIndexIssue]
 
             predictions[f"pv_{q}"] = (
                 series.rolling(window=3, center=True, min_periods=1).mean().fillna(0.0)
@@ -329,16 +331,16 @@ async def generate_forward_slots(
             "slot_start": row["slot_start"].isoformat(),
             "temp_c": row.get("temp_c"),
             # Primary (Legacy/p50)
-            "pv_forecast_kwh": float(predictions["pv_p50"][idx]),
-            "load_forecast_kwh": float(predictions["load_p50"][idx]),
-            "base_load_forecast_kwh": float(predictions["load_p50"][idx]),
+            "pv_forecast_kwh": float(predictions["pv_p50"][idx]),  # type: ignore[reportUnknownArgumentType]
+            "load_forecast_kwh": float(predictions["load_p50"][idx]),  # type: ignore[reportUnknownArgumentType]
+            "base_load_forecast_kwh": float(predictions["load_p50"][idx]),  # type: ignore[reportUnknownArgumentType]
             # Probabilistic Bands
-            "pv_p10": float(predictions["pv_p10"][idx]),
-            "pv_p90": float(predictions["pv_p90"][idx]),
-            "load_p10": float(predictions["load_p10"][idx]),
-            "load_p90": float(predictions["load_p90"][idx]),
-            "base_load_p10": float(predictions["load_p10"][idx]),
-            "base_load_p90": float(predictions["load_p90"][idx]),
+            "pv_p10": float(predictions["pv_p10"][idx]),  # type: ignore[reportUnknownArgumentType]
+            "pv_p90": float(predictions["pv_p90"][idx]),  # type: ignore[reportUnknownArgumentType]
+            "load_p10": float(predictions["load_p10"][idx]),  # type: ignore[reportUnknownArgumentType]
+            "load_p90": float(predictions["load_p90"][idx]),  # type: ignore[reportUnknownArgumentType]
+            "base_load_p10": float(predictions["load_p10"][idx]),  # type: ignore[reportUnknownArgumentType]
+            "base_load_p90": float(predictions["load_p90"][idx]),  # type: ignore[reportUnknownArgumentType]
         }
         forecasts.append(item)
 

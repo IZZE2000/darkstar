@@ -67,7 +67,7 @@ class AuroraReflex:
 
         # Load current config (Sync in constructor is generally okay if not high-frequency)
         with self.config_path.open(encoding="utf-8") as f:
-            self.config = self.yaml.load(f)
+            self.config: dict[str, Any] = self.yaml.load(f)  # type: ignore[reportUnknownMemberType]
 
     async def run(self, dry_run: bool = False) -> list[str]:
         """
@@ -79,8 +79,8 @@ class AuroraReflex:
             return ["Skipped: Reflex disabled"]
 
         logger.info(f"Running Aurora Reflex (Dry Run: {dry_run})...")
-        updates = {}
-        report = []
+        updates: dict[str, Any] = {}
+        report: list[str] = []
 
         # 1. Analyze Safety (S-Index Base Factor)
         safety_update, safety_msg = await self.analyze_safety()
@@ -163,7 +163,7 @@ class AuroraReflex:
 
         return new_value
 
-    async def analyze_safety(self) -> tuple[dict, str]:
+    async def analyze_safety(self) -> tuple[dict[str, Any], str]:
         """
         Monitor low-SoC events during peak hours.
         If SoC < 5% during 16:00-20:00 too often, increase s_index.base_factor.
@@ -239,7 +239,7 @@ class AuroraReflex:
             f"Safety: Stable ({num_events} events in 30d, base_factor={current_value:.3f})",
         )
 
-    async def analyze_confidence(self) -> tuple[dict, str]:
+    async def analyze_confidence(self) -> tuple[dict[str, Any], str]:
         """
         Compare PV forecast vs actuals to detect systematic bias.
         If over-predicting (positive bias), lower confidence to increase safety margin.
@@ -314,7 +314,7 @@ class AuroraReflex:
             f"Confidence: Stable (bias={mean_bias:.2f} kWh, MAE={mae:.2f} kWh, {len(df)} samples)",
         )
 
-    async def analyze_roi(self) -> tuple[dict, str]:
+    async def analyze_roi(self) -> tuple[dict[str, Any], str]:
         """
         Analyze battery ROI by comparing realized profit per cycle vs configured cost.
 
@@ -384,7 +384,7 @@ class AuroraReflex:
             f"ROI: Stable (profit={profit_per_kwh:.2f} SEK/kWh, {cycles:.1f} cycles, cost={current_cost:.2f})",
         )
 
-    async def analyze_capacity(self) -> tuple[dict, str]:
+    async def analyze_capacity(self) -> tuple[dict[str, Any], str]:
         """
         Detect battery capacity fade by analyzing discharge efficiency.
 
@@ -438,12 +438,12 @@ class AuroraReflex:
         """
         import asyncio
 
-        def _apply_updates():
+        def _apply_updates() -> tuple[Any, list[dict[str, Any]]]:
             # Reload config to ensure we have the latest comment structure
             with self.config_path.open(encoding="utf-8") as f:
-                data = self.yaml.load(f)
+                data: Any = self.yaml.load(f)  # type: ignore[reportUnknownMemberType]
 
-            changes_made = []
+            changes_made: list[dict[str, Any]] = []
 
             for key_path, new_value in updates.items():
                 keys = key_path.split(".")
@@ -483,7 +483,7 @@ class AuroraReflex:
 
             def _write_config():
                 with self.config_path.open("w", encoding="utf-8") as f:
-                    self.yaml.dump(data, f)
+                    self.yaml.dump(data, f)  # type: ignore[reportUnknownMemberType]
 
             await asyncio.to_thread(_write_config)
             logger.info("Config saved.")

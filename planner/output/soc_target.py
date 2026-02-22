@@ -73,7 +73,7 @@ def apply_soc_target_percent(
     float(battery_config.get("capacity_kwh", 34.2))
 
     # Manual planning configuration
-    manual_cfg = config.get("manual_planning", {}) or {}
+    manual_cfg: dict[str, Any] = config.get("manual_planning", {}) or {}
 
     def _clamp(value: float | None, fallback: float) -> float:
         """Clamp value to min/max SoC bounds."""
@@ -274,8 +274,8 @@ def _group_into_blocks(indices: list[int], max_gap: int = 1) -> list[list[int]]:
     if not indices:
         return []
 
-    blocks = []
-    current_block = [indices[0]]
+    blocks: list[list[int]] = []
+    current_block: list[int] = [indices[0]]
 
     for idx in indices[1:]:
         if idx <= current_block[-1] + max_gap + 1:

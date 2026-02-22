@@ -477,23 +477,33 @@ async def save_schedule(request_body: dict[str, Any]) -> dict[str, str]:
         schedule_path = Path("data/schedule.json")
 
         # Load existing schedule
+        existing: dict[str, Any]
         if schedule_path.exists():
             with schedule_path.open() as f:
-                existing = json.load(f)
+                loaded_data = json.load(f)
+                existing = cast("dict[str, Any]", loaded_data)
         else:
             existing = {"schedule": [], "meta": {}}
 
         # Merge overrides
-        overrides = request_body.get("overrides", [])
+        overrides: list[dict[str, Any]] = cast(
+            "list[dict[str, Any]]", request_body.get("overrides", [])
+        )
         if overrides:
             # Simple override logic: replace matching slots by start_time
-            override_map = {o.get("start_time"): o for o in overrides}
-            for slot in existing.get("schedule", []):
-                st = slot.get("start_time")
+            override_map: dict[Any, dict[str, Any]] = {o.get("start_time"): o for o in overrides}
+            schedule_list: list[dict[str, Any]] = cast(
+                "list[dict[str, Any]]", existing.get("schedule", [])
+            )
+            slot: dict[str, Any]
+            for slot in schedule_list:
+                st: Any = slot.get("start_time")
                 if st in override_map:
                     slot.update(override_map[st])
 
-            existing["meta"]["last_manual_override"] = datetime.now().isoformat()
+            meta: dict[str, Any] = cast("dict[str, Any]", existing.get("meta", {}))
+            meta["last_manual_override"] = datetime.now().isoformat()
+            existing["meta"] = meta
 
         # Write back
         with schedule_path.open("w") as f:

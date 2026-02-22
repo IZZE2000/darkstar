@@ -1,6 +1,7 @@
 import logging
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import httpx
 import pytz
@@ -29,21 +30,21 @@ class BackfillEngine:
         # Load secrets for backfill fallback (HA)
         self.secrets = self._load_secrets()
 
-    def _load_config(self, path: str) -> dict:
+    def _load_config(self, path: str) -> dict[str, Any]:
         try:
             with Path(path).open(encoding="utf-8") as f:
                 return yaml.safe_load(f) or {}
         except FileNotFoundError:
             return {}
 
-    def _load_secrets(self) -> dict:
+    def _load_secrets(self) -> dict[str, Any]:
         try:
             with Path("secrets.yaml").open(encoding="utf-8") as f:
                 return yaml.safe_load(f) or {}
         except FileNotFoundError:
             return {}
 
-    def _load_ha_config(self) -> dict:
+    def _load_ha_config(self) -> dict[str, Any]:
         """Load HA config from secrets.yaml"""
         secrets = self._load_secrets()
         return secrets.get("home_assistant", {})
@@ -82,11 +83,12 @@ class BackfillEngine:
             if not data or not data[0]:
                 return []
 
-            history = []
-            for state in data[0]:
+            history: list[tuple[datetime, float]] = []
+            state_item: dict[str, Any]
+            for state_item in data[0]:
                 try:
-                    ts = datetime.fromisoformat(state["last_changed"])
-                    val = float(state["state"])
+                    ts = datetime.fromisoformat(state_item["last_changed"])
+                    val = float(state_item["state"])
                     history.append((ts, val))
                 except (ValueError, TypeError, KeyError):
                     continue
@@ -127,7 +129,8 @@ class BackfillEngine:
 
             # 2. Identify sensors to fetch
             # REV // F26: Fallback to input_sensors if sensor_map is empty
-            raw_map = self.learning_config.get("sensor_map")
+            raw_map_source: dict[str, str] | None = self.learning_config.get("sensor_map")
+            raw_map: dict[str, str] = raw_map_source or {}
             if not raw_map:
                 logger.info("sensor_map is empty. Auto-detecting from input_sensors...")
                 input_sensors = self.config.get("input_sensors", {})
@@ -154,11 +157,11 @@ class BackfillEngine:
 
             cumulative_data: dict[str, list[tuple[datetime, float]]] = {}
             count = 0
-            for entity_id, canonical in raw_map.items():
-                logger.info(f"Backfilling {canonical} ({entity_id})...")
-                history = await self._fetch_history(str(entity_id), start_time, now)
+            for entity_id_str, canonical_str in raw_map.items():
+                logger.info(f"Backfilling {canonical_str} ({entity_id_str})...")
+                history = await self._fetch_history(entity_id_str, start_time, now)
                 if history:
-                    cumulative_data[str(entity_id)] = history
+                    cumulative_data[entity_id_str] = history
                     count += len(history)
 
             if not cumulative_data:

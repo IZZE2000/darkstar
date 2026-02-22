@@ -5,7 +5,7 @@ This module handles the generation of debug payloads for the planner,
 including window responsibilities, water analysis, and metrics.
 """
 
-from typing import Any
+from typing import Any, cast
 
 import pandas as pd
 
@@ -20,10 +20,10 @@ def prepare_windows_for_json(window_responsibilities: list[dict[str, Any]]) -> l
     Returns:
         list: List of window dictionaries with timestamps converted to strings
     """
-    json_windows = []
+    json_windows: list[dict[str, Any]] = []
 
     for window in window_responsibilities:
-        json_window = {}
+        json_window: dict[str, Any] = {}
         for key, value in window.items():
             if key == "window":
                 # Handle nested window dict with timestamps
@@ -56,7 +56,9 @@ def prepare_sample_schedule_for_json(sample_df: pd.DataFrame) -> list[dict[str, 
         return []
 
     # Reset index and convert to dict
-    records = sample_df.reset_index().to_dict("records")
+    records: list[dict[str, Any]] = cast(
+        "list[dict[str, Any]]", sample_df.reset_index().to_dict("records")
+    )
 
     # Convert timestamps to strings
     for record in records:

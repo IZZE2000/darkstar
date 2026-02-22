@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import subprocess
+from collections.abc import Coroutine  # noqa: TC003
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -110,7 +111,7 @@ async def get_system_status() -> StatusResponse:
 
     # Define keys to fetch
     keys = ["battery_soc", "pv_power", "load_power", "battery_power", "grid_power"]
-    tasks = []
+    tasks: list[Coroutine[Any, Any, float | None]] = []
     for key in keys:
         eid = sensors.get(key)
         if eid:
@@ -118,7 +119,7 @@ async def get_system_status() -> StatusResponse:
         else:
             tasks.append(asyncio.sleep(0, result=0.0))
 
-    results = await asyncio.gather(*tasks)
+    results: list[float | None] = await asyncio.gather(*tasks)
 
     soc = results[0] or 0.0
     pv_pow = results[1] or 0.0

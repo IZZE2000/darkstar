@@ -56,7 +56,7 @@ async def learning_history(limit: int = Query(20, ge=1, le=100)) -> dict[str, An
             result = await session.execute(stmt)
             rows = result.scalars().all()
 
-            results = []
+            results: list[dict[str, Any]] = []
             for run in rows:
                 results.append(
                     {
@@ -94,7 +94,8 @@ async def learning_train() -> dict[str, Any]:
         logger.info("Manual training triggered via API")
 
         # train_all_models is async and handles locking/logging
-        result = await train_all_models(training_type="manual")
+        raw_result = await train_all_models(training_type="manual")
+        result: dict[str, Any] = raw_result
 
         if result.get("status") == "busy":
             raise HTTPException(status_code=409, detail="Training already in progress")
@@ -120,10 +121,10 @@ async def learning_run() -> dict[str, Any]:
 
         logger.info("Full learning run triggered via API")
 
-        reflex_report = await AuroraReflex().run(dry_run=False)
+        reflex_report: Any = await AuroraReflex().run(dry_run=False)
 
         # Training is async
-        training_result = await train_all_models(training_type="manual")
+        training_result: dict[str, Any] = await train_all_models(training_type="manual")
 
         return {
             "status": "success",
@@ -199,7 +200,7 @@ async def learning_changes(limit: int = Query(10, ge=1, le=50)) -> dict[str, Any
             result = await session.execute(stmt)
             rows = result.scalars().all()
 
-            changes = []
+            changes: list[dict[str, Any]] = []
             for change in rows:
                 changes.append(
                     {
@@ -245,7 +246,10 @@ async def learning_training_status() -> dict[str, Any]:
         import time
         from pathlib import Path
 
-        from ml.corrector import _determine_graduation_level, _get_engine
+        from ml.corrector import (
+            _determine_graduation_level,  # type: ignore[private-import]
+            _get_engine,  # type: ignore[private-import]
+        )
         from ml.training_orchestrator import get_training_status
 
         LOCK_FILE = Path("data/ml/models/.training.lock")
@@ -256,7 +260,7 @@ async def learning_training_status() -> dict[str, Any]:
                 return False
             return time.time() - LOCK_FILE.stat().st_mtime > 3600
 
-        status = await asyncio.to_thread(get_training_status)
+        status: dict[str, Any] = await asyncio.to_thread(get_training_status)
 
         # ARC11 Fix: Explicitly add lock status structure
         # Even if get_training_status has it, we ensure it matches the requested format

@@ -2,28 +2,30 @@ import argparse
 import sys
 from datetime import date, timedelta
 from pathlib import Path
-
-sys.path.append(str(Path.cwd()))
+from typing import Any, cast
 
 import pytz
 import yaml
-from learning import LearningEngine
 from nordpool.elspot import Prices
 
+sys.path.insert(0, str(Path.cwd()))
+from learning import LearningEngine  # type: ignore[reportUnknownVariableType]
 
-def load_config(path="config.yaml"):
+
+def load_config(path: str = "config.yaml") -> dict[str, Any]:
     with Path(path).open(encoding="utf-8") as f:
-        return yaml.safe_load(f)
+        raw_data: Any = yaml.safe_load(f)
+    return cast("dict[str, Any]", raw_data) if isinstance(raw_data, dict) else {}
 
 
-def backfill_prices(days, config_path="config.yaml"):
+def backfill_prices(days: int, config_path: str = "config.yaml") -> None:
     config = load_config(config_path)
-    engine = LearningEngine(config_path)
+    engine: Any = LearningEngine(config_path)  # type: ignore[assignment]
 
-    nordpool_config = config.get("nordpool", {})
-    price_area = nordpool_config.get("price_area", "SE4")
-    currency = nordpool_config.get("currency", "SEK")
-    resolution_minutes = nordpool_config.get("resolution_minutes", 60)
+    nordpool_config: dict[str, Any] = config.get("nordpool", {}) or {}
+    price_area: str = nordpool_config.get("price_area", "SE4")
+    currency: str = nordpool_config.get("currency", "SEK")
+    resolution_minutes: int = nordpool_config.get("resolution_minutes", 60)
 
     prices_client = Prices(currency)
 
@@ -34,16 +36,16 @@ def backfill_prices(days, config_path="config.yaml"):
 
     # Nordpool library fetches by day. We iterate.
     current_date = start_date
-    all_entries = []
+    all_entries: list[dict[str, Any]] = []
 
     while current_date <= end_date:
         try:
             print(f"  Fetching {current_date}...")
-            data = prices_client.fetch(
+            data: dict[str, Any] = prices_client.fetch(
                 end_date=current_date, areas=[price_area], resolution=resolution_minutes
             )
             if data and data.get("areas") and data["areas"].get(price_area):
-                values = data["areas"][price_area].get("values", [])
+                values: list[Any] = data["areas"][price_area].get("values", [])
                 all_entries.extend(values)
         except Exception as e:
             print(f"  Failed to fetch {current_date}: {e}")
@@ -56,13 +58,14 @@ def backfill_prices(days, config_path="config.yaml"):
 
     # Process and Store
     # Re-use logic from inputs.py _process_nordpool_data but simplified for storage
-    pricing_config = config.get("pricing", {})
-    vat_percent = pricing_config.get("vat_percent", 25.0)
-    grid_transfer_fee_sek = pricing_config.get("grid_transfer_fee_sek", 0.2456)
-    energy_tax_sek = pricing_config.get("energy_tax_sek", 0.439)
+    pricing_config: dict[str, Any] = config.get("pricing", {}) or {}
+    vat_percent: float = pricing_config.get("vat_percent", 25.0)
+    grid_transfer_fee_sek: float = pricing_config.get("grid_transfer_fee_sek", 0.2456)
+    energy_tax_sek: float = pricing_config.get("energy_tax_sek", 0.439)
     local_tz = pytz.timezone(config.get("timezone", "Europe/Stockholm"))
 
-    records = []
+    records: list[dict[str, Any]] = []
+    entry: dict[str, Any]
     for entry in all_entries:
         start_time = entry["start"].astimezone(local_tz)
         end_time = entry["end"].astimezone(local_tz)
@@ -83,7 +86,7 @@ def backfill_prices(days, config_path="config.yaml"):
         )
 
     print(f"Storing {len(records)} price slots...")
-    engine.store_slot_prices(records)
+    engine.store_slot_prices(records)  # type: ignore[method-call]
     print("Done.")
 
 

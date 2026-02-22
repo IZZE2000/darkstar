@@ -12,6 +12,7 @@ from collections import deque
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import pytz
 import yaml
@@ -19,9 +20,9 @@ import yaml
 from backend.learning.backfill import BackfillEngine
 from backend.loads.service import LoadDisaggregator
 from backend.recorder import (
-    _run_analyst,
     backfill_missing_prices,
     record_observation_from_current_state,
+    run_analyst,
 )
 
 logger = logging.getLogger("darkstar.services.recorder")
@@ -35,9 +36,9 @@ class RecorderStatus:
     last_record_at: datetime | None = None
     last_error: str | None = None
     error_count: int = 0
-    recent_errors: deque = None  # Bounded queue of error messages
+    recent_errors: deque[str] | None = None  # Bounded queue of error messages
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.recent_errors is None:
             self.recent_errors = deque(maxlen=10)
 
@@ -49,8 +50,8 @@ class RecorderService:
         self._task: asyncio.Task[None] | None = None
         self._running = False
         self._status = RecorderStatus()
-        self._config = {}
-        self._disaggregator = None
+        self._config: dict[str, Any] = {}
+        self._disaggregator: LoadDisaggregator | None = None
 
     @property
     def status(self) -> RecorderStatus:
@@ -81,10 +82,11 @@ class RecorderService:
 
         logger.info("RecorderService stopped")
 
-    def _load_config(self) -> dict:
+    def _load_config(self) -> dict[str, Any]:
         try:
             with Path("config.yaml").open(encoding="utf-8") as f:
-                return yaml.safe_load(f) or {}
+                result: dict[str, Any] = yaml.safe_load(f) or {}
+                return result
         except Exception as e:
             logger.error(f"Failed to load config: {e}")
             return {}
@@ -94,8 +96,8 @@ class RecorderService:
         logger.info("Recorder loop starting...")
 
         self._config = self._load_config()
-        tz_name = self._config.get("timezone", "Europe/Stockholm")
-        tz = pytz.timezone(tz_name)
+        tz_name: str = self._config.get("timezone", "Europe/Stockholm")
+        tz: pytz.BaseTzInfo = pytz.timezone(tz_name)
 
         # 1. Backfill energy on startup
         try:
@@ -108,7 +110,7 @@ class RecorderService:
         await backfill_missing_prices()
 
         # 3. Run Analyst on startup
-        await _run_analyst()
+        await run_analyst()
 
         # 4. Initialize disaggregator
         self._disaggregator = LoadDisaggregator(self._config)
@@ -124,7 +126,7 @@ class RecorderService:
                 # Daily analyst run at ~6 AM
                 now_local = datetime.now(tz)
                 if now_local.date() > last_analyst_date and now_local.hour >= 6:
-                    await _run_analyst()
+                    await run_analyst()
                     last_analyst_date = now_local.date()
 
                 # Sleep until next 15m boundary
@@ -136,7 +138,7 @@ class RecorderService:
                 logger.exception(f"Recorder loop error: {e}")
                 self._status.last_error = str(e)
                 self._status.error_count += 1
-                self._status.recent_errors.append(f"{datetime.now(UTC).isoformat()}: {e}")
+                self._status.recent_errors.append(f"{datetime.now(UTC).isoformat()}: {e}")  # type: ignore[union-attr]
                 await asyncio.sleep(60)  # Back off on error
 
     async def _sleep_until_next_quarter(self) -> None:

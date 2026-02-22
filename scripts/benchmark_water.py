@@ -51,7 +51,7 @@ class PerfCaptureHandler(logging.Handler):
         super().__init__()
         self.last_metrics = {}
 
-    def emit(self, record):
+    def emit(self, record: logging.LogRecord) -> None:
         msg = record.getMessage()
         match = re.search(r"Vars: (\d+), Const: (\d+)", msg)
         if match:
@@ -128,7 +128,7 @@ def generate_scenario(sc_config: dict[str, Any]) -> dict[str, Any]:
     heating_power = sc_config.get("heating_power", 3.0)
 
     start = datetime(2025, 1, 1, 0, 0)
-    input_slots = []
+    input_slots: list[KeplerInputSlot] = []
     rng = random.Random(42)
 
     for i in range(slots):
@@ -225,7 +225,7 @@ def analyze_quality(result: KeplerResult, total_slots: int) -> dict[str, Any]:
     max_gap_slots = 0
     current_gap = 0
 
-    blocks = []
+    blocks: list[int] = []
     current_block = 0
     sawtooth_count = 0
     last_val = 0
@@ -271,7 +271,7 @@ def save_markdown_report(results: list[dict[str, Any]], sys_info: dict[str, str]
     mode = "a"
 
     # Header if new file
-    lines = []
+    lines: list[str] = []
     if not report_path.exists():
         lines.append("# Water Heating Optimization Benchmark Report")
         lines.append("Comparison of water heating MILP complexity and solve times.\n")
@@ -301,10 +301,10 @@ def save_markdown_report(results: list[dict[str, Any]], sys_info: dict[str, str]
     for r in results:
         q = r["quality"]
         # Compress prices to hourly average for sparkline (192 -> 48)
-        hourly_prices = []
+        hourly_prices: list[float] = []
         if q["prices"]:
             for i in range(0, len(q["prices"]), 4):
-                chunk = q["prices"][i : i + 4]
+                chunk: list[float] = q["prices"][i : i + 4]  # type: ignore[assignment]
                 hourly_prices.append(sum(chunk) / len(chunk))
 
         spark = draw_sparkline(hourly_prices)
@@ -341,7 +341,7 @@ def run_benchmark():
     scenarios = [generate_scenario(s) for s in bench_data["benchmarks"]]
 
     py_solver = KeplerSolver()
-    progress_results = []
+    progress_results: list[dict[str, Any]] = []
 
     with Progress(
         SpinnerColumn(),
@@ -386,10 +386,10 @@ def run_benchmark():
 
             # Draw Sparkline below
             if quality.get("prices"):
-                # Compress prices to hourly average for sparkline
-                hourly_prices = []
-                for i in range(0, len(quality["prices"]), 4):
-                    chunk = quality["prices"][i : i + 4]
+                prices: list[float] = quality["prices"]  # type: ignore[assignment]
+                hourly_prices: list[float] = []
+                for i in range(0, len(prices), 4):
+                    chunk: list[float] = prices[i : i + 4]
                     hourly_prices.append(sum(chunk) / len(chunk))
                 spark = draw_sparkline(hourly_prices)
                 console.print(f"  [dim]{spark}[/]\n")

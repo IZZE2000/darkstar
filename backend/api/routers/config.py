@@ -116,7 +116,7 @@ async def download_config():
         import io
 
         stream = io.StringIO()
-        yaml_handler.dump(conf, stream)
+        yaml_handler.dump(conf, stream)  # type: ignore[no-untyped-call]
         yaml_content = stream.getvalue()
 
         # Create response with proper headers for download
@@ -153,7 +153,7 @@ async def save_config(
         # Or just dump. webapp.py usually did a load-update-dump cycle using ruamel.
         # EXCLUSION FILTER: Ensure secrets from secrets.yaml never leak into config.yaml
         # These keys should only live in secrets.yaml
-        SECRET_KEYS = {
+        SECRET_KEYS: dict[str, Any] = {
             "home_assistant": {"token"},
             "notifications": {"api_key", "token", "password", "webhook_url", "discord_webhook_url"},
             "openrouter_api_key": None,
@@ -166,7 +166,7 @@ async def save_config(
 
             for key in list(overrides.keys()):
                 if key in exclusions:
-                    excl_val = exclusions[key]
+                    excl_val: Any = exclusions[key]
                     if excl_val is None:
                         logger.warning(
                             f"Security: Stripped sensitive block '{key}' from config save."
@@ -181,7 +181,7 @@ async def save_config(
                                     )
                                     overrides[key].pop(subkey)
                         elif isinstance(excl_val, dict):
-                            filter_secrets(overrides[key], excl_val)
+                            filter_secrets(overrides[key], cast("dict[str, Any]", excl_val))
 
                         if not overrides[key]:
                             overrides.pop(key)
@@ -206,12 +206,28 @@ async def save_config(
                         source[key] = {}
 
                     # Recursively merge the nested dict, passing sub-schema
-                    sub_schema = expected_val if isinstance(expected_val, dict) else None
-                    deep_update(source[key], value, sub_schema)
+                    sub_schema: dict[str, Any] | None = (
+                        cast("dict[str, Any]", expected_val)
+                        if isinstance(expected_val, dict)
+                        else None
+                    )
+                    deep_update(
+                        cast("dict[str, Any]", source[key]),
+                        cast("dict[str, Any]", value),
+                        sub_schema,
+                    )
                 else:
                     # Type Coercion Logic
-                    coerced_value = value
-                    if expected_val is not None and value is not None:
+                    coerced_value: Any
+                    if isinstance(value, dict):
+                        coerced_value = cast("dict[str, Any]", value)
+                    else:
+                        coerced_value = value
+                    if (
+                        expected_val is not None
+                        and value is not None
+                        and not isinstance(value, dict)
+                    ):
                         try:
                             if isinstance(expected_val, bool) and not isinstance(value, bool):
                                 if str(value).lower() in ("true", "1", "yes"):
@@ -241,11 +257,11 @@ async def save_config(
 
         # Load template as base (has all comments and structure)
         with default_path.open(encoding="utf-8") as df:
-            template_config = cast("dict[str, Any]", yaml_handler.load(df) or {})
+            template_config: dict[str, Any] = yaml_handler.load(df) or {}  # type: ignore[no-untyped-call]
 
         # Load user config for current values
         with config_path.open(encoding="utf-8") as f:
-            user_data = cast("dict[str, Any]", yaml_handler.load(f) or {})
+            user_data: dict[str, Any] = yaml_handler.load(f) or {}  # type: ignore[no-untyped-call]
 
         # Filter secrets before merging
         filter_secrets(payload, SECRET_KEYS)
@@ -344,7 +360,7 @@ def _validate_config_for_save(
 
         if config_version >= 2 and water_heaters:
             # Validate new array format
-            existing_ids = set()
+            existing_ids: set[str] = set()
             for i, wh in enumerate(water_heaters):
                 # Check for required fields
                 if not wh.get("id"):
@@ -429,7 +445,7 @@ def _validate_config_for_save(
 
         if config_version >= 2 and ev_chargers:
             # Validate new array format
-            existing_ev_ids = set()
+            existing_ev_ids: set[str] = set()
             for i, ev in enumerate(ev_chargers):
                 # Check for required fields
                 if not ev.get("id"):
@@ -563,8 +579,8 @@ def _validate_config_for_save(
                     }
                 )
 
-        solar_arrays = system_cfg.get("solar_arrays", [])
-        if not isinstance(solar_arrays, list):
+        solar_arrays: list[dict[str, Any]] = system_cfg.get("solar_arrays", [])
+        if not isinstance(solar_arrays, list):  # type: ignore[unnecessary-else]
             issues.append(
                 {
                     "severity": "error",
@@ -803,7 +819,7 @@ async def toggle_error_correction(enabled: bool = Body(..., embed=True)):
         yaml_handler = YAML()
         yaml_handler.preserve_quotes = True
         with Path("config.yaml").open("w", encoding="utf-8") as f:
-            yaml_handler.dump(conf, f)
+            yaml_handler.dump(conf, f)  # type: ignore[no-untyped-call]
 
         return {"status": "success", "enabled": enabled}
     except Exception as e:

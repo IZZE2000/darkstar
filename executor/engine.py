@@ -176,10 +176,10 @@ class ExecutorEngine:
         self._ev_charging_slot_end: datetime | None = None
 
         # Recent errors tracking (Phase 3)
-        self.recent_errors = collections.deque(maxlen=10)
+        self.recent_errors: collections.deque[dict[str, Any]] = collections.deque(maxlen=10)
 
         # Async background tasks reference (RUF006 fix)
-        self._background_tasks = set()
+        self._background_tasks: set[asyncio.Task[Any]] = set()
 
     def _get_db_path(self) -> str:
         """Get the path to the learning database."""
@@ -506,7 +506,7 @@ class ExecutorEngine:
             try:
                 # Issue 0 Fix: Use create_task for async tick execution
                 loop = asyncio.get_running_loop()
-                task = loop.create_task(self._tick())
+                task: asyncio.Task[Any] = loop.create_task(self._tick())
                 self._background_tasks.add(task)
                 task.add_done_callback(self._background_tasks.discard)
                 logger.info("Immediate tick scheduled after resume")
@@ -561,7 +561,7 @@ class ExecutorEngine:
         # Fix: Schedule async execution
         try:
             loop = asyncio.get_running_loop()
-            task = loop.create_task(self.dispatcher.execute(idle_decision))
+            task: asyncio.Task[Any] = loop.create_task(self.dispatcher.execute(idle_decision))
             self._background_tasks.add(task)
             task.add_done_callback(self._background_tasks.discard)
             logger.info("Idle mode actions scheduled (async)")
@@ -602,13 +602,9 @@ class ExecutorEngine:
             )
 
             # Send via ActionDispatcher
-            self.send_notification(
-                "Darkstar Executor Paused",
+            self.dispatcher._send_notification(  # type: ignore[protected-access]
                 message,
-                data={
-                    "notification_type": "pause_reminder",
-                    "actions": [{"action": "RESUME_EXECUTOR", "title": "ACTIVATE"}],
-                },
+                title="Darkstar Executor Paused",
             )
             logger.info("Pause reminder notification sent")
         except Exception as e:
@@ -622,10 +618,10 @@ class ExecutorEngine:
             return False
 
         try:
-            self.dispatcher._send_notification(message, title=title)
+            self.dispatcher._send_notification(message, title=title)  # type: ignore[protected-access]
             # If data is provided, we might need a more direct HA call
             # since _send_notification is simplified
-            if data:
+            if data and self.ha_client:
                 self.ha_client.send_notification(
                     self.config.notifications.service, title, message, data=data
                 )
@@ -675,7 +671,15 @@ class ExecutorEngine:
         # Immediately apply the boost
         if self.ha_client and self.dispatcher:
             try:
-                self.dispatcher.set_water_temp(self.config.water_heater.temp_boost)
+                # Schedule async water temp setting
+                loop = asyncio.get_running_loop()
+                task: asyncio.Task[Any] = loop.create_task(
+                    self.dispatcher.set_water_temp(self.config.water_heater.temp_boost)
+                )
+                self._background_tasks.add(task)
+                task.add_done_callback(self._background_tasks.discard)
+            except RuntimeError:
+                logger.warning("Could not apply water boost: no running event loop")
             except Exception as e:
                 logger.error("Failed to apply water boost: %s", e)
 
@@ -700,7 +704,15 @@ class ExecutorEngine:
             # Set water temp back to normal
             if self.dispatcher:
                 try:
-                    self.dispatcher.set_water_temp(self.config.water_heater.temp_off)
+                    # Schedule async water temp setting
+                    loop = asyncio.get_running_loop()
+                    task: asyncio.Task[Any] = loop.create_task(
+                        self.dispatcher.set_water_temp(self.config.water_heater.temp_off)
+                    )
+                    self._background_tasks.add(task)
+                    task.add_done_callback(self._background_tasks.discard)
+                except RuntimeError:
+                    logger.warning("Could not reset water temp: no running event loop")
                 except Exception as e:
                     logger.error("Failed to reset water temp: %s", e)
 
@@ -826,7 +838,7 @@ class ExecutorEngine:
             # Calculate next run time
             now = datetime.now(tz)
             next_run = self._compute_next_run(now)
-            self.status.next_run_at = next_run.isoformat()
+            self.status.next_run_at = next_run
 
             # Wait until next run time
             wait_seconds = (next_run - now).total_seconds()
@@ -964,7 +976,7 @@ class ExecutorEngine:
                 return result
 
             # 1. Check automation toggle (Rev O1)
-            if self.config.automation_toggle_entity:
+            if self.config.automation_toggle_entity and self.ha_client:
                 toggle_state = self.ha_client.get_state_value(self.config.automation_toggle_entity)
                 if toggle_state and toggle_state.lower() != "on":
                     logger.warning(
@@ -1081,7 +1093,7 @@ class ExecutorEngine:
                         self._water_boost_until = None
                     # Send notification
                     if self.dispatcher:
-                        self.dispatcher._send_notification(
+                        self.dispatcher._send_notification(  # type: ignore[protected-access]
                             f"Water boost cancelled - battery too low ({state.current_soc_percent:.0f}% < {min_boost_soc:.0f}%)",
                             title="Darkstar Water Boost",
                         )
@@ -1450,16 +1462,18 @@ class ExecutorEngine:
                         state.current_export_kw = float(exp_str) / 1000
 
             # Get current work mode (only if entity configured)
-            if self.config.has_battery and self.config.inverter.work_mode_entity:
-                work_mode = self.ha_client.get_state_value(self.config.inverter.work_mode_entity)
+            work_mode_entity: str | None = getattr(self.config.inverter, "work_mode_entity", None)
+            if self.config.has_battery and work_mode_entity:
+                work_mode = self.ha_client.get_state_value(work_mode_entity)
                 if work_mode:
                     state.current_work_mode = work_mode
 
             # Get grid charging state (only if entity configured)
-            if self.config.has_battery and self.config.inverter.grid_charging_entity:
-                grid_charge = self.ha_client.get_state_value(
-                    self.config.inverter.grid_charging_entity
-                )
+            grid_charging_entity: str | None = getattr(
+                self.config.inverter, "grid_charging_entity", None
+            )
+            if self.config.has_battery and grid_charging_entity and self.ha_client:
+                grid_charge = self.ha_client.get_state_value(grid_charging_entity)
                 state.grid_charging_enabled = grid_charge == "on"
 
             # Get water heater temp (Rev O1, only if entity configured)
@@ -1574,13 +1588,15 @@ class ExecutorEngine:
             slot_duration_h = self.config.interval_seconds / 3600.0
 
             # Grid charge: if mode_intent is "charge" and charge value > 0
-            grid_charge_kwh = 0.0
+            grid_charge_kwh: float = 0.0
             is_grid_charging = decision.mode_intent == "charge"
             if is_grid_charging and decision.charge_value > 0:
                 # Rough estimate: charge_value * voltage / 1000 * efficiency * duration
-                voltage_v = self.config.controller.system_voltage_v or 48.0
-                efficiency = self.config.controller.charge_efficiency or 0.92
-                charge_kw = (decision.charge_value * voltage_v / 1000.0) * efficiency
+                voltage_v: float = getattr(self.config.controller, "system_voltage_v", 48.0) or 48.0
+                efficiency: float = (
+                    getattr(self.config.controller, "charge_efficiency", 0.92) or 0.92
+                )
+                charge_kw: float = (decision.charge_value * voltage_v / 1000.0) * efficiency
                 grid_charge_kwh = charge_kw * slot_duration_h
 
             # PV charge: if PV exceeds load, surplus goes to battery

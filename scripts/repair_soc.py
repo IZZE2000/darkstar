@@ -4,6 +4,7 @@ import logging
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Any, cast
 
 import pandas as pd
 import pytz
@@ -20,10 +21,11 @@ logger = logging.getLogger("repair_soc")
 logging.basicConfig(level=logging.INFO)
 
 
-def load_config():
+def load_config() -> dict[str, Any]:
     try:
         with Path("config.yaml").open(encoding="utf-8") as f:
-            return yaml.safe_load(f) or {}
+            raw_data = yaml.safe_load(f)
+            return cast("dict[str, Any]", raw_data) if raw_data else {}
     except FileNotFoundError:
         return {}
 
@@ -38,9 +40,9 @@ def parse_args():
 
 async def repair():
     args = parse_args()
-    config = load_config()
-    db_path = config.get("learning", {}).get("sqlite_path", "data/planner_learning.db")
-    tz_name = config.get("timezone", "Europe/Stockholm")
+    config: dict[str, Any] = load_config()
+    db_path: str = config.get("learning", {}).get("sqlite_path", "data/planner_learning.db")  # type: ignore[union-attr]
+    tz_name: str = config.get("timezone", "Europe/Stockholm")  # type: ignore[union-attr]
     tz = pytz.timezone(tz_name)
 
     # Repair window: Last 24 hours up to NOW
@@ -75,7 +77,7 @@ async def repair():
             return
 
         # Load into DataFrame
-        df_data = []
+        df_data: list[dict[str, Any]] = []
         for r in rows:
             df_data.append({"slot_start": r.slot_start, "soc": r.soc_end_percent})
 
@@ -103,7 +105,7 @@ async def repair():
         df["soc_filled"] = df["soc_filled"].ffill()
 
         # Prepare updates
-        updates_to_run = []
+        updates_to_run: list[dict[str, Any]] = []
         print(f"\n{'Time':<25} {'Old':<10} {'New':<10} {'Method'}")
         print("-" * 65)
 
@@ -135,7 +137,7 @@ async def repair():
         for update_data in updates_to_run:
             stmt = (
                 update(SlotObservation)
-                .where(SlotObservation.slot_start == update_data["slot_start"])
+                .where(SlotObservation.slot_start == update_data["slot_start"])  # type: ignore[arg-type]
                 .values(soc_end_percent=update_data["soc_end_percent"])
             )
             await conn.execute(stmt)

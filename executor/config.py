@@ -52,7 +52,7 @@ class InverterConfig:
     control_unit: str = "A"
 
     # Dynamic entities for complex profiles (Rev IP2)
-    custom_entities: dict[str, str | None] = field(default_factory=dict)
+    custom_entities: dict[str, str | None] = field(default_factory=dict[str, str | None])
 
 
 @dataclass
@@ -268,11 +268,14 @@ def load_executor_config(config_path: str = "config.yaml") -> ExecutorConfig:
 
     # REV F71: Explicitly merge nested custom_entities from YAML
     # This handles the case where users define custom_entities as a nested dict
-    nested_custom = inverter_data.get("custom_entities", {})
-    if isinstance(nested_custom, dict):
-        for k, v in nested_custom.items():
-            if k not in inverter.custom_entities or inverter.custom_entities.get(k) is None:
-                inverter.custom_entities[k] = _str_or_none(v)
+    nested_custom: dict[str, Any] = (
+        inverter_data.get("custom_entities", {})
+        if isinstance(inverter_data.get("custom_entities"), dict)
+        else {}
+    )
+    for k, v in nested_custom.items():
+        if k not in inverter.custom_entities or inverter.custom_entities.get(k) is None:
+            inverter.custom_entities[k] = _str_or_none(v)
 
     water_data: dict[str, Any] = (
         executor_data.get("water_heater", {})
@@ -343,11 +346,11 @@ def load_executor_config(config_path: str = "config.yaml") -> ExecutorConfig:
         key: str,
         legacy_key: str,
         default: Any,
-        source: dict = battery_data,
-        legacy_source: dict = ctrl_data,
+        source: dict[str, Any] = battery_data,
+        legacy_source: dict[str, Any] = ctrl_data,
     ) -> Any:
         # 1. Try new source
-        val = source.get(key)
+        val: Any = source.get(key)
         if val is not None:
             return val
         # 2. Try legacy source
