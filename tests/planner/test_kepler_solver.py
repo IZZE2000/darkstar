@@ -242,3 +242,85 @@ def test_kepler_ev_no_battery_drain():
     # And total discharge cannot be more than load (0 in this case)
     total_discharge = sum(s.discharge_kwh for s in result.slots)
     assert total_discharge == pytest.approx(0.0, abs=0.01)
+
+
+def test_export_threshold_k5():
+    """Verify export threshold logic prevents uneconomic exports (REV K5)."""
+    from planner.solver.types import KeplerConfig, KeplerInput, KeplerInputSlot
+
+    start = datetime(2025, 1, 1, 12, 0)
+    slots = [
+        KeplerInputSlot(
+            start_time=start,
+            end_time=start + timedelta(minutes=15),
+            load_kwh=0.0,
+            pv_kwh=0.0,
+            import_price_sek_kwh=2.0,
+            export_price_sek_kwh=1.0,
+        )
+    ]
+    input_data = KeplerInput(slots=slots, initial_soc_kwh=5.0)
+
+    # Case 1: Low Threshold -> Should Export
+    config_low = KeplerConfig(
+        capacity_kwh=10.0,
+        min_soc_percent=0,
+        max_soc_percent=100,
+        max_charge_power_kw=10,
+        max_discharge_power_kw=10,
+        charge_efficiency=1.0,
+        discharge_efficiency=1.0,
+        wear_cost_sek_per_kwh=0.0,
+        export_threshold_sek_per_kwh=0.1,
+    )
+    res_low = KeplerSolver().solve(input_data, config_low)
+    assert res_low.slots[0].grid_export_kwh > 0.1
+
+    # Case 2: High Threshold -> Should NOT Export
+    config_high = KeplerConfig(
+        capacity_kwh=10.0,
+        min_soc_percent=0,
+        max_soc_percent=100,
+        max_charge_power_kw=10,
+        max_discharge_power_kw=10,
+        charge_efficiency=1.0,
+        discharge_efficiency=1.0,
+        wear_cost_sek_per_kwh=0.0,
+        export_threshold_sek_per_kwh=1.5,
+    )
+    res_high = KeplerSolver().solve(input_data, config_high)
+    assert res_high.slots[0].grid_export_kwh == pytest.approx(0.0)
+
+
+def test_ramping_cost_k5():
+    """Verify ramping cost prevents excessive flip-flopping (REV K5)."""
+    from planner.solver.types import KeplerConfig, KeplerInput, KeplerInputSlot
+
+    start = datetime(2025, 1, 1, 12, 0)
+    prices = [0.1, 10.0, 0.1, 10.0]
+    slots = [
+        KeplerInputSlot(
+            start_time=start + timedelta(minutes=15 * i),
+            end_time=start + timedelta(minutes=15 * (i + 1)),
+            load_kwh=0.0,
+            pv_kwh=0.0,
+            import_price_sek_kwh=p,
+            export_price_sek_kwh=p,
+        )
+        for i, p in enumerate(prices)
+    ]
+    input_data = KeplerInput(slots=slots, initial_soc_kwh=0.0)
+    config_ramp = KeplerConfig(
+        capacity_kwh=10.0,
+        min_soc_percent=0,
+        max_soc_percent=100,
+        max_charge_power_kw=4.0,
+        max_discharge_power_kw=4.0,
+        charge_efficiency=1.0,
+        discharge_efficiency=1.0,
+        wear_cost_sek_per_kwh=0.0,
+        ramping_cost_sek_per_kw=10.0,
+    )
+    res_ramp = KeplerSolver().solve(input_data, config_ramp)
+    # S2 discharge should be suppressed by ramping penalty
+    assert res_ramp.slots[1].discharge_kwh == pytest.approx(0.0)

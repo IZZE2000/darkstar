@@ -16,7 +16,7 @@ from planner.solver.adapter import config_to_kepler_config
 @pytest.fixture
 def default_config():
     """Load the default config YAML."""
-    config_path = Path(__file__).parent.parent / "config.default.yaml"
+    config_path = Path(__file__).parent.parent.parent / "config.default.yaml"
     with config_path.open() as f:
         return yaml.safe_load(f)
 

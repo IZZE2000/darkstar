@@ -115,3 +115,95 @@ def test_manual_load_registration(disaggregator):
     disaggregator.register_load(new_load)
     assert disaggregator.get_load_by_id("dynamic_load") == new_load
     assert len(disaggregator.list_active_loads()) == 3
+
+
+class TestARC15EntityArrays:
+    """Test LoadDisaggregator with new water_heaters[] and ev_chargers[] arrays (ARC15)."""
+
+    @pytest.fixture
+    def mock_config_arc15(self):
+        return {
+            "config_version": 2,
+            "water_heaters": [
+                {
+                    "id": "main_tank",
+                    "name": "Main",
+                    "enabled": True,
+                    "power_kw": 3.0,
+                    "sensor": "sensor.vvb",
+                    "type": "binary",
+                },
+                {
+                    "id": "disabled",
+                    "enabled": False,
+                    "power_kw": 3.0,
+                    "sensor": "sensor.off",
+                    "type": "binary",
+                },
+            ],
+            "ev_chargers": [
+                {
+                    "id": "tesla",
+                    "name": "Tesla",
+                    "enabled": True,
+                    "max_power_kw": 11.0,
+                    "sensor": "sensor.tesla",
+                    "type": "variable",
+                }
+            ],
+        }
+
+    def test_arc15_load_registration(self, mock_config_arc15):
+        disaggregator = LoadDisaggregator(mock_config_arc15)
+        loads = disaggregator.list_active_loads()
+        assert len(loads) == 2
+        assert disaggregator.get_load_by_id("main_tank") is not None
+        assert disaggregator.get_load_by_id("tesla") is not None
+        assert disaggregator.get_load_by_id("disabled") is None
+
+    @pytest.mark.asyncio
+    async def test_arc15_update_current_power(self, mock_config_arc15):
+        disaggregator = LoadDisaggregator(mock_config_arc15)
+        with patch("backend.loads.service.get_ha_sensor_float", new_callable=AsyncMock) as mock_get:
+            mock_get.side_effect = lambda s: 3000.0 if "vvb" in s else 5500.0
+            total = await disaggregator.update_current_power()
+            assert total == 8.5
+            assert disaggregator.get_load_by_id("main_tank").current_power_kw == 3.0
+
+
+class TestBackwardCompatibility:
+    """Test that legacy deferrable_loads format still works (ARC15)."""
+
+    def test_legacy_load_registration(self):
+        config = {
+            "config_version": 1,
+            "deferrable_loads": [
+                {"id": "wh", "name": "WH", "sensor_key": "s1", "type": "binary"},
+                {"id": "ev", "name": "EV", "sensor_key": "s2", "type": "variable"},
+            ],
+            "input_sensors": {"s1": "sensor.wh", "s2": "sensor.ev"},
+        }
+        disaggregator = LoadDisaggregator(config)
+        assert len(disaggregator.list_active_loads()) == 2
+        assert disaggregator.get_load_by_id("wh").sensor_key == "sensor.wh"
+
+    def test_mixed_config_prefers_arc15(self):
+        config = {
+            "config_version": 2,
+            "deferrable_loads": [
+                {"id": "legacy", "name": "L", "sensor_key": "s1", "type": "binary"}
+            ],
+            "water_heaters": [
+                {
+                    "id": "arc15",
+                    "name": "A",
+                    "enabled": True,
+                    "power_kw": 3.0,
+                    "sensor": "s2",
+                    "type": "binary",
+                }
+            ],
+        }
+        disaggregator = LoadDisaggregator(config)
+        assert len(disaggregator.list_active_loads()) == 1
+        assert disaggregator.get_load_by_id("arc15") is not None

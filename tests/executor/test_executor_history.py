@@ -1,4 +1,5 @@
 import contextlib
+import json
 import tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -8,6 +9,7 @@ import pytz
 from sqlalchemy import inspect
 
 from backend.learning.models import Base
+from executor.actions import ActionResult
 from executor.history import ExecutionHistory, ExecutionRecord
 
 
@@ -53,6 +55,92 @@ class TestExecutionRecord:
         )
         assert record.success == 1
         assert record.source == "native"
+
+    def test_ev_charge_start_record_serializes(self):
+        """Verify EV charge start ExecutionRecord serializes to JSON (REV F71)."""
+        record = ExecutionRecord(
+            executed_at="2026-02-17T20:23:00+01:00",
+            slot_start="2026-02-17T20:15:00+01:00",
+            commanded_work_mode="ev_charge_start",
+            before_soc_percent=50,
+            success=1,
+            source="ev_charger",
+            duration_ms=150,
+            action_results=[
+                {
+                    "type": "ev_charger_switch",
+                    "success": True,
+                    "message": "EV charger turned on",
+                    "entity_id": "switch.laddare_charging",
+                    "previous_value": False,
+                    "new_value": True,
+                    "verified_value": True,
+                    "verification_success": True,
+                    "skipped": False,
+                    "error_details": None,
+                }
+            ],
+        )
+        json_str = json.dumps(record.__dict__)
+        assert "ev_charge_start" in json_str
+        assert "switch.laddare_charging" in json_str
+
+    def test_ev_charge_stop_record_serializes(self):
+        """Verify EV charge stop ExecutionRecord serializes to JSON (REV F71)."""
+        record = ExecutionRecord(
+            executed_at="2026-02-17T20:24:00+01:00",
+            slot_start="2026-02-17T20:15:00+01:00",
+            commanded_work_mode="ev_charge_stop",
+            before_soc_percent=55,
+            success=1,
+            source="ev_charger",
+            duration_ms=120,
+            action_results=[
+                {
+                    "type": "ev_charger_switch",
+                    "success": True,
+                    "message": "EV charger turned off",
+                    "entity_id": "switch.laddare_charging",
+                    "previous_value": True,
+                    "new_value": False,
+                    "verified_value": False,
+                    "verification_success": True,
+                    "skipped": False,
+                    "error_details": None,
+                }
+            ],
+        )
+        json_str = json.dumps(record.__dict__)
+        assert "ev_charge_stop" in json_str
+
+    def test_action_result_as_dict_serializable(self):
+        """Verify that ActionResult converted to dict IS JSON serializable (REV F71)."""
+        result = ActionResult(
+            action_type="ev_charger_switch",
+            success=True,
+            message="EV charger turned on",
+            entity_id="switch.laddare_charging",
+            previous_value=False,
+            new_value=True,
+            verified_value=True,
+            verification_success=True,
+            skipped=False,
+            error_details=None,
+        )
+        result_dict = {
+            "type": result.action_type,
+            "success": result.success,
+            "message": result.message,
+            "entity_id": result.entity_id,
+            "previous_value": result.previous_value,
+            "new_value": result.new_value,
+            "verified_value": result.verified_value,
+            "verification_success": result.verification_success,
+            "skipped": result.skipped,
+            "error_details": result.error_details,
+        }
+        json_str = json.dumps(result_dict)
+        assert "ev_charger_switch" in json_str
 
 
 class TestExecutionHistorySchema:
