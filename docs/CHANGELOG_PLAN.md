@@ -4,6 +4,30 @@ This document contains the archive of all completed revisions. It serves as the 
 
 ---
 
+### [DONE] REV // F74 — Fix Initial Load Unit Normalization (W vs kW)
+
+**Goal:** Ensure the initial dashboard load (`/api/status`) correctly normalizes all power sensors to kW by checking their Home Assistant `unit_of_measurement`, matching the behavior of the live WebSocket feed.
+
+**Context:**
+Currently, `get_system_status()` in `backend/api/routers/system.py` blindly divides Solar, Grid, Load, and Battery power by 1000 assuming they are in Watts, but it assumes EV sensors are already in Kilowatts. This causes massive spikes (e.g., 641.9 kW instead of 0.6 kW) on initial load if the user configured an EV sensor that outputs Watts. The live WebSocket correctly parses `unit_of_measurement` and fixes it after 30 seconds.
+
+**Plan:**
+
+#### Phase 1: Smart Sensor Helper (Backend) [DONE]
+* [x] Create a new async helper function in `inputs.py` named `get_ha_sensor_kw_normalized(entity_id: str)`.
+* [x] This function should fetch the full entity state using `get_ha_entity_state(entity_id)`.
+* [x] If the state exists, extract the numeric `state` value.
+* [x] Check `attributes.unit_of_measurement`. If it equals "W" (case-insensitive), divide the value by 1000.0. Return the final kW float.
+
+#### Phase 2: Refactor Initial Hydration (Backend) [DONE]
+* [x] Update `get_system_status()` in `backend/api/routers/system.py`.
+* [x] Swap the `get_ha_sensor_float` calls for `pv_power`, `load_power`, `battery_power`, `grid_power`, and EV `sensor` to use the new `get_ha_sensor_kw_normalized`.
+* [x] Remove the hardcoded `/ 1000.0` divisions at the bottom of the function when constructing the `StatusResponse` (since the new helper already handles it).
+* [x] Leave `battery_soc`, EV `soc_sensor`, and EV `plug_sensor` alone, as they are not power metrics.
+* [x] Run `pytest` and `pyright` to ensure no regressions.
+
+---
+
 ### [DONE] REV // F73 — Battery Max Charge/Discharge Settings Missing from UI
 
 **Goal:** Make battery max charge/discharge power/current settings visible in the Battery Tab for all inverter profiles.
