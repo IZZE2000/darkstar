@@ -68,7 +68,7 @@ jobs:
           pip install pytest httpx
 
       - name: Run API tests
-        run: PYTHONPATH=. pytest tests/test_api_routes.py -v
+        run: PYTHONPATH=. pytest tests/api/test_api_routes.py -v
 
   validate-openapi:
     name: Validate OpenAPI Schema

@@ -30,7 +30,7 @@ jobs:
           pip install -r requirements.txt
           pip install pytest httpx
       - name: Run API tests
-        run: PYTHONPATH=. pytest tests/test_api_routes.py -v
+        run: PYTHONPATH=. pytest tests/api/test_api_routes.py -v
 
   build:
     needs: [test]
