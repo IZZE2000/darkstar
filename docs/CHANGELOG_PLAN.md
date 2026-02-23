@@ -4,6 +4,32 @@ This document contains the archive of all completed revisions. It serves as the 
 
 ---
 
+### [DONE] REV // DX8 — Production-Grade Test Suite Modernization
+
+**Goal:** Refactor the test suite from a chronological "Revision Stream" to a modular, component-based architecture to improve maintainability and discoverability.
+
+**Context:**
+The test suite had grown organically over dozens of revisions, leading to a flat root directory filled with files named after chronological updates (e.g., `test_rev_f71.py`, `test_arc15_*.py`). This made it difficult to find relevant tests and led to code duplication.
+
+**Plan:**
+
+#### Phase 1: Structural Reorganization [DONE]
+* [x] Create modular directory hierarchy (`tests/api/`, `tests/executor/`, `tests/config/`, `tests/planner/`, `tests/ml/`)
+* [x] Move manual reproduction scripts to `tests/manual/`
+* [x] Move specialized utility scripts to `/scripts/`
+
+#### Phase 2: Aggressive Consolidation [DONE]
+* [x] Merge all chronological "Revision" tests into unified component suites
+* [x] Renamed remaining integration tests to functional names (e.g., `test_integration.py`, `test_learning_engine.py`)
+* [x] Eliminate all `test_rev_*` and `test_arc15_*` filenames
+
+#### Phase 3: Verification [DONE]
+* [x] Unified relative paths across the new structure
+* [x] Verified 100% pass rate (466 tests)
+* [x] Applied unified linting and formatting
+
+---
+
 ### [DONE] REV // F74 — Fix Initial Load Unit Normalization (W vs kW)
 
 **Goal:** Ensure the initial dashboard load (`/api/status`) correctly normalizes all power sensors to kW by checking their Home Assistant `unit_of_measurement`, matching the behavior of the live WebSocket feed.
@@ -3005,7 +3031,7 @@ The fix requires restructuring to entity-centric sections where each physical de
 
 ---
 
-### [DONE] REV // DX14 — Config Soft Merge Improvement
+### [DONE] REV // DX7 — Config Soft Merge Improvement
 
 **Goal:** Improve the config soft merge functionality so new keys are added to the same location as they appear in the default config file, maintaining proper structure and organization.
 

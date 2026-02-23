@@ -127,27 +127,3 @@ We need a targeted Setup Wizard that triggers automatically. It should gather th
 * [ ] Test the Synthetic Profile generation mathematically scales correctly.
 
 ---
-
-### [DONE] REV // DX7 — Production-Grade Test Suite Modernization
-
-**Goal:** Refactor the test suite from a chronological "Revision Stream" to a modular, component-based architecture to improve maintainability and discoverability.
-
-**Context:**
-The test suite had grown organically over dozens of revisions, leading to a flat root directory filled with files named after chronological updates (e.g., `test_rev_f71.py`, `test_arc15_*.py`). This made it difficult to find relevant tests and led to code duplication.
-
-**Plan:**
-
-#### Phase 1: Structural Reorganization [DONE]
-* [x] Create modular directory hierarchy (`tests/api/`, `tests/executor/`, `tests/config/`, `tests/planner/`, `tests/ml/`)
-* [x] Move manual reproduction scripts to `tests/manual/`
-* [x] Move specialized utility scripts to `/scripts/`
-
-#### Phase 2: Aggressive Consolidation [DONE]
-* [x] Merge all chronological "Revision" tests into unified component suites
-* [x] Renamed remaining integration tests to functional names (e.g., `test_integration.py`, `test_learning_engine.py`)
-* [x] Eliminate all `test_rev_*` and `test_arc15_*` filenames
-
-#### Phase 3: Verification [DONE]
-* [x] Unified relative paths across the new structure
-* [x] Verified 100% pass rate (466 tests)
-* [x] Applied unified linting and formatting
