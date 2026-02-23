@@ -1,33 +1,10 @@
 # syntax=docker/dockerfile:1
 # ==============================================================================
 # Darkstar Energy Manager - Production Dockerfile
-# Multi-stage build for small image size (~300MB)
+# Single-stage build using Debian (python:3.12-slim)
 # Supports amd64 (servers) and arm64 (Raspberry Pi)
 # ==============================================================================
 
-# ------------------------------------------------------------------------------
-# Stage 1: Build Frontend
-# ------------------------------------------------------------------------------
-FROM node:20-alpine AS frontend-builder
-
-WORKDIR /app/frontend
-
-# Install pnpm
-RUN npm install -g pnpm
-
-# Copy package files first for layer caching
-COPY frontend/package.json frontend/pnpm-lock.yaml ./
-
-# Install dependencies
-RUN pnpm install --no-frozen-lockfile
-
-# Copy source and build
-COPY frontend/ ./
-RUN pnpm build
-
-# ------------------------------------------------------------------------------
-# Stage 2: Python Runtime
-# ------------------------------------------------------------------------------
 FROM python:3.12-slim
 
 LABEL maintainer="Darkstar Energy Manager"
@@ -36,16 +13,30 @@ LABEL description="AI-powered home battery optimization"
 WORKDIR /app
 
 # Install system dependencies
+# - nodejs, npm: Frontend build
 # - libgomp1: Required for LightGBM
 # - curl: Health checks
+# - gcc, g++, make: Build dependencies for packages that need compilation
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    nodejs \
+    npm \
     libgomp1 \
     curl \
+    gcc \
+    g++ \
+    make \
     && rm -rf /var/lib/apt/lists/*
+
+# Install pnpm globally
+RUN npm install -g pnpm
 
 # Install Python dependencies
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy frontend package files first for layer caching
+COPY frontend/package.json frontend/pnpm-lock.yaml ./frontend/
+RUN cd frontend && pnpm install --frozen-lockfile
 
 # Copy application code
 COPY backend/ ./backend/
@@ -54,7 +45,6 @@ COPY executor/ ./executor/
 COPY profiles/ ./profiles/
 COPY bin/ ./bin/
 COPY ml/*.py ./ml/
-# Models are generated at runtime (Clean Slate strategy)
 RUN mkdir -p ml/models
 COPY ml/models/defaults/ ./ml/models/defaults/
 COPY inputs.py ./
@@ -71,8 +61,9 @@ COPY VERSION ./VERSION
 COPY config.default.yaml ./config.default.yaml
 COPY secrets.example.yaml ./secrets.example.yaml
 
-# Copy built frontend from stage 1 (Vite outputs to backend/static, FastAPI serves from there)
-COPY --from=frontend-builder /app/backend/static ./backend/static
+# Build frontend (Vite outputs to backend/static, FastAPI serves from there)
+COPY frontend/ ./frontend/
+RUN cd frontend && pnpm build
 
 # Copy Vite's index.html to templates folder (it has the correct asset hashes)
 RUN mkdir -p ./backend/templates && \
@@ -81,7 +72,6 @@ RUN mkdir -p ./backend/templates && \
 # Create directories for runtime data
 RUN mkdir -p /data
 
-# Environment variables
 # Environment variables
 ENV PYTHONUNBUFFERED=1
 ENV APP_MODULE=backend.main:app
