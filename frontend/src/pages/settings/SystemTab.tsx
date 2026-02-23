@@ -25,6 +25,7 @@ export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }
     }, [])
 
     const {
+        config,
         form,
         fieldErrors,
         loading: settingsLoading,
@@ -89,10 +90,10 @@ export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }
 
     const unit = form['executor.inverter.control_unit']
 
-    // Sync unit based on profile behavior
+    // Sync unit based on profile behavior (only for non-generic profiles)
     useEffect(() => {
         const selectedProfile = profiles.find((p) => p.name === form['system.inverter_profile'])
-        if (selectedProfile && selectedProfile.behavior?.control_unit) {
+        if (selectedProfile && selectedProfile.name !== 'generic' && selectedProfile.behavior?.control_unit) {
             if (unit !== selectedProfile.behavior.control_unit) {
                 handleChange('executor.inverter.control_unit', selectedProfile.behavior.control_unit)
             }
@@ -286,6 +287,12 @@ export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }
                                                                                                         haLoading
                                                                                                     }
                                                                                                     fullForm={form}
+                                                                                                    config={
+                                                                                                        config as unknown as Record<
+                                                                                                            string,
+                                                                                                            unknown
+                                                                                                        >
+                                                                                                    }
                                                                                                 />
                                                                                             </motion.div>
                                                                                         ),

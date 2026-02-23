@@ -285,3 +285,27 @@ We need a targeted Setup Wizard that triggers automatically. It should gather th
 * [x] Refactor the `useSocket` hook in `frontend/src/lib/hooks.ts` using the `useRef` pattern (storing the latest callback reference). This maintains a stable event listener on the socket without detaching/re-attaching on every component render, preventing dropped WebSocket packets.
 
 ---
+
+### [DONE] REV // F73 — Battery Max Charge/Discharge Settings Missing from UI
+
+**Goal:** Make battery max charge/discharge power/current settings visible in the Battery Tab for all inverter profiles.
+
+**Context:**
+The battery specification fields (`battery.max_charge/discharge_a/w`) were missing because their `showIf` conditions depended on `executor.inverter.control_unit`. This key wasn't part of the `BatteryTab`'s local form state, and the `shouldRenderField` logic lacked a robust fallback to the global configuration. Furthermore, `SettingsField` wasn't receiving the necessary configuration context to verify its own visibility.
+
+**Plan:**
+
+#### Phase 1: Logic Consolidation [DONE]
+* [x] Update `shouldRenderField` in `logic.ts` to implement a robust `getValue` helper that traverses the `config` object if the key is missing from the local form state.
+
+#### Phase 2: Prop Propagation [DONE]
+* [x] Update `SettingsField` calls in `BatteryTab.tsx` and `SystemTab.tsx` to pass `fullForm={form}` and `config={config}`. This ensures the fields can resolve cross-tab dependencies like `control_unit`.
+
+#### Phase 3: Metadata & Type Safety [DONE]
+* [x] Fix the section title match in `BatteryTab.tsx` (changed to `'HA Control Entities'`) to ensure dynamic inverter-specific battery controls are correctly injected.
+* [x] Update `ConfigResponse` in `api.ts` to include `inverter_profile`, fixing a TS type mismatch in the settings tabs.
+
+**Verification status:**
+- [x] Frontend linting/formatting (Clean)
+- [x] Backend test suite (481 Passed)
+- [x] UI Verification (Fields visible)

@@ -74,7 +74,7 @@ export interface InverterProfile {
         }
     >
     behavior: {
-        control_unit: 'A' | 'W'
+        control_unit: 'A' | 'W' | null
         min_charge_a?: number
         min_charge_w?: number
         round_step_a?: number

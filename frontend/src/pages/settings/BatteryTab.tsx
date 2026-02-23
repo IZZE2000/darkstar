@@ -3,14 +3,14 @@ import { useNavigate } from 'react-router-dom'
 import Card from '../../components/Card'
 import { useSettingsForm } from './hooks/useSettingsForm'
 import { SettingsField } from './components/SettingsField'
-import { batteryFieldList, batterySections, InverterProfile } from './types'
+import { batteryFieldList, batterySections, InverterProfile, BaseField } from './types'
 import { shouldRenderField } from './logic'
 import { motion, AnimatePresence } from 'framer-motion'
 import { AdditionalAdvancedNotice, GlobalAdvancedLockedNotice } from './components/AdvancedLockedNotice'
 import { UnsavedChangesBanner } from './components/UnsavedChangesBanner'
 import { NavigationBlockerDialog } from './components/NavigationBlockerDialog'
 import { useUnsavedChangesGuard } from './hooks/useUnsavedChangesGuard'
-import { Api } from '../../lib/api'
+import { Api, ConfigResponse } from '../../lib/api'
 
 export const BatteryTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }) => {
     const navigate = useNavigate()
@@ -23,32 +23,30 @@ export const BatteryTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode 
             .catch((err) => console.error('Failed to load profiles:', err))
     }, [])
 
-    const { form, fieldErrors, loading, saving, handleChange, save, isDirty, haEntities, haLoading } = useSettingsForm(
-        batteryFieldList,
-        profiles,
-        'battery',
-    )
+    const { config, form, fieldErrors, loading, saving, handleChange, save, isDirty, haEntities, haLoading } =
+        useSettingsForm(batteryFieldList, profiles)
 
     const blocker = useUnsavedChangesGuard(isDirty)
     const hasHiddenSections = batterySections.some((s) => s.fields.every((f) => f.isAdvanced))
 
     // Generate dynamic sections with profile entities
     const dynamicSections = useMemo(() => {
-        const selectedProfileName = form['system.inverter_profile']
+        const selectedProfileName = (config as ConfigResponse)?.system?.inverter_profile
         const selectedProfile = profiles.find((p) => p.name === selectedProfileName)
 
         return batterySections.map((section) => {
-            // Replace hardcoded "Battery HA Control Entities" with dynamic fields from profile (battery category)
-            if (section.title === 'Battery HA Control Entities' && selectedProfile) {
+            // Replace hardcoded "HA Control Entities" with dynamic fields from profile (battery category)
+            if (section.title === 'HA Control Entities' && selectedProfile) {
                 const batteryEntities = Object.entries(selectedProfile.entities)
                     .filter(([_, entity]) => entity.category === 'battery')
                     .map(([key, entity]) => ({
                         key: `executor.inverter.${key}`,
                         label: entity.description,
-                        path: ['executor', 'inverter', key] as (string | number)[],
+                        path: ['executor', 'inverter', key],
                         type: 'entity' as const,
                         helper: entity.required ? `Required for ${selectedProfile.name}` : `Optional`,
                         required: entity.required,
+                        isAdvanced: false,
                     }))
                 return {
                     ...section,
@@ -57,7 +55,7 @@ export const BatteryTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode 
             }
             return section
         })
-    }, [profiles, form])
+    }, [profiles, config])
 
     if (loading || profiles.length === 0) {
         return <Card className="p-6 text-sm text-muted">Loading battery configuration…</Card>
@@ -114,16 +112,23 @@ export const BatteryTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode 
                                 </div>
                                 <div className="grid grid-cols-1 gap-4 p-6 md:grid-cols-2">
                                     {section.fields.map((field) => {
-                                        if (!shouldRenderField(field, form)) return null
+                                        const shouldRender = shouldRenderField(
+                                            field as BaseField,
+                                            form,
+                                            config as unknown as Record<string, unknown>,
+                                        )
+                                        if (!shouldRender) return null
                                         return (
                                             <SettingsField
                                                 key={field.key}
-                                                field={field}
+                                                field={field as BaseField}
                                                 value={form[field.key]}
                                                 onChange={handleChange}
                                                 error={fieldErrors[field.key]}
                                                 haEntities={haEntities}
                                                 haLoading={haLoading}
+                                                fullForm={form}
+                                                config={config as unknown as Record<string, unknown>}
                                             />
                                         )
                                     })}

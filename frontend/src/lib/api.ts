@@ -58,6 +58,7 @@ export type ScheduleTodayWithHistoryResponse = {
 }
 export type ConfigResponse = {
     system?: {
+        inverter_profile?: string
         battery?: { capacity_kwh?: number }
         solar_array?: { kwp?: number }
         grid?: { max_power_kw?: number }

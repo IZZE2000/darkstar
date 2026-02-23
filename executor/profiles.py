@@ -163,8 +163,10 @@ class InverterProfile:
         if not self.metadata.version:
             errors.append("Profile metadata.version is required")
 
-        if self.behavior.control_unit not in ("A", "W"):
-            errors.append(f"Invalid control_unit: {self.behavior.control_unit}. Must be 'A' or 'W'")
+        if self.behavior.control_unit not in ("A", "W", None):
+            errors.append(
+                f"Invalid control_unit: {self.behavior.control_unit}. Must be 'A', 'W', or null"
+            )
 
         for mode_name in REQUIRED_MODES:
             if mode_name not in self.modes:
