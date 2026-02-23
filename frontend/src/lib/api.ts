@@ -22,6 +22,9 @@ export type StatusResponse = {
     load_power_kw?: number
     battery_power_kw?: number
     grid_power_kw?: number
+    ev_kw?: number
+    ev_plugged_in?: boolean
+    ev_chargers?: Array<{ name: string; kw: number; soc: number | null; plugged_in: boolean }>
     status?: string
     mode?: string
     rev?: string

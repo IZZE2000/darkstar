@@ -1,5 +1,7 @@
 """Pydantic models for system-related API responses."""
 
+from typing import Any
+
 from pydantic import BaseModel
 
 
@@ -20,6 +22,9 @@ class StatusResponse(BaseModel):
     load_power_kw: float
     battery_power_kw: float
     grid_power_kw: float
+    ev_kw: float = 0.0
+    ev_plugged_in: bool = False
+    ev_chargers: list[dict[str, Any]] = []
 
 
 class LogInfoResponse(BaseModel):

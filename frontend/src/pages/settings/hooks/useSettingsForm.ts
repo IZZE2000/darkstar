@@ -1,23 +1,8 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Api, ConfigResponse } from '../../../lib/api'
 import { useToast } from '../../../lib/useToast'
-import { BaseField, InverterProfile } from '../types'
+import { BaseField, InverterProfile, standardInverterKeys } from '../types'
 import { buildFormState, buildPatch } from '../utils'
-
-// Standard keys that live directly in the inverter config (not in custom_entities)
-const standardInverterKeys = new Set([
-    'work_mode',
-    'soc_target',
-    'grid_charging_enable',
-    'grid_charge_power',
-    'minimum_reserve',
-    'grid_max_export_power',
-    'grid_max_export_power_switch',
-    'max_charge_current',
-    'max_discharge_current',
-    'max_charge_power',
-    'max_discharge_power',
-])
 
 export interface UseSettingsFormReturn {
     config: ConfigResponse | null

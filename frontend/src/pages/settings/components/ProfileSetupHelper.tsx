@@ -42,7 +42,7 @@ export const ProfileSetupHelper: React.FC<ProfileSetupHelperProps> = ({ profileN
             setLoading(true)
             setErrorMsg(null)
             try {
-                const response = await fetch(`/api/profiles/${profileName}/suggestions`)
+                const response = await fetch(`api/profiles/${profileName}/suggestions`)
                 if (!response.ok) {
                     if (response.status === 404) {
                         setSuggestions(null)

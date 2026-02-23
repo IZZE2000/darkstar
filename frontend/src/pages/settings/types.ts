@@ -1462,15 +1462,32 @@ export const allFields = [
     },
 ]
 
+// Standard keys that live directly in the inverter config (not in custom_entities)
+export const standardInverterKeys = new Set([
+    'work_mode',
+    'soc_target',
+    'grid_charging_enable',
+    'grid_charge_power',
+    'minimum_reserve',
+    'grid_max_export_power',
+    'grid_max_export_power_switch',
+    'max_charge_current',
+    'max_discharge_current',
+    'max_charge_power',
+    'max_discharge_power',
+])
+
 export function generateProfileEntityFields(profile: InverterProfile): BaseField[] {
     const fields: BaseField[] = []
 
     for (const [key, entity] of Object.entries(profile.entities)) {
-        const configPath = `executor.inverter.${key}`
+        const isStandard = standardInverterKeys.has(key)
+        const configPath = isStandard ? `executor.inverter.${key}` : `executor.inverter.custom_entities.${key}`
+        const arrayPath = isStandard ? ['executor', 'inverter', key] : ['executor', 'inverter', 'custom_entities', key]
         fields.push({
             key: configPath,
             label: entity.description,
-            path: ['executor', 'inverter', key],
+            path: arrayPath,
             type: 'entity' as FieldType,
             helper: entity.required ? `Required for ${profile.name} profile` : `Optional for ${profile.name} profile`,
             required: entity.required,

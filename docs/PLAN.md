@@ -258,7 +258,7 @@ We need a targeted Setup Wizard that triggers automatically. It should gather th
 
 ---
 
-### [DRAFT] REV // F72 — Fix EV SoC PowerFlow Race Condition and Profile Suggestions 404
+### [DONE] REV // F72 — Fix EV SoC PowerFlow Race Condition and Profile Suggestions 404
 
 **Goal:** Fix the missing EV SoC in the PowerFlow card and the 404 error preventing the Profile Setup Helper from loading in Home Assistant.
 **Context:**
@@ -267,21 +267,21 @@ We need a targeted Setup Wizard that triggers automatically. It should gather th
 
 **Plan:**
 
-#### Phase 1: Fix Profile Entity Parsing (Frontend UI) [DRAFT]
-* [ ] Extract `standardInverterKeys` from `useSettingsForm.ts` and move it to `types.ts` so it can be shared.
-* [ ] Update `generateProfileEntityFields` in `types.ts` to dynamically check if an entity key is standard or custom.
-* [ ] Route standard keys to `executor.inverter.[key]`.
-* [ ] Route custom keys to `executor.inverter.custom_entities.[key]`. This will fix existing config values not displaying in the UI.
+#### Phase 1: Fix Profile Entity Parsing (Frontend UI) [DONE]
+* [x] Extract `standardInverterKeys` from `useSettingsForm.ts` and move it to `types.ts` so it can be shared.
+* [x] Update `generateProfileEntityFields` in `types.ts` to dynamically check if an entity key is standard or custom.
+* [x] Route standard keys to `executor.inverter.[key]`.
+* [x] Route custom keys to `executor.inverter.custom_entities.[key]`. This will fix existing config values not displaying in the UI.
 
-#### Phase 2: Fix Profile Suggestions Path (Frontend API) [DRAFT]
-* [ ] In `frontend/src/pages/settings/components/ProfileSetupHelper.tsx`, remove the leading slash from the fetch URL or migrate it to use `lib/api.ts`'s `getJSON` wrapper. This ensures it inherits the relative path required for HA Ingress routing, fixing the 404 error.
+#### Phase 2: Fix Profile Suggestions Path (Frontend API) [DONE]
+* [x] In `frontend/src/pages/settings/components/ProfileSetupHelper.tsx`, remove the leading slash from the fetch URL or migrate it to use `lib/api.ts`'s `getJSON` wrapper. This ensures it inherits the relative path required for HA Ingress routing, fixing the 404 error.
 
-#### Phase 3: Fix EV SoC Initialization & Indexing (Backend) [DRAFT]
-* [ ] **Backend Indexing:** Fix `backend/ha_socket.py` to correctly map EV sensors to the active `ev_chargers` list. Right now, it maps by config index, which causes an `IndexError` if `EV 1` is disabled but `EV 2` is enabled.
-* [ ] **Initial REST Payload:** Update `backend/api/routers/system.py` (`get_system_status()`) to fetch the initial EV Power, SoC, and Plug state alongside Solar/Grid/Battery data. Update the frontend `StatusResponse` type in `api.ts` to match.
-* [ ] **UI Placeholder:** Update `frontend/src/components/PowerFlowRegistry.ts` so that when `ev.soc` is `null`, it returns `--%` rather than `undefined` (which completely hides the UI element).
+#### Phase 3: Fix EV SoC Initialization & Indexing (Backend) [DONE]
+* [x] **Backend Indexing:** Fix `backend/ha_socket.py` to correctly map EV sensors to the active `ev_chargers` list. Right now, it maps by config index, which causes an `IndexError` if `EV 1` is disabled but `EV 2` is enabled.
+* [x] **Initial REST Payload:** Update `backend/api/routers/system.py` (`get_system_status()`) to fetch the initial EV Power, SoC, and Plug state alongside Solar/Grid/Battery data. Update the frontend `StatusResponse` type in `api.ts` to match.
+* [x] **UI Placeholder:** Update `frontend/src/components/PowerFlowRegistry.ts` so that when `ev.soc` is `null`, it returns `--%` rather than `undefined` (which completely hides the UI element).
 
-#### Phase 3: Fix WebSocket Race Condition (Frontend) [DRAFT]
-* [ ] Refactor the `useSocket` hook in `frontend/src/lib/hooks.ts` using the `useRef` pattern (storing the latest callback reference). This maintains a stable event listener on the socket without detaching/re-attaching on every component render, preventing dropped WebSocket packets.
+#### Phase 3: Fix WebSocket Race Condition (Frontend) [DONE]
+* [x] Refactor the `useSocket` hook in `frontend/src/lib/hooks.ts` using the `useRef` pattern (storing the latest callback reference). This maintains a stable event listener on the socket without detaching/re-attaching on every component render, preventing dropped WebSocket packets.
 
 ---

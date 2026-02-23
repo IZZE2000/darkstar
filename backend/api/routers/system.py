@@ -17,6 +17,7 @@ from backend.api.models.system import (
     VersionResponse,
 )
 from inputs import (
+    get_ha_bool,
     get_ha_sensor_float,
     load_yaml,
 )
@@ -119,7 +120,28 @@ async def get_system_status() -> StatusResponse:
         else:
             tasks.append(asyncio.sleep(0, result=0.0))
 
-    results: list[float | None] = await asyncio.gather(*tasks)
+    # Fetch EV states
+    ev_configs: list[dict[str, Any]] = []
+    if config.get("system", {}).get("has_ev_charger", False):
+        for ev in config.get("ev_chargers", []):
+            if ev.get("enabled", True):
+                ev_configs.append(ev)
+
+    for ev in ev_configs:
+        sensor = ev.get("sensor")
+        tasks.append(get_ha_sensor_float(str(sensor)) if sensor else asyncio.sleep(0, result=0.0))
+
+        soc_sensor = ev.get("soc_sensor")
+        tasks.append(
+            get_ha_sensor_float(str(soc_sensor)) if soc_sensor else asyncio.sleep(0, result=None)
+        )
+
+        plug_sensor = ev.get("plug_sensor")
+        tasks.append(
+            get_ha_bool(str(plug_sensor)) if plug_sensor else asyncio.sleep(0, result=False)
+        )
+
+    results: list[Any] = await asyncio.gather(*tasks)
 
     soc = results[0] or 0.0
     pv_pow = results[1] or 0.0
@@ -133,6 +155,34 @@ async def get_system_status() -> StatusResponse:
     if sensors.get("battery_power_inverted", False):
         batt_pow = -batt_pow
 
+    # Extract EV results
+    ev_chargers: list[dict[str, Any]] = []
+    base_idx = len(keys)
+    total_ev_kw = 0.0
+    any_plugged = False
+
+    for i, ev in enumerate(ev_configs):
+        idx = base_idx + i * 3
+        kw = results[idx] or 0.0
+        # If in Watts, convert to kW (best effort if HA provides numeric only, inputs.py float doesn't convert W to kW but ha_socket does)
+        # Assuming inputs.py get_ha_sensor_float returns exact numeric value
+        # But wait, ha_socket converts W to kW if unit_of_measurement is 'W'. Let's not duplicate that complexity unless needed.
+        # Typically people set kW for EVs.
+        ev_soc = results[idx + 1]
+        plugged = results[idx + 2] or False
+
+        ev_chargers.append(
+            {
+                "name": ev.get("name", f"EV {i + 1}"),
+                "kw": round(kw, 3),
+                "soc": round(ev_soc, 1) if ev_soc is not None else None,
+                "plugged_in": plugged,
+            }
+        )
+        total_ev_kw += kw
+        if plugged:
+            any_plugged = True
+
     return StatusResponse(
         status="online",
         mode="fastapi",
@@ -142,6 +192,9 @@ async def get_system_status() -> StatusResponse:
         load_power_kw=round(load_pow / 1000.0, 3),
         battery_power_kw=round(batt_pow / 1000.0, 3),
         grid_power_kw=round(grid_pow / 1000.0, 3),
+        ev_kw=round(total_ev_kw, 3),
+        ev_plugged_in=any_plugged,
+        ev_chargers=ev_chargers,
     )
 
 

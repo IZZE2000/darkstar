@@ -113,7 +113,7 @@ export const NODE_REGISTRY: FlowNodeConfig[] = [
             if (!data.evChargers || data.evChargers.length === 0) return undefined
             const pluggedIn = data.evChargers.filter((ev) => ev.pluggedIn)
             const evToShow = pluggedIn.length > 0 ? pluggedIn[0] : data.evChargers[0]
-            return evToShow?.soc !== null ? `${evToShow.soc.toFixed(0)}%` : undefined
+            return evToShow?.soc != null ? `${evToShow.soc.toFixed(0)}%` : '--%'
         },
         glowIntensityAccessor: (data) => (data.ev ? Math.min(data.ev.kw / 11, 1) : 0),
     },

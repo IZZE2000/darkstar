@@ -203,6 +203,26 @@ export default function Dashboard() {
                 const data = bundle.status
                 if (data.soc_percent != null) setSoc(data.soc_percent)
                 else if (data.current_soc?.value != null) setSoc(data.current_soc.value)
+
+                setLivePower((prev) => ({
+                    ...prev,
+                    pv_kw: data.pv_power_kw ?? prev.pv_kw,
+                    load_kw: data.load_power_kw ?? prev.load_kw,
+                    battery_kw: data.battery_power_kw ?? prev.battery_kw,
+                    grid_kw: data.grid_power_kw ?? prev.grid_kw,
+                    ev_kw: data.ev_kw ?? prev.ev_kw,
+                    ev_plugged_in: data.ev_plugged_in !== undefined ? data.ev_plugged_in : prev.ev_plugged_in,
+                    ev_chargers: data.ev_chargers
+                        ? data.ev_chargers.map(
+                              (ev: { name: string; kw: number; soc: number | null; plugged_in: boolean }) => ({
+                                  name: ev.name,
+                                  kw: ev.kw,
+                                  soc: ev.soc,
+                                  pluggedIn: ev.plugged_in,
+                              }),
+                          )
+                        : prev.ev_chargers,
+                }))
             }
 
             // Process critical data: Config

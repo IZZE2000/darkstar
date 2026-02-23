@@ -120,18 +120,19 @@ class HAWebSocketClient:
                 for idx, ev in enumerate(ev_chargers):
                     if ev.get("enabled", True):
                         ev_name = ev.get("name", f"EV {idx + 1}")
-                        self.ev_charger_configs.append({"index": idx, "name": ev_name})
+                        active_idx = len(self.ev_charger_configs)
+                        self.ev_charger_configs.append({"index": active_idx, "name": ev_name})
                         # Only map sensors that aren't already used for the same type
                         # This allows same sensor for different types (e.g., one sensor for both power and soc)
                         # but prevents duplicate mappings within the same type
                         if ev.get("sensor") and ev["sensor"] not in used_power_sensors:
-                            mapping[ev["sensor"]] = f"ev_kw_{idx}"
+                            mapping[ev["sensor"]] = f"ev_kw_{active_idx}"
                             used_power_sensors.add(ev["sensor"])
                         if ev.get("soc_sensor") and ev["soc_sensor"] not in used_soc_sensors:
-                            mapping[ev["soc_sensor"]] = f"ev_soc_{idx}"
+                            mapping[ev["soc_sensor"]] = f"ev_soc_{active_idx}"
                             used_soc_sensors.add(ev["soc_sensor"])
                         if ev.get("plug_sensor") and ev["plug_sensor"] not in used_plug_sensors:
-                            mapping[ev["plug_sensor"]] = f"ev_plug_{idx}"
+                            mapping[ev["plug_sensor"]] = f"ev_plug_{active_idx}"
                             used_plug_sensors.add(ev["plug_sensor"])
 
                 # Initialize ev_chargers array upfront with configured EVs
