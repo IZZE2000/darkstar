@@ -19,6 +19,7 @@ from backend.api.models.system import (
 from inputs import (
     get_ha_bool,
     get_ha_sensor_float,
+    get_ha_sensor_kw_normalized,
     load_yaml,
 )
 
@@ -116,7 +117,10 @@ async def get_system_status() -> StatusResponse:
     for key in keys:
         eid = sensors.get(key)
         if eid:
-            tasks.append(get_ha_sensor_float(str(eid)))
+            if key == "battery_soc":
+                tasks.append(get_ha_sensor_float(str(eid)))
+            else:
+                tasks.append(get_ha_sensor_kw_normalized(str(eid)))
         else:
             tasks.append(asyncio.sleep(0, result=0.0))
 
@@ -129,7 +133,9 @@ async def get_system_status() -> StatusResponse:
 
     for ev in ev_configs:
         sensor = ev.get("sensor")
-        tasks.append(get_ha_sensor_float(str(sensor)) if sensor else asyncio.sleep(0, result=0.0))
+        tasks.append(
+            get_ha_sensor_kw_normalized(str(sensor)) if sensor else asyncio.sleep(0, result=0.0)
+        )
 
         soc_sensor = ev.get("soc_sensor")
         tasks.append(
@@ -188,10 +194,10 @@ async def get_system_status() -> StatusResponse:
         mode="fastapi",
         rev="ARC1",
         soc_percent=round(soc, 1),
-        pv_power_kw=round(pv_pow / 1000.0, 3),
-        load_power_kw=round(load_pow / 1000.0, 3),
-        battery_power_kw=round(batt_pow / 1000.0, 3),
-        grid_power_kw=round(grid_pow / 1000.0, 3),
+        pv_power_kw=round(pv_pow, 3),
+        load_power_kw=round(load_pow, 3),
+        battery_power_kw=round(batt_pow, 3),
+        grid_power_kw=round(grid_pow, 3),
         ev_kw=round(total_ev_kw, 3),
         ev_plugged_in=any_plugged,
         ev_chargers=ev_chargers,

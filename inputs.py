@@ -129,6 +129,28 @@ async def get_ha_sensor_float(entity_id: str) -> float | None:
         return None
 
 
+async def get_ha_sensor_kw_normalized(entity_id: str) -> float | None:
+    """Return numeric state of HA sensor normalized to kW (scales W to kW)."""
+    state_data = await get_ha_entity_state(entity_id)
+    if not state_data:
+        return None
+
+    raw_value = state_data.get("state")
+    if raw_value in (None, "unknown", "unavailable"):
+        return None
+
+    try:
+        value = float(raw_value)
+        # Check units
+        attributes = state_data.get("attributes", {})
+        unit = str(attributes.get("unit_of_measurement", "")).upper()
+        if unit == "W":
+            return value / 1000.0
+        return value
+    except (TypeError, ValueError):
+        return None
+
+
 async def get_ha_bool(entity_id: str) -> bool:
     """Return True if entity is 'on', 'true', 'armed', etc."""
     state = await get_ha_entity_state(entity_id)

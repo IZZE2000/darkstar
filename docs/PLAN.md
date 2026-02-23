@@ -128,7 +128,7 @@ We need a targeted Setup Wizard that triggers automatically. It should gather th
 
 ---
 
-### [DRAFT] REV // F74 — Fix Initial Load Unit Normalization (W vs kW)
+### [DONE] REV // F74 — Fix Initial Load Unit Normalization (W vs kW)
 
 **Goal:** Ensure the initial dashboard load (`/api/status`) correctly normalizes all power sensors to kW by checking their Home Assistant `unit_of_measurement`, matching the behavior of the live WebSocket feed.
 
@@ -137,15 +137,15 @@ Currently, `get_system_status()` in `backend/api/routers/system.py` blindly divi
 
 **Plan:**
 
-#### Phase 1: Smart Sensor Helper (Backend) [DRAFT]
-* [ ] Create a new async helper function in `inputs.py` named `get_ha_sensor_kw_normalized(entity_id: str)`.
-* [ ] This function should fetch the full entity state using `get_ha_entity_state(entity_id)`.
-* [ ] If the state exists, extract the numeric `state` value.
-* [ ] Check `attributes.unit_of_measurement`. If it equals "W" (case-insensitive), divide the value by 1000.0. Return the final kW float.
+#### Phase 1: Smart Sensor Helper (Backend) [DONE]
+* [x] Create a new async helper function in `inputs.py` named `get_ha_sensor_kw_normalized(entity_id: str)`.
+* [x] This function should fetch the full entity state using `get_ha_entity_state(entity_id)`.
+* [x] If the state exists, extract the numeric `state` value.
+* [x] Check `attributes.unit_of_measurement`. If it equals "W" (case-insensitive), divide the value by 1000.0. Return the final kW float.
 
-#### Phase 2: Refactor Initial Hydration (Backend) [DRAFT]
-* [ ] Update `get_system_status()` in `backend/api/routers/system.py`.
-* [ ] Swap the `get_ha_sensor_float` calls for `pv_power`, `load_power`, `battery_power`, `grid_power`, and EV `sensor` to use the new `get_ha_sensor_kw_normalized`.
-* [ ] Remove the hardcoded `/ 1000.0` divisions at the bottom of the function when constructing the `StatusResponse` (since the new helper already handles it).
-* [ ] Leave `battery_soc`, EV `soc_sensor`, and EV `plug_sensor` alone, as they are not power metrics.
-* [ ] Run `pytest` and `pyright` to ensure no regressions.
+#### Phase 2: Refactor Initial Hydration (Backend) [DONE]
+* [x] Update `get_system_status()` in `backend/api/routers/system.py`.
+* [x] Swap the `get_ha_sensor_float` calls for `pv_power`, `load_power`, `battery_power`, `grid_power`, and EV `sensor` to use the new `get_ha_sensor_kw_normalized`.
+* [x] Remove the hardcoded `/ 1000.0` divisions at the bottom of the function when constructing the `StatusResponse` (since the new helper already handles it).
+* [x] Leave `battery_soc`, EV `soc_sensor`, and EV `plug_sensor` alone, as they are not power metrics.
+* [x] Run `pytest` and `pyright` to ensure no regressions.
