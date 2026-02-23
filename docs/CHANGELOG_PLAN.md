@@ -4,6 +4,190 @@ This document contains the archive of all completed revisions. It serves as the 
 
 ---
 
+### [DONE] REV // F73 — Battery Max Charge/Discharge Settings Missing from UI
+
+**Goal:** Make battery max charge/discharge power/current settings visible in the Battery Tab for all inverter profiles.
+
+**Context:**
+The battery specification fields (`battery.max_charge/discharge_a/w`) were missing because their `showIf` conditions depended on `executor.inverter.control_unit`. This key wasn't part of the `BatteryTab`'s local form state, and the `shouldRenderField` logic lacked a robust fallback to the global configuration. Furthermore, `SettingsField` wasn't receiving the necessary configuration context to verify its own visibility.
+
+**Plan:**
+
+#### Phase 1: Logic Consolidation [DONE]
+* [x] Update `shouldRenderField` in `logic.ts` to implement a robust `getValue` helper that traverses the `config` object if the key is missing from the local form state.
+
+#### Phase 2: Prop Propagation [DONE]
+* [x] Update `SettingsField` calls in `BatteryTab.tsx` and `SystemTab.tsx` to pass `fullForm={form}` and `config={config}`. This ensures the fields can resolve cross-tab dependencies like `control_unit`.
+
+#### Phase 3: Metadata & Type Safety [DONE]
+* [x] Fix the section title match in `BatteryTab.tsx` (changed to `'HA Control Entities'`) to ensure dynamic inverter-specific battery controls are correctly injected.
+* [x] Update `ConfigResponse` in `api.ts` to include `inverter_profile`, fixing a TS type mismatch in the settings tabs.
+
+**Verification status:**
+- [x] Frontend linting/formatting (Clean)
+- [x] Backend test suite (481 Passed)
+- [x] UI Verification (Fields visible)
+
+---
+
+### [DONE] REV // F72 — Fix EV SoC PowerFlow Race Condition and Profile Suggestions 404
+
+**Goal:** Fix the missing EV SoC in the PowerFlow card and the 404 error preventing the Profile Setup Helper from loading in Home Assistant.
+**Context:**
+1. **EV SoC missing:** The `useSocket` hook drops rapid WebSocket events because it cleans up and re-subscribes on every React render. Additionally, `ha_socket.py` has an indexing bug when EV chargers are disabled, and the REST API `/api/status` lacks initial EV data (unlike solar/grid).
+2. **Profile Suggestions 404:** `ProfileSetupHelper.tsx` uses an absolute fetch path (`/api/profiles/...`) that bypasses HA Ingress routing, causing requests to hit the Home Assistant root server instead of the Darkstar add-on.
+
+**Plan:**
+
+#### Phase 1: Fix Profile Entity Parsing (Frontend UI) [DONE]
+* [x] Extract `standardInverterKeys` from `useSettingsForm.ts` and move it to `types.ts` so it can be shared.
+* [x] Update `generateProfileEntityFields` in `types.ts` to dynamically check if an entity key is standard or custom.
+* [x] Route standard keys to `executor.inverter.[key]`.
+* [x] Route custom keys to `executor.inverter.custom_entities.[key]`. This will fix existing config values not displaying in the UI.
+
+#### Phase 2: Fix Profile Suggestions Path (Frontend API) [DONE]
+* [x] In `frontend/src/pages/settings/components/ProfileSetupHelper.tsx`, remove the leading slash from the fetch URL or migrate it to use `lib/api.ts`'s `getJSON` wrapper. This ensures it inherits the relative path required for HA Ingress routing, fixing the 404 error.
+
+#### Phase 3: Fix EV SoC Initialization & Indexing (Backend) [DONE]
+* [x] **Backend Indexing:** Fix `backend/ha_socket.py` to correctly map EV sensors to the active `ev_chargers` list. Right now, it maps by config index, which causes an `IndexError` if `EV 1` is disabled but `EV 2` is enabled.
+* [x] **Initial REST Payload:** Update `backend/api/routers/system.py` (`get_system_status()`) to fetch the initial EV Power, SoC, and Plug state alongside Solar/Grid/Battery data. Update the frontend `StatusResponse` type in `api.ts` to match.
+* [x] **UI Placeholder:** Update `frontend/src/components/PowerFlowRegistry.ts` so that when `ev.soc` is `null`, it returns `--%` rather than `undefined` (which completely hides the UI element).
+
+#### Phase 3: Fix WebSocket Race Condition (Frontend) [DONE]
+* [x] Refactor the `useSocket` hook in `frontend/src/lib/hooks.ts` using the `useRef` pattern (storing the latest callback reference). This maintains a stable event listener on the socket without detaching/re-attaching on every component render, preventing dropped WebSocket packets.
+
+---
+
+### [DONE] REV // UI24 — Migrate SVG Charts to CSS Variables
+
+**Goal:** Replace hardcoded hex colors in SVG charts and Chart.js configurations with dynamic CSS custom properties for proper Light/Dark mode adaptation.
+
+**Context:**
+Many SVG charts (Power Flow diagram, probabilistic forecasts, etc.) use hardcoded hex colors that don't adapt to theme changes. This causes poor visibility in certain modes - dark text on dark backgrounds or light text on light backgrounds. The `index.css` file already defines a comprehensive theme system with CSS variables like `--color-surface`, `--color-text`, `--color-muted`, and `--color-line` that automatically switch between light and dark modes.
+
+**Files to Modify:**
+
+| File | Hex Colors | Strategy |
+|------|------------|----------|
+| `CircuitNode.tsx` | 8 locations | SVG attribute replacements |
+| `CircuitPath.tsx` | 1 location | SVG stroke color |
+| `PowerFlowCard.tsx` | 2 locations | Tooltip inline styles |
+| `ProbabilisticChart.tsx` | 10 locations | Chart.js options objects |
+| `Aurora.tsx` | 12 locations | Chart.js scales configuration |
+| `ContextRadar.tsx` | 4 locations | Chart.js tooltip config |
+| `DecompositionChart.tsx` | 2 locations | Preserve OLED/Swiss logic |
+
+**Color Mapping:**
+
+| Current Hex | CSS Variable | Usage |
+|-------------|--------------|-------|
+| `#0f172a` | `rgb(var(--color-surface))` | Node backgrounds |
+| `#334155` | `rgb(var(--color-line))` | Grid lines, borders |
+| `#64748b` | `rgb(var(--color-muted))` | Secondary text, brackets |
+| `#94a3b8` | `rgb(var(--color-muted))` | Labels, small text |
+| `#e2e8f0` | `rgb(var(--color-text))` | Primary values |
+| `#f1f5f9` | `rgb(var(--color-text))` | Active text state |
+| `#1e293b` | `rgb(var(--color-surface))` | Trace backgrounds |
+| `#cbd5e1` | `rgb(var(--color-muted))` | Tooltip body |
+| `#f8fafc` | `rgb(var(--color-text))` | Tooltip titles |
+
+**Plan:**
+
+#### Phase 1: SVG Components [DONE]
+* [x] Update `CircuitNode.tsx` - Replace 8 hardcoded hex colors
+  - `fill="#0f172a"` → `fill="rgb(var(--color-surface))"`
+  - `stroke={isActive ? color : '#334155'}` → `stroke={isActive ? color : 'rgb(var(--color-line))'}`
+  - Style object colors for text and icon elements
+* [x] Update `CircuitPath.tsx` - Replace background trace color
+  - `stroke="#1e293b"` → `stroke="rgb(var(--color-surface))"`
+* [x] Update `PowerFlowCard.tsx` - Replace tooltip styles
+  - `#e2e8f0` → `rgb(var(--color-text))`
+  - `#64748b` → `rgb(var(--color-muted))`
+
+#### Phase 2: Chart.js Configurations [DONE]
+* [x] Update `ProbabilisticChart.tsx`
+  - Grid colors: `#334155` → `rgb(var(--color-line))`
+  - Text colors: `#94a3b8`, `#e2e8f0`, `#cbd5e1` → theme variables
+  - Tooltip styling: `#1e293b`, `#334155` → surface/line
+* [x] Update `Aurora.tsx`
+  - Chart scales: grid and tick colors
+  - Legend labels
+* [x] Update `ContextRadar.tsx`
+  - Tooltip configuration
+* [x] Update `DecompositionChart.tsx`
+  - Maintain conditional OLED/Swiss logic
+  - Replace default fallback colors only
+
+#### Phase 3: Testing & Validation [DONE]
+* [x] Verify Power Flow diagram in both Light and Dark modes
+* [x] Verify all charts adapt correctly to theme toggle
+* [x] Run `pnpm lint` in frontend/ directory - **PASSED**
+* [x] Run `pnpm format` to ensure consistent formatting - **FORMATTED**
+* [x] Check for any remaining hardcoded colors with grep - **NONE FOUND**
+
+**Total Changes:** ~35 hex color references across 7 files → 4 CSS variables
+
+---
+
+### [DONE] REV // A25 — Fix Forecast Timestamp Alignment Bug
+
+**Goal:** Fix the critical bug where load and PV forecasts show zeros and unexpected gaps due to timestamp misalignment between forecast generation and price slots.
+
+**Context:**
+A Fronius beta tester observes completely different load/PV forecasts between consecutive planning runs seconds apart. Load forecast shows huge gaps with zero values; PV forecast plummets unexpectedly. These should be identical between runs.
+
+**Root Cause Analysis:**
+The bug is in `ml/forward.py:94-98`. The code generates forecasts starting at the **next** 15-minute slot boundary (e.g., 09:15 if current time is 09:01), but price slots start at the **current** slot boundary (e.g., 09:00). When `inputs.py:build_db_forecast_for_slots()` looks up forecasts for price slots, the first slot (09:00) has no matching forecast → returns `pv=0.0, load=0.0`.
+
+**Why it appears intermittent:**
+- If planner runs at exactly 09:00:00, forecasts start at 09:00 → alignment OK
+- If planner runs at 09:00:15, forecasts start at 09:15 → 09:00 slot has no forecast → zeros
+
+**Plan:**
+
+#### Phase 1: Fix Root Cause (Primary) [DONE]
+* [x] Modify `ml/forward.py:94-98` to generate forecasts starting from the **current** 15-minute slot boundary instead of "next slot"
+* [x] Update comment to reflect the change: "Align to current slot boundary"
+* [x] Verify forecast timestamps now match price slot timestamps exactly
+
+#### Phase 2: Add Resilient Retry Logic in RecorderService [DONE]
+* [x] **Problem:** The previous approach tried to "fake" missing data by copying adjacent slots. This is wrong.
+* [x] **Correct Approach:** Retry logic in RecorderService instead of faking data:
+  1. **Immediate Retry with Delay:** When the RecorderService wakes up at a 15-minute boundary, before fetching data from Home Assistant, wait 5 seconds (`await asyncio.sleep(5)`) to give any pending database writes or ML processes a moment to finish. Then fetch the data. If it fails, retry once more after another short delay.
+  2. **Backfill on Next Run:** If the data is still missing after retries, accept the gap. The next RecorderService tick (15 minutes later) will naturally backfill the missing slot when it captures that time period.
+* [x] **Never fake data:** Do NOT copy forecasts from adjacent slots. Let the existing HA fallback in `_get_forecast_data_aurora` handle truly missing data.
+* [x] Add warning log when data is temporarily missing: "Observation gap detected for {ts}, will retry on next tick"
+
+#### Phase 3: Defensive Interpolation Fallback (Forecast Lookup) [DONE]
+* [x] **Where:** This logic belongs in `inputs.py:_get_forecast_data_aurora` (not RecorderService), because it's a read-time fallback when the DB lookup finds no data.
+* [x] **When to interpolate:** Only if the gap is 1-2 slots (15-30 minutes), interpolate between the known data points rather than returning zeros.
+* [x] **How:** Linear interpolation between adjacent slot values for both PV and load forecasts.
+* [x] **Never extrapolate:** If gap is > 2 slots, let the HA baseline fallback handle it (existing behavior).
+
+#### Phase 4: Testing & Validation [DONE]
+* [x] Run planner at various times within a 15-minute window and verify consistent forecasts
+* [x] Verify no zero values in load/PV forecasts when DB has valid data
+* [x] Verify interpolation fallback works for 1-2 slot gaps
+* [x] Verify >2 slot gaps fall back to HA baseline (existing behavior)
+* [x] Run `uv run ruff check .` for linting - **PASSED**
+* [x] Run relevant pytest tests - **18 tests PASSED**
+
+#### Phase 5: Documentation [DONE]
+* [x] Add inline comments explaining timestamp alignment requirements
+* [x] Document the "belt and suspenders" approach (fix root cause + retry logic + defensive fallback)
+
+**Affected Files:**
+- `ml/forward.py:94-100` - Forecast generation timestamp logic (Phase 1)
+- `backend/services/recorder_service.py:94-127` - Add retry logic with delay (Phase 2)
+- `inputs.py:354-443` - Add interpolation fallback for short gaps (Phase 3)
+
+**Success Criteria:**
+- Consecutive planner runs (seconds apart) produce identical load/PV forecasts
+- No zero values in forecasts when the ML database contains valid predictions
+- Graceful degradation with logged warnings if forecasts are ever stale/missing
+
+---
+
 ### [DONE] REV // E6 — Remove Emergency Charge Override to Fix SoC Oscillation
 
 **Goal:** Remove the Emergency Charge override from the executor to eliminate jojo oscillation when `soc_target = min_soc_percent`, treating `min_soc_percent` as a planning constraint rather than a safety limit.
