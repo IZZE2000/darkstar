@@ -354,7 +354,7 @@ export default function Executor() {
     const [notifications, setNotifications] = useState<NotificationSettings | null>(null)
 
     // History Filters
-    const [dateRange, setDateRange] = useState<'24h' | '7d' | '30d' | 'custom'>('24h')
+    const [dateRange, setDateRange] = useState<'1h' | '8h' | '24h' | '7d' | 'custom'>('24h')
     const [startDate, setStartDate] = useState<string>('')
     const [endDate, setEndDate] = useState<string>('')
     const [successOnlyFilter, setSuccessOnlyFilter] = useState<boolean | undefined>(undefined)
@@ -364,18 +364,67 @@ export default function Executor() {
     const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null)
     const [expandedRecordId, setExpandedRecordId] = useState<number | null>(null)
 
+    // Helper to format date in local timezone with offset (matches backend format)
+    const toLocalISO = (date: Date): string => {
+        const offset = -date.getTimezoneOffset()
+        const offsetHours = Math.floor(Math.abs(offset) / 60)
+        const offsetMinutes = Math.abs(offset) % 60
+        const offsetSign = offset >= 0 ? '+' : '-'
+        const offsetStr = `${offsetSign}${String(offsetHours).padStart(2, '0')}:${String(offsetMinutes).padStart(2, '0')}`
+        return date.toISOString().slice(0, -1) + offsetStr
+    }
+
     const fetchAll = useCallback(async () => {
         try {
-            const filters: any = { limit: 50 }
-            if (dateRange === '24h') {
-                filters.start_date = new Date(Date.now() - 24 * 3600 * 1000).toISOString()
+            const filters: any = {}
+
+            // Auto-calculate limit based on date range (assuming ~1 record/min, with 20% margin)
+            const calculateLimit = (): number => {
+                switch (dateRange) {
+                    case '1h':
+                        return 80
+                    case '8h':
+                        return 580
+                    case '24h':
+                        return 1730
+                    case '7d':
+                        return 12100
+                    case 'custom':
+                        if (startDate && endDate) {
+                            const start = new Date(startDate)
+                            const end = new Date(endDate)
+                            // Cap at 30 days
+                            const maxDays = 30
+                            const daysDiff = Math.min(
+                                maxDays,
+                                Math.max(1, (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)),
+                            )
+                            return Math.ceil(daysDiff * 24 * 60 * 1.2)
+                        }
+                        return 1730
+                    default:
+                        return 1730
+                }
+            }
+
+            filters.limit = calculateLimit()
+
+            if (dateRange === '1h') {
+                filters.start_date = toLocalISO(new Date(Date.now() - 60 * 60 * 1000))
+            } else if (dateRange === '8h') {
+                filters.start_date = toLocalISO(new Date(Date.now() - 8 * 3600 * 1000))
+            } else if (dateRange === '24h') {
+                filters.start_date = toLocalISO(new Date(Date.now() - 24 * 3600 * 1000))
             } else if (dateRange === '7d') {
-                filters.start_date = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString()
-            } else if (dateRange === '30d') {
-                filters.start_date = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
+                filters.start_date = toLocalISO(new Date(Date.now() - 7 * 24 * 3600 * 1000))
             } else if (dateRange === 'custom') {
-                if (startDate) filters.start_date = new Date(startDate).toISOString()
-                if (endDate) filters.end_date = new Date(endDate).toISOString()
+                if (startDate) filters.start_date = toLocalISO(new Date(startDate))
+                if (endDate) {
+                    // Set end date to end of day (23:59:59)
+                    const end = new Date(endDate)
+                    end.setHours(23, 59, 59, 999)
+                    filters.end_date = toLocalISO(end)
+                }
             }
 
             if (successOnlyFilter !== undefined) {
@@ -534,7 +583,7 @@ export default function Executor() {
     }
 
     return (
-        <div className="px-4 pt-16 pb-4 lg:px-8 lg:pt-8 min-h-screen flex flex-col gap-6 overflow-y-auto">
+        <div className="px-4 pt-16 pb-24 lg:px-8 lg:pt-8 lg:pb-8 min-h-screen lg:h-screen flex flex-col gap-6 overflow-auto lg:overflow-hidden">
             {/* Header */}
             <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
                 <div>
@@ -882,7 +931,7 @@ export default function Executor() {
             </div>
 
             {/* Execution History */}
-            <Card className="p-4 md:p-5 flex-1 min-h-0 flex flex-col">
+            <Card className="p-4 md:p-5 flex-1 flex flex-col overflow-hidden">
                 <div className="flex items-center justify-between mb-4">
                     <div className="flex flex-col md:flex-row md:items-center gap-4">
                         <div className="flex items-center gap-2">
@@ -894,7 +943,7 @@ export default function Executor() {
                         {/* Filters */}
                         <div className="flex flex-wrap items-center gap-2">
                             <div className="flex bg-surface2/50 rounded-lg p-0.5 border border-line/30">
-                                {(['24h', '7d', 'custom'] as const).map((r) => (
+                                {(['1h', '8h', '24h', '7d', 'custom'] as const).map((r) => (
                                     <button
                                         key={r}
                                         onClick={() => setDateRange(r)}
@@ -904,7 +953,15 @@ export default function Executor() {
                                                 : 'text-muted hover:text-text'
                                         }`}
                                     >
-                                        {r === '24h' ? 'Last 24h' : r === '7d' ? 'Last 7d' : 'Custom'}
+                                        {r === '1h'
+                                            ? '1h'
+                                            : r === '8h'
+                                              ? '8h'
+                                              : r === '24h'
+                                                ? '24h'
+                                                : r === '7d'
+                                                  ? '7d'
+                                                  : 'Custom'}
                                     </button>
                                 ))}
                             </div>
@@ -946,7 +1003,11 @@ export default function Executor() {
                         <button
                             onClick={() => {
                                 const filters: any = {}
-                                if (dateRange === '24h') {
+                                if (dateRange === '1h') {
+                                    filters.start_date = new Date(Date.now() - 60 * 60 * 1000).toISOString()
+                                } else if (dateRange === '8h') {
+                                    filters.start_date = new Date(Date.now() - 8 * 3600 * 1000).toISOString()
+                                } else if (dateRange === '24h') {
                                     filters.start_date = new Date(Date.now() - 24 * 3600 * 1000).toISOString()
                                 } else if (dateRange === '7d') {
                                     filters.start_date = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString()
