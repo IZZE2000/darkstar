@@ -46,6 +46,7 @@ class ControllerDecision:
     # Water heater
     water_temp: int = 40
     export_power_w: float = 0.0  # Planned grid export power in Watts
+    export_with_load_w: float = 0.0  # Export power + house load (for Fronius export mode)
 
     # User's configured max limits (for templates like {{max_charge}})
     max_charge: float = 0.0
@@ -162,6 +163,7 @@ class Controller:
             charge_value=charge_value,
             discharge_value=discharge_value,
             export_power_w=0.0,
+            export_with_load_w=0.0,
             soc_target=soc_target,
             water_temp=water_temp,
             max_charge=max_charge,
@@ -196,6 +198,15 @@ class Controller:
         # Planned grid export power (kW to W)
         export_power_w = slot.export_kw * 1000.0
 
+        # Calculate export_with_load_w for Fronius export mode
+        # This adds house load to export power so battery delivers both
+        if slot.export_kw > 0:
+            step = self.profile.behavior.round_step_w if self.profile else 100.0
+            raw_export_with_load = export_power_w + (slot.load_kw * 1000.0)
+            export_with_load_w = round(raw_export_with_load / step) * step
+        else:
+            export_with_load_w = 0.0
+
         # SoC target from plan
         soc_target = slot.soc_target
 
@@ -218,6 +229,7 @@ class Controller:
             charge_value=charge_value,
             discharge_value=discharge_value,
             export_power_w=export_power_w,
+            export_with_load_w=export_with_load_w,
             soc_target=soc_target,
             water_temp=water_temp,
             max_charge=max_charge,

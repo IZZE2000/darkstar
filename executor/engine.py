@@ -449,9 +449,11 @@ class ExecutorEngine:
         """
         Pause the executor - stops all automated control.
 
-        The executor will stop running and will not make any changes to HA entities.
-        This allows full manual control of all devices.
-        A reminder will be scheduled based on configuration or duration.
+        IMPORTANT: When paused, the executor simply stops making writes to HA entities.
+        The inverter REMAINS in its current state (not forced to idle mode).
+        This allows the user to manually control devices via HA without interference.
+
+        A reminder notification will be sent after the configured duration.
         """
         tz = pytz.timezone(self.config.timezone)
         now = datetime.now(tz)
@@ -470,8 +472,9 @@ class ExecutorEngine:
 
         logger.info("Executor PAUSED at %s - manual control enabled", now.isoformat())
 
-        # Issue 5 fix: Do NOT apply any settings when pausing
-        # User has full manual control while paused
+        # NOTE: We do NOT apply idle mode or any settings when pausing.
+        # The inverter stays in its current state, allowing user to manually override.
+        # This was an intentional design decision (REV F21).
 
         return {
             "success": True,
@@ -538,35 +541,6 @@ class ExecutorEngine:
                 "paused_minutes": round(duration, 1),
                 "reminder_sent": self._pause_reminder_sent,
             }
-
-    def _apply_idle_mode(self) -> None:
-        """Apply idle mode settings to Home Assistant."""
-        if not self.dispatcher:
-            return
-
-        from .controller import ControllerDecision
-
-        # Idle mode: use idle mode_intent, min SoC target, no water heat
-        idle_decision = ControllerDecision(
-            mode_intent="idle",
-            charge_value=0,
-            discharge_value=50,  # Allow discharge to power house
-            soc_target=10,  # Min SoC
-            water_temp=self.config.water_heater.temp_off,
-            control_unit=self.config.inverter.control_unit,
-            source="pause_idle",
-            reason="Executor paused - idle mode",
-        )
-
-        # Fix: Schedule async execution
-        try:
-            loop = asyncio.get_running_loop()
-            task: asyncio.Task[Any] = loop.create_task(self.dispatcher.execute(idle_decision))
-            self._background_tasks.add(task)
-            task.add_done_callback(self._background_tasks.discard)
-            logger.info("Idle mode actions scheduled (async)")
-        except RuntimeError:
-            logger.warning("Could not apply idle mode: no running event loop")
 
     def _check_pause_reminder(self) -> None:
         """Check if 30-minute pause reminder should be sent."""
@@ -1395,6 +1369,8 @@ class ExecutorEngine:
         charge_kw = float(slot_data.get("battery_charge_kw", 0.0) or 0.0)
         discharge_kw = float(slot_data.get("battery_discharge_kw", 0.0) or 0.0)
         export_kw = float(slot_data.get("export_kwh", 0.0) or 0.0) * 4  # kWh to kW
+        # Load forecast: convert kWh per slot to kW (multiply by 4 for 15-min slots)
+        load_kw = float(slot_data.get("load_forecast_kwh", 0.0) or 0.0) * 4
         water_kw = float(slot_data.get("water_heating_kw", 0.0) or 0.0)
         ev_charging_kw = float(slot_data.get("ev_charging_kw", 0.0) or 0.0)
         soc_target = int(slot_data.get("soc_target_percent", slot_data.get("soc_target", 50)) or 50)
@@ -1406,6 +1382,7 @@ class ExecutorEngine:
             charge_kw=charge_kw,
             discharge_kw=discharge_kw,
             export_kw=export_kw,
+            load_kw=load_kw,
             water_kw=water_kw,
             ev_charging_kw=ev_charging_kw,
             soc_target=soc_target,

@@ -399,6 +399,69 @@ class TestGenerateReason:
         assert "Idle" in reason
 
 
+class TestExportWithLoadCalculation:
+    """Test export_with_load_w calculation for Fronius export mode."""
+
+    def test_export_with_load_calculation(self):
+        """export_with_load_w = export_power_w + (load_kw * 1000), rounded to step."""
+        config = ControllerConfig()
+        inverter_config = InverterConfig()
+        controller = Controller(config, inverter_config)
+
+        # Export 2kW, load 0.5kW -> total 2.5kW = 2500W
+        slot = SlotPlan(export_kw=2.0, load_kw=0.5)
+        state = SystemState()
+
+        decision = controller._follow_plan(slot, state)
+
+        assert decision.export_power_w == 2000.0  # 2kW in Watts
+        assert decision.export_with_load_w == 2500.0  # (2 + 0.5) * 1000, rounded to 100
+
+    def test_export_with_load_rounding(self):
+        """export_with_load_w is rounded to round_step_w (100W default)."""
+        config = ControllerConfig()
+        inverter_config = InverterConfig()
+        controller = Controller(config, inverter_config)
+
+        # Export 1.23kW, load 0.456kW -> total 1.686kW = 1686W
+        # Should round to 1700W (nearest 100W)
+        slot = SlotPlan(export_kw=1.23, load_kw=0.456)
+        state = SystemState()
+
+        decision = controller._follow_plan(slot, state)
+
+        assert decision.export_with_load_w == 1700.0  # Rounded to nearest 100W
+
+    def test_no_export_sets_export_with_load_to_zero(self):
+        """When not exporting, export_with_load_w should be 0."""
+        config = ControllerConfig()
+        inverter_config = InverterConfig()
+        controller = Controller(config, inverter_config)
+
+        # No export, just charging
+        slot = SlotPlan(charge_kw=3.0, load_kw=1.0)
+        state = SystemState()
+
+        decision = controller._follow_plan(slot, state)
+
+        assert decision.export_power_w == 0.0
+        assert decision.export_with_load_w == 0.0
+
+    def test_export_with_zero_load(self):
+        """export_with_load_w equals export_power_w when load is 0."""
+        config = ControllerConfig()
+        inverter_config = InverterConfig()
+        controller = Controller(config, inverter_config)
+
+        slot = SlotPlan(export_kw=3.0, load_kw=0.0)
+        state = SystemState()
+
+        decision = controller._follow_plan(slot, state)
+
+        assert decision.export_power_w == 3000.0
+        assert decision.export_with_load_w == 3000.0
+
+
 class TestMakeDecisionConvenience:
     """Test the make_decision convenience function."""
 

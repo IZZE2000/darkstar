@@ -127,3 +127,48 @@ We need a targeted Setup Wizard that triggers automatically. It should gather th
 * [ ] Test the Synthetic Profile generation mathematically scales correctly.
 
 ---
+
+### [DONE] REV // F75 — Fix Fronius Export Profile: Include House Load in grid_discharge_power
+
+**Goal:** Fix the Fronius export mode to correctly calculate `grid_discharge_power` by including the house load, preventing export capping issues. This is a **Fronius-only fix** - Deye, Sungrow, and Generic profiles do NOT have this issue and must remain unaffected.
+
+**Context:**
+Beta testers (Kristofer, Cmon89) discovered that Fronius GEN24's `grid_discharge_power` entity must be set to **house load + desired export power**, not just the export power. The current profile sets only `{{discharge_value}}` (which equals export power), causing the battery to deliver insufficient power to the grid.
+
+Additionally, the profile incorrectly sets `export_power_limit_enable` and `export_power_limit` during export mode - these entities limit PV surplus feed-in, not battery discharge, and were capping exports unexpectedly.
+
+**Key Finding from Testing:**
+- House draws 500W, want to export 1000W → must set `grid_discharge_power = 1500W`
+- Current code: set 2kW but battery only delivered 527W because `export_limit` was at 520W
+- Setting `export_limit` to 10kW allowed full 2kW export
+
+**Implementation Approach:**
+Use Option 1: Pre-calculate the total discharge value in the Controller to avoid template expression security risks and complexity.
+
+**Plan:**
+
+#### Phase 1: Backend Changes [DONE]
+* [x] Add `export_with_load_w` field to `ControllerDecision` dataclass in `executor/controller.py` (default=0.0)
+* [x] In `Controller._follow_plan()` method, calculate and populate:
+  - `export_with_load_w = export_power_w + (slot.load_kw * 1000)`
+  - Round to nearest `round_step_w` (100W default for Fronius)
+* [x] Add `export_with_load_w` to `VALID_TEMPLATES` frozenset in `executor/profiles.py`
+* [x] Ensure calculation only happens when `slot.export_kw > 0`, otherwise `export_with_load_w = 0`
+
+#### Phase 2: Profile Update [DONE]
+* [x] Update `profiles/fronius.yaml` export mode:
+  - Change `grid_discharge_power` from `{{discharge_value}}` to `{{export_with_load_w}}`
+  - Remove `export_power_limit_enable` and `export_power_limit` actions entirely
+
+#### Phase 3: Safety & Testing [DONE]
+* [x] Verify Deye, Sungrow, Generic profiles still use `{{discharge_value}}` (unchanged)
+* [x] Update `VALID_TEMPLATES` in `tests/executor/test_profiles_v2.py` to include `export_with_load_w`
+* [x] Add unit test: Controller calculates `export_with_load_w` correctly for export slots
+* [x] Add unit test: `export_with_load_w = 0` for non-export slots
+* [x] Run `uv run ruff check .` for linting
+* [x] Run `uv run python -m pytest tests/executor/test_profiles_v2.py -v` for profile validation
+* [x] Run `uv run python -m pytest tests/executor/test_executor_controller.py -v` for controller tests
+
+**Important:** This change only affects Fronius profile. Other profiles continue to use `{{discharge_value}}` which remains the raw export power without house load compensation.
+
+---

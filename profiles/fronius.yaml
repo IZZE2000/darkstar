@@ -44,10 +44,10 @@ entities:
     required: true
 
   export_power_limit_enable:
-    default_entity: "switch.fronius_symo_gen24_10_0_export_limit_enable"
-    domain: "switch"
+    default_entity: "select.fronius_symo_gen24_10_0_export_limit_enable"
+    domain: "select"
     category: "battery"
-    description: "Export limit enable switch"
+    description: "Export limit enable select"
     required: false
 
   export_power_limit:
@@ -74,11 +74,7 @@ modes:
         value: "Discharge to Grid"
         settle_ms: 500
       - entity: "grid_discharge_power"
-        value: "{{discharge_value}}"
-      - entity: "export_power_limit_enable"
-        value: "on"
-      - entity: "export_power_limit"
-        value: "{{export_power_w}}"
+        value: "{{export_with_load_w}}"
 
   self_consumption:
     description: "Self consumption - Normal automatic operation"
@@ -152,3 +148,14 @@ behavior:
 #    - Discharge to Grid
 #    - Block Discharging
 #    - Block Charging
+#
+# 10. EXPORT POWER LIMIT ENTITIES (export_power_limit, export_power_limit_enable):
+#     These entities limit PV SURPLUS export to grid, NOT battery discharge.
+#     They were removed from "export" mode because they were incorrectly
+#     capping battery discharge exports.
+#
+#     NOTE: These entities are kept defined for potential future use cases,
+#     such as stopping PV export during negative electricity prices (e.g.,
+#     setting export limit to 0W during negative price hours).
+#     When used, they would be set in "self_consumption" mode to limit
+#     PV feed-in, not in "export" mode for battery discharge.

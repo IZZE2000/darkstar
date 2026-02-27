@@ -119,6 +119,7 @@ class TestProfileV2DynamicTemplates:
         "{{discharge_value}}",
         "{{soc_target}}",
         "{{export_power_w}}",
+        "{{export_with_load_w}}",
         "{{max_charge}}",
         "{{max_discharge}}",
         "true",
