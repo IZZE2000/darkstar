@@ -172,3 +172,54 @@ Use Option 1: Pre-calculate the total discharge value in the Controller to avoid
 **Important:** This change only affects Fronius profile. Other profiles continue to use `{{discharge_value}}` which remains the raw export power without house load compensation.
 
 ---
+
+### [DRAFT] REV // F76 — Fix Battery Discharge During EV Charging
+
+**Goal:** Fix three critical bugs that allow battery discharge when EV is charging, even when source isolation should block it.
+
+**Context:**
+Beta testers reported battery discharging while EV is charging (observed at 06:45). Investigation revealed three separate bugs in the source isolation logic:
+
+**Bug #1: Source Isolation Drops EV Data (executor/engine.py:1156-1163)**
+When source isolation blocks discharge, it creates a new SlotPlan but does NOT copy `ev_charging_kw`, causing it to default to 0.0. This breaks downstream tracking and logging.
+```python
+slot = SlotPlan(
+    charge_kw=slot.charge_kw,
+    discharge_kw=0.0,  # Blocks discharge ✓
+    # MISSING: ev_charging_kw=slot.ev_charging_kw  ✗
+)
+```
+
+**Bug #2: No Actual EV Power Monitoring (Most Critical)**
+The executor only blocks discharge based on SCHEDULED EV charging (`slot.ev_charging_kw > 0.1`), not ACTUAL power draw. If user manually starts EV charging via Home Assistant, Tesla app, or physical button, battery WILL discharge to EV because Darkstar doesn't detect actual power flow.
+
+**Bug #3: `self_consumption` Mode Allows Discharge**
+When SoC > target, controller uses `self_consumption` mode which relies on inverter "Auto" mode. Unlike `idle` mode (which sets discharge=0), `self_consumption` can still discharge. From CSV data: battery was in `self_consumption` mode during all discharge periods.
+
+**Plan:**
+
+#### Phase 1: Fix Source Isolation Data Loss [DRAFT]
+* [ ] Fix `executor/engine.py:1156-1163` to include `ev_charging_kw=slot.ev_charging_kw` when reconstructing SlotPlan
+* [ ] Verify `ev_charging_kw` is preserved through all SlotPlan operations
+* [ ] Run `uv run ruff check .`
+
+#### Phase 2: Monitor Actual EV Power [DRAFT]
+* [ ] Add `get_total_ev_power()` method to `LoadDisaggregator` class
+* [ ] Update `executor/engine.py` to query actual EV power during decision making
+* [ ] Modify discharge blocking logic: `if scheduled_ev_charge OR actual_ev_power > 0.1 kW: block_discharge()`
+* [ ] Add logging: "EV detected consuming X kW - blocking battery discharge"
+* [ ] Run `uv run python -m pytest tests/ -v -k ev` for EV-related tests
+
+#### Phase 3: Fix self_consumption Mode [DRAFT]
+* [ ] Modify `executor/controller.py` to use `idle` mode instead of `self_consumption` when EV charging is active
+* [ ] Alternative: Set `discharge_kw=0` and mode to `idle` when `ev_should_charge=True`
+* [ ] Verify `idle` mode correctly blocks discharge in all inverter profiles
+* [ ] Run `uv run python -m pytest tests/executor/test_executor_controller.py -v`
+
+#### Phase 4: Integration Testing [DRAFT]
+* [ ] Create test: Manual EV trigger via HA → discharge blocked
+* [ ] Create test: Scheduled EV charging → discharge blocked
+* [ ] Create test: High house load + EV charging → battery stays idle
+* [ ] Run full test suite: `uv run python -m pytest -q`
+
+---
