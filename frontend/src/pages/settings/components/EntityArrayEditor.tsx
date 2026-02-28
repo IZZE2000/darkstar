@@ -422,6 +422,9 @@ export const EntityArrayEditor: React.FC<EntityArrayEditorProps> = ({
                                                     </>
                                                 ) : (
                                                     <>
+                                                        {entity.type !== 'binary' && (
+                                                            <option value="">-- Select Type --</option>
+                                                        )}
                                                         <option value="binary">Binary (On/Off)</option>
                                                     </>
                                                 )}
