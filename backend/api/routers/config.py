@@ -512,6 +512,17 @@ def _validate_config_for_save(
                         }
                     )
 
+                # REV F77: Validate EV charger type
+                ev_type = ev.get("type", "")
+                if ev_type and ev_type != "binary":
+                    issues.append(
+                        {
+                            "severity": "warning",
+                            "message": f"EV charger '{ev.get('id', i + 1)}' uses unsupported type: '{ev_type}'",
+                            "guidance": "Variable power control is not yet implemented. Current implementation uses binary ON/OFF control at max_power_kw. Change type to 'binary' to suppress this warning.",
+                        }
+                    )
+
             # Check if at least one EV charger is enabled
             if not any(ev.get("enabled", True) for ev in ev_chargers):
                 issues.append(

@@ -104,7 +104,7 @@ class LoadDisaggregator:
 
             name = ev.get("name", load_id)
             entity_id = ev.get("sensor")
-            l_type_str = ev.get("type", "variable")
+            l_type_str = ev.get("type", "binary")
             nominal_power = ev.get("nominal_power_kw", ev.get("max_power_kw", 0.0))
 
             if not entity_id:
@@ -116,9 +116,9 @@ class LoadDisaggregator:
                 l_type = LoadType(l_type_str)
             except ValueError:
                 logger.warning(
-                    f"Invalid load type '{l_type_str}' for EV charger '{load_id}', defaulting to variable"
+                    f"Invalid load type '{l_type_str}' for EV charger '{load_id}', defaulting to binary"
                 )
-                l_type = LoadType.VARIABLE
+                l_type = LoadType.BINARY
 
             load = DeferrableLoad(
                 load_id=load_id,

@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { Plus, Trash2, ChevronDown, ChevronUp } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Badge } from '../../../components/ui/Badge'
+import { Banner } from '../../../components/ui/Banner'
 import Switch from '../../../components/ui/Switch'
 import EntitySelect from '../../../components/EntitySelect'
 import { NumberInput } from '../../../components/ui/NumberInput'
@@ -31,7 +32,7 @@ export interface EVChargerEntity {
     sensor: string
     soc_sensor: string
     plug_sensor: string
-    type: 'variable' | 'constant'
+    type: 'binary' | 'variable' | 'constant'
     nominal_power_kw: number
     penalty_levels?: Array<{ max_soc: number; penalty_sek: number }>
 }
@@ -408,11 +409,7 @@ export const EntityArrayEditor: React.FC<EntityArrayEditorProps> = ({
                                                 value={entity.type}
                                                 onChange={(e) =>
                                                     updateEntity(index, {
-                                                        type: e.target.value as
-                                                            | 'binary'
-                                                            | 'modulating'
-                                                            | 'variable'
-                                                            | 'constant',
+                                                        type: e.target.value as 'binary' | 'modulating',
                                                     })
                                                 }
                                                 disabled={disabled}
@@ -425,11 +422,19 @@ export const EntityArrayEditor: React.FC<EntityArrayEditorProps> = ({
                                                     </>
                                                 ) : (
                                                     <>
-                                                        <option value="variable">Variable (EV)</option>
-                                                        <option value="constant">Constant</option>
+                                                        <option value="binary">Binary (On/Off)</option>
                                                     </>
                                                 )}
                                             </select>
+
+                                            {/* REV F77: Warning for deprecated EV charger types */}
+                                            {!isWaterHeater && entity.type !== 'binary' && (
+                                                <Banner variant="warning" className="mt-2 text-xs">
+                                                    Variable power control is not yet implemented. Current
+                                                    implementation uses binary ON/OFF control at max_power_kw. Change
+                                                    type to 'binary' to suppress this warning.
+                                                </Banner>
+                                            )}
                                         </div>
 
                                         {/* Nominal Power */}

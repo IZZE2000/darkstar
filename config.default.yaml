@@ -120,7 +120,7 @@ ev_chargers:
     sensor: sensor.tesla_power       # Home Assistant entity for power reading
     soc_sensor: ""                   # EV battery state of charge (%) - Required for smart charging
     plug_sensor: ""                  # EV plug status sensor - Required for smart charging
-    type: variable                   # Load type: variable (EV) or constant
+    type: binary                     # Load type: binary (ON/OFF) only. Variable power control not yet implemented
     nominal_power_kw: 11.0           # Nominal power for load calculations
 
   # Example: Second EV (disabled by default)
