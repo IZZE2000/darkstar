@@ -50,7 +50,8 @@ async def temp_db():
 
     yield db_path, store, tz
 
-    # Cleanup
+    # Cleanup DB and threads
+    await store.close()
     with contextlib.suppress(OSError):
         Path(db_path).unlink()
 

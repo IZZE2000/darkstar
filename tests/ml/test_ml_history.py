@@ -1,15 +1,15 @@
-import asyncio
 from datetime import datetime, timedelta
 
 import pytest
+import pytest_asyncio
 from sqlalchemy import func, select
 
 from backend.learning.models import Base, LearningRun
 from backend.learning.store import LearningStore
 
 
-@pytest.fixture
-def store(tmp_path):
+@pytest_asyncio.fixture
+async def store(tmp_path):
     db_path = str(tmp_path / "test_learning.db")
     import pytz
 
@@ -21,8 +21,12 @@ def store(tmp_path):
         async with store.async_engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
 
-    asyncio.run(init_db())
-    return store
+    await init_db()
+
+    yield store
+
+    # Cleanup background threads
+    await store.close()
 
 
 @pytest.mark.asyncio

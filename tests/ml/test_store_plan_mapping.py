@@ -24,7 +24,11 @@ async def store(memory_db_path):
     # Manually create schema for tests using async engine
     async with store.async_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    return store
+
+    yield store
+
+    # Cleanup threads
+    await store.close()
 
 
 @pytest.mark.asyncio

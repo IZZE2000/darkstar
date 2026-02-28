@@ -73,7 +73,10 @@ async def test_today_with_history_includes_planned_actions(tmp_path):
         MockPath.side_effect = side_effect
 
         store = LearningStore(str(db_path), tz)
-        result = await schedule_today_with_history(store=store)
+        try:
+            result = await schedule_today_with_history(store=store)
+        finally:
+            await store.close()
 
     # Assertions
     slots = result["slots"]
@@ -136,7 +139,10 @@ async def test_today_with_history_includes_past(tmp_path):
         MockPath.side_effect = side_effect
 
         store = LearningStore(str(db_path), tz)
-        result = await schedule_today_with_history(store=store)
+        try:
+            result = await schedule_today_with_history(store=store)
+        finally:
+            await store.close()
 
     slots = result["slots"]
     # 01:00 should be INCLUDED (past/history), 22:00 should be INCLUDED (future)

@@ -47,6 +47,11 @@ class LearningStore:
     async def close(self):
         """Dispose of the async engine."""
         await self.async_engine.dispose()
+        # Prevent aiosqlite _connection_worker_thread from crashing when pytest-asyncio
+        # destroys the event loop immediately after tests finish.
+        import asyncio
+
+        await asyncio.sleep(0.01)
 
     async def ensure_wal_mode(self):
         """ARC12: Ensure WAL mode is enabled (idempotent, call once on startup)."""

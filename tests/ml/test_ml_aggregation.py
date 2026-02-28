@@ -13,6 +13,14 @@ class TestMLAggregation(unittest.IsolatedAsyncioTestCase):
         self.engine.timezone = pytz.UTC
         self.engine.sensor_map = {"sensor.pv_total": "pv", "sensor.solar_yield": "pv"}
 
+    async def asyncTearDown(self):
+        if (
+            hasattr(self, "engine")
+            and hasattr(self.engine, "store")
+            and self.engine.store is not None
+        ):
+            await self.engine.store.close()
+
     def test_sensor_aggregation(self):
         print("\n--- Testing ML Sensor Aggregation ---")
 
