@@ -194,7 +194,7 @@ The sidebar version is fetched from `/api/version` which uses `git describe --ta
   4. **Always Fix the Root Cause**: Investigate *why* it froze (e.g., unclosed background threads, missing timeouts) and patch the code rather than repeatedly canceling the command.
   5. **AI Extension UI Desync**: If a command like `git commit -m "..."` completes instantly but the AI UI still shows it as "Running", the AI's internal parser lost the prompt marker. This is caused by **multi-line string literals** (newlines inside quotes) generating `> ` continuation prompts that confuse the UI.
      * **Prevention**: Always use single-line `git commit -m "message"` or `git commit -am` commands from the AI. Never send raw newlines inside the `-m` string. If long messages are needed, use an editor or format the string carefully without literal mid-string newlines.
-     * **Fix**: Run `kill -9 $(pgrep -f "bash")` (specifically the hidden background bash spawned by the extension) to forcefully reset the AI's internal PTY state.
+     * **Fix**: Run `pkill -9 -f "shellIntegration-bash"` to forcefully kill the extension's hidden terminal instances and reset the AI's internal PTY state. Do not just kill `bash` randomly.
 
 ### Git & Commit Standards
 - **Strict Conventional Commits**: Mandatory for all commits.
