@@ -223,3 +223,53 @@ When SoC > target, controller uses `self_consumption` mode which relies on inver
 * [x] Run full test suite: `uv run python -m pytest -q`
 
 ---
+
+### [DRAFT] REV // F77 — Clarify EV Charger Type Field: Binary vs Variable
+
+**Goal:** Fix misleading EV charger "type" field that suggests variable power control capability when Darkstar only supports ON/OFF switching.
+
+**Context:**
+The EV charger configuration has a `type` field with options "variable" and "constant", which implies dynamic power control. However, Darkstar's current implementation only supports binary ON/OFF switching via Home Assistant switch entities. The `type` field is legacy baggage from the config migration system that serves no runtime purpose, causing user confusion.
+
+Current behavior:
+- `type: variable` suggests dynamic current limiting capability
+- Actual control: Only ON (at max_power_kw) or OFF
+- No power modulation or current limiting implemented
+
+**Technical Details:**
+- Frontend: `frontend/src/pages/settings/components/EntityArrayEditor.tsx` (lines 402-433)
+- Backend: `backend/loads/service.py` (lines 107-121) - defaults to "variable"
+- Config: `config.default.yaml` (line 123) - shows `type: variable`
+- Validation: No warning when "variable" type is selected
+
+**Plan:**
+
+#### Phase 1: Update Config Default [DRAFT]
+* [ ] Change `config.default.yaml:123` from `type: variable` to `type: binary`
+* [ ] Add clarifying comment: "Load type: binary (ON/OFF) only. Variable power control not yet implemented."
+* [ ] Update inline documentation
+
+#### Phase 2: Backend Changes [DRAFT]
+* [ ] Change default in `backend/loads/service.py:107` from "variable" to "binary"
+* [ ] Update warning message in `backend/loads/service.py:119` to mention "not yet implemented"
+* [ ] Add validation check in `backend/api/routers/config.py` (~line 500)
+  * Return warning when `type: "variable"` is detected
+  * Warning format: `{"severity": "warning", "message": "EV charger uses 'variable' type which is not yet implemented", "guidance": "Variable power control will be available in a future release. Current implementation uses binary ON/OFF control at max_power_kw. Change type to 'binary' to suppress this warning."}`
+
+#### Phase 3: Frontend Changes [DRAFT]
+* [ ] Update select options in `frontend/src/pages/settings/components/EntityArrayEditor.tsx`
+  * Change from: "variable" (label: "Variable (EV)") and "constant" (label: "Constant")
+  * Change to: "binary" (label: "Binary (On/Off)")
+* [ ] Add inline yellow warning banner when `type === 'variable'`
+  * Use `<Banner variant="warning">` component
+  * Message: "Variable power control is not yet implemented. EV charging will use binary ON/OFF control at max_power_kw. Dynamic current limiting coming in future release."
+* [ ] Add tooltip to type field explaining the limitation
+
+#### Phase 4: Testing & Validation [DRAFT]
+* [ ] Verify config migration still works correctly
+* [ ] Test that existing "variable" configs show warning banner
+* [ ] Test that new configs default to "binary"
+* [ ] Run full test suite: `uv run python -m pytest -q`
+* [ ] Verify yellow warning banner displays correctly in UI
+
+---
