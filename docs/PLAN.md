@@ -173,7 +173,7 @@ Use Option 1: Pre-calculate the total discharge value in the Controller to avoid
 
 ---
 
-### [DRAFT] REV // F76 — Fix Battery Discharge During EV Charging
+### [DONE] REV // F76 — Fix Battery Discharge During EV Charging
 
 **Goal:** Fix three critical bugs that allow battery discharge when EV is charging, even when source isolation should block it.
 
@@ -198,28 +198,28 @@ When SoC > target, controller uses `self_consumption` mode which relies on inver
 
 **Plan:**
 
-#### Phase 1: Fix Source Isolation Data Loss [DRAFT]
-* [ ] Fix `executor/engine.py:1156-1163` to include `ev_charging_kw=slot.ev_charging_kw` when reconstructing SlotPlan
-* [ ] Verify `ev_charging_kw` is preserved through all SlotPlan operations
-* [ ] Run `uv run ruff check .`
+#### Phase 1: Fix Source Isolation Data Loss [DONE]
+* [x] Fix `executor/engine.py:1156-1163` to include `ev_charging_kw=slot.ev_charging_kw` when reconstructing SlotPlan
+* [x] Verify `ev_charging_kw` is preserved through all SlotPlan operations
+* [x] Run `uv run ruff check .`
 
-#### Phase 2: Monitor Actual EV Power [DRAFT]
-* [ ] Add `get_total_ev_power()` method to `LoadDisaggregator` class
-* [ ] Update `executor/engine.py` to query actual EV power during decision making
-* [ ] Modify discharge blocking logic: `if scheduled_ev_charge OR actual_ev_power > 0.1 kW: block_discharge()`
-* [ ] Add logging: "EV detected consuming X kW - blocking battery discharge"
-* [ ] Run `uv run python -m pytest tests/ -v -k ev` for EV-related tests
+#### Phase 2: Monitor Actual EV Power [DONE]
+* [x] Add `get_total_ev_power()` method to `LoadDisaggregator` class
+* [x] Update `executor/engine.py` to query actual EV power during decision making
+* [x] Modify discharge blocking logic: `if scheduled_ev_charge OR actual_ev_power > 0.1 kW: block_discharge()`
+* [x] Add logging: "EV detected consuming X kW - blocking battery discharge"
+* [x] Run `uv run python -m pytest tests/ -v -k ev` for EV-related tests
 
-#### Phase 3: Fix self_consumption Mode [DRAFT]
-* [ ] Modify `executor/controller.py` to use `idle` mode instead of `self_consumption` when EV charging is active
-* [ ] Alternative: Set `discharge_kw=0` and mode to `idle` when `ev_should_charge=True`
-* [ ] Verify `idle` mode correctly blocks discharge in all inverter profiles
-* [ ] Run `uv run python -m pytest tests/executor/test_executor_controller.py -v`
+#### Phase 3: Fix self_consumption Mode [DONE]
+* [x] Modify `executor/controller.py` to use `idle` mode instead of `self_consumption` when EV charging is active
+* [x] Alternative: Set `discharge_kw=0` and mode to `idle` when `ev_should_charge=True`
+* [x] Verify `idle` mode correctly blocks discharge in all inverter profiles
+* [x] Run `uv run python -m pytest tests/executor/test_executor_controller.py -v`
 
-#### Phase 4: Integration Testing [DRAFT]
-* [ ] Create test: Manual EV trigger via HA → discharge blocked
-* [ ] Create test: Scheduled EV charging → discharge blocked
-* [ ] Create test: High house load + EV charging → battery stays idle
-* [ ] Run full test suite: `uv run python -m pytest -q`
+#### Phase 4: Integration Testing [DONE]
+* [x] Create test: Manual EV trigger via HA → discharge blocked
+* [x] Create test: Scheduled EV charging → discharge blocked
+* [x] Create test: High house load + EV charging → battery stays idle
+* [x] Run full test suite: `uv run python -m pytest -q`
 
 ---

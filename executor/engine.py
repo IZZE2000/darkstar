@@ -24,6 +24,8 @@ from typing import Any
 
 import pytz
 
+from backend.loads.service import LoadDisaggregator
+
 # import yaml
 # Import existing HA config loader
 from inputs import load_home_assistant_config
@@ -175,8 +177,17 @@ class ExecutorEngine:
         self._ev_charging_started_at: datetime | None = None
         self._ev_charging_slot_end: datetime | None = None
 
+        # REV F76 Phase 5: Smart logging state tracking (Issue 4 fix)
+        self._ev_detected_last_tick = False
+
+        # REV F76 Phase 5: Fail-safe error tracking (Issue 1 fix)
+        self._ev_power_fetch_failed = False
+
         # Recent errors tracking (Phase 3)
         self.recent_errors: collections.deque[dict[str, Any]] = collections.deque(maxlen=10)
+
+        # Load disaggregator for EV power monitoring (REV F76)
+        self._load_disaggregator = LoadDisaggregator(self._full_config)
 
         # Async background tasks reference (RUF006 fix)
         self._background_tasks: set[asyncio.Task[Any]] = set()
@@ -1142,25 +1153,77 @@ class ExecutorEngine:
             if slot is None:
                 slot = SlotPlan()  # Use defaults if no slot
 
-            # REV K25 Phase 5: EV Charging Logic
+            # REV K25 Phase 5 + REV F76: EV Charging Logic with Actual Power Monitoring
             ev_charging_kw = slot.ev_charging_kw if slot else 0.0
-            ev_should_charge = ev_charging_kw > 0.1 if ev_charging_kw else False
+            scheduled_ev_charging = ev_charging_kw > 0.1 if ev_charging_kw else False
+
+            # REV F76 Phase 2: Get actual EV power from disaggregator
+            actual_ev_power_kw: float = 0.0
+            if self._has_ev_charger:
+                try:
+                    # Update load readings and get total EV power
+                    await self._load_disaggregator.update_current_power()
+                    actual_ev_power_kw = self._load_disaggregator.get_total_ev_power()
+                    # REV F76 Phase 5 (Issue 1): Reset fail-safe flag on success
+                    if self._ev_power_fetch_failed:
+                        self._ev_power_fetch_failed = False
+                        logger.info("EV power monitoring restored - fail-safe deactivated")
+                except Exception as e:
+                    # REV F76 Phase 5 (Issue 1): Fail-safe - block discharge on error
+                    if not self._ev_power_fetch_failed:
+                        logger.warning(
+                            "EV power monitoring failed: %s - Fail-safe activated (blocking discharge)",
+                            e,
+                        )
+                        self._ev_power_fetch_failed = True
+                    actual_ev_power_kw = float("inf")  # Fail-safe: assume EV charging
+
+            # Block discharge if scheduled OR actual EV charging detected
+            actual_ev_charging: bool = actual_ev_power_kw > 0.1
+            ev_should_charge: bool = scheduled_ev_charging or actual_ev_charging
 
             # Source Isolation: Block battery discharge when EV charging
             if ev_should_charge and self._has_battery:
-                logger.info(
-                    "EV Charging active (%.1f kW) - Source isolation: Blocking battery discharge",
-                    ev_charging_kw,
-                )
+                # REV F76 Phase 5 (Issue 4): Smart state-based logging
+                if not self._ev_detected_last_tick:
+                    # State transition: EV started charging
+                    if self._ev_power_fetch_failed:
+                        logger.warning(
+                            "EV isolation active (fail-safe mode due to sensor failure) - Blocking battery discharge"
+                        )
+                    elif actual_ev_charging and not scheduled_ev_charging:
+                        logger.info(
+                            "EV charging started: %.2f kW detected (not in schedule) - Source isolation: Blocking battery discharge",
+                            actual_ev_power_kw,
+                        )
+                    else:
+                        logger.info(
+                            "EV charging started: %.1f kW scheduled, %.2f kW actual - Source isolation: Blocking battery discharge",
+                            ev_charging_kw,
+                            actual_ev_power_kw,
+                        )
+                    self._ev_detected_last_tick = True
+
                 # Force zero discharge to prevent battery → EV energy flow
                 slot = SlotPlan(
                     charge_kw=slot.charge_kw,
                     discharge_kw=0.0,  # Block discharge
                     export_kw=slot.export_kw,
+                    load_kw=slot.load_kw,
                     water_kw=slot.water_kw,
+                    ev_charging_kw=slot.ev_charging_kw,  # REV F76: Preserve EV data
                     soc_target=slot.soc_target,
                     soc_projected=slot.soc_projected,
                 )
+            else:
+                # REV F76 Phase 5 (Issue 4): Smart state-based logging
+                if self._ev_detected_last_tick and not self._ev_power_fetch_failed:
+                    # State transition: EV stopped charging
+                    # Note: Skip if in fail-safe mode (sensor failure, not actual EV)
+                    logger.info(
+                        "EV charging ended - Source isolation: Resuming normal battery operation"
+                    )
+                self._ev_detected_last_tick = False
 
             decision = make_decision(
                 slot,

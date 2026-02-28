@@ -16,6 +16,7 @@ class LoadDisaggregator:
     def __init__(self, config: dict[str, Any]):
         self.config = config
         self.loads_registry: dict[str, DeferrableLoad] = {}
+        self._ev_charger_ids: set[str] = set()  # REV F76: Track EV charger IDs
         self.metrics = {
             "negative_base_load_count": 0,
             "total_calculations": 0,
@@ -127,6 +128,7 @@ class LoadDisaggregator:
                 nominal_power_kw=nominal_power,
             )
             self.register_load(load)
+            self._ev_charger_ids.add(load_id)  # REV F76: Track EV charger IDs
             logger.info(f"Registered EV charger from ARC15 config: {load_id}")
 
             # REV F63: soc_sensor and plug_sensor are read directly from ev_chargers[]
@@ -251,3 +253,18 @@ class LoadDisaggregator:
             ),
             "sensor_health": {lid: load.is_healthy for lid, load in self.loads_registry.items()},
         }
+
+    def get_total_ev_power(self) -> float:
+        """
+        REV F76: Calculate total power consumption from all EV chargers.
+
+        Returns:
+            Total power in kW from all registered EV chargers.
+            Returns 0.0 if no EV chargers are registered.
+        """
+        total_ev_kw = 0.0
+        for ev_id in self._ev_charger_ids:
+            load = self.loads_registry.get(ev_id)
+            if load:
+                total_ev_kw += load.current_power_kw
+        return total_ev_kw
