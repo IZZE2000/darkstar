@@ -25,8 +25,10 @@ def test_api_loads_debug():
 
     client = TestClient(app)
 
-    with patch("backend.loads.service.get_ha_sensor_float", new_callable=AsyncMock) as mock_get:
-        mock_get.return_value = 1000.0  # 1kW
+    with patch(
+        "backend.loads.service.get_ha_sensor_kw_normalized", new_callable=AsyncMock
+    ) as mock_get:
+        mock_get.return_value = 1.0  # 1.0 kW directly (unit-aware)
 
         response = client.get("/api/loads/debug")
         assert response.status_code == 200

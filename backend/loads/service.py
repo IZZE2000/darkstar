@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from inputs import get_ha_sensor_float
+from inputs import get_ha_sensor_kw_normalized
 
 from .base import DeferrableLoad, LoadType
 
@@ -197,12 +197,16 @@ class LoadDisaggregator:
         return list(self.loads_registry.values())
 
     async def update_current_power(self) -> float:
-        """Fetch current power for all loads and return the total controllable load (kW)."""
+        """Fetch current power for all loads and return the total controllable load (kW).
+
+        Uses get_ha_sensor_kw_normalized to correctly handle both W-reporting
+        and kW-reporting sensors by reading unit_of_measurement from HA.
+        """
         total_controllable_kw = 0.0
 
         for load in self.loads_registry.values():
             try:
-                val = await get_ha_sensor_float(load.sensor_key)
+                val = await get_ha_sensor_kw_normalized(load.sensor_key)
                 if val is None:
                     load.is_healthy = False
                     load.current_power_kw = 0.0
@@ -210,9 +214,7 @@ class LoadDisaggregator:
                     logger.debug(f"Sensor {load.sensor_key} unavailable for load {load.id}")
                 else:
                     load.is_healthy = True
-                    # Darkstar convention: sensors > 100 are likely Watts.
-                    # Standard recorder practice (as seen in recorder.py) is to assume Watts.
-                    load.current_power_kw = val / 1000.0
+                    load.current_power_kw = val
                     total_controllable_kw += load.current_power_kw
             except Exception as e:
                 load.is_healthy = False

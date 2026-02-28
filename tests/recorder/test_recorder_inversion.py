@@ -67,9 +67,11 @@ class TestRecorderBatteryInversion:
     @patch("backend.recorder._load_config")
     @patch("backend.recorder.LearningStore")
     @patch("backend.recorder.get_ha_sensor_float", new_callable=AsyncMock)
+    @patch("backend.recorder.get_ha_sensor_kw_normalized", new_callable=AsyncMock)
     async def test_inverted_battery_discharge_recorded_correctly(
         self,
-        mock_get_sensor,
+        mock_get_kw,
+        mock_get_float,
         mock_store_cls,
         mock_load_config,
         mock_config_battery_inverted,
@@ -85,15 +87,20 @@ class TestRecorderBatteryInversion:
         mock_load_config.return_value = mock_config_battery_inverted
         mock_store_cls.return_value = mock_store
 
-        # Sungrow reports +2000W when charging
-        async def get_sensor_side_effect(entity_id):
+        # Sungrow reports +2.0 kW when charging
+        async def get_kw_side_effect(entity_id):
             if entity_id == "sensor.battery_power":
-                return 2000.0  # Sungrow: positive = charging
-            if entity_id == "sensor.battery_soc":
-                return 50.0
+                return 2.0  # Sungrow: positive = charging
             return 0.0
 
-        mock_get_sensor.side_effect = get_sensor_side_effect
+        mock_get_kw.side_effect = get_kw_side_effect
+
+        async def get_float_side_effect(entity_id):
+            if entity_id == "sensor.battery_soc":
+                return 50.0
+            return None
+
+        mock_get_float.side_effect = get_float_side_effect
 
         await record_observation_from_current_state()
 
@@ -109,9 +116,11 @@ class TestRecorderBatteryInversion:
     @patch("backend.recorder._load_config")
     @patch("backend.recorder.LearningStore")
     @patch("backend.recorder.get_ha_sensor_float", new_callable=AsyncMock)
+    @patch("backend.recorder.get_ha_sensor_kw_normalized", new_callable=AsyncMock)
     async def test_inverted_battery_charge_recorded_correctly(
         self,
-        mock_get_sensor,
+        mock_get_kw,
+        mock_get_float,
         mock_store_cls,
         mock_load_config,
         mock_config_battery_inverted,
@@ -124,15 +133,20 @@ class TestRecorderBatteryInversion:
         mock_load_config.return_value = mock_config_battery_inverted
         mock_store_cls.return_value = mock_store
 
-        # Sungrow reports -2000W when discharging
-        async def get_sensor_side_effect(entity_id):
+        # Sungrow reports -2.0 kW when discharging
+        async def get_kw_side_effect(entity_id):
             if entity_id == "sensor.battery_power":
-                return -2000.0  # Sungrow: negative = discharging
-            if entity_id == "sensor.battery_soc":
-                return 50.0
+                return -2.0  # Sungrow: negative = discharging
             return 0.0
 
-        mock_get_sensor.side_effect = get_sensor_side_effect
+        mock_get_kw.side_effect = get_kw_side_effect
+
+        async def get_float_side_effect(entity_id):
+            if entity_id == "sensor.battery_soc":
+                return 50.0
+            return None
+
+        mock_get_float.side_effect = get_float_side_effect
 
         await record_observation_from_current_state()
 
@@ -152,9 +166,11 @@ class TestRecorderGridInversion:
     @patch("backend.recorder._load_config")
     @patch("backend.recorder.LearningStore")
     @patch("backend.recorder.get_ha_sensor_float", new_callable=AsyncMock)
+    @patch("backend.recorder.get_ha_sensor_kw_normalized", new_callable=AsyncMock)
     async def test_inverted_grid_import_recorded_correctly(
         self,
-        mock_get_sensor,
+        mock_get_kw,
+        mock_get_float,
         mock_store_cls,
         mock_load_config,
         mock_config_grid_inverted,
@@ -170,15 +186,20 @@ class TestRecorderGridInversion:
         mock_load_config.return_value = mock_config_grid_inverted
         mock_store_cls.return_value = mock_store
 
-        # Inverted sensor reports +1000W when exporting
-        async def get_sensor_side_effect(entity_id):
+        # Inverted sensor reports +1.0 kW when exporting
+        async def get_kw_side_effect(entity_id):
             if entity_id == "sensor.grid_power":
-                return 1000.0  # Inverted: positive = export
-            if entity_id == "sensor.battery_soc":
-                return 50.0
+                return 1.0  # Inverted: positive = export
             return 0.0
 
-        mock_get_sensor.side_effect = get_sensor_side_effect
+        mock_get_kw.side_effect = get_kw_side_effect
+
+        async def get_float_side_effect(entity_id):
+            if entity_id == "sensor.battery_soc":
+                return 50.0
+            return None
+
+        mock_get_float.side_effect = get_float_side_effect
 
         await record_observation_from_current_state()
 
@@ -194,9 +215,11 @@ class TestRecorderGridInversion:
     @patch("backend.recorder._load_config")
     @patch("backend.recorder.LearningStore")
     @patch("backend.recorder.get_ha_sensor_float", new_callable=AsyncMock)
+    @patch("backend.recorder.get_ha_sensor_kw_normalized", new_callable=AsyncMock)
     async def test_inverted_grid_export_recorded_correctly(
         self,
-        mock_get_sensor,
+        mock_get_kw,
+        mock_get_float,
         mock_store_cls,
         mock_load_config,
         mock_config_grid_inverted,
@@ -209,15 +232,20 @@ class TestRecorderGridInversion:
         mock_load_config.return_value = mock_config_grid_inverted
         mock_store_cls.return_value = mock_store
 
-        # Inverted sensor reports -1000W when importing
-        async def get_sensor_side_effect(entity_id):
+        # Inverted sensor reports -1.0 kW when importing
+        async def get_kw_side_effect(entity_id):
             if entity_id == "sensor.grid_power":
-                return -1000.0  # Inverted: negative = import
-            if entity_id == "sensor.battery_soc":
-                return 50.0
+                return -1.0  # Inverted: negative = import
             return 0.0
 
-        mock_get_sensor.side_effect = get_sensor_side_effect
+        mock_get_kw.side_effect = get_kw_side_effect
+
+        async def get_float_side_effect(entity_id):
+            if entity_id == "sensor.battery_soc":
+                return 50.0
+            return None
+
+        mock_get_float.side_effect = get_float_side_effect
 
         await record_observation_from_current_state()
 
@@ -301,21 +329,27 @@ class TestNonInvertedSensors:
     @patch("backend.recorder._load_config")
     @patch("backend.recorder.LearningStore")
     @patch("backend.recorder.get_ha_sensor_float", new_callable=AsyncMock)
+    @patch("backend.recorder.get_ha_sensor_kw_normalized", new_callable=AsyncMock)
     async def test_non_inverted_battery_standard_convention(
-        self, mock_get_sensor, mock_store_cls, mock_load_config, mock_config, mock_store
+        self, mock_get_kw, mock_get_float, mock_store_cls, mock_load_config, mock_config, mock_store
     ):
         """Standard battery convention: + = discharge, - = charge."""
         mock_load_config.return_value = mock_config
         mock_store_cls.return_value = mock_store
 
-        async def get_sensor_side_effect(entity_id):
+        async def get_kw_side_effect(entity_id):
             if entity_id == "sensor.battery_power":
-                return 2000.0  # Standard: positive = discharge
-            if entity_id == "sensor.battery_soc":
-                return 50.0
+                return 2.0  # Standard: positive = discharge
             return 0.0
 
-        mock_get_sensor.side_effect = get_sensor_side_effect
+        mock_get_kw.side_effect = get_kw_side_effect
+
+        async def get_float_side_effect(entity_id):
+            if entity_id == "sensor.battery_soc":
+                return 50.0
+            return None
+
+        mock_get_float.side_effect = get_float_side_effect
 
         await record_observation_from_current_state()
 
@@ -330,21 +364,27 @@ class TestNonInvertedSensors:
     @patch("backend.recorder._load_config")
     @patch("backend.recorder.LearningStore")
     @patch("backend.recorder.get_ha_sensor_float", new_callable=AsyncMock)
+    @patch("backend.recorder.get_ha_sensor_kw_normalized", new_callable=AsyncMock)
     async def test_non_inverted_grid_standard_convention(
-        self, mock_get_sensor, mock_store_cls, mock_load_config, mock_config, mock_store
+        self, mock_get_kw, mock_get_float, mock_store_cls, mock_load_config, mock_config, mock_store
     ):
         """Standard grid convention: + = import, - = export."""
         mock_load_config.return_value = mock_config
         mock_store_cls.return_value = mock_store
 
-        async def get_sensor_side_effect(entity_id):
+        async def get_kw_side_effect(entity_id):
             if entity_id == "sensor.grid_power":
-                return 1000.0  # Standard: positive = import
-            if entity_id == "sensor.battery_soc":
-                return 50.0
+                return 1.0  # Standard: positive = import
             return 0.0
 
-        mock_get_sensor.side_effect = get_sensor_side_effect
+        mock_get_kw.side_effect = get_kw_side_effect
+
+        async def get_float_side_effect(entity_id):
+            if entity_id == "sensor.battery_soc":
+                return 50.0
+            return None
+
+        mock_get_float.side_effect = get_float_side_effect
 
         await record_observation_from_current_state()
 

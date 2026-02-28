@@ -52,14 +52,16 @@ def test_load_registration(disaggregator):
 
 @pytest.mark.asyncio
 async def test_update_current_power(disaggregator):
-    """Test fetching power from HA sensors and unit conversion."""
-    with patch("backend.loads.service.get_ha_sensor_float", new_callable=AsyncMock) as mock_get:
-        # sensor.water_heater_power -> 3000W, sensor.ev_power -> 5500W
-        mock_get.side_effect = lambda sensor: 3000.0 if "water" in sensor else 5500.0
+    """Test fetching power from HA sensors with unit-aware normalization."""
+    with patch(
+        "backend.loads.service.get_ha_sensor_kw_normalized", new_callable=AsyncMock
+    ) as mock_get:
+        # sensor.water_heater_power -> 3.0 kW, sensor.ev_power -> 5.5 kW
+        mock_get.side_effect = lambda sensor: 3.0 if "water" in sensor else 5.5
 
         total_controllable = await disaggregator.update_current_power()
 
-        assert total_controllable == 8.5  # (3000 + 5500) / 1000
+        assert total_controllable == 8.5
         assert disaggregator.get_load_by_id("water_heater").current_power_kw == 3.0
         assert disaggregator.get_load_by_id("ev_charger").current_power_kw == 5.5
         assert disaggregator.get_load_by_id("water_heater").is_healthy is True
@@ -68,8 +70,10 @@ async def test_update_current_power(disaggregator):
 @pytest.mark.asyncio
 async def test_update_current_power_failure(disaggregator):
     """Test handling of sensor failures."""
-    with patch("backend.loads.service.get_ha_sensor_float", new_callable=AsyncMock) as mock_get:
-        mock_get.side_effect = lambda sensor: None if "water" in sensor else 5500.0
+    with patch(
+        "backend.loads.service.get_ha_sensor_kw_normalized", new_callable=AsyncMock
+    ) as mock_get:
+        mock_get.side_effect = lambda sensor: None if "water" in sensor else 5.5
 
         total_controllable = await disaggregator.update_current_power()
 
@@ -164,8 +168,10 @@ class TestARC15EntityArrays:
     @pytest.mark.asyncio
     async def test_arc15_update_current_power(self, mock_config_arc15):
         disaggregator = LoadDisaggregator(mock_config_arc15)
-        with patch("backend.loads.service.get_ha_sensor_float", new_callable=AsyncMock) as mock_get:
-            mock_get.side_effect = lambda s: 3000.0 if "vvb" in s else 5500.0
+        with patch(
+            "backend.loads.service.get_ha_sensor_kw_normalized", new_callable=AsyncMock
+        ) as mock_get:
+            mock_get.side_effect = lambda s: 3.0 if "vvb" in s else 5.5
             total = await disaggregator.update_current_power()
             assert total == 8.5
             assert disaggregator.get_load_by_id("main_tank").current_power_kw == 3.0

@@ -13,7 +13,7 @@ from backend.learning.backfill import BackfillEngine
 # Local imports
 from backend.learning.store import LearningStore
 from backend.loads.service import LoadDisaggregator
-from inputs import get_current_slot_prices, get_ha_sensor_float
+from inputs import get_current_slot_prices, get_ha_sensor_float, get_ha_sensor_kw_normalized
 
 logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
 logger = logging.getLogger("recorder")
@@ -53,17 +53,19 @@ async def record_observation_from_current_state(
     # Gather Data
     input_sensors = config.get("input_sensors", {})
 
-    # Helper to get sensor value and convert W to kW if needed
+    # Helper to get sensor value and convert W to kW if needed.
+    # Uses get_ha_sensor_kw_normalized which reads unit_of_measurement from HA
+    # and only divides by 1000 when the sensor reports in Watts.
+    # This correctly handles both W-reporting (most inverters) and
+    # kW-reporting (Fronius SolarNet) sensors automatically.
     async def get_kw(key: str, default: float = 0.0) -> float:
         entity = input_sensors.get(key)
         if not entity:
             return default
-        val = await get_ha_sensor_float(entity)
+        val = await get_ha_sensor_kw_normalized(str(entity))
         if val is None:
             return default
-        # Assume sensors are in Watts if > 100? Or just assume Watts?
-        # Usually HA power sensors are W.
-        return val / 1000.0
+        return val
 
     # Current Power State (Snapshot)
     pv_kw = await get_kw("pv_power")
@@ -106,14 +108,10 @@ async def record_observation_from_current_state(
         if ev_charger.get("enabled", True):
             sensor = ev_charger.get("sensor")
             if sensor:
-                power_kw = await get_kw("sensor_not_configured")  # Dummy call to get_kw
-                # Actually get from HA directly since sensors are indexed
                 try:
-                    val = await get_ha_sensor_float(sensor)
+                    val = await get_ha_sensor_kw_normalized(str(sensor))
                     if val is not None:
-                        # Assume sensors are in Watts, convert to kW
-                        power_kw = val / 1000.0
-                        ev_charging_kw += power_kw
+                        ev_charging_kw += val
                 except Exception:
                     pass  # Sensor not available, skip
 

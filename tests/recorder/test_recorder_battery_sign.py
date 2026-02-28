@@ -21,8 +21,9 @@ def mock_config():
 @patch("backend.recorder._load_config")
 @patch("backend.recorder.LearningStore")
 @patch("backend.recorder.get_ha_sensor_float", new_callable=AsyncMock)
+@patch("backend.recorder.get_ha_sensor_kw_normalized", new_callable=AsyncMock)
 async def test_recorder_sign_convention_discharge(
-    mock_get_sensor, mock_store_cls, mock_load_config, mock_config
+    mock_get_kw, mock_get_float, mock_store_cls, mock_load_config, mock_config
 ):
     """
     Test standard convention: Positive battery power = Discharge
@@ -42,14 +43,21 @@ async def test_recorder_sign_convention_discharge(
     mock_store.__aexit__ = AsyncMock(return_value=None)
     mock_store_cls.return_value = mock_store
 
-    # Setup sensor values
-    # +2.0 kW (Positive) -> Should be DISCHARGE in new logic
-    async def get_sensor_side_effect(entity_id):
+    # get_ha_sensor_kw_normalized: power sensors in kW
+    async def get_kw_side_effect(entity_id):
         if entity_id == "sensor.battery_power":
-            return 2000.0  # 2000 Watts = 2.0 kW
+            return 2.0  # 2.0 kW discharge
         return 0.0
 
-    mock_get_sensor.side_effect = get_sensor_side_effect
+    mock_get_kw.side_effect = get_kw_side_effect
+
+    # get_ha_sensor_float: SoC (percentage, not power)
+    async def get_float_side_effect(entity_id):
+        if entity_id == "sensor.battery_soc":
+            return 50.0
+        return None
+
+    mock_get_float.side_effect = get_float_side_effect
 
     # Run recorder
     await record_observation_from_current_state()
@@ -67,8 +75,9 @@ async def test_recorder_sign_convention_discharge(
 @patch("backend.recorder._load_config")
 @patch("backend.recorder.LearningStore")
 @patch("backend.recorder.get_ha_sensor_float", new_callable=AsyncMock)
+@patch("backend.recorder.get_ha_sensor_kw_normalized", new_callable=AsyncMock)
 async def test_recorder_sign_convention_charge(
-    mock_get_sensor, mock_store_cls, mock_load_config, mock_config
+    mock_get_kw, mock_get_float, mock_store_cls, mock_load_config, mock_config
 ):
     """
     Test standard convention: Negative battery power = Charge
@@ -87,12 +96,20 @@ async def test_recorder_sign_convention_charge(
     mock_store_cls.return_value = mock_store
 
     # -2.0 kW (Negative) -> Should be CHARGE in new logic
-    async def get_sensor_side_effect(entity_id):
+    async def get_kw_side_effect(entity_id):
         if entity_id == "sensor.battery_power":
-            return -2000.0
+            return -2.0  # -2.0 kW charge
         return 0.0
 
-    mock_get_sensor.side_effect = get_sensor_side_effect
+    mock_get_kw.side_effect = get_kw_side_effect
+
+    # get_ha_sensor_float: SoC (percentage, not power)
+    async def get_float_side_effect(entity_id):
+        if entity_id == "sensor.battery_soc":
+            return 50.0
+        return None
+
+    mock_get_float.side_effect = get_float_side_effect
 
     await record_observation_from_current_state()
 

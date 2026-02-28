@@ -6,10 +6,10 @@ from backend.ha_socket import HAWebSocketClient
 from backend.recorder import record_observation_from_current_state
 
 
-# Mock inputs.get_ha_sensor_float
+# Mock inputs.get_ha_sensor_kw_normalized
 @pytest.fixture
 def mock_get_sensor():
-    with patch("backend.recorder.get_ha_sensor_float", new_callable=AsyncMock) as mock:
+    with patch("backend.recorder.get_ha_sensor_kw_normalized", new_callable=AsyncMock) as mock:
         yield mock
 
 
@@ -35,10 +35,10 @@ async def test_recorder_net_meter_mode(mock_config, mock_get_sensor, mock_store)
         },
     }
 
-    # Setup Sensor Values (Grid = 500W Import)
+    # Setup Sensor Values (Grid = 0.5 kW Import)
     async def side_effect(entity, **kwargs):
         if entity == "sensor.grid_net":
-            return 500.0
+            return 0.5
         return 0.0
 
     mock_get_sensor.side_effect = side_effect
@@ -58,7 +58,7 @@ async def test_recorder_net_meter_mode(mock_config, mock_get_sensor, mock_store)
 
     # Verify Store call
     df = mock_store.return_value.store_slot_observations.call_args[0][0]
-    # Import should be 500W * 0.25h / 1000 = 0.125 kWh
+    # Import should be 0.5 kW * 0.25h = 0.125 kWh
     assert df.iloc[0]["import_kwh"] == 0.125
     assert df.iloc[0]["export_kwh"] == 0.0
 
@@ -74,12 +74,12 @@ async def test_recorder_dual_meter_mode(mock_config, mock_get_sensor, mock_store
         },
     }
 
-    # Setup Sensor Values (Import=1000W, Export=200W) - simultaneous?
+    # Setup Sensor Values (Import=1.0 kW, Export=0.2 kW)
     async def side_effect(entity, **kwargs):
         if entity == "sensor.grid_import":
-            return 1000.0
+            return 1.0
         if entity == "sensor.grid_export":
-            return 200.0
+            return 0.2
         return 0.0
 
     mock_get_sensor.side_effect = side_effect
