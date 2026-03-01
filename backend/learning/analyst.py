@@ -197,7 +197,9 @@ class Analyst:
                 import asyncio
 
                 def build_df():
-                    df = pd.DataFrame([r.__dict__.copy() for r in rows])
+                    # SQLAlchemy 2.0 Row objects use _asdict(), not __dict__
+                    # _asdict() is the official API for converting Row to dict (type: ignore for protected access)
+                    df = pd.DataFrame([r._asdict() for r in rows])  # type: ignore[misc]
                     df["slot_start"] = pd.to_datetime(df["slot_start"], utc=True)
                     start_utc = start.astimezone(UTC) if start.tzinfo else start.replace(tzinfo=UTC)
                     end_utc = end.astimezone(UTC) if end.tzinfo else end.replace(tzinfo=UTC)
@@ -228,7 +230,9 @@ class Analyst:
                 import asyncio
 
                 def build_df():
-                    df = pd.DataFrame([r.__dict__.copy() for r in rows])
+                    # SQLAlchemy 2.0 Row objects use _asdict(), not __dict__
+                    # _asdict() is the official API for converting Row to dict (type: ignore for protected access)
+                    df = pd.DataFrame([r._asdict() for r in rows])  # type: ignore[misc]
                     df["slot_start"] = pd.to_datetime(df["slot_start"], utc=True)
                     start_utc = start.astimezone(UTC) if start.tzinfo else start.replace(tzinfo=UTC)
                     end_utc = end.astimezone(UTC) if end.tzinfo else end.replace(tzinfo=UTC)

@@ -151,6 +151,35 @@ async def get_ha_sensor_kw_normalized(entity_id: str) -> float | None:
         return None
 
 
+def _normalize_energy_to_kwh(value: float, unit: str | None) -> float:
+    """Normalize energy value to kWh based on Home Assistant unit_of_measurement.
+
+    Handles common energy units: Wh, kWh, MWh with case-insensitive matching.
+    Assumes kWh if no unit is specified (conservative fallback).
+
+    Args:
+        value: The raw numeric value from HA
+        unit: The unit_of_measurement attribute from HA state
+
+    Returns:
+        Value normalized to kWh
+    """
+    if not unit:
+        return value  # Assume kWh if no unit specified
+
+    unit_clean = str(unit).upper().replace(" ", "_")
+
+    if unit_clean in ("WH", "WATT_HOUR", "WATT_HOURS"):
+        return value / 1000.0
+    elif unit_clean in ("KWH", "KILOWATT_HOUR", "KILOWATT_HOURS"):
+        return value
+    elif unit_clean in ("MWH", "MEGAWATT_HOUR", "MEGAWATT_HOURS"):
+        return value * 1000.0
+    else:
+        # Unknown unit - assume kWh (conservative)
+        return value
+
+
 async def get_ha_bool(entity_id: str) -> bool:
     """Return True if entity is 'on', 'true', 'armed', etc."""
     state = await get_ha_entity_state(entity_id)
@@ -1153,6 +1182,11 @@ async def get_load_profile_from_ha(config: dict[str, Any]) -> list[float]:
                     current_time = current_time.replace(tzinfo=pytz.UTC)
                 current_time = current_time.astimezone(local_tz)
                 current_value = float(state_val)
+
+                # Normalize energy unit to kWh (handles Wh, kWh, MWh)
+                attributes = state.get("attributes", {})
+                unit = attributes.get("unit_of_measurement")
+                current_value = _normalize_energy_to_kwh(current_value, unit)
 
                 if prev_state is not None and prev_time is not None:
                     # Calculate energy delta (ensure positive)
