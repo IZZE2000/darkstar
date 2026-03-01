@@ -134,6 +134,7 @@ class ExecutionHistory:
             )
             session.add(entry)
             session.commit()
+            session.refresh(entry)
             return entry.id
 
     def update_slot_observation(self, slot_start: str, action_summary: dict[str, Any]) -> None:
