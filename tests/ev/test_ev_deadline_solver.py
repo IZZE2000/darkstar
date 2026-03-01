@@ -62,7 +62,7 @@ class TestEVDeadlineConstraint:
             ev_plugged_in=True,
             ev_deadline=deadline,
             ev_incentive_buckets=[
-                IncentiveBucket(threshold_soc=100.0, value_sek=1.0),
+                IncentiveBucket(threshold_soc=100.0, value_sek=2.0),
             ],
         )
 
@@ -99,7 +99,7 @@ class TestEVDeadlineConstraint:
             ev_plugged_in=True,
             ev_deadline=deadline,
             ev_incentive_buckets=[
-                IncentiveBucket(threshold_soc=100.0, value_sek=1.0),
+                IncentiveBucket(threshold_soc=100.0, value_sek=2.0),
             ],
         )
 
@@ -132,7 +132,7 @@ class TestEVDeadlineConstraint:
             ev_plugged_in=True,
             ev_deadline=None,
             ev_incentive_buckets=[
-                IncentiveBucket(threshold_soc=100.0, value_sek=1.0),
+                IncentiveBucket(threshold_soc=100.0, value_sek=2.0),
             ],
         )
 
@@ -170,7 +170,7 @@ class TestEVDeadlineConstraint:
             ev_deadline=deadline,
             ev_deadline_urgent=True,  # Urgent flag set
             ev_incentive_buckets=[
-                IncentiveBucket(threshold_soc=100.0, value_sek=1.0),
+                IncentiveBucket(threshold_soc=100.0, value_sek=2.0),
             ],
         )
 

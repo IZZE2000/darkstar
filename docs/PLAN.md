@@ -271,3 +271,21 @@ Changes made:
 * [x] Code auto-formatted with prettier
 
 ---
+
+### [DONE] REV // F78 — Enforce Binary EV Charging in Kepler Solver
+
+**Goal:** Ensure EV charging output from the Kepler MILP solver is strictly binary (ON/OFF at maximum power) to match the physical executor limits and Rev F77 config restrictions.
+**Context:** The EV charging variable was previously continuous to support F51 Phase 2 (Incentive Buckets). However, Rev F77 enforced binary-only execution because physical executors don't yet support variable charging. This discrepancy allowed the solver to output fractional charging plans that the executor would turn into massive actual power draws.
+
+**Plan:**
+
+#### Phase 1: Solver Constraints [DONE]
+* [x] Re-introduce `ev_charge` as a binary constraint variable in `kepler.py`
+* [x] Tie the continuous `ev_energy` variable to the binary `ev_charge` (e.g., `ev_energy[t] == ev_charge[t] * max_power`)
+* [x] Ensure Incentive Bucket mathematical derivations remain unaffected.
+
+#### Phase 2: Testing [DONE]
+* [x] Add automated tests for binary-level charging restrictions
+* [x] Pass lint and typechecks
+
+---

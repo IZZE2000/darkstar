@@ -59,6 +59,15 @@ This document contains ideas, improvements, and tasks that are not yet scheduled
 
 <!-- Add new bugs/requests here. AI will wipe this section when processing. -->
 
+### [Chore] Pytest Warnings Cleanup
+
+**Goal:** Address 4 pre-existing DeprecationWarnings that appear during pytest runs.
+
+**Notes:**
+- `pythonjsonlogger.jsonlogger has been moved to pythonjsonlogger.json`
+- `PydanticDeprecatedSince20: Support for class-based config is deprecated` (in `forecast.py`)
+- `datetime.datetime.utcnow() is deprecated` (in `test_ml_history.py`)
+
 ---
 
 ### 🔴 High Priority (Ready to Plan)

@@ -86,6 +86,9 @@ exclude = [
     "__pycache__",
     "reference",
     "scripts",    # Manual tests, benchmarks, debugging tools
+    "typings",    # Third-party type stubs creating false positives
+    "tests/recorder/test_recorder_inversion.py", # Mocks with untyped signatures
+    "tests/weather/test_weather_interpolation.py", # Mocks with untyped signatures
 ]
 
 # Report settings for strict mode

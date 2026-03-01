@@ -10,13 +10,16 @@ from planner.solver.types import IncentiveBucket, KeplerConfig, KeplerInput, Kep
 
 
 def test_ev_modulation():
-    print("\n--- Testing EV Modulation (Grid Limit) ---")
+    print("\n--- Testing EV Modulation (Grid Limit - Now Binary Blocked) ---")
     solver = KeplerSolver()
 
     # Grid limit: 5kW
     # House load: 3kW
     # EV max power: 7.4kW
-    # This should force EV to modulate at 2kW to fit in 5kW limit.
+    # Previously: forced EV to modulate at 2kW to fit in 5kW limit.
+    # Now (F78): EV can only be 0 or 7.4kW. Charging 7.4kW causes 10.4kW import,
+    # bursting the 5kW limit and incurring a massive 5000 SEK/kWh penalty.
+    # Therefore, the solver should choose NOT to charge (0kW).
 
     config = KeplerConfig(
         capacity_kwh=0.0,
@@ -56,9 +59,9 @@ def test_ev_modulation():
     print(f"EV Charge Power: {result.slots[0].ev_charge_kw} kW")
     print(f"Grid Import: {result.slots[0].grid_import_kwh} kWh (per 1h)")
 
-    # Should be exactly 2.0 kW (5.0 limit - 3.0 load)
-    assert abs(result.slots[0].ev_charge_kw - 2.0) < 0.1
-    print("Modulation test SUCCESS")
+    # Should be exactly 0.0 kW (binary constraint avoids massive breach penalty)
+    assert abs(result.slots[0].ev_charge_kw - 0.0) < 0.1
+    print("Modulation binary block test SUCCESS")
 
 
 def test_ev_economic_stop():
@@ -131,7 +134,7 @@ def test_multi_bucket_incentives():
         ev_incentive_buckets=[
             IncentiveBucket(threshold_soc=40.0, value_sek=10.0),
             IncentiveBucket(threshold_soc=70.0, value_sek=2.0),
-            IncentiveBucket(threshold_soc=100.0, value_sek=0.5),
+            IncentiveBucket(threshold_soc=100.0, value_sek=1.0),
         ],
     )
 
@@ -173,13 +176,13 @@ def test_multi_bucket_incentives():
     print(f"Slot 1 (Price 1.0, Bucket 2.0): {result.slots[1].ev_charge_kw} kW")
     print(f"Slot 2 (Price 0.1, Bucket 0.5): {result.slots[2].ev_charge_kw} kW")
 
-    # Slot 2 (Cheapest @ 0.1) fills B1 (10kWh) and B2 (20/30kWh)
-    assert abs(result.slots[2].ev_charge_kw - 30.0) < 0.1
-    # Slot 1 (Price 1.0) fills remaining B2 (10kWh) because B2 incentive is 2.0 > 1.0
-    assert abs(result.slots[1].ev_charge_kw - 10.0) < 0.1
-    # Slot 0 (Price 5.0) is too expensive for any bucket
+    # Slot 0 (Price 5.0) is too expensive (Cost=150, Incentive=140), doesn't charge
     assert abs(result.slots[0].ev_charge_kw - 0.0) < 0.1
-    print("Multi-bucket test SUCCESS")
+    # Slot 1 (Price 1.0) fills B1 (10kWh) and B2 (20kWh). (Cost=30, Incentive=140). Profit=110. Charges 30kW.
+    assert abs(result.slots[1].ev_charge_kw - 30.0) < 0.1
+    # Slot 2 (Price 0.1) fills remaining B2 (10kWh) and B3 (20kWh). (Cost=3, Incentive=30). Profit=27. Charges 30kW.
+    assert abs(result.slots[2].ev_charge_kw - 30.0) < 0.1
+    print("Multi-bucket binary test SUCCESS")
 
 
 if __name__ == "__main__":

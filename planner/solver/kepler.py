@@ -86,6 +86,7 @@ class KeplerSolver:
         # EV Charging as deferrable load (Rev K25)
         # modulation and incentive buckets (REV // F51)
         ev_enabled: bool = config.ev_charging_enabled and config.ev_plugged_in
+        ev_charge: dict[int, Any]
         ev_energy: dict[int, Any]
         ev_bucket_charged: dict[int, Any]
         num_buckets: int
@@ -100,6 +101,9 @@ class KeplerSolver:
             else:
                 logger.info("REV K25: EV charging enabled, no deadline constraint")
 
+            # EV charge binary variable (ON/OFF) - Rev F78
+            ev_charge = pulp.LpVariable.dicts("ev_charge", range(T), cat="Binary")  # type: ignore[reportUnknownMemberType]
+
             # EV energy tracking variable (kWh charged in each slot) - Continuous modulation!
             ev_energy = pulp.LpVariable.dicts("ev_energy_kwh", range(T), lowBound=0.0)  # type: ignore[reportUnknownMemberType]
 
@@ -110,6 +114,7 @@ class KeplerSolver:
                 "ev_bucket_charged", range(num_buckets), lowBound=0.0
             )
         else:
+            ev_charge = dict.fromkeys(range(T), 0)  # type: ignore[assignment]
             ev_energy = dict.fromkeys(range(T), 0.0)  # type: ignore[assignment]
             ev_bucket_charged = {}
             num_buckets = 0
@@ -206,10 +211,10 @@ class KeplerSolver:
                 water_heat[t] * config.water_heating_power_kw * h if water_enabled else 0  # type: ignore[operator]
             )  # type: ignore[reportUnknownVariableType]
 
-            # EV charging load for this slot (kWh) - Rev // F51 (Continuous)
+            # EV charging load for this slot (kWh)
             if ev_enabled:
-                # Modulating power: Bound by max_power, not binary
-                prob += ev_energy[t] <= config.ev_max_power_kw * h  # type: ignore[operator]
+                # Rev F78: Require strict binary switching (ON/OFF at max power)
+                prob += ev_energy[t] == ev_charge[t] * config.ev_max_power_kw * h  # type: ignore[operator]
 
                 # REV K25 Phase 4: Enforce deadline constraint
                 # If slot end time is after deadline, no EV charging allowed
