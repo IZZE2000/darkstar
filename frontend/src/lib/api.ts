@@ -550,7 +550,7 @@ export const Api = {
     haAverage: () => getJSON<HaAverageResponse>('/api/ha/average'),
     haWaterToday: () => getJSON<WaterTodayResponse>('/api/ha/water_today'),
     haTest: (payload: { url: string; token: string }) =>
-        getJSON<{ success: boolean; message: string }>('/api/ha/test', 'POST', payload),
+        getJSON<{ status?: string; success?: boolean; message: string }>('/api/ha/test', 'POST', payload),
     haEntities: () =>
         getJSON<{ entities: { entity_id: string; friendly_name: string; domain: string }[] }>('/api/ha/entities'),
     haServices: () => getJSON<{ services: string[] }>('/api/ha/services'),

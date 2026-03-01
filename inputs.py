@@ -1237,19 +1237,142 @@ async def get_load_profile_from_ha(config: dict[str, Any]) -> list[float]:
 
 
 def get_dummy_load_profile(config: dict[str, Any]) -> list[float]:
-    """Create a dummy load profile for DEMO/NO_DATA scenarios.
+    """Create a dummy load profile or a synthetic scaled profile.
 
-    WARNING: This is a flat fallback when NO historical data is available.
-    Should only be used when:
-    - Fresh installation with no cumulative sensor configured
-    - Home Assistant fetch failed completely
-    - total_load_consumption sensor is missing
-
-    For production, ensure total_load_consumption sensor is configured.
+    If config.input_sensors.total_load_consumption is a number (estimated daily kWh),
+    we generate a synthetic winter heat-pump curve scaled to that daily total.
+    Otherwise, we fall back to a 0.5 kWh flat dummy profile.
     """
     import logging
 
     logger = logging.getLogger(__name__)
+
+    # Check if the user provided an estimated daily kWh (from Startup Wizard)
+    # The wizard stores this as a string, e.g. "20", in the total_load_consumption field
+    # if they selected 'synthetic' mode.
+    estimated_daily_kwh = None
+    sensors = config.get("input_sensors", {})
+    raw_val = sensors.get("total_load_consumption")
+
+    if raw_val is not None:
+        try:
+            val = float(raw_val)
+            if val > 0 and not str(raw_val).startswith(("sensor.", "input_")):
+                estimated_daily_kwh = val
+        except (ValueError, TypeError):
+            pass
+
+    if estimated_daily_kwh is not None:
+        logger.info(
+            f"Generating Synthetic Heat Pump profile scaled to {estimated_daily_kwh} kWh/day."
+        )
+        set_load_forecast_status("synthetic", "estimated")
+
+        # Base normalized heat pump curve (higher in night/morning, lower in afternoon)
+        # 96 slots representing a standard winter day shape. Sums to ~1.0.
+        base_curve = [
+            1.2,
+            1.2,
+            1.1,
+            1.1,
+            1.1,
+            1.1,
+            1.2,
+            1.2,  # 00:00 - 02:00
+            1.2,
+            1.3,
+            1.3,
+            1.3,
+            1.4,
+            1.4,
+            1.5,
+            1.6,  # 02:00 - 04:00
+            1.7,
+            1.8,
+            1.9,
+            1.9,
+            2.0,
+            2.0,
+            1.9,
+            1.8,  # 04:00 - 06:00
+            1.7,
+            1.6,
+            1.5,
+            1.4,
+            1.3,
+            1.2,
+            1.1,
+            1.0,  # 06:00 - 08:00
+            0.9,
+            0.9,
+            0.8,
+            0.8,
+            0.8,
+            0.7,
+            0.7,
+            0.7,  # 08:00 - 10:00
+            0.7,
+            0.6,
+            0.6,
+            0.6,
+            0.6,
+            0.5,
+            0.5,
+            0.5,  # 10:00 - 12:00
+            0.5,
+            0.5,
+            0.5,
+            0.5,
+            0.5,
+            0.5,
+            0.5,
+            0.6,  # 12:00 - 14:00
+            0.6,
+            0.6,
+            0.7,
+            0.7,
+            0.8,
+            0.8,
+            0.9,
+            1.0,  # 14:00 - 16:00
+            1.1,
+            1.2,
+            1.3,
+            1.4,
+            1.5,
+            1.6,
+            1.7,
+            1.7,  # 16:00 - 18:00
+            1.6,
+            1.5,
+            1.4,
+            1.3,
+            1.2,
+            1.1,
+            1.0,
+            1.0,  # 18:00 - 20:00
+            0.9,
+            0.9,
+            0.9,
+            1.0,
+            1.0,
+            1.0,
+            1.1,
+            1.1,  # 20:00 - 22:00
+            1.1,
+            1.1,
+            1.1,
+            1.2,
+            1.2,
+            1.2,
+            1.2,
+            1.2,  # 22:00 - 00:00
+        ]
+
+        curve_sum = sum(base_curve)
+        # Scale the curve so its integral (sum) equals the estimated daily kWh
+        return [(val / curve_sum) * estimated_daily_kwh for val in base_curve]
+
     logger.warning(
         "⚠️ Using DEMO load profile (0.5 kWh flat) - no historical data available. Configure total_load_consumption sensor for accurate forecasts."
     )

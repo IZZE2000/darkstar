@@ -20,17 +20,38 @@ import ChartExamples from './pages/ChartExamples'
 import { Api, HealthResponse, ConfigSaveResponse } from './lib/api'
 import { SystemAlert } from './components/SystemAlert'
 import { ToastProvider } from './components/ui/Toast'
+import { StartupWizard } from './components/startup/StartupWizard'
 
 function RootLayout() {
     const [backendOffline, setBackendOffline] = useState(false)
     const [healthStatus, setHealthStatus] = useState<HealthResponse | null>(null)
     const [configWarnings, setConfigWarnings] = useState<ConfigSaveResponse | null>(null)
+    const [showWizard, setShowWizard] = useState(false)
+    const [missingProfile, setMissingProfile] = useState(false)
+    const [configLoaded, setConfigLoaded] = useState(false)
 
-    // Check config validation on mount
+    // Check config validation on mount and detect if wizard is needed
     useEffect(() => {
-        Api.configValidate()
-            .then(setConfigWarnings)
-            .catch(() => setConfigWarnings(null))
+        const checkConfig = async () => {
+            try {
+                const config = await Api.config()
+                const isProfileMissing = config.system?.inverter_profile === null
+                setMissingProfile(isProfileMissing)
+
+                const isForced = new URLSearchParams(window.location.search).get('setup_wizard') === 'true'
+                if (isProfileMissing || isForced) {
+                    setShowWizard(true)
+                }
+
+                const warnings = await Api.configValidate()
+                setConfigWarnings(warnings)
+            } catch (err) {
+                console.error('Failed to load config', err)
+            } finally {
+                setConfigLoaded(true)
+            }
+        }
+        checkConfig()
     }, [])
 
     // REV UI23: Re-check config validation when config changes (after save)
@@ -113,7 +134,30 @@ function RootLayout() {
                         <span>Backend appears offline or degraded. Some data may be stale or unavailable.</span>
                     </div>
                 )}
-                <Outlet />
+
+                {/* REV UI25: Show missing profile warning if bypassed */}
+                {missingProfile && !showWizard && (
+                    <div className="banner banner-error px-4 py-3 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                            <span>⚠️</span>
+                            <span className="font-medium flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+                                <span>Missing Hardware Profile — Darkstar is disabled.</span>
+                                <span className="opacity-80 font-normal text-xs">
+                                    No hardware control or optimization can occur until a profile is selected.
+                                </span>
+                            </span>
+                        </div>
+                        <button
+                            onClick={() => setShowWizard(true)}
+                            className="bg-bad text-white hover:brightness-110 ml-4 px-3 py-1 text-xs font-bold rounded-lg transition shrink-0 shadow-sm"
+                        >
+                            Open Setup
+                        </button>
+                    </div>
+                )}
+
+                {/* REV UI25: Show Startup Wizard if forced or needed */}
+                {configLoaded && showWizard ? <StartupWizard onComplete={() => setShowWizard(false)} /> : <Outlet />}
             </div>
         </>
     )
