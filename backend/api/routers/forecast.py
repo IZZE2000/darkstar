@@ -5,7 +5,7 @@ from typing import Any, cast
 
 import pytz
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import func, select
 
 from backend.learning import LearningEngine, get_learning_engine
@@ -304,8 +304,7 @@ async def aurora_dashboard() -> dict[str, Any]:
 
 class BriefingRequest(BaseModel):
     # Dynamic dict payload
-    class Config:
-        extra = "allow"
+    model_config = ConfigDict(extra="allow")
 
 
 @router.post("/briefing")

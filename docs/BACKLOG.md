@@ -1,45 +1,19 @@
 # Darkstar Energy Manager: Backlog
 
-This document contains ideas, improvements, and tasks that are not yet scheduled for implementation. Items here are moved to [PLAN.md](PLAN.md) when they become active priorities.
-
----
-
-- [Darkstar Energy Manager: Backlog](#darkstar-energy-manager-backlog)
-  - [🤖 AI Instructions (Read First)](#-ai-instructions-read-first)
-    - [Backlog Item Template](#backlog-item-template)
-  - [📋 Backlog](#-backlog)
-    - [📥 Inbox (User Added / Unsorted)](#-inbox-user-added--unsorted)
-    - [🔴 High Priority (Ready to Plan)](#-high-priority-ready-to-plan)
-    - [🟡 Medium Priority (Needs Design)](#-medium-priority-needs-design)
-      - [\[Planner\] Multiple Heating Sources/Deferrable Loads](#planner-multiple-heating-sourcesdeferrable-loads)
-      - [\[Testing\] Add E2E Tests (IMPLEMENT PRE-STABLE RELEASE)](#testing-add-e2e-tests-implement-pre-stable-release)
-    - [🔧 Technical Debt (Low User Impact)](#-technical-debt-low-user-impact)
-      - [\[Refactor\] Move inputs.py to Proper Module](#refactor-move-inputspy-to-proper-module)
-      - [\[Testing\] Expand CI/CD Coverage (REVIEW-2026-01-04)](#testing-expand-cicd-coverage-review-2026-01-04)
-      - [\[Backend\] Split services.py Router (REVIEW-2026-01-04)](#backend-split-servicespy-router-review-2026-01-04)
-    - [💡 Future Ideas (Brainstorming)](#-future-ideas-brainstorming)
-      - [\[UI\] Advisor Overhaul](#ui-advisor-overhaul)
-
+This document contains ideas, improvements, and tasks that are not yet scheduled for implementation.
 
 ---
 
 ## 🤖 AI Instructions (Read First)
 
-1.  **Structure:** This file is organized by category. Items do **not** have strict ordering.
+1.  **Naming:** Use generic names (e.g., `Settings Cleanup`, `Chart Improvements`) until the item is promoted.
 
-2.  **Naming:** Use generic names (e.g., `Settings Cleanup`, `Chart Improvements`) until the item is promoted.
-
-3.  **Promotion Flow:**
-    - When starting work on a backlog item, assign it a proper **Rev ID** following the [naming conventions in PLAN.md](PLAN.md#revision-naming-conventions).
-    - Move the item to `PLAN.md` with status `[PLANNED]` or `[IN PROGRESS]`.
-    - Delete the item from this file.
-
-4.  **Categories:**
+2.  **Categories:**
     - **Backlog** — Concrete tasks ready for implementation
     - **On Hold** — Paused work with existing code/design
     - **Future Ideas** — Brainstorming, needs design before implementation
 
-5.  **Format:** Use the template below for new items.
+3.  **Format:** Use the template below for new items.
 
 ### Backlog Item Template
 
@@ -59,20 +33,9 @@ This document contains ideas, improvements, and tasks that are not yet scheduled
 
 <!-- Add new bugs/requests here. AI will wipe this section when processing. -->
 
-### [Chore] Pytest Warnings Cleanup
-
-**Goal:** Address 4 pre-existing DeprecationWarnings that appear during pytest runs.
-
-**Notes:**
-- `pythonjsonlogger.jsonlogger has been moved to pythonjsonlogger.json`
-- `PydanticDeprecatedSince20: Support for class-based config is deprecated` (in `forecast.py`)
-- `datetime.datetime.utcnow() is deprecated` (in `test_ml_history.py`)
-
----
-
 ### 🔴 High Priority (Ready to Plan)
 
-### [PLANNED] REV // K22 — Effekttariff (Active Guard)
+### [PLANNED] Effekttariff (Active Guard)
 
 **Goal:** Implement a dual-layer strategy (Planner + Executor) to minimize peak power usage ("Effekttariff").
 
@@ -103,7 +66,7 @@ This document contains ideas, improvements, and tasks that are not yet scheduled
 
 ---
 
-### [DRAFT] REV // K26 — Inverter Clipping Support
+### [DRAFT] Inverter Clipping Support
 
 **Goal:** Correctly model DC vs AC inverter limits in the Kepler solver to prevent over-optimistic planning on high-PV systems.
 **Context:** User has a 15kWp array but a 10kW (AC) / 12kW (DC-Input) inverter. Current model assumes all PV is available at the AC bus.

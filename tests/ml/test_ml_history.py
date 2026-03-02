@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 import pytest_asyncio
@@ -32,7 +32,7 @@ async def store(tmp_path):
 @pytest.mark.asyncio
 async def test_log_learning_run_full(store):
     """Test logging a run with all new ARC11 columns."""
-    start = datetime.utcnow() - timedelta(minutes=5)
+    start = datetime.now(UTC) - timedelta(minutes=5)
 
     await store.log_learning_run(
         status="success",
@@ -59,7 +59,7 @@ async def test_log_learning_run_full(store):
 @pytest.mark.asyncio
 async def test_cleanup_learning_runs(store):
     """Test that cleanup removes old records but keeps recent ones."""
-    now = datetime.utcnow()
+    now = datetime.now(UTC)
     old = now - timedelta(days=40)
     recent = now - timedelta(days=10)
 

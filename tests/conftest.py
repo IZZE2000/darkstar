@@ -48,8 +48,9 @@ input_sensors:
     # Run init
     try:
         asyncio.run(init_db())
-    except Exception as e:
-        print(f"Warning during test DB init: {e}")
+    finally:
+        # Disposing the engine to prevent hanging aiosqlite threads
+        asyncio.run(engine.dispose())
 
     yield
 

@@ -6,7 +6,7 @@ from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 from typing import Any
 
-from pythonjsonlogger import jsonlogger
+from pythonjsonlogger import json as jsonlogger
 
 
 # Ring Buffer for real-time logs in UI
