@@ -35,34 +35,34 @@ This document contains ideas, improvements, and tasks that are not yet scheduled
 
 ### 🔴 High Priority (Ready to Plan)
 
-### [PLANNED] Effekttariff (Active Guard)
+### [PLANNED] Effekttariff (Power Tariff Guard)
 
 **Goal:** Implement a dual-layer strategy (Planner + Executor) to minimize peak power usage ("Effekttariff").
 
-**Plan:**
+**Notes:** Two paths identified during exploration. Start with KISS (V1) and evolve toward Advanced (V2).
 
-#### Phase 1: Configuration & Entities [PLANNED]
-* [ ] Add `grid.import_breach_penalty_sek` (Default: 5000.0) to `config.default.yaml`.
-* [ ] Add `grid.import_breach_penalty_enabled` (Default: false) to `config.default.yaml`.
-* [ ] Add `grid.import_breach_limit_kw` (Default: 11.0) for the hard executor limit.
-* [ ] Add override entities to `executor.config`.
-* [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
+#### Path A: The KISS "Ceiling & Fuse" (V1) [RECOMMENDED]
+*   **Concept:** A simple time-windowed hard limit.
+*   **Inputs:**
+    *   `peak_power_limit` (kW)
+    *   `peak_start_time` / `peak_stop_time` (e.g., 07:00-19:00)
+    *   `current_month_peak_sensor` (Optional HA sensor to track the "Peak-to-Beat").
+*   **Logic:** `Effective Limit = MAX(peak_power_limit, current_month_peak_sensor)`.
+*   **Planner Role:** Treats the Effective Limit as a "Hard Wall" during the active window. No complex cost math, just a constraint.
+*   **Executor Role:** Acts as a "Reactive Fuse." If real-time import crosses the limit during the window:
+    1.  **Throttle EV** (if `has_ev` is true).
+    2.  **Stop Water Heater** (if `has_water_heater` is true).
+    3.  **Force Discharge** battery (if available).
+*   **Sync:** Support reading/writing these values to HA entities (`input_number`, `input_datetime`) to keep UI in sync.
 
-#### Phase 2: Planner Logic (Economic) [PLANNED]
-* [ ] **Planner Logic:** Pass the penalty cost to Kepler if enabled.
-* [ ] **Re-planning:** Trigger re-plan if penalty configuration changes.
-* [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
+#### Path B: The "Advanced Tariff Profile" (V2)
+*   **Concept:** Declarative YAML profiles for different Swedish providers (E.ON, Vattenfall, etc.).
+*   **Planner Logic:** Uses MILP "Peak Variables" to perform economic negotiation.
+    *   *Decision:* "Is the electricity cheap enough that paying the 60 SEK tariff peak fee is actually profitable?"
+*   **Memory:** Tracks "Top 3 Peaks" or other complex monthly rules across the 36h planning horizon using a "Monthly State" input.
+*   **KISS Benefit:** Users can share profiles for their specific region.
 
-#### Phase 3: Executor Active Guard (Reactive) [PLANNED]
-* [ ] **Monitor:** In `executor/engine.py` `_tick`, check `grid_import_power` vs `import_breach_limit_kw`.
-* [ ] **Reactive Logic:**
-    *   If Breach > Limit:
-        *   Trigger `ForceDischarge` on Battery (Max power).
-        *   Trigger `Disable` on Water Heating.
-        *   Log "Grid Breach Detected! Engaging Emergency Shedding".
-* [ ] **Recovery:** Hysteresis logic to release overrides when grid import drops.
-* [ ] **Frontend:** Add controls to `Settings > Grid`.
-* [ ] **USER VERIFICATION AND COMMIT:** Stop and let the user verify, after the user approves commit the changes
+** See @/docs/designs/effekttariff-kiss.md and @/docs/designs/effekttariff-advanced.md for more details.
 
 ---
 
