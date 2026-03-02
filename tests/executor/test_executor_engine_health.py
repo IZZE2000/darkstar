@@ -43,6 +43,8 @@ async def test_executor_engine_captures_action_errors(engine):
     # Execute is async now, so we need to mock it as such if we await it, or just ensure it returns an awaitable if mocked.
     # However, since we mock the whole dispatcher, let's make execute an AsyncMock
     engine.dispatcher.execute = AsyncMock()
+    engine.dispatcher.notify_override = AsyncMock()
+    engine.dispatcher.notify_error = AsyncMock()
     error_result = ActionResult(
         action_type="set_work_mode", success=False, message="HA API Error", skipped=False
     )
@@ -53,9 +55,10 @@ async def test_executor_engine_captures_action_errors(engine):
     # _get_planner_decision is ASYNC, so use AsyncMock
     engine._get_planner_decision = AsyncMock(return_value=MagicMock())
     engine.history = MagicMock()
-    # _load_config and _gather_system_state are SYNC, so use MagicMock
+    # _load_config is SYNC, so use MagicMock
+    # _gather_system_state is ASYNC, so use AsyncMock
     engine._load_config = MagicMock()
-    engine._gather_system_state = MagicMock()
+    engine._gather_system_state = AsyncMock()
 
     await engine._tick()
 
@@ -68,13 +71,15 @@ async def test_executor_engine_captures_action_errors(engine):
 async def test_executor_engine_ignores_skipped_actions(engine):
     engine.dispatcher = MagicMock()
     engine.dispatcher.execute = AsyncMock()
+    engine.dispatcher.notify_override = AsyncMock()
+    engine.dispatcher.notify_error = AsyncMock()
     skipped_result = ActionResult(
         action_type="set_work_mode", success=False, message="Entity not configured", skipped=True
     )
     engine.dispatcher.execute.return_value = [skipped_result]
 
     engine._load_config = MagicMock()
-    engine._gather_system_state = MagicMock()
+    engine._gather_system_state = AsyncMock()
     engine._get_planner_decision = AsyncMock(return_value=MagicMock())
     engine.history = MagicMock()
 

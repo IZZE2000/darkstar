@@ -1,18 +1,25 @@
 """
 Action Dispatcher
 
-Executes actions by calling Home Assistant services.
-Handles idempotent execution (skip if already set) and
-notification dispatch per action type.
+Executes actions by calling Home Assistant services asynchronously using aiohttp.
+Handles idempotent execution (skip if already set), notification dispatch per action type,
+and automatic retry with exponential backoff for transient network failures.
+
+Key Features:
+- Async HTTP client (aiohttp) for non-blocking HA API calls
+- 5-second timeout on all requests to prevent executor freezing
+- Exponential backoff retry (3 attempts) for transient network errors
+- Graceful degradation when HA is unreachable
 """
 
 import asyncio
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-import requests
+import aiohttp
 
 from .config import ExecutorConfig
 from .controller import ControllerDecision
@@ -45,6 +52,88 @@ class HACallError(Exception):
             error_parts.append(f"({exception_type})")
 
         super().__init__(" | ".join(error_parts))
+
+
+def _is_retryable_error(exception: Exception) -> bool:
+    """Check if an exception is retryable (transient network error).
+
+    Retryable errors include:
+    - Connection errors (connection reset, refused, etc.)
+    - Timeout errors
+    - Server errors (5xx)
+    - Temporary network issues
+
+    Non-retryable errors include:
+    - Client errors (4xx except 429)
+    - Authentication errors
+    - Invalid URL errors
+    """
+    import aiohttp
+
+    # Server errors (5xx) are retryable
+    if isinstance(exception, aiohttp.ClientResponseError):
+        return exception.status >= 500 or exception.status == 429  # 429 = Too Many Requests
+
+    # Connection and timeout errors are retryable
+    return isinstance(exception, aiohttp.ClientError | asyncio.TimeoutError)
+
+
+async def _retry_with_backoff(
+    operation: Callable[[], Any],
+    max_retries: int = 3,
+    base_delay: float = 1.0,
+    max_delay: float = 10.0,
+    backoff_factor: float = 2.0,
+) -> Any:
+    """Execute an async operation with exponential backoff retry.
+
+    Args:
+        operation: Async callable to execute
+        max_retries: Maximum number of retry attempts (default: 3)
+        base_delay: Initial delay between retries in seconds (default: 1.0)
+        max_delay: Maximum delay between retries in seconds (default: 10.0)
+        backoff_factor: Multiplier for exponential backoff (default: 2.0)
+
+    Returns:
+        Result of the operation
+
+    Raises:
+        HACallError: If all retries are exhausted
+        Exception: If the error is not retryable
+    """
+    last_exception = None
+
+    for attempt in range(max_retries + 1):
+        try:
+            return await operation()
+        except Exception as e:
+            last_exception = e
+
+            # Check if this is the last attempt
+            if attempt >= max_retries:
+                break
+
+            # Check if error is retryable
+            if not _is_retryable_error(e):
+                # Not retryable, raise immediately
+                raise
+
+            # Calculate delay with exponential backoff
+            delay = min(base_delay * (backoff_factor**attempt), max_delay)
+            logger.warning(
+                "HA API call failed (attempt %d/%d): %s. Retrying in %.1fs...",
+                attempt + 1,
+                max_retries + 1,
+                e,
+                delay,
+            )
+            await asyncio.sleep(delay)
+
+    # All retries exhausted
+    raise HACallError(
+        message=f"HA API call failed after {max_retries + 1} attempts",
+        exception_type=type(last_exception).__name__ if last_exception else "Unknown",
+    ) from last_exception
 
 
 def _is_entity_configured(entity: str | None) -> bool:
@@ -103,30 +192,55 @@ class ActionResult:
 
 class HAClient:
     """
-    Home Assistant API client for executing actions.
+    Async Home Assistant API client for executing actions.
 
-    Uses the REST API to call services and get entity states.
+    Uses aiohttp for non-blocking HTTP communication with Home Assistant.
+    All methods are async and should be awaited.
+
+    Features:
+    - Connection pooling via aiohttp.ClientSession
+    - Configurable timeout (default: 5 seconds)
+    - Automatic retry with exponential backoff for transient errors
+    - Graceful error handling with HACallError exceptions
+
+    Usage:
+        client = HAClient("http://homeassistant:8123", "token")
+        state = await client.get_state("sensor.battery_soc")
+        await client.close()
     """
 
     def __init__(
         self,
         base_url: str,
         token: str,
-        timeout: int = 10,
+        timeout: int = 5,
     ):
         self.base_url = base_url.rstrip("/")
         self.token = token
-        self.timeout = timeout
-        self._session = requests.Session()
-        self._session.headers.update(
-            {
-                "Authorization": f"Bearer {token}",
-                "Content-Type": "application/json",
-            }
-        )
+        self.timeout = aiohttp.ClientTimeout(total=timeout)
+        self._headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
+        self._session: aiohttp.ClientSession | None = None
 
-    def get_state(self, entity_id: str) -> dict[str, Any] | None:
-        """Get the current state of an entity."""
+    async def _get_session(self) -> aiohttp.ClientSession:
+        """Get or create the aiohttp session."""
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession(
+                headers=self._headers,
+                timeout=self.timeout,
+            )
+        return self._session
+
+    async def close(self) -> None:
+        """Close the aiohttp session."""
+        if self._session and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    async def get_state(self, entity_id: str) -> dict[str, Any] | None:
+        """Get the current state of an entity with retry logic."""
         # Early validation: catch None/invalid entity_id before hitting HA API
         if not entity_id or entity_id.strip().lower() in ("", "none"):
             logger.error(
@@ -137,25 +251,28 @@ class HAClient:
             )
             return None
 
-        try:
-            response = self._session.get(
+        async def _fetch() -> dict[str, Any]:
+            session = await self._get_session()
+            async with session.get(
                 f"{self.base_url}/api/states/{entity_id}",
-                timeout=self.timeout,
-            )
-            response.raise_for_status()
-            return response.json()
-        except requests.RequestException as e:
-            logger.error("Failed to get state of %s: %s", entity_id, e)
+            ) as response:
+                response.raise_for_status()
+                return await response.json()
+
+        try:
+            return await _retry_with_backoff(_fetch, max_retries=3, base_delay=1.0)
+        except HACallError:
+            # All retries exhausted, return None for graceful degradation
             return None
 
-    def get_state_value(self, entity_id: str) -> str | None:
+    async def get_state_value(self, entity_id: str) -> str | None:
         """Get just the state value of an entity."""
-        state = self.get_state(entity_id)
+        state = await self.get_state(entity_id)
         if state:
             return state.get("state")
         return None
 
-    def call_service(
+    async def call_service(
         self,
         domain: str,
         service: str,
@@ -186,23 +303,21 @@ class HAClient:
         )
 
         try:
-            response = self._session.post(
+            session = await self._get_session()
+            async with session.post(
                 f"{self.base_url}/api/services/{domain}/{service}",
                 json=payload,
-                timeout=self.timeout,
-            )
-            response.raise_for_status()
-            return True
-        except requests.HTTPError as e:
-            status_code = e.response.status_code if e.response is not None else None
-            response_body = e.response.text if e.response is not None else None
+            ) as response:
+                response.raise_for_status()
+                return True
+        except aiohttp.ClientResponseError as e:
             raise HACallError(
                 message=f"Failed to call service {domain}.{service} on {entity_id}",
-                status_code=status_code,
-                response_body=response_body,
+                status_code=e.status,
+                response_body=str(e.message),
                 exception_type=type(e).__name__,
             ) from e
-        except requests.RequestException as e:
+        except aiohttp.ClientError as e:
             raise HACallError(
                 message=f"Failed to call service {domain}.{service} on {entity_id}",
                 exception_type=type(e).__name__,
@@ -249,7 +364,7 @@ class HAClient:
 
         return domain
 
-    def set_select_option(self, entity_id: str, option: str) -> bool:
+    async def set_select_option(self, entity_id: str, option: str) -> bool:
         """Set a select entity to a specific option."""
         domain = self._get_safe_domain(entity_id, {"select", "input_select"})
         if not domain:
@@ -257,9 +372,9 @@ class HAClient:
                 message=f"Invalid domain for select entity {entity_id}",
                 exception_type="DomainValidationError",
             )
-        return self.call_service(domain, "select_option", entity_id, {"option": option})
+        return await self.call_service(domain, "select_option", entity_id, {"option": option})
 
-    def set_switch(self, entity_id: str, state: bool) -> bool:
+    async def set_switch(self, entity_id: str, state: bool) -> bool:
         """Turn a switch on or off."""
         domain = self._get_safe_domain(entity_id, {"switch", "input_boolean"})
         if not domain:
@@ -268,9 +383,9 @@ class HAClient:
                 exception_type="DomainValidationError",
             )
         service = "turn_on" if state else "turn_off"
-        return self.call_service(domain, service, entity_id)
+        return await self.call_service(domain, service, entity_id)
 
-    def set_number(self, entity_id: str, value: float) -> bool:
+    async def set_number(self, entity_id: str, value: float) -> bool:
         """Set a number entity to a specific value."""
         domain = self._get_safe_domain(entity_id, {"number", "input_number"})
         if not domain:
@@ -278,14 +393,14 @@ class HAClient:
                 message=f"Invalid domain for number entity {entity_id}",
                 exception_type="DomainValidationError",
             )
-        return self.call_service(domain, "set_value", entity_id, {"value": value})
+        return await self.call_service(domain, "set_value", entity_id, {"value": value})
 
-    def set_input_number(self, entity_id: str, value: float) -> bool:
+    async def set_input_number(self, entity_id: str, value: float) -> bool:
         """Set an input_number entity to a specific value."""
         # Alias to set_number which now handles both
-        return self.set_number(entity_id, value)
+        return await self.set_number(entity_id, value)
 
-    def send_notification(
+    async def send_notification(
         self,
         service: str | None,
         title: str,
@@ -321,7 +436,7 @@ class HAClient:
         if data:
             payload["data"] = data
 
-        return self.call_service(domain, svc_name, data=payload)
+        return await self.call_service(domain, svc_name, data=payload)
 
 
 class ActionDispatcher:
@@ -409,11 +524,11 @@ class ActionDispatcher:
         """
         try:
             if domain in ("number", "input_number"):
-                return self.ha.set_number(entity_id, float(value))
+                return await self.ha.set_number(entity_id, float(value))
             elif domain == "select":
-                return self.ha.set_select_option(entity_id, str(value))
+                return await self.ha.set_select_option(entity_id, str(value))
             elif domain in ("switch", "input_boolean"):
-                return self.ha.set_switch(entity_id, bool(value))
+                return await self.ha.set_switch(entity_id, bool(value))
             else:
                 logger.error("Unknown entity domain: %s", domain)
                 return False
@@ -440,7 +555,7 @@ class ActionDispatcher:
 
     async def _verify_action(self, entity_id: str, expected: Any) -> tuple[Any, bool | None]:
         """Verify that an action was applied correctly."""
-        state = self.ha.get_state_value(entity_id)
+        state = await self.ha.get_state_value(entity_id)
         if state is None:
             return None, None
 
@@ -553,7 +668,7 @@ class ActionDispatcher:
 
         resolved_value = self._resolve_value(action.value, decision)
 
-        previous_value = self.ha.get_state_value(entity_id)
+        previous_value = await self.ha.get_state_value(entity_id)
 
         if self._values_match(previous_value, resolved_value):
             return ActionResult(
@@ -601,7 +716,7 @@ class ActionDispatcher:
         duration_ms = int((time.time() - start_time) * 1000)
 
         if success:
-            self._maybe_notify(action.entity, f"Set {action.entity} to {resolved_value}")
+            await self._maybe_notify(action.entity, f"Set {action.entity} to {resolved_value}")
 
         return ActionResult(
             action_type=action.entity,
@@ -645,7 +760,7 @@ class ActionDispatcher:
                 error_details=None,
             )
 
-        current = self.ha.get_state_value(entity)
+        current = await self.ha.get_state_value(entity)
         try:
             current_val = int(float(current)) if current else None
         except (ValueError, TypeError):
@@ -682,7 +797,7 @@ class ActionDispatcher:
 
         error_details = None
         try:
-            success = self.ha.set_input_number(entity, float(target))  # type: ignore[arg-type]
+            success = await self.ha.set_input_number(entity, float(target))  # type: ignore[arg-type]
         except HACallError as e:
             success = False
             error_details = str(e)
@@ -705,7 +820,7 @@ class ActionDispatcher:
         is_heating = target > self.config.water_heater.temp_off
         action = "start" if is_heating else "stop"
         if success:
-            self._maybe_notify(f"water_heat_{action}", f"Water heater target: {target}°C")
+            await self._maybe_notify(f"water_heat_{action}", f"Water heater target: {target}°C")
 
         return ActionResult(
             action_type="water_temp",
@@ -771,7 +886,7 @@ class ActionDispatcher:
                 error_details=None,
             )
 
-        current = self.ha.get_state_value(entity)
+        current = await self.ha.get_state_value(entity)
         try:
             current_val = float(current) if current else None
         except (ValueError, TypeError):
@@ -807,7 +922,7 @@ class ActionDispatcher:
 
         error_details = None
         try:
-            success = self.ha.set_number(entity, watts)
+            success = await self.ha.set_number(entity, watts)
         except HACallError as e:
             success = False
             error_details = str(e)
@@ -826,7 +941,7 @@ class ActionDispatcher:
         if success and _is_entity_configured(switch_entity) and switch_entity is not None:
             logger.info("Enabling export power limit switch: %s", switch_entity)
             try:
-                self.ha.set_switch(switch_entity, True)
+                await self.ha.set_switch(switch_entity, True)
             except HACallError as e:
                 logger.warning("Failed to enable export power limit switch: %s", str(e))
 
@@ -870,7 +985,7 @@ class ActionDispatcher:
         action_label = "ON" if turn_on else "OFF"
 
         # Check current state
-        current_state = self.ha.get_state_value(entity_id)
+        current_state = await self.ha.get_state_value(entity_id)
         is_currently_on = current_state == "on" if current_state else False
 
         # Idempotent skip
@@ -910,7 +1025,7 @@ class ActionDispatcher:
         # Execute action
         error_details = None
         try:
-            self.ha.set_switch(entity_id, turn_on)
+            await self.ha.set_switch(entity_id, turn_on)
             success = True
         except HACallError as e:
             success = False
@@ -929,9 +1044,11 @@ class ActionDispatcher:
 
         # Notification (via _maybe_notify)
         if turn_on:
-            self._maybe_notify("ev_charge_start", f"EV charging started ({charging_kw:.1f} kW)")
+            await self._maybe_notify(
+                "ev_charge_start", f"EV charging started ({charging_kw:.1f} kW)"
+            )
         else:
-            self._maybe_notify("ev_charge_stop", "EV charging stopped")
+            await self._maybe_notify("ev_charge_stop", "EV charging stopped")
 
         return ActionResult(
             action_type=action_type,
@@ -950,7 +1067,7 @@ class ActionDispatcher:
             error_details=error_details,
         )
 
-    def _maybe_notify(self, action_type: str, message: str) -> None:
+    async def _maybe_notify(self, action_type: str, message: str) -> None:
         """Send notification if enabled for this action type."""
         notif = self.config.notifications
 
@@ -968,16 +1085,16 @@ class ActionDispatcher:
         }.get(action_type, False)
 
         if should_notify:
-            self._send_notification(message)
+            await self._send_notification(message)
 
-    def _send_notification(self, message: str, title: str = "Darkstar Executor") -> None:
+    async def _send_notification(self, message: str, title: str = "Darkstar Executor") -> None:
         """Send a notification via the configured service."""
         if self.shadow_mode:
             logger.info("[SHADOW] Would send notification: %s", message)
             return
 
         try:
-            self.ha.send_notification(
+            await self.ha.send_notification(
                 self.config.notifications.service,
                 title,
                 message,
@@ -985,18 +1102,18 @@ class ActionDispatcher:
         except Exception as e:
             logger.warning("Failed to send notification: %s", e)
 
-    def notify_override(self, override_type: str, reason: str) -> None:
+    async def notify_override(self, override_type: str, reason: str) -> None:
         """Send notification about an override activation."""
         if self.config.notifications.on_override_activated:
-            self._send_notification(
+            await self._send_notification(
                 f"Override: {override_type}\n{reason}",
                 title="Darkstar Override Active",
             )
 
-    def notify_error(self, error: str) -> None:
+    async def notify_error(self, error: str) -> None:
         """Send notification about an error."""
         if self.config.notifications.on_error:
-            self._send_notification(
+            await self._send_notification(
                 f"Error: {error}",
                 title="Darkstar Executor Error",
             )

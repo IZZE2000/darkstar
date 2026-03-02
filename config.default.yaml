@@ -281,6 +281,9 @@ executor:
   interval_seconds: 60                           # How often to run (default: 1 minute)
   pause_reminder_minutes: 30                     # Notify if paused longer than this
   history_retention_days: 30                     # Keep execution history for N days
+  # HTTP Timeout: All Home Assistant API calls use a 5-second timeout with automatic
+  # retry (3 attempts) for transient network failures. This prevents the executor from
+  # freezing when HA becomes unresponsive (e.g., Fronius inverter via Modbus issues).
 
   # Toggle entities (read by executor to check if enabled)
   automation_toggle_entity: ""           # Master enable/disable switch

@@ -3,11 +3,17 @@ Executor Engine
 
 The main executor loop that orchestrates:
 1. Reading the current slot from schedule.json
-2. Gathering system state from Home Assistant
+2. Gathering system state from Home Assistant (async)
 3. Evaluating overrides
 4. Making controller decisions
-5. Executing actions
+5. Executing actions (async)
 6. Logging execution history
+
+Async Architecture:
+- All HA communication is async using aiohttp (non-blocking)
+- Executor continues processing even when HA is slow/unresponsive
+- 5-second timeout prevents indefinite hangs
+- Automatic retry with exponential backoff for transient errors
 """
 
 import asyncio
@@ -316,14 +322,14 @@ class ExecutorEngine:
         """Get execution statistics."""
         return self.history.get_stats(days=days)
 
-    def get_live_metrics(self) -> dict[str, Any]:
+    async def get_live_metrics(self) -> dict[str, Any]:
         """
         Get live system metrics for API.
 
         Returns a snapshot of current system power flows and state.
         """
         # Start with standard system state
-        state = self._gather_system_state()
+        state = await self._gather_system_state()
 
         metrics = {
             "soc": state.current_soc_percent,
@@ -343,7 +349,7 @@ class ExecutorEngine:
             # Battery Power
             batt_pwr_entity = input_sensors.get("battery_power")
             if batt_pwr_entity:
-                val = self.ha_client.get_state_value(batt_pwr_entity)
+                val = await self.ha_client.get_state_value(batt_pwr_entity)
                 if val and val not in ("unknown", "unavailable"):
                     with contextlib.suppress(ValueError):
                         metrics["battery_kw"] = float(val) / 1000.0  # W to kW
@@ -351,7 +357,7 @@ class ExecutorEngine:
             # Water Heater Power
             water_pwr_entity = input_sensors.get("water_power")
             if water_pwr_entity:
-                val = self.ha_client.get_state_value(water_pwr_entity)
+                val = await self.ha_client.get_state_value(water_pwr_entity)
                 if val and val not in ("unknown", "unavailable"):
                     with contextlib.suppress(ValueError):
                         metrics["water_kw"] = float(val) / 1000.0  # W to kW
@@ -553,7 +559,7 @@ class ExecutorEngine:
                 "reminder_sent": self._pause_reminder_sent,
             }
 
-    def _check_pause_reminder(self) -> None:
+    async def _check_pause_reminder(self) -> None:
         """Check if 30-minute pause reminder should be sent."""
         if not self.config.pause_reminder_minutes:
             return
@@ -573,9 +579,9 @@ class ExecutorEngine:
 
         # Send reminder notification (outside lock)
         if self.dispatcher and paused_at:
-            self._send_pause_reminder(paused_at)
+            await self._send_pause_reminder(paused_at)
 
-    def _send_pause_reminder(self, paused_at: datetime) -> None:
+    async def _send_pause_reminder(self, paused_at: datetime) -> None:
         """Send pause reminder notification with resume action."""
         if not self.dispatcher:
             return
@@ -587,7 +593,7 @@ class ExecutorEngine:
             )
 
             # Send via ActionDispatcher
-            self.dispatcher._send_notification(  # type: ignore[protected-access]
+            await self.dispatcher._send_notification(  # type: ignore[protected-access]
                 message,
                 title="Darkstar Executor Paused",
             )
@@ -595,7 +601,7 @@ class ExecutorEngine:
         except Exception as e:
             logger.error("Failed to send pause reminder: %s", e)
 
-    def send_notification(
+    async def send_notification(
         self, title: str, message: str, data: dict[str, Any] | None = None
     ) -> bool:
         """Send a notification via the configured service."""
@@ -603,11 +609,11 @@ class ExecutorEngine:
             return False
 
         try:
-            self.dispatcher._send_notification(message, title=title)  # type: ignore[protected-access]
+            await self.dispatcher._send_notification(message, title=title)  # type: ignore[protected-access]
             # If data is provided, we might need a more direct HA call
             # since _send_notification is simplified
             if data and self.ha_client:
-                self.ha_client.send_notification(
+                await self.ha_client.send_notification(
                     self.config.notifications.service, title, message, data=data
                 )
             return True
@@ -952,7 +958,7 @@ class ExecutorEngine:
                 # Only apply it once when pause() is called.
                 # This allows the user to manually control devices while paused.
                 logger.debug("Executor is PAUSED - skipping tick")
-                self._check_pause_reminder()
+                await self._check_pause_reminder()
 
                 self.status.last_run_status = "skipped"
                 self.status.last_skip_reason = "paused_idle_mode"
@@ -962,7 +968,9 @@ class ExecutorEngine:
 
             # 1. Check automation toggle (Rev O1)
             if self.config.automation_toggle_entity and self.ha_client:
-                toggle_state = self.ha_client.get_state_value(self.config.automation_toggle_entity)
+                toggle_state = await self.ha_client.get_state_value(
+                    self.config.automation_toggle_entity
+                )
                 if toggle_state and toggle_state.lower() != "on":
                     logger.warning(
                         "Executor skip: Automation toggle (%s) is %s",
@@ -998,7 +1006,7 @@ class ExecutorEngine:
                 logger.warning("No valid slot found for current time")
 
             # 3. Gather system state
-            state = self._gather_system_state()
+            state = await self._gather_system_state()
 
             # Emit live metrics for UI sparklines (Rev E1)
             try:
@@ -1143,7 +1151,9 @@ class ExecutorEngine:
                 }
                 # Only send notification on state transition (not every tick)
                 if current_override_type != self._last_override_type and self.dispatcher:
-                    self.dispatcher.notify_override(override.override_type.value, override.reason)
+                    await self.dispatcher.notify_override(
+                        override.override_type.value, override.reason
+                    )
                     logger.info("Override notification sent (state transition)")
 
             # Update state tracking
@@ -1343,7 +1353,7 @@ class ExecutorEngine:
             self.status.last_error = str(e)
 
             if self.dispatcher:
-                self.dispatcher.notify_error(str(e))
+                await self.dispatcher.notify_error(str(e))
 
             # Phase 3: Capture critical tick failure
             error_data = {
@@ -1452,7 +1462,7 @@ class ExecutorEngine:
             soc_projected=soc_projected,
         )
 
-    def _gather_system_state(self) -> SystemState:
+    async def _gather_system_state(self) -> SystemState:
         """Gather current system state from Home Assistant."""
         state = SystemState()
 
@@ -1468,18 +1478,18 @@ class ExecutorEngine:
         try:
             # Get SoC (Rev O1)
             if self.config.has_battery:
-                soc_str = self.ha_client.get_state_value(soc_entity)
+                soc_str = await self.ha_client.get_state_value(soc_entity)
                 if soc_str and soc_str not in ("unknown", "unavailable"):
                     state.current_soc_percent = float(soc_str)
 
             # Get PV power (Rev O1)
             if self.config.has_solar:
-                pv_str = self.ha_client.get_state_value(pv_power_entity)
+                pv_str = await self.ha_client.get_state_value(pv_power_entity)
                 if pv_str and pv_str not in ("unknown", "unavailable"):
                     state.current_pv_kw = float(pv_str) / 1000  # W to kW
 
             # Get load power
-            load_str = self.ha_client.get_state_value(load_power_entity)
+            load_str = await self.ha_client.get_state_value(load_power_entity)
             if load_str and load_str not in ("unknown", "unavailable"):
                 state.current_load_kw = float(load_str) / 1000
 
@@ -1492,19 +1502,19 @@ class ExecutorEngine:
                 export_entity = input_sensors.get("grid_export_power")
 
                 if import_entity:
-                    imp_str = self.ha_client.get_state_value(import_entity)
+                    imp_str = await self.ha_client.get_state_value(import_entity)
                     if imp_str and imp_str not in ("unknown", "unavailable"):
                         state.current_import_kw = float(imp_str) / 1000
 
                 if export_entity:
-                    exp_str = self.ha_client.get_state_value(export_entity)
+                    exp_str = await self.ha_client.get_state_value(export_entity)
                     if exp_str and exp_str not in ("unknown", "unavailable"):
                         state.current_export_kw = float(exp_str) / 1000
 
             # Get current work mode (only if entity configured)
             work_mode_entity: str | None = getattr(self.config.inverter, "work_mode_entity", None)
             if self.config.has_battery and work_mode_entity:
-                work_mode = self.ha_client.get_state_value(work_mode_entity)
+                work_mode = await self.ha_client.get_state_value(work_mode_entity)
                 if work_mode:
                     state.current_work_mode = work_mode
 
@@ -1513,18 +1523,20 @@ class ExecutorEngine:
                 self.config.inverter, "grid_charging_entity", None
             )
             if self.config.has_battery and grid_charging_entity and self.ha_client:
-                grid_charge = self.ha_client.get_state_value(grid_charging_entity)
+                grid_charge = await self.ha_client.get_state_value(grid_charging_entity)
                 state.grid_charging_enabled = grid_charge == "on"
 
             # Get water heater temp (Rev O1, only if entity configured)
             if self.config.has_water_heater and self.config.water_heater.target_entity:
-                water_str = self.ha_client.get_state_value(self.config.water_heater.target_entity)
+                water_str = await self.ha_client.get_state_value(
+                    self.config.water_heater.target_entity
+                )
                 if water_str:
                     state.current_water_temp = float(water_str)
 
             # Check manual override toggle (optional - don't fail if missing)
             if self.config.manual_override_entity:
-                manual = self.ha_client.get_state_value(self.config.manual_override_entity)
+                manual = await self.ha_client.get_state_value(self.config.manual_override_entity)
                 if manual is not None:
                     state.manual_override_active = manual == "on"
 
@@ -1710,7 +1722,7 @@ class ExecutorEngine:
 
         try:
             # Check current state
-            current_state = self.ha_client.get_state_value(switch_entity)
+            current_state = await self.ha_client.get_state_value(switch_entity)
             is_currently_on = current_state == "on" if current_state else False
 
             # Safety timeout: Check if we should stop due to expired plan

@@ -523,7 +523,9 @@ async def test_notifications() -> dict[str, str]:
         raise HTTPException(500, "Executor not available")
 
     try:
-        success = executor.send_notification("Test", "This is a test notification from Darkstar")
+        success = await executor.send_notification(
+            "Test", "This is a test notification from Darkstar"
+        )
         if success:
             return {"status": "success", "message": "Test notification sent"}
         else:
@@ -541,7 +543,7 @@ async def get_live() -> dict[str, Any]:
     executor = get_executor_instance()
     if not executor:
         return {}
-    return executor.get_live_metrics()
+    return await executor.get_live_metrics()
 
 
 async def get_executor_status_snapshot() -> dict[str, Any]:

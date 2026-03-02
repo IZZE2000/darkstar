@@ -4,7 +4,7 @@ Tests for the Executor v2 - Profile-Driven Action Execution
 Tests the generic profile-driven action loop in ActionDispatcher.
 """
 
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -29,11 +29,11 @@ class TestExecutorV2ActionOrdering:
         profile = load_profile("deye")
 
         ha_client = MagicMock(spec=HAClient)
-        ha_client.get_state_value = MagicMock(return_value="unknown")
-        ha_client.set_select = MagicMock(return_value=True)
-        ha_client.set_switch = MagicMock(return_value=True)
-        ha_client.set_number = MagicMock(return_value=True)
-        ha_client.set_input_number = MagicMock(return_value=True)
+        ha_client.get_state_value = AsyncMock(return_value="unknown")
+        ha_client.set_select = AsyncMock(return_value=True)
+        ha_client.set_switch = AsyncMock(return_value=True)
+        ha_client.set_number = AsyncMock(return_value=True)
+        ha_client.set_input_number = AsyncMock(return_value=True)
 
         config = ExecutorConfig(
             inverter=InverterConfig(
@@ -86,8 +86,8 @@ class TestExecutorV2Idempotent:
         profile = load_profile("deye")
 
         ha_client = MagicMock(spec=HAClient)
-        ha_client.get_state_value = MagicMock(return_value="Zero Export To CT")
-        ha_client.set_select = MagicMock(return_value=True)
+        ha_client.get_state_value = AsyncMock(return_value="Zero Export To CT")
+        ha_client.set_select = AsyncMock(return_value=True)
 
         config = ExecutorConfig(
             inverter=InverterConfig(work_mode="select.work_mode"),
@@ -132,11 +132,11 @@ class TestExecutorV2DynamicTemplates:
         profile = load_profile("deye")
 
         ha_client = MagicMock(spec=HAClient)
-        ha_client.get_state_value = MagicMock(return_value="unknown")
-        ha_client.set_select = MagicMock(return_value=True)
-        ha_client.set_switch = MagicMock(return_value=True)
-        ha_client.set_number = MagicMock(return_value=True)
-        ha_client.set_input_number = MagicMock(return_value=True)
+        ha_client.get_state_value = AsyncMock(return_value="unknown")
+        ha_client.set_select = AsyncMock(return_value=True)
+        ha_client.set_switch = AsyncMock(return_value=True)
+        ha_client.set_number = AsyncMock(return_value=True)
+        ha_client.set_input_number = AsyncMock(return_value=True)
 
         config = ExecutorConfig(
             inverter=InverterConfig(
@@ -179,11 +179,11 @@ class TestExecutorV2DynamicTemplates:
         profile = load_profile("deye")
 
         ha_client = MagicMock(spec=HAClient)
-        ha_client.get_state_value = MagicMock(return_value="unknown")
-        ha_client.set_select = MagicMock(return_value=True)
-        ha_client.set_switch = MagicMock(return_value=True)
-        ha_client.set_number = MagicMock(return_value=True)
-        ha_client.set_input_number = MagicMock(return_value=True)
+        ha_client.get_state_value = AsyncMock(return_value="unknown")
+        ha_client.set_select = AsyncMock(return_value=True)
+        ha_client.set_switch = AsyncMock(return_value=True)
+        ha_client.set_number = AsyncMock(return_value=True)
+        ha_client.set_input_number = AsyncMock(return_value=True)
 
         config = ExecutorConfig(
             inverter=InverterConfig(
@@ -230,11 +230,11 @@ class TestExecutorV2ShadowMode:
         profile = load_profile("deye")
 
         ha_client = MagicMock(spec=HAClient)
-        ha_client.get_state_value = MagicMock(return_value="unknown")
-        ha_client.set_select = MagicMock(return_value=True)
-        ha_client.set_switch = MagicMock(return_value=True)
-        ha_client.set_number = MagicMock(return_value=True)
-        ha_client.set_input_number = MagicMock(return_value=True)
+        ha_client.get_state_value = AsyncMock(return_value="unknown")
+        ha_client.set_select = AsyncMock(return_value=True)
+        ha_client.set_switch = AsyncMock(return_value=True)
+        ha_client.set_number = AsyncMock(return_value=True)
+        ha_client.set_input_number = AsyncMock(return_value=True)
 
         config = ExecutorConfig(
             inverter=InverterConfig(
@@ -285,9 +285,9 @@ class TestExecutorV2SettleDelay:
         profile = load_profile("fronius")
 
         ha_client = MagicMock(spec=HAClient)
-        ha_client.get_state_value = MagicMock(return_value="unknown")
-        ha_client.set_select = MagicMock(return_value=True)
-        ha_client.set_switch = MagicMock(return_value=True)
+        ha_client.get_state_value = AsyncMock(return_value="unknown")
+        ha_client.set_select = AsyncMock(return_value=True)
+        ha_client.set_switch = AsyncMock(return_value=True)
 
         config = ExecutorConfig(
             inverter=InverterConfig(work_mode="select.work_mode"),
@@ -327,8 +327,8 @@ class TestExecutorV2EntityResolution:
         profile = load_profile("deye")
 
         ha_client = MagicMock(spec=HAClient)
-        ha_client.get_state_value = MagicMock(return_value="unknown")
-        ha_client.set_select = MagicMock(return_value=True)
+        ha_client.get_state_value = AsyncMock(return_value="unknown")
+        ha_client.set_select = AsyncMock(return_value=True)
 
         config = ExecutorConfig(
             inverter=InverterConfig(
