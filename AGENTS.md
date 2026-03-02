@@ -1,3 +1,6 @@
+> **IMPORTANT**: AGENTS.md and GEMINI.md must ALWAYS be kept 100% identical.
+> If updating one, you MUST update the other with the exact same content.
+
 # AGENTS.md - Development Guidelines for Darkstar Energy Manager
 
 ## Build & Test Commands
@@ -48,7 +51,7 @@ import pytz
 import yaml
 
 ### Linting & Quality Control
-*   **Mandatory Checks**: At the end of **every revision** (before marking as done), you MUST run the standard linting and testing suite.
+*   **Mandatory Checks**: At the end of **every task or change** (before marking as done), you MUST run the standard linting and testing suite.
     *   **Frontend**: `pnpm lint` (must be error-free) and `pnpm format`.
     *   **Backend Linting**: `uv run ruff check .` and `uv run pyright` (if Python files were touched).
     *   **Backend Testing**: `uv run python -m pytest -q` (MUST pass 100% to ensure no regressions).
@@ -105,15 +108,11 @@ from inputs import get_all_input_data
 - Add inline comments for complex business logic
 - Maintain README with setup and usage instructions
 
-### Process Policy
-- Before implementing any newly drafted revision/plan section (e.g., after we agree on a fix plan), switch to the designated implementation model. Planning and discussion should happen first; code changes should only be made after switching models.
-- **Planning**: Before implementing, ensure the revision is active in `docs/PLAN.md`.
-- **History / Archival**:
-  - A revision may be moved from `docs/PLAN.md` to `docs/CHANGELOG_PLANS.md` **only** when:
-    - The relevant project phase is fully completed and validated, and
-    - The Product Owner has explicitly confirmed that the revision is ready to be archived.
-  - Once moved, the revision should live in **one place only** (the changelog), not duplicated in `docs/PLAN.md` (a short pointer is fine if needed).
-  - While a project phase is active, keep its revisions in `docs/PLAN.md` for context; do not archive them without prior confirmation.
+### Workflow
+
+This project uses the **OpenSpec workflow** for all changes. AI agents will be invoked
+via OpenSpec skills (openspec-new-change, openspec-continue-change, openspec-apply-change, etc.).
+Follow the skill instructions when they are invoked.
 
 ### Git & Data Hygiene
 - Treat `config.yaml` as environment-specific. Do **not** commit server-only edits; keep long-lived defaults in `config.default.yaml` and copy/merge locally.
@@ -125,6 +124,9 @@ from inputs import get_all_input_data
 - When deploying to a server, prefer `git stash` / `git restore` to keep local DB and schedules, then `git checkout` the desired branch.
 
 ### Releasing a New Version
+
+> **WARNING**: Do NOT modify `docs/RELEASE_NOTES.md` unless explicitly instructed by the user to prepare for a release. This file is ONLY for actual version releases and should never be touched during normal development.
+
 When releasing a new version:
 1. **Mandatory: Create/Update Release Notes**: Update [docs/RELEASE_NOTES.md](file:///home/s/sync/documents/projects/darkstar/docs/RELEASE_NOTES.md) with the changes for this version.
 2. **Bump version/notes** in all 8 locations:
@@ -173,7 +175,7 @@ The sidebar version is fetched from `/api/version` which uses `git describe --ta
   3. Present options if multiple approaches exist.
   4. Wait for user approval before implementing.
 - **One Problem at a Time**: When the user mentions multiple issues, handle them sequentially. Store all items in a task list and work through them one by one.
-- **Regular Commits**: Commit changes after completing a defined task or revision. This should occur after each task or batch of tasks. It has to follow the semantic versioning rules.
+- **Regular Commits**: Commit changes after completing work. This should occur after each task or batch of tasks. It has to follow the semantic versioning rules.
 - **UI Design Guide**: All UI changes must strictly follow the design system:
   - **AI Guidelines**: [docs/design-system/AI_GUIDELINES.md](docs/design-system/AI_GUIDELINES.md)
   - **Live Preview**: `/design-system` route shows all components
