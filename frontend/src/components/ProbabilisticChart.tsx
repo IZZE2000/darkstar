@@ -8,6 +8,7 @@ import {
     Tooltip,
     Legend,
     Filler,
+    ChartData,
 } from 'chart.js'
 import { Line } from 'react-chartjs-2'
 
@@ -144,7 +145,7 @@ export default function ProbabilisticChart({ title, slots, color, showOpenMeteo 
         })
     }
 
-    const data = { labels, datasets }
+    const data: ChartData<'line'> = { labels, datasets }
 
     const options = {
         responsive: true,

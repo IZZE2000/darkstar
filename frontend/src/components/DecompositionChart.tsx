@@ -170,8 +170,8 @@ export default function DecompositionChart({ slots, mode, variant = 'field' }: P
         >
             <Line
                 key={`${mode}-${variant}`}
-                data={data as unknown as ChartData<'line'>}
-                options={options as unknown as ChartConfiguration<'line'>['options']}
+                data={data as ChartData<'line'>}
+                options={options as ChartConfiguration<'line'>['options']}
             />
         </div>
     )

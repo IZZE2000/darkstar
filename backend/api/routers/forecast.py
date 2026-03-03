@@ -319,7 +319,8 @@ async def aurora_dashboard() -> dict[str, Any]:
     now = datetime.now(tz)
 
     start_of_today = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    horizon_start = start_of_today
+    start_of_yesterday = start_of_today - timedelta(days=1)
+    horizon_start = start_of_yesterday
     horizon_end = start_of_today + timedelta(days=2)
 
     identity = await _compute_graduation_level(engine)
@@ -344,12 +345,13 @@ async def aurora_dashboard() -> dict[str, Any]:
         total_load = sum(s["final"]["load_kwh"] for s in horizon_slots)
 
         stats = {
-            "horizon_hours": 48,
+            "horizon_hours": 72,
             "start": horizon_start.isoformat(),
             "end": horizon_end.isoformat(),
             "total_pv_kwh": round(total_pv, 2),
             "total_load_kwh": round(total_load, 2),
             "slots": horizon_slots,
+            "history_series": history_series,
         }
     except Exception as e:
         logger.error(f"Failed to fetch horizon for dashboard: {e}")
@@ -385,7 +387,6 @@ async def aurora_dashboard() -> dict[str, Any]:
         "correction_history": corrections,
         "horizon": stats,
         "history": {"strategy_events": strategy_history},
-        "history_series": history_series,
         "status": "online" if engine else "offline",
         "state": {
             "auto_tune_enabled": config.get("learning", {}).get("auto_tune_enabled", False),

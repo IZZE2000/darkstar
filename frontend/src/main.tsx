@@ -1,6 +1,7 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import './index.css'
+import './chart-setup'  // Register global ChartJS plugins
 
 // Top-level error handler for module load failures
 // (React ErrorBoundary can't catch these since they happen before React mounts)

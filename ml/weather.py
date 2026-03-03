@@ -5,14 +5,16 @@ Weather data fetching and processing for Aurora.
 from __future__ import annotations
 
 import time
-from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 import pytz
 import requests
 import yaml
+
+if TYPE_CHECKING:
+    from datetime import datetime
 
 # Simple in-memory cache with TTL (5 minutes)
 _weather_cache: dict[str, tuple[float, pd.DataFrame]] = {}
@@ -58,7 +60,6 @@ def get_weather_series(
     end_local = end_time.astimezone(tz)
     start_date_obj = start_local.date()
     end_date_obj = end_local.date()
-    today_local = datetime.now(tz).date()
 
     # --- Cache Lookup ---
     cache_key = f"{latitude:.2f}_{longitude:.2f}_{start_date_obj}_{end_date_obj}"
@@ -76,30 +77,16 @@ def get_weather_series(
         ]
         hourly_param_str = ",".join(hourly_params)
 
-        if end_date_obj <= today_local:
-            url = "https://archive-api.open-meteo.com/v1/archive"
-            # Open-Meteo archive API typically supports data up to yesterday.
-            archive_end = min(end_date_obj, today_local - timedelta(days=1))
-            if archive_end < start_date_obj:
-                return pd.DataFrame(dtype="float64")
-            params = {
-                "latitude": latitude,
-                "longitude": longitude,
-                "start_date": start_date_obj.isoformat(),
-                "end_date": archive_end.isoformat(),
-                "hourly": hourly_param_str,
-                "timezone": timezone_name,
-            }
-        else:
-            url = "https://api.open-meteo.com/v1/forecast"
-            days_ahead = max(1, (end_local.date() - today_local).days + 1)
-            params = {
-                "latitude": latitude,
-                "longitude": longitude,
-                "hourly": hourly_param_str,
-                "forecast_days": days_ahead,
-                "timezone": timezone_name,
-            }
+        # Always use forecast API with past_days + forecast_days for complete coverage
+        url = "https://api.open-meteo.com/v1/forecast"
+        params = {
+            "latitude": latitude,
+            "longitude": longitude,
+            "hourly": hourly_param_str,
+            "past_days": 1,  # Yesterday's hindcast
+            "forecast_days": 2,  # Today and tomorrow's forecast
+            "timezone": timezone_name,
+        }
 
         # Reduced timeout from 20s to 5s to fail fast
         response = requests.get(url, params=params, timeout=5)

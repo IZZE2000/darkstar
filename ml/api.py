@@ -72,7 +72,7 @@ async def get_forecast_slots(
                 weather_df = get_weather_series(start_time, end_time, config=config)
                 if not weather_df.empty and "shortwave_radiation_w_m2" in weather_df.columns:
                     for ts_idx, row_data in weather_df.iterrows():
-                        ts_str = str(ts_idx)
+                        ts_str = ts_idx.isoformat()  # type: ignore[attr-defined]
                         radiation = row_data.get("shortwave_radiation_w_m2")
                         total_kwh, per_array = calculate_per_array_pv(radiation, solar_arrays)
                         open_meteo_data[ts_str] = {

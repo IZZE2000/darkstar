@@ -600,7 +600,7 @@ export default function Aurora() {
                     <div className="flex items-center justify-between mb-3 shrink-0">
                         <div>
                             <div className="text-xs font-medium text-text">
-                                {viewMode === 'forecast' ? 'Forecast Horizon (48h)' : 'SoC Tunnel'}
+                                {viewMode === 'forecast' ? 'Forecast Horizon (3 Days)' : 'SoC Tunnel'}
                             </div>
                             <div className="text-[11px] text-muted">
                                 {viewMode === 'forecast'

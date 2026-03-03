@@ -32,29 +32,50 @@ The chart SHALL display individual dashed lines for each configured solar array'
 - **WHEN** user clicks an array name label in the chart legend
 - **THEN** that array's dashed line SHALL toggle visibility
 
-### Requirement: Fixed 48-Hour Window
+### Requirement: Fixed 72-Hour Window
 
-The Forecast Horizon chart SHALL use a fixed time window from 00:00 today to 00:00 the day after tomorrow (48 hours total), anchored to calendar days rather than the current time.
+The Forecast Horizon chart SHALL use a fixed time window from 00:00 yesterday to 00:00 the day after tomorrow (72 hours total), anchored to calendar days rather than the current time.
 
-#### Scenario: Window anchored to calendar days
+#### Scenario: Window covers three days
 - **WHEN** user views the Forecast Horizon chart at any time during a day
-- **THEN** the chart SHALL display data from 00:00 today to 00:00 the day after tomorrow
+- **THEN** the chart SHALL display data from 00:00 yesterday to 00:00 the day after tomorrow (72 hours)
 
 #### Scenario: Window resets at midnight
 - **WHEN** the current time crosses midnight
-- **THEN** the chart window SHALL shift to show the new "today" through "day after tomorrow"
+- **THEN** the chart window SHALL shift to show the new "yesterday" through "day after tomorrow"
 
 ### Requirement: Historical Actuals Visible
 
-The chart SHALL display historical actual PV production data in the "Actual" line for past time slots within the fixed 48-hour window.
+The chart SHALL display historical actual PV production data in the "Actual" line for past time slots within the fixed 72-hour window.
 
 #### Scenario: Actual line shows past production
-- **WHEN** historical PV production data exists for past slots within the 48-hour window
+- **WHEN** historical PV production data exists for past slots within the 72-hour window
 - **THEN** the chart SHALL display the "Actual" line with observed PV values for those slots
 
 #### Scenario: Actual line gaps for missing data
 - **WHEN** historical PV production data is missing for some past slots
 - **THEN** the Actual line SHALL have gaps (null values) for those slots rather than showing zero
+
+### Requirement: Open-Meteo Forecast Data for All Slots
+
+The backend SHALL provide Open-Meteo forecast data for all 72 hours (yesterday, today, and tomorrow) using the forecast API with `past_days=1` and `forecast_days=2`.
+
+#### Scenario: Yesterday's slots show hindcast data
+- **WHEN** the Aurora dashboard generates forecast slots
+- **THEN** yesterday's slots SHALL show Open-Meteo hindcast data (what the model would have predicted)
+
+#### Scenario: Today and tomorrow's slots show forecast data
+- **WHEN** the Aurora dashboard generates forecast slots
+- **THEN** today and tomorrow's slots SHALL show Open-Meteo forecast data
+
+### Requirement: History Series in Horizon Object
+
+The `/aurora/dashboard` API SHALL return historical actuals in `horizon.history_series` with proper structure for the PV and Load tabs.
+
+#### Scenario: Dashboard returns history series in horizon object
+- **WHEN** the Aurora dashboard API is called
+- **THEN** the response SHALL contain `horizon.history_series` with `pv` and `load` arrays
+- **AND** each entry SHALL have `timestamp`, `value`, and optional `confidence`
 
 ### Requirement: Open-Meteo PV Calculation
 
