@@ -894,7 +894,16 @@ export default function ChartCard({
         Api.config()
             .then((config) => {
                 // Scaling values - always apply
-                const solarKwp = config?.system?.solar_array?.kwp ?? 10
+                const legacySolarKwp = config?.system?.solar_array?.kwp
+                const solarArrays = config?.system?.solar_arrays
+                let solarKwp = 10
+
+                if (legacySolarKwp != null) {
+                    solarKwp = Number(legacySolarKwp)
+                } else if (Array.isArray(solarArrays) && solarArrays.length > 0) {
+                    solarKwp = solarArrays.reduce((sum, arr) => sum + Number(arr.kwp || 0), 0)
+                }
+
                 const gridMaxKw = config?.system?.grid?.max_power_kw ?? 8
                 const inverterMaxKw = config?.system?.inverter?.max_power_kw ?? 8
                 setScaling({
