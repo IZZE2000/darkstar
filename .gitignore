@@ -43,6 +43,7 @@ planner_learning.db
 # Generated files
 
 data/scheduler_status.json
+data/recorder_state.json
 data/strategy_history.json
 schedule.json
 data/*.backup*

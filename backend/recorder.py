@@ -1,4 +1,6 @@
 import asyncio
+import contextlib
+import json
 import logging
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -19,6 +21,111 @@ logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
 logger = logging.getLogger("recorder")
 
 
+class RecorderStateStore:
+    """Manages JSON persistence of meter readings for delta-based energy calculation.
+
+    Stores last seen cumulative meter values and timestamps to calculate energy
+    deltas between 15-minute observation slots.
+    """
+
+    def __init__(self, state_file: Path | str = "data/recorder_state.json"):
+        self.state_file = Path(state_file)
+        self._state: dict[str, Any] = {}
+        self._ensure_directory()
+
+    def _ensure_directory(self) -> None:
+        """Ensure the state file directory exists."""
+        self.state_file.parent.mkdir(parents=True, exist_ok=True)
+
+    def load(self) -> dict[str, Any]:
+        """Load state from JSON file. Returns empty dict if file doesn't exist or is corrupted."""
+        try:
+            if self.state_file.exists():
+                with self.state_file.open("r", encoding="utf-8") as f:
+                    self._state = json.load(f)
+                    logger.debug(f"Loaded recorder state from {self.state_file}")
+                    return self._state
+        except (json.JSONDecodeError, OSError) as e:
+            logger.warning(f"Failed to load state file ({e}), starting fresh")
+            # If corrupted, remove the file to start fresh
+            with contextlib.suppress(OSError):
+                self.state_file.unlink()
+
+        self._state = {}
+        return self._state
+
+    def save(self) -> None:
+        """Save current state to JSON file."""
+        try:
+            self._ensure_directory()
+            with self.state_file.open("w", encoding="utf-8") as f:
+                json.dump(self._state, f, indent=2)
+            logger.debug(f"Saved recorder state to {self.state_file}")
+        except OSError as e:
+            logger.error(f"Failed to save state file: {e}")
+
+    def get_delta(
+        self, key: str, current_value: float, timestamp: datetime
+    ) -> tuple[float | None, bool]:
+        """Calculate delta between current and previous meter reading.
+
+        Args:
+            key: Unique identifier for this meter (e.g., 'total_pv_production')
+            current_value: Current meter reading
+            timestamp: Current timestamp
+
+        Returns:
+            Tuple of (delta_value, is_valid):
+            - delta_value: Energy delta in kWh, or None if no previous state
+            - is_valid: False if meter reset detected (negative delta)
+        """
+        previous = self._state.get(key, {})
+        previous_value = previous.get("value")
+
+        # No previous state - can't calculate delta
+        if previous_value is None:
+            logger.debug(f"No previous state for {key}, storing initial value")
+            self._state[key] = {"value": current_value, "timestamp": timestamp.isoformat()}
+            self.save()
+            return None, True
+
+        # Calculate delta
+        try:
+            delta = current_value - float(previous_value)
+        except (TypeError, ValueError):
+            logger.warning(f"Invalid previous value for {key}: {previous_value}")
+            self._state[key] = {"value": current_value, "timestamp": timestamp.isoformat()}
+            self.save()
+            return None, True
+
+        # Check for meter reset (negative delta)
+        if delta < 0:
+            logger.warning(
+                f"Meter reset detected for {key}: {previous_value} -> {current_value} "
+                f"(delta={delta:.3f} kWh). Using fallback."
+            )
+            self._state[key] = {"value": current_value, "timestamp": timestamp.isoformat()}
+            self.save()
+            return None, False
+
+        # Update state with current reading
+        self._state[key] = {"value": current_value, "timestamp": timestamp.isoformat()}
+        self.save()
+
+        return delta, True
+
+    def get_last_timestamp(self, key: str) -> datetime | None:
+        """Get the timestamp of the last reading for a given key."""
+        previous = self._state.get(key, {})
+        timestamp_str = previous.get("timestamp")
+        if timestamp_str:
+            try:
+                return datetime.fromisoformat(timestamp_str)
+            except ValueError:
+                pass
+        return None
+
+
 def _load_config() -> dict[str, Any]:
     try:
         with Path("config.yaml").open(encoding="utf-8") as f:
@@ -31,7 +138,9 @@ def _load_config() -> dict[str, Any]:
 
 
 async def record_observation_from_current_state(
-    config: dict[str, Any] | None = None, disaggregator: LoadDisaggregator | None = None
+    config: dict[str, Any] | None = None,
+    disaggregator: LoadDisaggregator | None = None,
+    state_store: RecorderStateStore | None = None,
 ):
     """Capture current system state and store as an observation."""
     if not config:
@@ -42,6 +151,11 @@ async def record_observation_from_current_state(
 
     # Initialize store (in-place initialization is acceptable for the standalone script)
     store = LearningStore(db_path, tz)
+
+    # Initialize state store for cumulative energy tracking
+    if state_store is None:
+        state_store = RecorderStateStore()
+        state_store.load()
 
     # Identify the just-finished slot (or current instant)
     now = datetime.now(tz)
@@ -66,6 +180,22 @@ async def record_observation_from_current_state(
         if val is None:
             return default
         return val
+
+    # Helper to get cumulative energy sensor value (returns None if not configured/unavailable)
+    async def get_cumulative_kwh(key: str) -> float | None:
+        """Fetch cumulative energy sensor value in kWh."""
+        entity = input_sensors.get(key)
+        if not entity:
+            return None
+        try:
+            val = await get_ha_sensor_float(str(entity))
+            if val is None:
+                return None
+            # Ensure we're working in kWh (some sensors report in Wh)
+            # Most cumulative sensors report in kWh, but we normalize just in case
+            return float(val)
+        except (ValueError, TypeError, Exception):
+            return None
 
     # Current Power State (Snapshot)
     pv_kw = await get_kw("pv_power")
@@ -128,14 +258,84 @@ async def record_observation_from_current_state(
         export_kw = max(0.0, -grid_net_kw)
         logger.debug(f"Applied grid_power_inverted: net={grid_net_kw:.3f}kW")
 
-    # Estimate Energy for the 15m slot (kWh = avg_kW * 0.25h)
-    # This is a Rough Approximation if we don't have cumulative counters
-    # ideally we would diff cumulative counters.
-    # For now, we store the snapshot rate converted to energy.
-    pv_kwh = pv_kw * 0.25
-    load_kwh = load_kw * 0.25
-    import_kwh = import_kw * 0.25
-    export_kwh = export_kw * 0.25
+    # Calculate Energy for the 15m slot
+    # Try cumulative energy sensors first, fallback to power snapshot method
+    async def calculate_energy_from_cumulative(
+        cumulative_key: str, power_kw: float, state_key: str
+    ) -> tuple[float, bool]:
+        """Calculate energy using cumulative sensor with fallback to power snapshot.
+
+        Returns:
+            Tuple of (energy_kwh, used_cumulative):
+            - energy_kwh: Calculated energy in kWh
+            - used_cumulative: True if cumulative sensor was used, False if fallback
+        """
+        cumulative = await get_cumulative_kwh(cumulative_key)
+        if cumulative is not None:
+            delta, is_valid = state_store.get_delta(state_key, cumulative, now)
+            if delta is not None and is_valid:
+                logger.debug(f"Using cumulative {cumulative_key}: delta={delta:.3f} kWh")
+                return delta, True
+            elif not is_valid:
+                # Meter reset detected, use fallback
+                logger.warning(f"Meter reset for {cumulative_key}, using power snapshot")
+
+        # Fallback to power snapshot
+        return power_kw * 0.25, False
+
+    # Calculate PV energy
+    pv_kwh, _ = await calculate_energy_from_cumulative("total_pv_production", pv_kw, "pv_total")
+
+    # Calculate load energy
+    load_kwh, _ = await calculate_energy_from_cumulative(
+        "total_load_consumption", load_kw, "load_total"
+    )
+
+    # Calculate import energy (only if dual meter or using cumulative)
+    import_kwh: float
+    export_kwh: float
+
+    if meter_type == "dual":
+        # For dual meters, calculate import and export separately
+        import_kwh, _ = await calculate_energy_from_cumulative(
+            "total_grid_import", import_kw, "grid_import_total"
+        )
+        export_kwh, _ = await calculate_energy_from_cumulative(
+            "total_grid_export", export_kw, "grid_export_total"
+        )
+    else:
+        # For net meter, try to get cumulative import and export if available
+        import_cumulative = await get_cumulative_kwh("total_grid_import")
+        export_cumulative = await get_cumulative_kwh("total_grid_export")
+
+        if import_cumulative is not None and export_cumulative is not None:
+            # Use cumulative sensors for both
+            import_delta, import_valid = state_store.get_delta(
+                "grid_import_total", import_cumulative, now
+            )
+            export_delta, export_valid = state_store.get_delta(
+                "grid_export_total", export_cumulative, now
+            )
+
+            if import_delta is not None and import_valid:
+                import_kwh = import_delta
+            else:
+                import_kwh = import_kw * 0.25
+                if not import_valid:
+                    logger.warning("Import meter reset detected, using power snapshot")
+
+            if export_delta is not None and export_valid:
+                export_kwh = export_delta
+            else:
+                export_kwh = export_kw * 0.25
+                if not export_valid:
+                    logger.warning("Export meter reset detected, using power snapshot")
+        else:
+            # Fallback to net power calculation
+            import_kwh = import_kw * 0.25
+            export_kwh = export_kw * 0.25
+
+    # Water and EV still use power snapshots (no cumulative sensors available)
     water_kwh = water_kw * 0.25
     ev_charging_kwh = ev_charging_kw * 0.25
 
