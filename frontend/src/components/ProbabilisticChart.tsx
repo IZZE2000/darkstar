@@ -19,74 +19,132 @@ export type SlotData = {
     p90: number | null
     p50: number | null
     actual?: number | null
+    open_meteo_kwh?: number | null
+    open_meteo_arrays?: {
+        name: string
+        kwh: number
+    }[]
 }
 
 type Props = {
     title: string
     slots: SlotData[]
     color: string
+    showOpenMeteo?: boolean
 }
 
-export default function ProbabilisticChart({ title, slots, color }: Props) {
+function getAmberColor(): string {
+    if (typeof window !== 'undefined') {
+        const style = getComputedStyle(document.documentElement)
+        const amber = style.getPropertyValue('--color-warn').trim()
+        if (amber) {
+            const [r, g, b] = amber.split(' ').map((v) => parseInt(v, 10))
+            return `rgb(${r}, ${g}, ${b})`
+        }
+    }
+    return '#F59E0B'
+}
+
+export default function ProbabilisticChart({ title, slots, color, showOpenMeteo = false }: Props) {
     const labels = slots.map((s) => {
         const d = new Date(s.time)
         return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
     })
 
-    const data = {
-        labels,
-        datasets: [
-            {
-                label: 'Actual',
-                data: slots.map((s) => s.actual ?? null),
-                borderColor: '#94a3b8',
-                backgroundColor: '#94a3b8',
-                borderWidth: 2,
-                pointRadius: 0,
-                pointHitRadius: 10, // Keep hover target large
-                tension: 0.4, // Smooth curve
-                spanGaps: true, // Bridge small gaps
-                fill: false,
-            },
-            {
-                label: 'p90',
-                data: slots.map((s) => s.p90),
-                borderColor: `${color}40`, // 25% opacity line
+    const amberColor = getAmberColor()
+
+    const datasets = [
+        {
+            label: 'Actual',
+            data: slots.map((s) => s.actual ?? null),
+            borderColor: '#94a3b8',
+            backgroundColor: '#94a3b8',
+            borderWidth: 2,
+            pointRadius: 0,
+            pointHitRadius: 10,
+            tension: 0.4,
+            spanGaps: true,
+            fill: false,
+        },
+        {
+            label: 'p90',
+            data: slots.map((s) => s.p90),
+            borderColor: `${color}40`,
+            borderWidth: 1,
+            backgroundColor: `${color}33`,
+            pointRadius: 0,
+            pointHitRadius: 10,
+            tension: 0.4,
+            spanGaps: true,
+            fill: '+1',
+        },
+        {
+            label: 'p10 (Risk)',
+            data: slots.map((s) => s.p10),
+            borderColor: `${color}80`,
+            borderWidth: 1.5,
+            borderDash: [4, 4],
+            backgroundColor: 'transparent',
+            pointRadius: 0,
+            pointHitRadius: 10,
+            tension: 0.4,
+            spanGaps: true,
+            fill: false,
+        },
+        {
+            label: 'p50 (Forecast)',
+            data: slots.map((s) => s.p50),
+            borderColor: color,
+            backgroundColor: color,
+            borderWidth: 2,
+            pointRadius: 0,
+            pointHitRadius: 10,
+            tension: 0.4,
+            spanGaps: true,
+            fill: false,
+        },
+    ]
+
+    if (showOpenMeteo) {
+        datasets.push({
+            label: 'Open-Meteo',
+            data: slots.map((s) => s.open_meteo_kwh ?? null),
+            borderColor: amberColor,
+            backgroundColor: amberColor,
+            borderWidth: 2,
+            pointRadius: 0,
+            pointHitRadius: 10,
+            tension: 0.4,
+            spanGaps: true,
+            fill: false,
+        })
+
+        const arrayNames = new Set<string>()
+        slots.forEach((s) => {
+            s.open_meteo_arrays?.forEach((arr) => arrayNames.add(arr.name))
+        })
+
+        arrayNames.forEach((name) => {
+            datasets.push({
+                label: name,
+                data: slots.map((s) => {
+                    const arr = s.open_meteo_arrays?.find((a) => a.name === name)
+                    return arr?.kwh ?? null
+                }),
+                borderColor: amberColor,
+                backgroundColor: amberColor,
                 borderWidth: 1,
-                backgroundColor: `${color}33`, // 20% opacity fill
+                borderDash: [4, 4],
                 pointRadius: 0,
                 pointHitRadius: 10,
-                tension: 0.4, // Smooth curve
-                spanGaps: true,
-                fill: '+1', // Fill to next dataset (p10)
-            },
-            {
-                label: 'p10 (Risk)',
-                data: slots.map((s) => s.p10),
-                borderColor: `${color}80`, // Higher opacity
-                borderWidth: 1.5,
-                borderDash: [4, 4], // Dashed line
-                backgroundColor: 'transparent',
-                pointRadius: 0,
-                pointHitRadius: 10,
-                tension: 0.4, // Smooth curve
+                tension: 0.4,
                 spanGaps: true,
                 fill: false,
-            },
-            {
-                label: 'p50 (Forecast)',
-                data: slots.map((s) => s.p50),
-                borderColor: color,
-                backgroundColor: color,
-                borderWidth: 2,
-                pointRadius: 0,
-                pointHitRadius: 10,
-                tension: 0.4, // Smooth curve
-                spanGaps: true,
-                fill: false,
-            },
-        ],
+            })
+        })
     }
+
+    const data = { labels, datasets }
 
     const options = {
         responsive: true,

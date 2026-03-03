@@ -69,6 +69,11 @@ export type AuroraHorizonSlot = {
         load_p10: number | null
         load_p90: number | null
     }
+    open_meteo_kwh?: number | null
+    open_meteo_arrays?: {
+        name: string
+        kwh: number
+    }[]
 }
 
 export type AuroraHorizon = {

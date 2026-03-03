@@ -212,3 +212,76 @@ def get_temperature_series(
     series = df["temp_c"].copy()
     series.name = "temp_c"
     return series
+
+
+def calculate_pv_from_radiation(
+    radiation_w_m2: float | None,
+    capacity_kw: float,
+    efficiency: float = 0.85,
+    slot_hours: float = 0.25,
+) -> float | None:
+    """
+    Calculate PV production estimate from shortwave radiation.
+
+    Formula: PV_kWh = (radiation_W_m2 / 1000) * capacity_kW * efficiency * slot_hours
+
+    Args:
+        radiation_w_m2: Shortwave radiation in W/m² (from Open-Meteo)
+        capacity_kw: Total DC peak power in kilowatts
+        efficiency: System efficiency factor (default 0.85, accounts for inverter,
+                    wiring, temperature losses)
+        slot_hours: Duration of the time slot in hours (default 0.25 = 15 minutes)
+
+    Returns:
+        Estimated PV production in kWh, or None if radiation data is missing
+    """
+    if radiation_w_m2 is None or capacity_kw <= 0:
+        return None
+
+    irradiance_kw_m2 = radiation_w_m2 / 1000.0
+    pv_kwh = irradiance_kw_m2 * capacity_kw * efficiency * slot_hours
+    return round(pv_kwh, 4)
+
+
+def calculate_per_array_pv(
+    radiation_w_m2: float | None,
+    solar_arrays: list[dict[str, Any]],
+    efficiency: float = 0.85,
+    slot_hours: float = 0.25,
+) -> tuple[float | None, list[dict[str, float]]]:
+    """
+    Calculate PV estimates for each solar array and the sum.
+
+    Args:
+        radiation_w_m2: Shortwave radiation in W/m² (from Open-Meteo)
+        solar_arrays: List of array configs with 'name' and 'kwp' keys
+        efficiency: System efficiency factor (default 0.85)
+        slot_hours: Duration of the time slot in hours (default 0.25)
+
+    Returns:
+        Tuple of (sum_kwh, per_array_list) where per_array_list contains
+        dicts with 'name' and 'kwh' keys. Returns (None, []) if no data.
+    """
+    if radiation_w_m2 is None or not solar_arrays:
+        return None, []
+
+    per_array: list[dict[str, float]] = []
+    total_kwh = 0.0
+    has_valid_data = False
+
+    for arr in solar_arrays:
+        name = arr.get("name", "Unknown")
+        kwp = float(arr.get("kwp", 0) or 0)
+        if kwp <= 0:
+            continue
+
+        arr_kwh = calculate_pv_from_radiation(radiation_w_m2, kwp, efficiency, slot_hours)
+        if arr_kwh is not None:
+            per_array.append({"name": name, "kwh": arr_kwh})
+            total_kwh += arr_kwh
+            has_valid_data = True
+
+    if not has_valid_data:
+        return None, []
+
+    return round(total_kwh, 4), per_array

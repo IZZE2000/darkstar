@@ -200,6 +200,113 @@ async def _compute_metrics(
     return metrics
 
 
+async def _get_history_with_actuals(
+    engine: LearningEngine | None,
+    start_time: datetime,
+    end_time: datetime,
+    forecast_version: str = "aurora",
+) -> dict[str, list[dict[str, Any]]]:
+    """
+    Fetch historical slot observations and forecasts for the given time window.
+
+    Returns a dict with 'pv' and 'load' lists, each containing:
+        - slot_start: ISO timestamp string
+        - actual: observed value (or null)
+        - forecast: forecasted value (or null)
+        - p10: P10 forecast (or null)
+        - p90: P90 forecast (or null)
+    """
+    result: dict[str, list[dict[str, Any]]] = {"pv": [], "load": []}
+
+    if not engine or not hasattr(engine, "store"):
+        return result
+
+    start_iso = start_time.isoformat()
+    end_iso = end_time.isoformat()
+
+    try:
+        async with engine.store.AsyncSession() as session:
+            obs_stmt = (
+                select(
+                    SlotObservation.slot_start,
+                    SlotObservation.pv_kwh,
+                    SlotObservation.load_kwh,
+                )
+                .where(
+                    SlotObservation.slot_start >= start_iso,
+                    SlotObservation.slot_start < end_iso,
+                )
+                .order_by(SlotObservation.slot_start)
+            )
+            obs_results = (await session.execute(obs_stmt)).all()
+
+            f_stmt = (
+                select(
+                    SlotForecast.slot_start,
+                    SlotForecast.pv_forecast_kwh,
+                    SlotForecast.load_forecast_kwh,
+                    SlotForecast.pv_p10,
+                    SlotForecast.pv_p90,
+                    SlotForecast.load_p10,
+                    SlotForecast.load_p90,
+                )
+                .where(
+                    SlotForecast.slot_start >= start_iso,
+                    SlotForecast.slot_start < end_iso,
+                    SlotForecast.forecast_version == forecast_version,
+                )
+                .order_by(SlotForecast.slot_start)
+            )
+            f_results = (await session.execute(f_stmt)).all()
+
+        obs_map: dict[str, dict[str, float | None]] = {}
+        for row in obs_results:
+            obs_map[row[0]] = {
+                "pv_actual": float(row[1]) if row[1] is not None else None,
+                "load_actual": float(row[2]) if row[2] is not None else None,
+            }
+
+        fcst_map: dict[str, dict[str, float | None]] = {}
+        for row in f_results:
+            fcst_map[row[0]] = {
+                "pv_forecast": float(row[1]) if row[1] is not None else None,
+                "load_forecast": float(row[2]) if row[2] is not None else None,
+                "pv_p10": float(row[3]) if row[3] is not None else None,
+                "pv_p90": float(row[4]) if row[4] is not None else None,
+                "load_p10": float(row[5]) if row[5] is not None else None,
+                "load_p90": float(row[6]) if row[6] is not None else None,
+            }
+
+        all_times = sorted(set(obs_map.keys()) | set(fcst_map.keys()))
+
+        for ts in all_times:
+            obs = obs_map.get(ts, {})
+            fcst = fcst_map.get(ts, {})
+
+            result["pv"].append(
+                {
+                    "slot_start": ts,
+                    "actual": obs.get("pv_actual"),
+                    "forecast": fcst.get("pv_forecast"),
+                    "p10": fcst.get("pv_p10"),
+                    "p90": fcst.get("pv_p90"),
+                }
+            )
+            result["load"].append(
+                {
+                    "slot_start": ts,
+                    "actual": obs.get("load_actual"),
+                    "forecast": fcst.get("load_forecast"),
+                    "p10": fcst.get("load_p10"),
+                    "p90": fcst.get("load_p90"),
+                }
+            )
+    except Exception:
+        logger.exception("Failed to fetch history with actuals")
+
+    return result
+
+
 @router.get(
     "/dashboard",
     summary="Aurora Dashboard Data",
@@ -211,38 +318,35 @@ async def aurora_dashboard() -> dict[str, Any]:
     tz = getattr(engine, "timezone", _get_timezone()) if engine else _get_timezone()
     now = datetime.now(tz)
 
-    # 1. Identity
+    start_of_today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    horizon_start = start_of_today
+    horizon_end = start_of_today + timedelta(days=2)
+
     identity = await _compute_graduation_level(engine)
-
-    # 2. Metrics
     metrics = await _compute_metrics(engine, days_back=7)
-
-    # 3. Risk
     risk = await _compute_risk_profile(engine, config)
-
-    # 4. Correction History
     corrections = await _fetch_correction_history(engine, config)
 
-    # 5. Horizon (Next 24h)
     stats: dict[str, Any] = {}
+    history_series: dict[str, list[dict[str, Any]]] = {"pv": [], "load": []}
     try:
-        minutes = (now.minute // 15) * 15
-        slot_start = now.replace(minute=minutes, second=0, microsecond=0)
-        horizon_end = slot_start + timedelta(hours=24)
         active_version = config.get("forecasting", {}).get("active_forecast_version") or "aurora"
         logger.debug("Dashboard Fetch: Using active_version=%s", active_version)
 
-        horizon_slots = await get_forecast_slots(slot_start, horizon_end, active_version)
+        history_series = await _get_history_with_actuals(engine, horizon_start, now, active_version)
+
+        horizon_slots = await get_forecast_slots(horizon_start, horizon_end, active_version)
         if not horizon_slots and active_version != "aurora":
             logger.warning("No slots for version %s, falling back to 'aurora'", active_version)
-            horizon_slots = await get_forecast_slots(slot_start, horizon_end, "aurora")
+            horizon_slots = await get_forecast_slots(horizon_start, horizon_end, "aurora")
 
-        # Calculate stats
         total_pv = sum(s["final"]["pv_kwh"] for s in horizon_slots)
         total_load = sum(s["final"]["load_kwh"] for s in horizon_slots)
 
         stats = {
-            "horizon_hours": 24,
+            "horizon_hours": 48,
+            "start": horizon_start.isoformat(),
+            "end": horizon_end.isoformat(),
             "total_pv_kwh": round(total_pv, 2),
             "total_load_kwh": round(total_load, 2),
             "slots": horizon_slots,
@@ -251,15 +355,10 @@ async def aurora_dashboard() -> dict[str, Any]:
         logger.error(f"Failed to fetch horizon for dashboard: {e}")
         stats = {"error": str(e)}
 
-    # NEW: Max Price Spread (Optimized)
     metrics["max_price_spread"] = None
     try:
-        # Optimization: Use get_nordpool_data but filter in memory is fine for now if cached
-        # Ideally we would pass range to get_nordpool_data if supported
         prices = await get_nordpool_data()
 
-        # Filter for relevant range (today + tomorrow)
-        # Using list comprehension for speed
         if prices:
             start_check = now.replace(hour=0, minute=0, second=0, microsecond=0)
             relevant_prices = [
@@ -269,7 +368,6 @@ async def aurora_dashboard() -> dict[str, Any]:
             ]
 
             if relevant_prices:
-                # Extract values, defaulting to 0 if key missing but keeping 0.0
                 exports = [p.get("export_price_sek_kwh", 0.0) for p in relevant_prices]
                 imports = [p.get("import_price_sek_kwh", 0.0) for p in relevant_prices]
 
@@ -278,7 +376,6 @@ async def aurora_dashboard() -> dict[str, Any]:
     except Exception as e:
         logger.warning("Failed to calc max_price_spread: %s", e)
 
-    # NEW: Strategy Events (Restored)
     strategy_history = get_strategy_history(limit=50)
 
     return {
@@ -287,9 +384,9 @@ async def aurora_dashboard() -> dict[str, Any]:
         "risk": risk,
         "correction_history": corrections,
         "horizon": stats,
-        "history": {"strategy_events": strategy_history},  # Restored
+        "history": {"strategy_events": strategy_history},
+        "history_series": history_series,
         "status": "online" if engine else "offline",
-        # NEW: Return state for UI toggles
         "state": {
             "auto_tune_enabled": config.get("learning", {}).get("auto_tune_enabled", False),
             "reflex_enabled": config.get("learning", {}).get("reflex_enabled", False),
@@ -297,7 +394,7 @@ async def aurora_dashboard() -> dict[str, Any]:
                 "risk_appetite": config.get("s_index", {}).get("risk_appetite", 3),
                 "mode": config.get("s_index", {}).get("mode", "dynamic"),
             },
-            "weather_volatility": risk,  # Re-using the calculated risk dict
+            "weather_volatility": risk,
         },
     }
 

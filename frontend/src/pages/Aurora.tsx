@@ -690,11 +690,11 @@ export default function Aurora() {
                                 )}
                             </div>
                         ) : probabilisticMode ? (
-                            // Probabilistic Forecast Chart
                             <div className="h-full w-full">
                                 <ProbabilisticChart
                                     title=""
                                     color={chartMode === 'load' ? '#f97316' : '#22c55e'}
+                                    showOpenMeteo={chartMode === 'pv'}
                                     slots={(() => {
                                         const histData =
                                             dashboard?.horizon?.history_series?.[
@@ -708,6 +708,8 @@ export default function Aurora() {
                                                     p50: s.final.load_kwh,
                                                     p90: s.probabilistic?.load_p90 ?? null,
                                                     actual: null as number | null,
+                                                    open_meteo_kwh: null as number | null,
+                                                    open_meteo_arrays: undefined,
                                                 }
                                             } else {
                                                 return {
@@ -716,6 +718,8 @@ export default function Aurora() {
                                                     p50: s.final.pv_kwh,
                                                     p90: s.probabilistic?.pv_p90 ?? null,
                                                     actual: null as number | null,
+                                                    open_meteo_kwh: s.open_meteo_kwh ?? null,
+                                                    open_meteo_arrays: s.open_meteo_arrays,
                                                 }
                                             }
                                         })
@@ -726,12 +730,15 @@ export default function Aurora() {
                                             p50: number | null
                                             p90: number | null
                                             actual?: number | null
+                                            open_meteo_kwh?: number | null
+                                            open_meteo_arrays?: {
+                                                name: string
+                                                kwh: number
+                                            }[]
                                         }
 
-                                        // 1. Create a map by timestamp to merge overlaps
                                         const merged = new Map<string, ProbabilisticSlot>()
 
-                                        // 2. Add History (Actuals + Forecasts)
                                         histData.forEach((h) => {
                                             merged.set(h.slot_start, {
                                                 time: h.slot_start,
@@ -739,29 +746,42 @@ export default function Aurora() {
                                                 p50: h.forecast ?? null,
                                                 p90: h.p90 ?? null,
                                                 actual: h.actual,
+                                                open_meteo_kwh: null,
+                                                open_meteo_arrays: undefined,
                                             })
                                         })
 
-                                        // 3. Add/Merge Future (Forecast)
                                         futureData.forEach((f) => {
                                             const existing = merged.get(f.time)
                                             if (existing) {
-                                                // Merge: Keep actual, add forecast
-                                                merged.set(f.time, { ...existing, p10: f.p10, p50: f.p50, p90: f.p90 })
+                                                merged.set(f.time, {
+                                                    ...existing,
+                                                    p10: f.p10,
+                                                    p50: f.p50,
+                                                    p90: f.p90,
+                                                    open_meteo_kwh: f.open_meteo_kwh,
+                                                    open_meteo_arrays: f.open_meteo_arrays,
+                                                })
                                             } else {
                                                 merged.set(f.time, f)
                                             }
                                         })
 
-                                        // 4. Sort and Slice (-24h to +24h)
-                                        const now = new Date().getTime()
-                                        const H24 = 24 * 60 * 60 * 1000
+                                        const horizonStart = dashboard?.horizon?.start
+                                            ? new Date(dashboard.horizon.start).getTime()
+                                            : null
+                                        const horizonEnd = dashboard?.horizon?.end
+                                            ? new Date(dashboard.horizon.end).getTime()
+                                            : null
 
                                         return Array.from(merged.values())
                                             .sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime())
                                             .filter((s) => {
                                                 const t = new Date(s.time).getTime()
-                                                return t >= now - H24 && t <= now + H24
+                                                if (horizonStart && horizonEnd) {
+                                                    return t >= horizonStart && t < horizonEnd
+                                                }
+                                                return true
                                             })
                                     })()}
                                 />
