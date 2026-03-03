@@ -15,7 +15,6 @@ from pydantic import BaseModel
 from backend.api.deps import get_learning_store
 from backend.learning.store import LearningStore
 from inputs import (
-    get_ha_client,
     get_ha_entity_state,
     get_ha_sensor_float,
     load_home_assistant_config,
@@ -56,12 +55,12 @@ async def _fetch_ha_history_avg(entity_id: str, hours: int) -> float:
     }
 
     try:
-        client = await get_ha_client()
-        resp = await client.get(api_url, headers=headers, params=params)
-        if resp.status_code != 200:
-            return 0.0
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(api_url, headers=headers, params=params)
+            if resp.status_code != 200:
+                return 0.0
 
-        data = resp.json()
+            data = resp.json()
         if not data or not data[0]:
             return 0.0
 

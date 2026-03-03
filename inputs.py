@@ -18,17 +18,6 @@ from ml.weather import get_weather_volatility
 
 logger = logging.getLogger("darkstar.inputs")
 
-# --- Async Helper ---
-_ha_client: httpx.AsyncClient | None = None
-
-
-async def get_ha_client() -> httpx.AsyncClient:
-    """Get or create singleton httpx.AsyncClient for HA."""
-    global _ha_client
-    if _ha_client is None or _ha_client.is_closed:
-        _ha_client = httpx.AsyncClient(timeout=10.0)
-    return _ha_client
-
 
 def load_home_assistant_config() -> dict[str, Any]:
     """Read Home Assistant configuration from secrets.yaml."""
@@ -101,13 +90,11 @@ async def get_ha_entity_state(entity_id: str) -> dict[str, Any] | None:
 
     endpoint = f"{url.rstrip('/')}/api/states/{entity_id}"
     try:
-        client = await get_ha_client()
-        response = await client.get(endpoint, headers=make_ha_headers(token))
-        response.raise_for_status()
-        data = response.json()
-        # state_value = data.get("state")
-        # print(f"[async_get_ha_entity_state] {entity_id} → state={state_value}")
-        return data
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(endpoint, headers=make_ha_headers(token))
+            response.raise_for_status()
+            data = response.json()
+            return data
     except Exception as exc:
         print(f"Warning: Could not fetch HA entity {entity_id}: {exc}")
         return None
@@ -1146,11 +1133,11 @@ async def get_load_profile_from_ha(config: dict[str, Any]) -> list[float]:
 
     try:
         print(f"Fetching {entity_id} data from Home Assistant...")
-        client = await get_ha_client()
-        response = await client.get(api_url, headers=headers, params=params, timeout=30.0)
-        response.raise_for_status()
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(api_url, headers=headers, params=params)
+            response.raise_for_status()
 
-        data = response.json()
+            data = response.json()
         if not data or not data[0]:
             print(f"Warning: No data received from Home Assistant for {entity_id}")
             return get_dummy_load_profile(config)
