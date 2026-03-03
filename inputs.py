@@ -544,6 +544,8 @@ async def _get_forecast_data_aurora(
 
         for rec in extended_records:
             ts = rec["slot_start"]
+            if isinstance(ts, str):
+                ts = datetime.fromisoformat(ts)
             if ts.tzinfo is None:
                 ts = pytz.UTC.localize(ts)
             date_key = ts.astimezone(local_tz).date().isoformat()
@@ -1040,6 +1042,8 @@ async def build_db_forecast_for_slots(
     indexed: dict[datetime, dict[str, Any]] = {}
     for rec in records:
         ts = rec["slot_start"]
+        if isinstance(ts, str):
+            ts = datetime.fromisoformat(ts)
         if ts.tzinfo is None:
             ts = pytz.UTC.localize(ts)
         indexed[ts.astimezone(local_tz)] = rec

@@ -303,7 +303,9 @@ class ExecutorEngine:
                 "last_run_status": self.status.last_run_status,
                 "last_error": self.status.last_error,
                 "last_skip_reason": self.status.last_skip_reason,
-                "next_run_at": self.status.next_run_at,
+                "next_run_at": (
+                    self.status.next_run_at.isoformat() if self.status.next_run_at else None
+                ),
                 "current_slot": self.status.current_slot,
                 "current_slot_plan": current_slot_plan,
                 "last_action": self.status.last_action,
@@ -769,10 +771,6 @@ class ExecutorEngine:
             logger.warning("Executor already running")
             return
 
-        if not self.init_ha_client():
-            logger.error("Failed to initialize HA client, executor not started")
-            return
-
         self._stop_event.clear()
         self._thread = threading.Thread(target=self._run_loop, daemon=True)
         self._thread.start()
@@ -807,6 +805,11 @@ class ExecutorEngine:
         """Async implementation of the background loop."""
         tz = pytz.timezone(self.config.timezone)
         logger.info("Executor background loop started (async)")
+
+        # Initialize HA client inside the async loop (not in main thread)
+        if not self.ha_client and not self.init_ha_client():
+            logger.error("Failed to initialize HA client, executor shutting down")
+            return
 
         while not self._stop_event.is_set():
             # Reload config to get latest settings
