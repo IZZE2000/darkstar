@@ -1,5 +1,7 @@
 """
 Main entry point for calculating forecasted states for the next window (Aurora).
+
+Supports hybrid PV forecasting: physics base + ML residual + corrector.
 """
 
 from __future__ import annotations
@@ -16,7 +18,7 @@ from backend.learning import LearningEngine, get_learning_engine
 from ml.context_features import get_alarm_armed_series, get_vacation_mode_series
 from ml.corrector import _determine_graduation_level  # type: ignore[reportPrivateUsage]
 from ml.train import _build_time_features  # type: ignore[reportPrivateUsage]
-from ml.weather import get_weather_series
+from ml.weather import calculate_physics_pv, get_weather_series
 
 logger = logging.getLogger("darkstar.ml.forward")
 
@@ -178,7 +180,7 @@ async def generate_forward_slots(
     models = _load_models()
 
     quantiles = ["p10", "p50", "p90"]
-    predictions = {}
+    predictions: dict[str, pd.Series] = {}
 
     # Initialize prediction series map
     for q in quantiles:
@@ -226,7 +228,7 @@ async def generate_forward_slots(
             else:  # p90
                 predictions[f"load_{q}"] = pd.Series(baseline_load * 1.3, index=df.index)
 
-    # --- PV INFERENCE (or fallback) ---
+    # --- PV INFERENCE (Hybrid: Physics + ML Residual) ---
     # Setup Astro Clamping
     sun_calc = None
     try:
@@ -240,34 +242,69 @@ async def generate_forward_slots(
     except Exception as e:
         logger.warning(f"⚠️ Astro init failed: {e}")
 
-    # Get total PV capacity for fallback scaling (REV ARC14)
+    # Get solar arrays config for physics calculation
     system_config: dict[str, Any] = engine.config.get("system", {})
     solar_arrays: list[Any] = system_config.get("solar_arrays", [])
-    if solar_arrays and isinstance(solar_arrays, list):  # type: ignore[reportUnnecessaryIsInstance]
-        pv_capacity_kw = sum(float(a.get("kwp", 0.0)) for a in solar_arrays)
-    else:
-        # Fallback to legacy single array or default
-        solar_cfg: dict[str, Any] = system_config.get("solar_array", {})
-        pv_capacity_kw = float(solar_cfg.get("kwp", 10.0))
+    loc_cfg: dict[str, Any] = system_config.get("location", {}) or {}
+    physics_lat = float(loc_cfg.get("latitude", 59.3))
+    physics_lon = float(loc_cfg.get("longitude", 18.1))
+
+    # Fallback to legacy single array
+    if not solar_arrays:
+        legacy_cfg: dict[str, Any] = system_config.get("solar_array", {}) or {}
+        if legacy_cfg:
+            solar_arrays = [legacy_cfg]
+
+    # Calculate physics base forecast for all slots
+    physics_series = pd.Series(0.0, index=df.index)
+    for idx, row in df.iterrows():
+        slot_ts = row["slot_start"]
+        radiation = row.get("shortwave_radiation_w_m2")
+
+        physics_kwh, _ = calculate_physics_pv(
+            radiation_w_m2=radiation,
+            solar_arrays=solar_arrays,  # type: ignore[arg-type]
+            slot_start=slot_ts,
+            latitude=physics_lat,
+            longitude=physics_lon,
+        )
+        physics_series.loc[idx] = physics_kwh if physics_kwh is not None else 0.0  # type: ignore[reportIndexIssue]
+
+    # Store physics for output
+    predictions["physics_kwh"] = physics_series
 
     if has_pv_models:
+        # HYBRID MODE: ML predicts residual, final = physics + residual
+        # Add physics as feature for ML model
+        df["physics_forecast_kwh"] = physics_series
+
+        # Feature columns for PV residual model (includes physics)
+        pv_feature_cols = feature_cols.copy()
+        if "physics_forecast_kwh" not in pv_feature_cols:
+            pv_feature_cols.append("physics_forecast_kwh")
+
+        X_pv = df[pv_feature_cols]
+
         for q in quantiles:
             model_key = f"pv_{q}"
             if model_key in models:
-                raw_pred: Any = models[model_key].predict(X)  # type: ignore[reportUnknownMemberType]
+                raw_pred: Any = models[model_key].predict(X_pv)  # type: ignore[reportUnknownMemberType]
 
                 series: pd.Series = pd.Series(0.0, index=df.index)
-                for idx, row in df.iterrows():
-                    val = float(max(raw_pred[idx], 0.0))
-                    slot_ts = row["slot_start"]
+                for pos_idx, (idx, row) in enumerate(df.iterrows()):
+                    # ML predicts residual (could be negative)
+                    ml_residual = float(raw_pred[pos_idx])
+                    physics = float(physics_series.iloc[pos_idx])
+
+                    # Final = physics + residual
+                    val = physics + ml_residual
 
                     # 1. Astro Clamp
                     is_sun_up = False
                     if sun_calc:
-                        is_sun_up = sun_calc.is_sun_up(slot_ts, buffer_minutes=30)
+                        is_sun_up = sun_calc.is_sun_up(row["slot_start"], buffer_minutes=30)
                     else:
-                        # Fallback
-                        h = slot_ts.hour
+                        h = row["slot_start"].hour
                         is_sun_up = 5 <= h < 22
 
                     if not is_sun_up:
@@ -278,54 +315,51 @@ async def generate_forward_slots(
                     if rad is not None and rad < 1.0:
                         val = 0.0
 
+                    # Floor at 0
+                    val = max(0.0, val)
                     series.loc[idx] = val  # type: ignore[reportIndexIssue]
 
-                # 3. Smoothing (Rolling Average)
-                # Apply to all bands to prevent sawtooth
+                # 3. Smoothing
                 predictions[model_key] = (
                     series.rolling(window=3, center=True, min_periods=1).mean().fillna(0.0)
                 )
-    else:
-        # REV PERS2 Fallback: Use Open-Meteo radiation to estimate PV output
-        logger.warning("⚠️ PV models not available, using radiation-based fallback (Open-Meteo)")
-        for q in quantiles:
-            series = pd.Series(0.0, index=df.index)
-            for idx, row in df.iterrows():
-                slot_ts = row["slot_start"]
 
-                # Check if sun is up
+                # Store ML residual for transparency
+                predictions[f"ml_residual_{q}"] = pd.Series(raw_pred, index=df.index)
+
+        logger.info("✅ PV: Using hybrid mode (physics + ML residual)")
+    else:
+        # PHYSICS-ONLY MODE: No ML models, use physics directly
+        logger.warning("⚠️ PV models not available, using physics-only mode")
+        for q in quantiles:
+            # Apply uncertainty bands around physics
+            if q == "p10":
+                predictions[f"pv_{q}"] = physics_series * 0.8
+            elif q == "p50":
+                predictions[f"pv_{q}"] = physics_series
+            else:  # p90
+                predictions[f"pv_{q}"] = physics_series * 1.2
+
+            # Apply smoothing
+            predictions[f"pv_{q}"] = (
+                predictions[f"pv_{q}"]
+                .rolling(window=3, center=True, min_periods=1)
+                .mean()
+                .fillna(0.0)  # type: ignore[union-attr]
+            )
+
+            # Zero out nighttime
+            for idx, row in df.iterrows():
                 is_sun_up = False
                 if sun_calc:
-                    is_sun_up = sun_calc.is_sun_up(slot_ts, buffer_minutes=30)
+                    is_sun_up = sun_calc.is_sun_up(row["slot_start"], buffer_minutes=30)
                 else:
-                    h = slot_ts.hour
+                    h = row["slot_start"].hour
                     is_sun_up = 5 <= h < 22
-
                 if not is_sun_up:
-                    series.loc[idx] = 0.0  # type: ignore[reportIndexIssue]
-                    continue
+                    predictions[f"pv_{q}"].loc[idx] = 0.0  # type: ignore[reportIndexIssue]
 
-                # Use radiation to estimate PV output
-                # Formula: kWh = radiation_w_m2 * efficiency * area * hours
-                # Simplified: pv_kw ≈ radiation / 1000 * capacity * efficiency
-                rad = row.get("shortwave_radiation_w_m2") or 0.0
-                efficiency = 0.15  # 15% system efficiency (panel + inverter)
-                pv_kw = (rad / 1000.0) * pv_capacity_kw * efficiency
-                pv_kwh = pv_kw * 0.25  # 15-min slot = 0.25 hours
-
-                # Use radiation to estimate PV output
-
-                # Apply uncertainty bands
-                if q == "p10":
-                    series.loc[idx] = max(0.0, pv_kwh * 0.7)  # type: ignore[reportIndexIssue]
-                elif q == "p50":
-                    series.loc[idx] = max(0.0, pv_kwh)  # type: ignore[reportIndexIssue]
-                else:  # p90
-                    series.loc[idx] = max(0.0, pv_kwh * 1.3)  # type: ignore[reportIndexIssue]
-
-            predictions[f"pv_{q}"] = (
-                series.rolling(window=3, center=True, min_periods=1).mean().fillna(0.0)
-            )
+            predictions[f"ml_residual_{q}"] = pd.Series(0.0, index=df.index)
 
     # --- STORE RESULTS ---
     forecasts: list[dict[str, Any]] = []
@@ -350,6 +384,18 @@ async def generate_forward_slots(
     if forecasts:
         await engine.store_forecasts(forecasts, forecast_version=forecast_version)
         print(f"✅ Stored {len(forecasts)} forward AURORA forecasts ({forecast_version}).")
+
+        # Log physics vs ML breakdown for monitoring
+        if "physics_kwh" in predictions:
+            total_physics = float(predictions["physics_kwh"].sum())
+            total_pv_p50 = float(predictions["pv_p50"].sum())
+            if total_physics > 0:
+                ml_residual_total = total_pv_p50 - total_physics
+                physics_pct = (total_physics / total_pv_p50 * 100) if total_pv_p50 > 0 else 0
+                logger.info(
+                    f"📊 PV Forecast Breakdown: Physics={total_physics:.2f}kWh ({physics_pct:.1f}%), "
+                    f"ML Residual={ml_residual_total:.2f}kWh"
+                )
 
 
 if __name__ == "__main__":

@@ -145,10 +145,26 @@ Darkstar's intelligence is powered by the **Aurora Suite**, which consists of th
 
 ### 5.1 Aurora Vision (The Eyes)
 *   **Role**: Forecasting.
-*   **Mechanism**: LightGBM models predict Load and PV generation with 11 features (time, weather, context).
+*   **Architecture**: Physics-First Hybrid PV Forecasting.
+*   **Mechanism**: Three-layer composition:
+    1. **Physics Base**: `OpenMeteoSolarForecast` with panel tilt/azimuth calculates POA (Plane of Array) irradiance using solar position and radiation data.
+    2. **ML Residual**: LightGBM model learns residual = actual - physics, capturing shadows, panel degradation, and system efficiency differences.
+    3. **Corrector**: Short-term adjustments for weather forecast errors.
+*   **Training Filter**: PV models train only on slots with `pv_kwh IS NOT NULL AND (radiation > 10 OR pv_kwh > 0.01)` to exclude nighttime noise.
+*   **Load Forecasting**: LightGBM with 11 features (time, weather, context).
 *   **Uncertainty**: Provides p10/p50/p90 confidence intervals for probabilistic S-Index.
 *   **Extended Horizon**: Aurora forecasts 168 hours (7 days), enabling S-Index to use probabilistic bands for D+1 to D+4 even when price data only covers 48 hours.
 *   **Config**: `s_index.s_index_horizon_days` (integer, default 4) controls how many future days are considered.
+*   **API Response Structure**:
+    ```json
+    {
+      "physics": {"pv_kwh": 0.65},
+      "ml_residual": {"pv_kwh": -0.08},
+      "correction": {"pv_kwh": -0.03},
+      "final": {"pv_kwh": 0.54},
+      "base": {"pv_kwh": 0.65, "load_kwh": 0.5}
+    }
+    ```
 
 ### 5.2 Aurora Strategy (The Brain)
 *   **Role**: Decision Making.

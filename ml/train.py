@@ -1,5 +1,7 @@
 """
 Training script for Aurora (LightGBM-based demand/PV forecasting).
+
+Supports hybrid PV forecasting where ML learns residuals (actual - physics).
 """
 
 from __future__ import annotations
@@ -10,6 +12,7 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import lightgbm as lgb
 import numpy as np
@@ -17,7 +20,7 @@ import pandas as pd
 
 from backend.learning import LearningEngine, get_learning_engine
 from ml.context_features import get_alarm_armed_series, get_vacation_mode_series
-from ml.weather import get_weather_series
+from ml.weather import calculate_physics_pv, get_weather_series
 
 
 @dataclass
@@ -163,7 +166,7 @@ def _save_model(model: lgb.LGBMRegressor, path: Path) -> None:
 def train_models(days_back: int = 90, min_samples: int = 100) -> None:
     cfg = TrainingConfig(days_back=days_back, min_samples=min_samples)
 
-    print("--- Starting AURORA Training (Rev K15: Probabilistic) ---")
+    print("--- Starting AURORA Training (Rev K16: Hybrid PV with Physics Residuals) ---")
 
     try:
         engine = get_learning_engine()
@@ -290,11 +293,78 @@ def train_models(days_back: int = 90, min_samples: int = 100) -> None:
         print("Warning: No valid load_kwh samples found; skipping load models.")
 
     # --- Train PV Models ---
-    pv_df = observations.dropna(subset=["pv_kwh"])
+    # HYBRID PV: Train on residuals (actual - physics) with sun-up filter
+    pv_df = observations.dropna(subset=["pv_kwh"]).copy()
+
+    # Apply sun-up filter: only train on slots with radiation > 10 OR actual PV > 0.01
+    # This excludes nighttime slots (radiation=0, pv=0) which provide no learning signal
+    if "shortwave_radiation_w_m2" in pv_df.columns:
+        sun_up_mask = (pv_df["shortwave_radiation_w_m2"] > 10) | (pv_df["pv_kwh"] > 0.01)
+        pv_df = pv_df[sun_up_mask].copy()
+        filtered_count = len(observations.dropna(subset=["pv_kwh"])) - len(pv_df)
+        if filtered_count > 0:
+            print(f"Filtered {filtered_count} nighttime/zero-production slots from PV training")
+
     if not pv_df.empty:
-        X_pv = pv_df[feature_cols]
-        y_pv = pv_df["pv_kwh"].astype(float)
-        print(f"Training PV models on {len(X_pv)} samples...")
+        # Calculate physics PV for each slot
+        system_cfg: dict[str, Any] = engine.config.get("system", {}) or {}
+        loc_cfg: dict[str, Any] = system_cfg.get("location", {}) or {}
+        solar_arrays: list[dict[str, Any]] = system_cfg.get("solar_arrays", [])  # type: ignore[assignment]
+
+        # Fallback to legacy single array
+        if not solar_arrays:
+            legacy_array: dict[str, Any] = system_cfg.get("solar_array", {}) or {}
+            if legacy_array:
+                solar_arrays = [legacy_array]
+
+        latitude = float(loc_cfg.get("latitude", 59.3) or 59.3)
+        longitude = float(loc_cfg.get("longitude", 18.1) or 18.1)
+
+        if solar_arrays:
+            # Calculate physics forecast for each slot
+            physics_kwh_list: list[float] = []
+            for _idx, row in pv_df.iterrows():
+                slot_start = row["slot_start"]
+                radiation = row.get("shortwave_radiation_w_m2")
+                physics_kwh, _ = calculate_physics_pv(
+                    radiation_w_m2=radiation,
+                    solar_arrays=solar_arrays,  # type: ignore[arg-type]
+                    slot_start=slot_start,
+                    latitude=latitude,
+                    longitude=longitude,
+                )
+                physics_kwh_list.append(physics_kwh if physics_kwh is not None else 0.0)
+
+            pv_df["physics_kwh"] = physics_kwh_list
+
+            # Calculate residual target: actual - physics
+            pv_df["pv_residual"] = pv_df["pv_kwh"] - pv_df["physics_kwh"]
+
+            # Add physics as a feature for the model
+            pv_df["physics_forecast_kwh"] = pv_df["physics_kwh"]
+
+            print(
+                f"PV Residual Stats: mean={pv_df['pv_residual'].mean():.4f}, "
+                f"std={pv_df['pv_residual'].std():.4f}, "
+                f"min={pv_df['pv_residual'].min():.4f}, max={pv_df['pv_residual'].max():.4f}"
+            )
+        else:
+            # No solar arrays configured - use direct PV prediction (legacy mode)
+            pv_df["pv_residual"] = pv_df["pv_kwh"]
+            pv_df["physics_forecast_kwh"] = 0.0
+            print("Warning: No solar arrays configured, using direct PV prediction")
+
+        # Feature columns for PV (add physics forecast)
+        pv_feature_cols = feature_cols.copy()
+        if (
+            "physics_forecast_kwh" in pv_df.columns
+            and "physics_forecast_kwh" not in pv_feature_cols
+        ):
+            pv_feature_cols.append("physics_forecast_kwh")
+
+        X_pv = pv_df[pv_feature_cols]
+        y_pv = pv_df["pv_residual"].astype(float)
+        print(f"Training PV models on {len(X_pv)} samples (residual mode)...")
 
         for q_name, alpha in quantiles.items():
             print(f"  > Training PV {q_name} (alpha={alpha})...")

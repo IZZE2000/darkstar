@@ -64,6 +64,10 @@ def _determine_graduation_level(engine: LearningEngine) -> GraduationLevel:
 def _load_training_frame(engine: LearningEngine, days_back: int = 30) -> pd.DataFrame:
     """
     Build a training dataframe with actuals, base forecasts, and context features.
+
+    For PV: The pv_forecast_kwh is the hybrid forecast (physics + ML residual).
+    The corrector learns the residual against this hybrid forecast:
+        corrector_residual = actual_pv - (physics + ml_residual)
     """
     tz = engine.timezone
     cutoff_date = (datetime.now(tz) - timedelta(days=days_back)).date().isoformat()

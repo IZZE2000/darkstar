@@ -1,5 +1,7 @@
 """
 API router for Aurora-based forecasting.
+
+Supports hybrid PV forecasting with physics base + ML residual + corrector.
 """
 
 from __future__ import annotations
@@ -10,7 +12,7 @@ import pandas as pd
 import pytz
 
 from backend.learning import LearningEngine, get_learning_engine
-from ml.weather import calculate_per_array_pv, get_weather_series
+from ml.weather import calculate_per_array_pv, calculate_physics_pv, get_weather_series
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -43,8 +45,12 @@ async def get_forecast_slots(
     """
     Async return forecast slots for the given time window and version using LearningStore.
 
-    When include_open_meteo is True, also fetches Open-Meteo radiation data and calculates
-    PV estimates using the formula: PV_kWh = (radiation_W_m2 / 1000) * capacity_kW * efficiency * 0.25h
+    Hybrid PV Forecast Structure:
+    - physics.pv_kwh: Physics-based forecast (POA irradiance calculation)
+    - ml_residual.pv_kwh: ML residual correction (learns shadows, degradation)
+    - correction.pv_kwh: Corrector residual (short-term weather error)
+    - final.pv_kwh = physics + ml_residual + correction
+    - base.pv_kwh: Legacy field, equals physics.pv_kwh
     """
     engine = _get_engine()
     rows = await engine.store.get_forecasts_range(start_time, forecast_version)
@@ -63,31 +69,64 @@ async def get_forecast_slots(
 
     df["slot_start"] = df["slot_start"].dt.tz_convert(engine.timezone)
 
+    # Load config for physics calculation
+    config = _load_config()
+    system_cfg: dict[str, Any] = config.get("system", {}) or {}
+    loc_cfg: dict[str, Any] = system_cfg.get("location", {}) or {}
+    solar_arrays: list[dict[str, Any]] = system_cfg.get("solar_arrays", [])  # type: ignore[assignment]
+
+    # Fallback to legacy single array
+    if not solar_arrays:
+        legacy_array: dict[str, Any] = system_cfg.get("solar_array", {}) or {}
+        if legacy_array:
+            solar_arrays = [legacy_array]
+
+    latitude = float(loc_cfg.get("latitude", 59.3) or 59.3)
+    longitude = float(loc_cfg.get("longitude", 18.1) or 18.1)
+
+    # Fetch weather for physics calculation
+    weather_df = get_weather_series(start_time, end_time, config=config)
+
+    # Calculate physics for each slot
+    physics_data: dict[str, dict[str, Any]] = {}
+    if solar_arrays and not weather_df.empty and "shortwave_radiation_w_m2" in weather_df.columns:
+        for ts_idx, row_data in weather_df.iterrows():
+            ts_str = ts_idx.isoformat()  # type: ignore[attr-defined]
+            radiation = row_data.get("shortwave_radiation_w_m2")
+            physics_kwh, per_array = calculate_physics_pv(
+                radiation_w_m2=radiation,
+                solar_arrays=solar_arrays,  # type: ignore[arg-type]
+                slot_start=ts_idx,  # type: ignore[arg-defined]
+                latitude=latitude,
+                longitude=longitude,
+            )
+            physics_data[ts_str] = {
+                "physics_kwh": physics_kwh if physics_kwh is not None else 0.0,
+                "physics_arrays": per_array if per_array else None,
+            }
+
+    # Legacy Open-Meteo data (kept for backward compatibility)
     open_meteo_data: dict[str, dict[str, Any]] = {}
-    if include_open_meteo:
+    if include_open_meteo and solar_arrays:
         try:
-            config = _load_config()
-            solar_arrays = config.get("system", {}).get("solar_arrays", [])
-            if solar_arrays:
-                weather_df = get_weather_series(start_time, end_time, config=config)
-                if not weather_df.empty and "shortwave_radiation_w_m2" in weather_df.columns:
-                    for ts_idx, row_data in weather_df.iterrows():
-                        ts_str = ts_idx.isoformat()  # type: ignore[attr-defined]
-                        radiation = row_data.get("shortwave_radiation_w_m2")
-                        total_kwh, per_array = calculate_per_array_pv(radiation, solar_arrays)
-                        open_meteo_data[ts_str] = {
-                            "open_meteo_kwh": total_kwh,
-                            "open_meteo_arrays": per_array if per_array else None,
-                        }
+            if not weather_df.empty and "shortwave_radiation_w_m2" in weather_df.columns:
+                for ts_idx, row_data in weather_df.iterrows():
+                    ts_str = ts_idx.isoformat()  # type: ignore[attr-defined]
+                    radiation = row_data.get("shortwave_radiation_w_m2")
+                    total_kwh, per_array = calculate_per_array_pv(radiation, solar_arrays)
+                    open_meteo_data[ts_str] = {
+                        "open_meteo_kwh": total_kwh,
+                        "open_meteo_arrays": per_array if per_array else None,
+                    }
         except Exception:
             pass
 
     records: list[dict[str, Any]] = []
     for raw_row in df.to_dict("records"):
         row: dict[str, Any] = raw_row  # type: ignore[assignment]
-        base_pv = float(row.get("pv_forecast_kwh") or 0.0)
+        final_pv = float(row.get("pv_forecast_kwh") or 0.0)
         base_load = float(row.get("base_load_forecast_kwh") or row.get("load_forecast_kwh") or 0.0)
-        pv_corr = float(row.get("pv_correction_kwh") or 0.0)
+        pv_correction = float(row.get("pv_correction_kwh") or 0.0)
         load_corr = float(row.get("load_correction_kwh") or 0.0)
 
         pv_p10_val: float | None = row.get("pv_p10")
@@ -98,14 +137,30 @@ async def get_forecast_slots(
         slot_ts = row["slot_start"]
         slot_ts_str = str(slot_ts) if not hasattr(slot_ts, "isoformat") else slot_ts.isoformat()  # type: ignore[union-attr]
 
+        # Get physics for this slot
+        phys_entry = physics_data.get(slot_ts_str, {})
+        physics_kwh = float(phys_entry.get("physics_kwh", 0.0) or 0.0)
+
+        # Calculate ML residual: final - physics - correction
+        # Note: This is approximate since we don't store ml_residual separately
+        ml_residual_kwh = final_pv - physics_kwh - pv_correction
+
+        # Legacy Open-Meteo entry
         om_entry = open_meteo_data.get(slot_ts_str, {})
 
         records.append(
             {
                 "slot_start": slot_ts_str,
-                "base": {"pv_kwh": base_pv, "load_kwh": base_load},
-                "correction": {"pv_kwh": pv_corr, "load_kwh": load_corr},
-                "final": {"pv_kwh": base_pv + pv_corr, "load_kwh": base_load + load_corr},
+                # Hybrid PV structure
+                "physics": {"pv_kwh": round(physics_kwh, 4)},
+                "ml_residual": {"pv_kwh": round(ml_residual_kwh, 4)},
+                "correction": {"pv_kwh": round(pv_correction, 4)},
+                "final": {
+                    "pv_kwh": round(final_pv, 4),
+                    "load_kwh": round(base_load + load_corr, 4),
+                },
+                # Legacy fields (backward compatibility)
+                "base": {"pv_kwh": round(physics_kwh, 4), "load_kwh": round(base_load, 4)},
                 "probabilistic": {
                     "pv_p10": float(pv_p10_val) if pv_p10_val is not None else None,
                     "pv_p90": float(pv_p90_val) if pv_p90_val is not None else None,
@@ -114,8 +169,10 @@ async def get_forecast_slots(
                 },
                 "temp_c": row.get("temp_c"),
                 "forecast_version": row.get("forecast_version"),
+                # Legacy Open-Meteo fields (deprecated, use physics instead)
                 "open_meteo_kwh": om_entry.get("open_meteo_kwh"),
                 "open_meteo_arrays": om_entry.get("open_meteo_arrays"),
+                "physics_arrays": phys_entry.get("physics_arrays"),
             },
         )
 

@@ -4,6 +4,7 @@ Weather data fetching and processing for Aurora.
 
 from __future__ import annotations
 
+import math
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -15,6 +16,255 @@ import yaml
 
 if TYPE_CHECKING:
     from datetime import datetime
+
+
+def _calculate_solar_position(
+    latitude: float,
+    longitude: float,
+    dt: datetime,
+) -> dict[str, float]:
+    """
+    Calculate solar position (elevation, azimuth) for a given location and time.
+
+    Uses simplified algorithm based on NOAA formulas.
+
+    Returns:
+        dict with 'elevation' (degrees) and 'azimuth' (degrees) keys.
+    """
+    # Day of year
+    day_of_year = dt.timetuple().tm_yday
+
+    # Decimal hour (including fractional day)
+    hour = dt.hour + dt.minute / 60.0 + dt.second / 3600.0
+
+    # Fractional year in radians
+    gamma = (2.0 * math.pi / 365.0) * (day_of_year - 1 + (hour - 12.0) / 24.0)
+
+    # Equation of time (minutes)
+    eq_time = 229.18 * (
+        0.000075
+        + 0.001868 * math.cos(gamma)
+        - 0.032077 * math.sin(gamma)
+        - 0.014615 * math.cos(2.0 * gamma)
+        - 0.040849 * math.sin(2.0 * gamma)
+    )
+
+    # Solar declination (radians)
+    decl = (
+        0.006918
+        - 0.399912 * math.cos(gamma)
+        + 0.070257 * math.sin(gamma)
+        - 0.006758 * math.cos(2.0 * gamma)
+        + 0.000907 * math.sin(2.0 * gamma)
+        - 0.002697 * math.cos(3.0 * gamma)
+        + 0.00148 * math.sin(3.0 * gamma)
+    )
+
+    # Convert latitude to radians
+    lat_rad = math.radians(latitude)
+
+    # Hour angle (degrees)
+    utc_offset = dt.utcoffset()
+    timezone_offset: float = 0.0
+    if utc_offset is not None:
+        timezone_offset = utc_offset.total_seconds() / 3600.0
+    time_offset = eq_time / 60.0 + (longitude / 15.0) - timezone_offset
+    hour_angle = 15.0 * (hour - 12.0 - time_offset)
+    hour_angle_rad = math.radians(hour_angle)
+
+    # Solar elevation angle
+    sin_elev = math.sin(lat_rad) * math.sin(decl) + math.cos(lat_rad) * math.cos(decl) * math.cos(
+        hour_angle_rad
+    )
+    elevation = math.degrees(math.asin(max(-1.0, min(1.0, sin_elev))))
+
+    # Solar azimuth angle (degrees from north, clockwise)
+    cos_az = (math.sin(decl) - math.sin(lat_rad) * sin_elev) / (
+        math.cos(lat_rad) * math.cos(math.radians(elevation)) + 1e-10
+    )
+    azimuth = math.degrees(math.acos(max(-1.0, min(1.0, cos_az))))
+    if hour_angle > 0:
+        azimuth = 360.0 - azimuth
+
+    return {"elevation": elevation, "azimuth": azimuth, "declination": math.degrees(decl)}
+
+
+def _calculate_poa_irradiance(
+    radiation_w_m2: float,
+    panel_tilt: float,
+    panel_azimuth: float,
+    solar_elevation: float,
+    solar_azimuth: float,
+) -> float:
+    """
+    Calculate Plane of Array (POA) irradiance from horizontal radiation.
+
+    Uses isotropic diffuse model for simplicity.
+
+    Args:
+        radiation_w_m2: Global horizontal irradiance (GHI) in W/m²
+        panel_tilt: Panel tilt angle in degrees (0=horizontal, 90=vertical)
+        panel_azimuth: Panel azimuth in degrees (0=South, 90=West, -90=East)
+        solar_elevation: Solar elevation angle in degrees
+        solar_azimuth: Solar azimuth in degrees (0=South, positive=West)
+
+    Returns:
+        POA irradiance in W/m²
+    """
+    if radiation_w_m2 <= 0 or solar_elevation <= 0:
+        return 0.0
+
+    # Convert to radians
+    panel_tilt_rad = math.radians(panel_tilt)
+    panel_azimuth_rad = math.radians(panel_azimuth)
+    solar_elevation_rad = math.radians(solar_elevation)
+    solar_azimuth_rad = math.radians(solar_azimuth)
+
+    # Simple diffuse fraction model (clear sky approximation)
+    # For more accuracy, use Perez model or similar
+    diffuse_fraction = 0.2 if solar_elevation > 15.0 else 0.4
+    dni = radiation_w_m2 * (1.0 - diffuse_fraction)
+    dhi = radiation_w_m2 * diffuse_fraction
+
+    # Angle of incidence
+    cos_aoi = math.sin(solar_elevation_rad) * math.cos(panel_tilt_rad) + math.cos(
+        solar_elevation_rad
+    ) * math.sin(panel_tilt_rad) * math.cos(solar_azimuth_rad - panel_azimuth_rad)
+    cos_aoi = max(0.0, cos_aoi)
+
+    # Sky diffuse on tilted surface (isotropic model)
+    sky_diffuse = dhi * (1.0 + math.cos(panel_tilt_rad)) / 2.0
+
+    # POA irradiance
+    poa = dni * cos_aoi + sky_diffuse
+
+    return max(0.0, poa)
+
+
+def calculate_physics_pv(
+    radiation_w_m2: float | None,
+    solar_arrays: list[dict[str, Any]],
+    slot_start: datetime,
+    latitude: float,
+    longitude: float,
+    efficiency: float = 0.85,
+    slot_hours: float = 0.25,
+) -> tuple[float | None, list[dict[str, Any]]]:
+    """
+    Calculate physics-based PV estimate using panel orientation and solar position.
+
+    This is the core physics calculation for the hybrid forecasting system.
+    It uses POA (Plane of Array) irradiance calculation to account for
+    panel tilt and azimuth, providing more accurate estimates than the
+    simplified radiation-based formula.
+
+    Args:
+        radiation_w_m2: Global horizontal irradiance in W/m²
+        solar_arrays: List of array configs with 'name', 'kwp', 'tilt', 'azimuth' keys
+        slot_start: Datetime of the slot for solar position calculation
+        latitude: Location latitude in degrees
+        longitude: Location longitude in degrees
+        efficiency: System efficiency factor (default 0.85)
+        slot_hours: Duration of the time slot in hours (default 0.25)
+
+    Returns:
+        Tuple of (total_kwh, per_array_list) where per_array_list contains
+        dicts with 'name', 'kwh', 'poa_w_m2' keys. Returns (None, []) if no data.
+    """
+    if radiation_w_m2 is None or radiation_w_m2 <= 0 or not solar_arrays:
+        return None, []
+
+    # Calculate solar position
+    try:
+        solar_pos = _calculate_solar_position(latitude, longitude, slot_start)
+    except Exception:
+        # Fallback to simplified formula if solar position fails
+        total_capacity = sum(float(arr.get("kwp", 0) or 0) for arr in solar_arrays)
+        if total_capacity <= 0:
+            return None, []
+        pv_kwh = (radiation_w_m2 / 1000.0) * total_capacity * efficiency * slot_hours
+        return round(pv_kwh, 4), []
+
+    solar_elevation = solar_pos["elevation"]
+    solar_azimuth = solar_pos["azimuth"]
+
+    # If sun is below horizon, return 0
+    if solar_elevation <= 0:
+        return 0.0, []
+
+    per_array: list[dict[str, Any]] = []
+    total_kwh = 0.0
+
+    for arr in solar_arrays:
+        name = str(arr.get("name", "Unknown"))
+        kwp = float(arr.get("kwp", 0) or 0)
+        if kwp <= 0:
+            continue
+
+        # Get panel orientation (default: 30° tilt, South-facing)
+        panel_tilt = float(arr.get("tilt", 30.0) or 30.0)
+        # Convert azimuth from Home Assistant convention (0=North, 180=South)
+        # to solar convention (0=South, positive=West)
+        panel_azimuth_ha = float(arr.get("azimuth", 180.0) or 180.0)
+        panel_azimuth = (panel_azimuth_ha % 360) - 180
+
+        # Calculate POA irradiance
+        poa = _calculate_poa_irradiance(
+            radiation_w_m2,
+            panel_tilt,
+            panel_azimuth,
+            solar_elevation,
+            solar_azimuth,
+        )
+
+        # Convert to kWh
+        # POA is in W/m², capacity in kWp, efficiency accounts for system losses
+        # Result is energy in kWh for the time slot
+        pv_kw = (poa / 1000.0) * kwp * efficiency
+        arr_kwh = pv_kw * slot_hours
+
+        per_array.append(
+            {
+                "name": name,
+                "kwh": round(arr_kwh, 4),
+                "poa_w_m2": round(poa, 2),
+            }
+        )
+        total_kwh += arr_kwh
+
+    if not per_array:
+        return None, []
+
+    return round(total_kwh, 4), per_array
+
+
+def calculate_physics_pv_simple(
+    radiation_w_m2: float | None,
+    total_capacity_kw: float,
+    efficiency: float = 0.85,
+    slot_hours: float = 0.25,
+) -> float | None:
+    """
+    Simplified physics PV calculation fallback without solar position.
+
+    Used when solar position calculation is not possible or as a fallback
+    when the more accurate calculate_physics_pv() fails.
+
+    Args:
+        radiation_w_m2: Shortwave radiation in W/m²
+        total_capacity_kw: Total DC peak power in kilowatts
+        efficiency: System efficiency factor (default 0.85)
+        slot_hours: Duration of the time slot in hours (default 0.25)
+
+    Returns:
+        Estimated PV production in kWh, or None if no data
+    """
+    if radiation_w_m2 is None or total_capacity_kw <= 0:
+        return None
+
+    pv_kwh = (radiation_w_m2 / 1000.0) * total_capacity_kw * efficiency * slot_hours
+    return round(pv_kwh, 4)
+
 
 # Simple in-memory cache with TTL (5 minutes)
 _weather_cache: dict[str, tuple[float, pd.DataFrame]] = {}
@@ -272,3 +522,72 @@ def calculate_per_array_pv(
         return None, []
 
     return round(total_kwh, 4), per_array
+
+
+def calculate_physics_for_slots(
+    slots: list[dict[str, Any]],
+    config: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """
+    Calculate physics-based PV for a list of historical slots.
+
+    Used during training to calculate retroactive physics forecasts
+    from stored radiation data.
+
+    Args:
+        slots: List of slot dicts with 'slot_start' and 'shortwave_radiation_w_m2' keys
+        config: Configuration dict with 'system.location' and 'system.solar_arrays'
+
+    Returns:
+        List of slots with added 'physics_kwh' and 'physics_arrays' keys
+    """
+    system_cfg: dict[str, Any] = config.get("system", {}) or {}
+    loc_cfg: dict[str, Any] = system_cfg.get("location", {}) or {}
+    solar_arrays: list[Any] = system_cfg.get("solar_arrays", [])
+
+    latitude = float(loc_cfg.get("latitude", 59.3))
+    longitude = float(loc_cfg.get("longitude", 18.1))
+
+    if not solar_arrays:
+        # Fallback to legacy single array
+        legacy_array: dict[str, Any] = system_cfg.get("solar_array", {}) or {}
+        if legacy_array:
+            solar_arrays = [legacy_array]
+
+    if not solar_arrays:
+        return [{**slot, "physics_kwh": None, "physics_arrays": []} for slot in slots]
+
+    results: list[dict[str, Any]] = []
+    for slot in slots:
+        slot_start_raw = slot.get("slot_start")
+        radiation = slot.get("shortwave_radiation_w_m2")
+
+        # Parse slot_start if it's a string
+        if isinstance(slot_start_raw, str):
+            slot_start = pd.to_datetime(slot_start_raw, utc=True)
+            if slot_start.tzinfo is None:
+                slot_start = slot_start.tz_localize("UTC")
+        elif isinstance(slot_start_raw, pd.Timestamp):
+            slot_start = slot_start_raw
+        else:
+            results.append({**slot, "physics_kwh": None, "physics_arrays": []})
+            continue
+
+        # Calculate physics
+        physics_kwh, physics_arrays = calculate_physics_pv(
+            radiation_w_m2=radiation,
+            solar_arrays=solar_arrays,  # type: ignore[arg-type]
+            slot_start=slot_start,
+            latitude=latitude,
+            longitude=longitude,
+        )
+
+        results.append(
+            {
+                **slot,
+                "physics_kwh": physics_kwh,
+                "physics_arrays": physics_arrays,
+            }
+        )
+
+    return results
