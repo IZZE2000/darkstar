@@ -457,3 +457,163 @@ class TestStatePersistence:
 
             assert nested_dir.exists()
             assert state_file.exists()
+
+
+class TestRecorderSpikeValidation:
+    """Test suite for recorder spike validation integration."""
+
+    @pytest.mark.asyncio
+    async def test_spike_values_zeroed_before_storage(self):
+        """Test that spike values are zeroed before storage to database."""
+
+        import pytz
+
+        from backend.learning.store import LearningStore
+        from backend.recorder import record_observation_from_current_state
+
+        # Create test config with 8kW grid limit = 4.0 kWh max per slot
+        config = {
+            "timezone": "Europe/Stockholm",
+            "system": {"grid": {"max_power_kw": 8.0}},
+            "learning": {"sqlite_path": ":memory:"},
+            "input_sensors": {"battery_soc": "sensor.test_soc"},
+        }
+
+        # Mock HA responses with spike values
+        with (
+            patch("backend.recorder.get_ha_sensor_float") as mock_soc,
+            patch("backend.recorder.get_ha_sensor_kw_normalized") as mock_power,
+            patch("backend.recorder.get_ha_entity_state") as mock_entity,
+        ):
+            mock_soc.return_value = 50.0  # Valid SoC
+            mock_power.return_value = 100.0  # Spike power value (100kW!)
+            mock_entity.return_value = None  # No cumulative sensors
+
+            # Create a mock store to capture what gets stored
+            tz = pytz.timezone("Europe/Stockholm")
+            store = LearningStore(":memory:", tz)
+            await store.ensure_wal_mode()
+
+            with patch("backend.recorder.LearningStore") as mock_store_class:
+                mock_store = AsyncMock()
+                mock_store_class.return_value = mock_store
+
+                # Capture the DataFrame passed to store_slot_observations
+                stored_records = []
+
+                async def capture_store(df):
+                    stored_records.extend(df.to_dict("records"))
+
+                mock_store.store_slot_observations = capture_store
+                mock_store.close = AsyncMock()
+
+                # Record observation
+                await record_observation_from_current_state(config)
+
+                # Verify store was called
+                assert len(stored_records) == 1
+                record = stored_records[0]
+
+                # All energy values should be validated
+                # With 100kW power, the energy would be 100 * 0.25 = 25 kWh
+                # This exceeds the 4.0 kWh threshold, so it should be zeroed
+                assert record["pv_kwh"] == 0.0, f"PV spike should be zeroed, got {record['pv_kwh']}"
+                assert record["load_kwh"] == 0.0, (
+                    f"Load spike should be zeroed, got {record['load_kwh']}"
+                )
+
+    @pytest.mark.asyncio
+    async def test_valid_values_preserved_in_recorder(self):
+        """Test that valid values are preserved during recording."""
+        config = {
+            "timezone": "Europe/Stockholm",
+            "system": {"grid": {"max_power_kw": 8.0}},
+            "learning": {"sqlite_path": ":memory:"},
+            "input_sensors": {
+                "battery_soc": "sensor.test_soc",
+                "pv_power": "sensor.pv_power",
+            },
+        }
+
+        # Mock HA responses with normal values
+        with (
+            patch("backend.recorder.get_ha_sensor_float") as mock_soc,
+            patch("backend.recorder.get_ha_sensor_kw_normalized") as mock_power,
+            patch("backend.recorder.get_ha_entity_state") as mock_entity,
+        ):
+            mock_soc.return_value = 50.0
+
+            def mock_power_side_effect(entity_id, default=0.0):
+                if entity_id == "sensor.pv_power":
+                    return 2.0  # Normal 2kW PV power
+                return default
+
+            mock_power.side_effect = mock_power_side_effect
+            mock_entity.return_value = None
+
+            stored_records = []
+
+            with patch("backend.recorder.LearningStore") as mock_store_class:
+                mock_store = AsyncMock()
+                mock_store_class.return_value = mock_store
+
+                async def capture_store(df):
+                    stored_records.extend(df.to_dict("records"))
+
+                mock_store.store_slot_observations = capture_store
+                mock_store.close = AsyncMock()
+
+                await record_observation_from_current_state(config)
+
+                assert len(stored_records) == 1
+                record = stored_records[0]
+
+                # 2kW * 0.25h = 0.5 kWh, which is under the 4.0 kWh threshold
+                assert record["pv_kwh"] == 0.5, (
+                    f"Valid PV should be preserved, got {record['pv_kwh']}"
+                )
+
+    @pytest.mark.asyncio
+    async def test_recorder_handles_missing_config_gracefully(self):
+        """Test that recorder handles missing grid config gracefully."""
+        config = {
+            "timezone": "Europe/Stockholm",
+            "learning": {"sqlite_path": ":memory:"},
+            "input_sensors": {"battery_soc": "sensor.test_soc"},
+            # Missing system.grid.max_power_kw
+        }
+
+        with (
+            patch("backend.recorder.get_ha_sensor_float") as mock_soc,
+            patch("backend.recorder.get_ha_sensor_kw_normalized") as mock_power,
+            patch("backend.recorder.get_ha_entity_state") as mock_entity,
+            patch("backend.recorder.logger") as mock_logger,
+        ):
+            mock_soc.return_value = 50.0
+            mock_power.return_value = 2.0
+            mock_entity.return_value = None
+
+            stored_records = []
+
+            with patch("backend.recorder.LearningStore") as mock_store_class:
+                mock_store = AsyncMock()
+                mock_store_class.return_value = mock_store
+
+                async def capture_store(df):
+                    stored_records.extend(df.to_dict("records"))
+
+                mock_store.store_slot_observations = capture_store
+                mock_store.close = AsyncMock()
+
+                await record_observation_from_current_state(config)
+
+                # Should log a warning about missing config
+                warning_calls = [
+                    c for c in mock_logger.warning.call_args_list if "max_power_kw" in str(c)
+                ]
+                assert len(warning_calls) > 0 or any(
+                    "validate" in str(c).lower() for c in mock_logger.warning.call_args_list
+                )
+
+                # Should still store the record
+                assert len(stored_records) == 1

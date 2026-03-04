@@ -269,6 +269,7 @@ class TestEnginePowerToSlotsInversion:
         engine.timezone = pytz.timezone("Europe/Stockholm")
         engine.sensor_map = {}
         engine.inversion_flags = {"battery": True, "grid": True}
+        engine.config = {"system": {"grid": {"max_power_kw": 8.0}}}
         return engine
 
     def test_battery_inversion_applied_in_etl(self, engine_with_inversion):

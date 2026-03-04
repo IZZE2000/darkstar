@@ -8,6 +8,7 @@ from sqlalchemy import desc, select
 
 from backend.learning.models import LearningDailyMetric
 from backend.learning.store import LearningStore
+from backend.validation import get_max_energy_per_slot
 
 logger = logging.getLogger("darkstar.learning.analyst")
 
@@ -182,10 +183,42 @@ class Analyst:
         """Fetch observations within date range using Async SQLAlchemy/Pandas."""
         from backend.learning.models import SlotObservation
 
+        # Get max threshold for spike filtering
+        try:
+            max_kwh = get_max_energy_per_slot(self.config)
+        except ValueError:
+            max_kwh = None
+            logger.warning(
+                "Analyst: Could not get max energy from config, spike filtering disabled"
+            )
+
         async with self.store.AsyncSession() as session:
-            stmt = select(
-                SlotObservation.slot_start, SlotObservation.load_kwh, SlotObservation.pv_kwh
-            ).order_by(SlotObservation.slot_start.asc())
+            # Build conditions for spike filtering
+            if max_kwh is not None:
+                # Filter out spike rows at query time
+                stmt = (
+                    select(
+                        SlotObservation.slot_start, SlotObservation.load_kwh, SlotObservation.pv_kwh
+                    )
+                    .where(
+                        SlotObservation.load_kwh.is_not(None),
+                        SlotObservation.pv_kwh.is_not(None),
+                        SlotObservation.load_kwh <= max_kwh,
+                        SlotObservation.pv_kwh <= max_kwh,
+                    )
+                    .order_by(SlotObservation.slot_start.asc())
+                )
+            else:
+                stmt = (
+                    select(
+                        SlotObservation.slot_start, SlotObservation.load_kwh, SlotObservation.pv_kwh
+                    )
+                    .where(
+                        SlotObservation.load_kwh.is_not(None),
+                        SlotObservation.pv_kwh.is_not(None),
+                    )
+                    .order_by(SlotObservation.slot_start.asc())
+                )
 
             try:
                 result = await session.execute(stmt)

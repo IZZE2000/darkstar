@@ -7,6 +7,7 @@ from ruamel.yaml import YAML
 
 from backend.learning.engine import LearningEngine
 from backend.strategy.history import append_strategy_event
+from backend.validation import get_max_energy_per_slot
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -253,10 +254,16 @@ class AuroraReflex:
         if not await self._can_update(param_path):
             return {}, "Confidence: Rate limited (changed today already)"
 
-        # Get forecast vs actual data
+        # Get forecast vs actual data with spike filtering
+        try:
+            max_kwh = get_max_energy_per_slot(self.config)
+        except ValueError:
+            max_kwh = None
+
         df = await self.store.get_forecast_vs_actual(
             days_back=CONFIDENCE_LOOKBACK_DAYS,
             target="pv",
+            max_kwh=max_kwh,
         )
 
         if len(df) < CONFIDENCE_MIN_SAMPLES:

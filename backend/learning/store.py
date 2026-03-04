@@ -446,9 +446,16 @@ class LearningStore:
         self,
         days_back: int = 14,
         target: str = "pv",
+        max_kwh: float | None = None,
     ) -> pd.DataFrame:
         """
         Compare forecast vs actual values for PV or load using Async SQLAlchemy.
+
+        Args:
+            days_back: Number of days to look back
+            target: "pv" or "load"
+            max_kwh: Maximum energy value threshold. Rows with actual values exceeding
+                    this threshold will be excluded (spike filtering).
         """
         cutoff_date = (datetime.now(self.timezone) - timedelta(days=days_back)).date().isoformat()
 
@@ -473,6 +480,10 @@ class LearningStore:
                 # REV F67: Filter out night slots (Bug #3) to avoid diluting bias signal.
                 # Only analyze slots where PV production was actually occurring.
                 conditions.append(actual_col > 0.01)
+
+            # Spike filtering: exclude rows where actual exceeds threshold
+            if max_kwh is not None:
+                conditions.append(actual_col <= max_kwh)
 
             stmt = (
                 select(
@@ -589,13 +600,29 @@ class LearningStore:
             median_idx: int = len(estimates) // 2
             return round(estimates[median_idx], 1)
 
-    async def calculate_metrics(self, days_back: int = 7) -> dict[str, Any]:
-        """Calculate learning metrics using Async SQLAlchemy."""
+    async def calculate_metrics(
+        self, days_back: int = 7, max_kwh: float | None = None
+    ) -> dict[str, Any]:
+        """Calculate learning metrics using Async SQLAlchemy.
+
+        Args:
+            days_back: Number of days to look back
+            max_kwh: Maximum energy value threshold. Rows with pv_kwh or load_kwh exceeding
+                    this threshold will be excluded from MAE calculations (spike filtering).
+        """
         cutoff_date = (datetime.now(self.timezone) - timedelta(days=days_back)).date().isoformat()
         metrics: dict[str, Any] = {}
 
         async with self.AsyncSession() as session:
-            # 1. Forecast Accuracy
+            # 1. Forecast Accuracy (PV)
+            pv_conditions = [
+                func.date(SlotObservation.slot_start) >= cutoff_date,
+                SlotObservation.pv_kwh.is_not(None),
+                SlotForecast.pv_forecast_kwh.is_not(None),
+            ]
+            if max_kwh is not None:
+                pv_conditions.append(SlotObservation.pv_kwh <= max_kwh)
+
             stmt_pv = (
                 select(func.avg(func.abs(SlotObservation.pv_kwh - SlotForecast.pv_forecast_kwh)))
                 .join(
@@ -603,7 +630,7 @@ class LearningStore:
                     (SlotObservation.slot_start == SlotForecast.slot_start)
                     & (SlotForecast.forecast_version == "aurora"),
                 )
-                .where(func.date(SlotObservation.slot_start) >= cutoff_date)
+                .where(*pv_conditions)
             )
 
             pv_res = await session.scalar(stmt_pv)
@@ -614,6 +641,14 @@ class LearningStore:
                     logger.warning(f"High PV forecast MAE detected: {mae} kWh (Threshold: 0.5)")
 
             # 2. Load Forecast Accuracy (Prefer Base Load if available)
+            load_conditions = [
+                func.date(SlotObservation.slot_start) >= cutoff_date,
+                SlotObservation.load_kwh.is_not(None),
+                SlotForecast.load_forecast_kwh.is_not(None),
+            ]
+            if max_kwh is not None:
+                load_conditions.append(SlotObservation.load_kwh <= max_kwh)
+
             stmt_load = (
                 select(
                     func.avg(
@@ -630,7 +665,7 @@ class LearningStore:
                     (SlotObservation.slot_start == SlotForecast.slot_start)
                     & (SlotForecast.forecast_version == "aurora"),
                 )
-                .where(func.date(SlotObservation.slot_start) >= cutoff_date)
+                .where(*load_conditions)
             )
 
             load_res = await session.scalar(stmt_load)

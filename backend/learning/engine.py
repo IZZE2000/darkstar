@@ -10,6 +10,7 @@ import pytz
 import yaml
 
 from backend.learning.store import LearningStore
+from backend.validation import get_max_energy_per_slot
 
 logger = logging.getLogger(__name__)
 
@@ -204,10 +205,18 @@ class LearningEngine:
             reindexed = reindexed.ffill().fillna(0)
             raw_diff = reindexed.diff().fillna(0)
 
-            # Heuristic: filter out huge spikes (>50 kWh in 15m is likely a reset or bug)
+            # Filter out huge spikes using config-derived threshold
+            # (exceeding physically possible energy for the slot duration)
+            try:
+                max_kwh = get_max_energy_per_slot(self.config)
+            except ValueError:
+                max_kwh = 50.0  # Fallback to legacy threshold if config missing
+                logger.warning(
+                    "Could not get max energy from config, using fallback threshold 50.0 kWh"
+                )
             # Clip negative values (sometimes counters reset to zero)
             deltas = raw_diff.clip(lower=0)
-            deltas[deltas > 50.0] = 0.0
+            deltas[deltas > max_kwh] = 0.0
 
             col_name = f"{canonical}_kwh"
             if col_name not in slot_df.columns:
@@ -235,7 +244,13 @@ class LearningEngine:
 
     async def calculate_metrics(self, days_back: int = 7) -> dict[str, Any]:
         """Calculate learning metrics for the last N days using the store."""
-        return await self.store.calculate_metrics(days_back)
+        # Get max threshold for spike filtering
+        try:
+            max_kwh = get_max_energy_per_slot(self.config)
+        except ValueError:
+            max_kwh = None
+
+        return await self.store.calculate_metrics(days_back, max_kwh=max_kwh)
 
     async def get_status(self) -> dict[str, Any]:
         """Get current status of the learning engine."""
@@ -327,6 +342,14 @@ class LearningEngine:
                 energy_kwh = resampled * hours_per_slot
             else:
                 energy_kwh = (resampled / 1000.0) * hours_per_slot
+
+            # Filter out huge spikes using config-derived threshold
+            try:
+                max_kwh = get_max_energy_per_slot(self.config)
+                energy_kwh = energy_kwh.where(energy_kwh <= max_kwh, 0.0)
+            except ValueError:
+                # Config missing, proceed without filtering (legacy behavior)
+                pass
 
             # Apply inversion for battery sensors (REV F55)
             if canonical == "battery" and self.inversion_flags.get("battery", False):

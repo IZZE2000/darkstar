@@ -15,6 +15,7 @@ from backend.learning.backfill import BackfillEngine
 # Local imports
 from backend.learning.store import LearningStore
 from backend.loads.service import LoadDisaggregator
+from backend.validation import get_max_energy_per_slot, validate_energy_values
 from inputs import (
     _normalize_energy_to_kwh,  # pyright: ignore[reportPrivateUsage]
     get_current_slot_prices,
@@ -429,6 +430,13 @@ async def record_observation_from_current_state(
         f"Recording observation for {slot_start}: SOC={soc_percent}% "
         f"PV={pv_kwh:.3f}kWh Load={load_kwh:.3f}kWh Water={water_kwh:.3f}kWh Bat={battery_kw:.3f}kW"
     )
+
+    # Validate energy values before storage
+    try:
+        max_kwh = get_max_energy_per_slot(config)
+        record = validate_energy_values(record, max_kwh)
+    except ValueError as e:
+        logger.warning(f"Could not validate energy values: {e}. Proceeding with raw values.")
 
     # Store
     df = pd.DataFrame([record])
