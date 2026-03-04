@@ -1,15 +1,19 @@
-import type { Plugin } from 'chart.js'
+import type { ChartData, Plugin } from 'chart.js'
 
-interface NowLineData {
+interface ExtendedChartData extends ChartData {
     nowPct?: number | null
-    labels?: string[]
 }
 
 export const nowLinePlugin: Plugin = {
     id: 'nowLine',
     afterDatasetsDraw(chart) {
-        const { ctx, chartArea: { top, bottom }, scales: { x } } = chart
-        const nowPct = (chart.config.options as any)?.nowPct
+        const {
+            ctx,
+            chartArea: { top, bottom },
+            scales: { x },
+        } = chart
+        const data = chart.data as ExtendedChartData
+        const nowPct = data.nowPct
 
         if (typeof nowPct !== 'number' || nowPct < 0 || nowPct > 1) return
 
@@ -32,7 +36,7 @@ export const nowLinePlugin: Plugin = {
         // Draw line
         ctx.save()
         ctx.beginPath()
-        ctx.strokeStyle = '#e879f9'  // Pink/magenta for consistency
+        ctx.strokeStyle = '#e879f9' // Pink/magenta for consistency
         ctx.lineWidth = 1.5
         ctx.shadowColor = '#e879f9'
         ctx.shadowBlur = 10
