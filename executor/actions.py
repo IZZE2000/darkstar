@@ -13,6 +13,7 @@ Key Features:
 """
 
 import asyncio
+import contextlib
 import logging
 import time
 from collections.abc import Callable
@@ -226,11 +227,30 @@ class HAClient:
 
     async def _get_session(self) -> aiohttp.ClientSession:
         """Get or create the aiohttp session."""
-        if self._session is None or self._session.closed:
+        import asyncio
+
+        current_loop = asyncio.get_running_loop()
+
+        # Check if we need a new session (closed, None, or different event loop)
+        need_new_session = (
+            self._session is None
+            or self._session.closed
+            or getattr(self, "_session_loop", None) != current_loop
+        )
+
+        if need_new_session:
+            # Close old session if it exists and belongs to a different loop
+            if self._session and not self._session.closed:
+                with contextlib.suppress(Exception):
+                    await self._session.close()
+
             self._session = aiohttp.ClientSession(
                 headers=self._headers,
                 timeout=self.timeout,
             )
+            self._session_loop = current_loop
+
+        assert self._session is not None
         return self._session
 
     async def close(self) -> None:
