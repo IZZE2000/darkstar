@@ -15,7 +15,13 @@ from backend.learning.backfill import BackfillEngine
 # Local imports
 from backend.learning.store import LearningStore
 from backend.loads.service import LoadDisaggregator
-from inputs import get_current_slot_prices, get_ha_sensor_float, get_ha_sensor_kw_normalized
+from inputs import (
+    _normalize_energy_to_kwh,  # pyright: ignore[reportPrivateUsage]
+    get_current_slot_prices,
+    get_ha_entity_state,
+    get_ha_sensor_float,
+    get_ha_sensor_kw_normalized,
+)
 
 logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
 logger = logging.getLogger("recorder")
@@ -183,18 +189,32 @@ async def record_observation_from_current_state(
 
     # Helper to get cumulative energy sensor value (returns None if not configured/unavailable)
     async def get_cumulative_kwh(key: str) -> float | None:
-        """Fetch cumulative energy sensor value in kWh."""
+        """Fetch cumulative energy sensor value in kWh with automatic unit normalization."""
         entity = input_sensors.get(key)
         if not entity:
             return None
         try:
-            val = await get_ha_sensor_float(str(entity))
-            if val is None:
+            # Fetch full state to get both value and unit_of_measurement
+            state = await get_ha_entity_state(str(entity))
+            if not state:
                 return None
-            # Ensure we're working in kWh (some sensors report in Wh)
-            # Most cumulative sensors report in kWh, but we normalize just in case
-            return float(val)
-        except (ValueError, TypeError, Exception):
+
+            raw_value = state.get("state")
+            if raw_value in (None, "unknown", "unavailable"):
+                return None
+
+            try:
+                value = float(raw_value)
+            except (TypeError, ValueError):
+                return None
+
+            # Get unit of measurement for normalization (handles Wh, kWh, MWh)
+            attributes = state.get("attributes", {})
+            unit = attributes.get("unit_of_measurement")
+
+            # Normalize to kWh
+            return _normalize_energy_to_kwh(value, unit)
+        except Exception:
             return None
 
     # Current Power State (Snapshot)

@@ -28,6 +28,22 @@ The recorder SHALL persist its last known meter readings to a local state file t
 - **AND** the current HA reading is `500.5 kWh`
 - **THEN** it SHALL record `0.5 kWh` for the missing slot instead of defaulting to 0 or snapshots
 
+### Requirement: Automatic Unit Normalization
+The system SHALL automatically normalize cumulative energy sensor values to kWh, supporting Wh, kWh, and MWh units based on the sensor's `unit_of_measurement` attribute.
+
+#### Scenario: Sensor reports in Watt-hours
+- **WHEN** a cumulative sensor reports `500000` with `unit_of_measurement: "Wh"`
+- **THEN** the system SHALL normalize to `500.0 kWh`
+- **AND** delta calculations SHALL use the normalized value
+
+#### Scenario: Sensor reports in kilowatt-hours
+- **WHEN** a cumulative sensor reports `500.0` with `unit_of_measurement: "kWh"`
+- **THEN** the system SHALL use the value as-is
+
+#### Scenario: Sensor reports in megawatt-hours
+- **WHEN** a cumulative sensor reports `0.5` with `unit_of_measurement: "MWh"`
+- **THEN** the system SHALL normalize to `500.0 kWh`
+
 ### Requirement: Snapshot Fallback
 The recorder SHALL fall back to power-snapshot based estimation (kW * 0.25h) only when a cumulative energy sensor is not provided for a specific metric.
 

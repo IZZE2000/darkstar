@@ -374,12 +374,31 @@ class TestRecorderDeltaLogic:
                 }
                 return cumulative_values.get(entity)
 
+            async def mock_get_ha_entity_state(entity):
+                # Return state structure with unit_of_measurement for cumulative sensors
+                state_values = {
+                    "sensor.grid_import_total": {
+                        "state": "100.5",
+                        "attributes": {"unit_of_measurement": "kWh"},
+                    },
+                    "sensor.grid_export_total": {
+                        "state": "50.25",
+                        "attributes": {"unit_of_measurement": "kWh"},
+                    },
+                    "sensor.battery_soc": {
+                        "state": "50.0",
+                        "attributes": {"unit_of_measurement": "%"},
+                    },
+                }
+                return state_values.get(entity)
+
             with (
                 patch(
                     "backend.recorder.get_ha_sensor_kw_normalized",
                     side_effect=mock_get_ha_sensor_kw_normalized,
                 ),
                 patch("backend.recorder.get_ha_sensor_float", side_effect=mock_get_ha_sensor_float),
+                patch("backend.recorder.get_ha_entity_state", side_effect=mock_get_ha_entity_state),
                 patch("backend.recorder.get_current_slot_prices", return_value=None),
             ):
                 mock_store = MagicMock()
