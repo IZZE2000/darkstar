@@ -265,3 +265,89 @@ class TestHAClientSafetyGuards:
             "read-only" in str(exc_info.value).lower()
             or "invalid domain" in str(exc_info.value).lower()
         )
+
+
+class TestHAClientCrossThreadSafety:
+    """Test HAClient handles cross-thread event loop usage correctly.
+
+    These tests verify the fix for: RuntimeError: Timeout context manager
+    should be used inside a task, which occurred when the executor's
+    background thread tried to use an HTTP client session created in
+    the FastAPI main thread's event loop.
+    """
+
+    @pytest.mark.asyncio
+    async def test_session_recreated_on_different_event_loop(self):
+        """Session is recreated when used from a different event loop."""
+        from unittest.mock import MagicMock, patch
+
+        client = HAClient("http://ha:8123", "token123")
+
+        # Create mock sessions for loop 1 and loop 2
+        mock_session1 = MagicMock()
+        mock_session1.closed = False
+        mock_session2 = MagicMock()
+        mock_session2.closed = False
+
+        # Track which session was created
+        sessions_created = []
+
+        def mock_session_factory(*args, **kwargs):
+            if len(sessions_created) == 0:
+                sessions_created.append(mock_session1)
+                return mock_session1
+            else:
+                sessions_created.append(mock_session2)
+                return mock_session2
+
+        # First call: Create session in loop 1
+        loop1 = MagicMock()
+        with (
+            patch("executor.actions.aiohttp.ClientSession", side_effect=mock_session_factory),
+            patch("asyncio.get_running_loop", return_value=loop1),
+        ):
+            session1 = await client._get_session()
+
+        # Mark session1 as closed to trigger recreation
+        mock_session1.closed = True
+
+        # Second call: Use from loop 2 (simulates executor thread)
+        loop2 = MagicMock()
+        with (
+            patch("executor.actions.aiohttp.ClientSession", side_effect=mock_session_factory),
+            patch("asyncio.get_running_loop", return_value=loop2),
+        ):
+            session2 = await client._get_session()
+
+        # Verify we got a different session
+        assert session1 is mock_session1
+        assert session2 is mock_session2
+        assert session1 is not session2
+        assert client._session_loop == loop2
+
+    @pytest.mark.asyncio
+    async def test_session_reused_on_same_event_loop(self):
+        """Session is reused when called from the same event loop."""
+        from unittest.mock import MagicMock, patch
+
+        client = HAClient("http://ha:8123", "token123")
+
+        # Create mock session
+        mock_session = MagicMock()
+        mock_session.closed = False
+
+        # Use same loop for both calls
+        loop = MagicMock()
+
+        with (
+            patch("executor.actions.aiohttp.ClientSession", return_value=mock_session),
+            patch("asyncio.get_running_loop", return_value=loop),
+        ):
+            session1 = await client._get_session()
+            session2 = await client._get_session()
+
+        # Verify we got the same session
+        assert session1 is mock_session
+        assert session2 is mock_session
+        assert session1 is session2
+        assert client._session_loop == loop
