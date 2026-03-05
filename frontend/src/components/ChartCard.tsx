@@ -1371,34 +1371,20 @@ function buildLiveData(
             const hourFraction = resolutionMinutes / 60
 
             price.push(slot.import_price_sek_kwh ?? null)
-            // For pv/load: prefer actual if available, fallback to forecast. Convert kWh to kW.
-            const rawPvKwh = isExec && slot.actual_pv_kwh != null ? slot.actual_pv_kwh : (slot.pv_forecast_kwh ?? null)
+            // Main bars: always show planned/forecasted values
+            // Actuals are shown in overlay lines
+            const rawPvKwh = slot.pv_forecast_kwh ?? null
             pv.push(rawPvKwh != null ? rawPvKwh / hourFraction : null)
 
-            const rawLoadKwh =
-                isExec && slot.actual_load_kwh != null ? slot.actual_load_kwh : (slot.load_forecast_kwh ?? null)
+            const rawLoadKwh = slot.load_forecast_kwh ?? null
             load.push(rawLoadKwh != null ? rawLoadKwh / hourFraction : null)
 
-            // For charge: only use actual if executed AND not null, otherwise use planned
-            charge.push(
-                isExec && slot.actual_charge_kw != null
-                    ? slot.actual_charge_kw
-                    : (slot.battery_charge_kw ?? slot.charge_kw ?? null),
-            )
-            discharge.push(
-                isExec && slot.actual_discharge_kw != null
-                    ? slot.actual_discharge_kw
-                    : (slot.battery_discharge_kw ?? slot.discharge_kw ?? null),
-            )
+            // Main bars: always show planned/forecasted values
+            charge.push(slot.battery_charge_kw ?? slot.charge_kw ?? null)
+            discharge.push(slot.battery_discharge_kw ?? slot.discharge_kw ?? null)
 
-            const rawExportKwh =
-                isExec && slot.actual_export_kw != null ? slot.actual_export_kw : (slot.export_kwh ?? null)
-            // If it's actual_export_kw, it's already kW. If export_kwh, convert.
-            if (isExec && slot.actual_export_kw != null) {
-                exp.push(slot.actual_export_kw)
-            } else {
-                exp.push(rawExportKwh != null ? rawExportKwh / hourFraction : null)
-            }
+            const rawExportKwh = slot.export_kwh ?? null
+            exp.push(rawExportKwh != null ? rawExportKwh / hourFraction : null)
 
             water.push(slot.water_heating_kw ?? null)
             evCharging.push(slot.ev_charging_kw ?? null)
