@@ -10,6 +10,7 @@ from ml.forward import generate_forward_slots
 
 
 class TestAuroraForward(unittest.IsolatedAsyncioTestCase):
+    @patch("ml.forward.datetime")
     @patch("ml.forward.get_learning_engine")
     @patch("ml.forward._load_models")
     @patch("ml.forward.get_weather_series")
@@ -26,19 +27,26 @@ class TestAuroraForward(unittest.IsolatedAsyncioTestCase):
         mock_weather,
         mock_models,
         mock_get_engine,
+        mock_datetime,
     ):
         print("\n--- Testing Aurora Forward Pass with Multi-Array ---")
 
-        # 1. Mock graduation level
+        # 1. Mock datetime to return a fixed midday summer time
+        # This ensures sun is above horizon during physics calculation
+        fixed_now = datetime(2024, 6, 15, 12, 0, tzinfo=pytz.UTC)
+        mock_datetime.now.return_value = fixed_now
+        mock_datetime.side_effect = datetime
+
+        # 2. Mock graduation level
         mock_grad_level.return_value = MagicMock(level=2)
 
-        # 2. Mock LearningEngine
+        # 3. Mock LearningEngine
         mock_engine = MagicMock(spec=LearningEngine)
         mock_engine.store_forecasts = AsyncMock()
         mock_engine.timezone = pytz.UTC
         mock_engine.db_path = "fake_db.db"
 
-        # 2. Mock SunCalculator
+        # 4. Mock SunCalculator
         mock_sun_instance = MagicMock()
         mock_sun_instance.is_sun_up.return_value = True
         mock_sun.return_value = mock_sun_instance
@@ -52,15 +60,11 @@ class TestAuroraForward(unittest.IsolatedAsyncioTestCase):
         mock_engine.store_forecasts = AsyncMock()
         mock_get_engine.return_value = mock_engine
 
-        # 2. Mock Models (empty to trigger fallback)
+        # 5. Mock Models (empty to trigger fallback)
         mock_models.return_value = {}
 
-        # 3. Mock Weather data
-        # Get start time that forward pass will actually use (current slot alignment)
-        now = datetime.now(pytz.UTC)
-        minutes = (now.minute // 15) * 15
-        slot_start = now.replace(minute=minutes, second=0, microsecond=0)
-
+        # 6. Mock Weather data - align with fixed datetime
+        slot_start = fixed_now.replace(minute=0, second=0, microsecond=0)
         mock_weather.return_value = pd.DataFrame(
             {
                 "temp_c": [20.0] * 8,

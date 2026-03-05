@@ -16,6 +16,7 @@ from backend.learning import LearningEngine
 class TestHybridPVIntegration(unittest.IsolatedAsyncioTestCase):
     """Integration tests for physics + ML residual composition."""
 
+    @patch("ml.forward.datetime")
     @patch("ml.forward.get_learning_engine")
     @patch("ml.forward._load_models")
     @patch("ml.forward.get_weather_series")
@@ -32,9 +33,16 @@ class TestHybridPVIntegration(unittest.IsolatedAsyncioTestCase):
         mock_weather,
         mock_models,
         mock_get_engine,
+        mock_datetime,
     ):
         """Test that hybrid mode correctly composes physics + ML residual."""
         from ml.forward import generate_forward_slots
+
+        # Mock datetime to return a fixed midday summer time
+        # This ensures sun is above horizon during physics calculation
+        fixed_now = datetime(2024, 6, 15, 12, 0, tzinfo=pytz.UTC)
+        mock_datetime.now.return_value = fixed_now
+        mock_datetime.side_effect = datetime
 
         # Mock graduation level
         mock_grad_level.return_value = MagicMock(level=2)
@@ -57,11 +65,8 @@ class TestHybridPVIntegration(unittest.IsolatedAsyncioTestCase):
         mock_sun_instance.is_sun_up.return_value = True
         mock_sun.return_value = mock_sun_instance
 
-        # Mock weather
-        now = datetime.now(pytz.UTC)
-        minutes = (now.minute // 15) * 15
-        slot_start = now.replace(minute=minutes, second=0, microsecond=0)
-
+        # Mock weather - align with fixed datetime
+        slot_start = fixed_now.replace(minute=0, second=0, microsecond=0)
         mock_weather.return_value = pd.DataFrame(
             {
                 "temp_c": [20.0] * 4,
@@ -100,6 +105,7 @@ class TestHybridPVIntegration(unittest.IsolatedAsyncioTestCase):
             pv = fc["pv_forecast_kwh"]
             self.assertGreater(pv, 0, "PV forecast should be positive during daytime")
 
+    @patch("ml.forward.datetime")
     @patch("ml.forward.get_learning_engine")
     @patch("ml.forward._load_models")
     @patch("ml.forward.get_weather_series")
@@ -116,9 +122,16 @@ class TestHybridPVIntegration(unittest.IsolatedAsyncioTestCase):
         mock_weather,
         mock_models,
         mock_get_engine,
+        mock_datetime,
     ):
         """Test that physics-only mode works when no ML models available."""
         from ml.forward import generate_forward_slots
+
+        # Mock datetime to return a fixed midday summer time
+        # This ensures sun is above horizon during physics calculation
+        fixed_now = datetime(2024, 6, 15, 12, 0, tzinfo=pytz.UTC)
+        mock_datetime.now.return_value = fixed_now
+        mock_datetime.side_effect = datetime
 
         mock_grad_level.return_value = MagicMock(level=2)
 
@@ -138,9 +151,8 @@ class TestHybridPVIntegration(unittest.IsolatedAsyncioTestCase):
         mock_sun_instance.is_sun_up.return_value = True
         mock_sun.return_value = mock_sun_instance
 
-        now = datetime.now(pytz.UTC)
-        minutes = (now.minute // 15) * 15
-        slot_start = now.replace(minute=minutes, second=0, microsecond=0)
+        # Mock weather - align with fixed datetime
+        slot_start = fixed_now.replace(minute=0, second=0, microsecond=0)
 
         mock_weather.return_value = pd.DataFrame(
             {
