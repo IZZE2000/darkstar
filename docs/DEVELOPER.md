@@ -300,7 +300,7 @@ We recommend running Darkstar on a Proxmox LXC or dedicated Pi.
     ```bash
     cd /opt/darkstar
     git pull --rebase
-    source venv/bin/activate
+    source .venv/bin/activate
     pip install -r requirements.txt
     ```
 
