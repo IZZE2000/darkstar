@@ -40,8 +40,9 @@ class TestDeyeMigration:
         """Verify that mode translation matches expected v2 behavior."""
         ctrl_cfg, inv_cfg, _wh_cfg = configs
 
-        # Test 1: Export case
-        slot_export = SlotPlan(export_kw=5.0, charge_kw=0)
+        # Test 1: Export case (battery discharge to grid)
+        # Requires both export_kw > 0 AND discharge_kw > 0
+        slot_export = SlotPlan(export_kw=5.0, discharge_kw=5.0, charge_kw=0)
         state = SystemState(current_soc_percent=50.0)
 
         decision = make_decision(
@@ -95,7 +96,8 @@ class TestDeyeMigration:
         """Verify that system falls back to generic profile if profile is None."""
         ctrl_cfg, inv_cfg, _wh_cfg = configs
         state = SystemState(current_soc_percent=50.0)
-        slot = SlotPlan(export_kw=5.0)
+        # Battery export requires both export_kw > 0 AND discharge_kw > 0
+        slot = SlotPlan(export_kw=5.0, discharge_kw=5.0)
 
         # No profile provided
         decision = make_decision(

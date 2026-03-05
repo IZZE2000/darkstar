@@ -76,6 +76,25 @@ class TestProfileV2Modes:
         assert mode.description is not None
         assert len(mode.description) > 0
 
+    def test_deye_self_consumption_has_max_charge_current(self):
+        """Deye self_consumption mode must include max_charge_current action.
+
+        This enables PV surplus export while charging battery by limiting
+        charge current. Excess PV beyond the limit exports to grid when
+        Solar Sell is enabled.
+        """
+        profile = load_profile("deye")
+        mode = profile.get_mode("self_consumption")
+
+        # Find max_charge_current action
+        charge_actions = [a for a in mode.actions if a.entity == "max_charge_current"]
+        assert len(charge_actions) == 1, "self_consumption must have max_charge_current action"
+
+        action = charge_actions[0]
+        assert action.value == "{{charge_value}}", (
+            "max_charge_current must use {{charge_value}} template"
+        )
+
 
 class TestProfileV2EntityValidation:
     """Test v2 profile entity validation."""

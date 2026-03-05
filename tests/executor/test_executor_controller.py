@@ -84,7 +84,8 @@ class TestControllerFollowPlan:
 
     def test_export_mode_when_export_planned(self, controller):
         """When export is planned, use export mode intent."""
-        slot = SlotPlan(export_kw=5.0)
+        # Battery export requires both export_kw > 0 AND discharge_kw > 0
+        slot = SlotPlan(export_kw=5.0, discharge_kw=5.0)
         state = SystemState()
 
         decision = controller.decide(slot, state)
@@ -146,6 +147,60 @@ class TestControllerFollowPlan:
         decision = controller.decide(slot, state)
 
         assert decision.mode_intent == "self_consumption"
+
+    # Tests for PV surplus vs battery export mode selection (Bug fix)
+    def test_pv_surplus_uses_self_consumption_not_export(self, controller):
+        """PV surplus (charge + export, no discharge) uses self_consumption mode.
+
+        Bug: Previously, any export_kw > 0 triggered export mode, causing
+        battery to discharge when it should charge during PV surplus.
+        Fix: PV surplus uses self_consumption mode (grid_charging OFF,
+        max_charge_current limited to enable PV export).
+        """
+        slot = SlotPlan(charge_kw=3.5, export_kw=1.96, discharge_kw=0.0)
+        state = SystemState()
+
+        decision = controller.decide(slot, state)
+
+        # Should use self_consumption, not export (grid_charging OFF for PV surplus)
+        assert decision.mode_intent == "self_consumption"
+
+    def test_battery_export_uses_export_mode(self, controller):
+        """Battery discharge to grid uses export mode."""
+        slot = SlotPlan(charge_kw=0.0, export_kw=2.0, discharge_kw=2.0)
+        state = SystemState()
+
+        decision = controller.decide(slot, state)
+
+        assert decision.mode_intent == "export"
+
+    def test_grid_charge_uses_charge_mode(self, controller):
+        """Grid charging (no export) uses charge mode."""
+        slot = SlotPlan(charge_kw=5.0, export_kw=0.0, discharge_kw=0.0)
+        state = SystemState()
+
+        decision = controller.decide(slot, state)
+
+        assert decision.mode_intent == "charge"
+
+    def test_idle_when_at_soc_target_no_activity(self, controller):
+        """When at SoC target with no charging/discharging, use idle."""
+        slot = SlotPlan(charge_kw=0.0, export_kw=0.0, discharge_kw=0.0, soc_target=50)
+        state = SystemState(current_soc_percent=50)
+
+        decision = controller.decide(slot, state)
+
+        assert decision.mode_intent == "idle"
+
+    def test_idle_when_below_soc_target_no_activity(self, controller):
+        """When below SoC target with no activity, use idle to prevent discharge."""
+        slot = SlotPlan(charge_kw=0.0, export_kw=0.0, discharge_kw=0.0, soc_target=80)
+        state = SystemState(current_soc_percent=70)
+
+        decision = controller.decide(slot, state)
+
+        # Below target with no charge/export planned - use idle to hold battery
+        assert decision.mode_intent == "idle"
 
     def test_soc_target_from_plan(self, controller):
         """SoC target comes from slot plan."""
@@ -251,7 +306,8 @@ class TestControllerApplyOverride:
 
     def test_no_override_follows_plan(self, controller):
         """When no override, decision follows plan."""
-        slot = SlotPlan(export_kw=5.0)
+        # Battery export requires both export_kw > 0 AND discharge_kw > 0
+        slot = SlotPlan(export_kw=5.0, discharge_kw=5.0)
         state = SystemState()
         override = None
 
@@ -467,7 +523,8 @@ class TestMakeDecisionConvenience:
 
     def test_with_defaults(self):
         """Works with default config."""
-        slot = SlotPlan(export_kw=5.0)
+        # Battery export requires both export_kw > 0 AND discharge_kw > 0
+        slot = SlotPlan(export_kw=5.0, discharge_kw=5.0)
         state = SystemState()
 
         decision = make_decision(slot, state)

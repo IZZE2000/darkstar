@@ -179,10 +179,20 @@ class Controller:
         """Follow the slot plan for normal operation using 4 mode intents."""
         # Determine mode intent based on slot plan
         # Order matters: export > charge > idle > self_consumption
-        if slot.export_kw > 0:
+        #
+        # PV surplus vs battery export distinction:
+        # - Battery export: discharge_kw > 0 (battery actively discharging to grid)
+        # - PV surplus: discharge_kw == 0, charge_kw > 0 (excess PV exports while charging)
+        if slot.export_kw > 0 and slot.discharge_kw > 0:
+            # Battery discharge to grid - use export mode
             mode_intent = "export"
-        elif slot.charge_kw > 0:
+        elif slot.charge_kw > 0 and slot.export_kw == 0:
+            # Grid charging (no PV surplus) - use charge mode with grid_charging ON
             mode_intent = "charge"
+        elif slot.charge_kw > 0:
+            # PV surplus (charge_kw > 0 AND export_kw > 0 AND discharge_kw == 0)
+            # Charge battery from PV while exporting excess - use self_consumption
+            mode_intent = "self_consumption"
         elif round(state.current_soc_percent) <= slot.soc_target:
             # At or below SoC target - use idle to hold battery
             # Round current SoC to integer for consistent comparison with plan target

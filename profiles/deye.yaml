@@ -91,6 +91,10 @@ modes:
         value: "Zero Export To CT"
       - entity: "grid_charging_enable"
         value: off
+      - entity: "max_charge_current"
+        value: "{{charge_value}}"
+        # Limit PV charging current to enable excess export.
+        # With Solar Sell ON (default), excess PV beyond this limit exports to grid.
       - entity: "soc_target"
         value: "{{soc_target}}"
       - entity: "max_discharge_current"
