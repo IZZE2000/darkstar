@@ -72,14 +72,27 @@ class RecorderStateStore:
             logger.error(f"Failed to save state file: {e}")
 
     def get_delta(
-        self, key: str, current_value: float, timestamp: datetime
+        self,
+        key: str,
+        current_value: float,
+        timestamp: datetime,
+        sensor_timestamp: datetime | None = None,
+        target_seconds: float = 900.0,
     ) -> tuple[float | None, bool]:
         """Calculate delta between current and previous meter reading.
+
+        When *sensor_timestamp* (the HA ``last_updated`` time) is supplied,
+        the raw delta is scaled proportionally so that it represents exactly
+        *target_seconds* of energy (default 900 s = 15 min).  This corrects
+        the sawtooth artifact caused by sensor-update and recorder cycles
+        running at different frequencies.
 
         Args:
             key: Unique identifier for this meter (e.g., 'total_pv_production')
             current_value: Current meter reading
-            timestamp: Current timestamp
+            timestamp: Current timestamp (recorder time)
+            sensor_timestamp: HA sensor's last_updated time (optional)
+            target_seconds: Target time span for scaling (default 900 = 15 min)
 
         Returns:
             Tuple of (delta_value, is_valid):
@@ -88,11 +101,20 @@ class RecorderStateStore:
         """
         previous = self._state.get(key, {})
         previous_value = previous.get("value")
+        previous_sensor_ts_str = previous.get("sensor_timestamp")
+
+        # -- persist new state ------------------------------------------------
+        new_entry: dict[str, Any] = {
+            "value": current_value,
+            "timestamp": timestamp.isoformat(),
+        }
+        if sensor_timestamp is not None:
+            new_entry["sensor_timestamp"] = sensor_timestamp.isoformat()
 
         # No previous state - can't calculate delta
         if previous_value is None:
             logger.debug(f"No previous state for {key}, storing initial value")
-            self._state[key] = {"value": current_value, "timestamp": timestamp.isoformat()}
+            self._state[key] = new_entry
             self.save()
             return None, True
 
@@ -101,7 +123,7 @@ class RecorderStateStore:
             delta = current_value - float(previous_value)
         except (TypeError, ValueError):
             logger.warning(f"Invalid previous value for {key}: {previous_value}")
-            self._state[key] = {"value": current_value, "timestamp": timestamp.isoformat()}
+            self._state[key] = new_entry
             self.save()
             return None, True
 
@@ -111,12 +133,30 @@ class RecorderStateStore:
                 f"Meter reset detected for {key}: {previous_value} -> {current_value} "
                 f"(delta={delta:.3f} kWh). Using fallback."
             )
-            self._state[key] = {"value": current_value, "timestamp": timestamp.isoformat()}
+            self._state[key] = new_entry
             self.save()
             return None, False
 
-        # Update state with current reading
-        self._state[key] = {"value": current_value, "timestamp": timestamp.isoformat()}
+        # -- time-proportional scaling ----------------------------------------
+        # Without this, deltas alternate between ~10 min and ~20 min of real
+        # production when sensors update every 10 min but we record every 15.
+        if delta > 0 and sensor_timestamp is not None and previous_sensor_ts_str is not None:
+            try:
+                prev_sensor_ts = datetime.fromisoformat(previous_sensor_ts_str)
+                actual_seconds = (sensor_timestamp - prev_sensor_ts).total_seconds()
+                # Only scale within a sane window (5 min - 60 min).
+                # Outside that range (restarts, long gaps) raw delta is safer.
+                if 300 <= actual_seconds <= 3600:
+                    scaled_delta = delta * (target_seconds / actual_seconds)
+                    logger.debug(
+                        f"{key}: scaled {delta:.3f} kWh over {actual_seconds:.0f}s "
+                        f"to {scaled_delta:.3f} kWh over {target_seconds:.0f}s"
+                    )
+                    delta = scaled_delta
+            except (ValueError, TypeError):
+                pass  # keep raw delta on parse errors
+
+        self._state[key] = new_entry
         self.save()
 
         return delta, True
@@ -188,35 +228,53 @@ async def record_observation_from_current_state(
             return default
         return val
 
-    # Helper to get cumulative energy sensor value (returns None if not configured/unavailable)
-    async def get_cumulative_kwh(key: str) -> float | None:
-        """Fetch cumulative energy sensor value in kWh with automatic unit normalization."""
+    # Helper to get cumulative energy sensor value and timestamp
+    async def get_cumulative_kwh(key: str) -> tuple[float | None, datetime | None]:
+        """Fetch cumulative energy sensor value in kWh and its HA timestamp.
+
+        Returns:
+            Tuple of (kwh_value, sensor_timestamp) where sensor_timestamp is
+            the HA entity's last_updated time for time-proportional scaling.
+        """
         entity = input_sensors.get(key)
         if not entity:
-            return None
+            return None, None
         try:
             # Fetch full state to get both value and unit_of_measurement
             state = await get_ha_entity_state(str(entity))
             if not state:
-                return None
+                return None, None
 
             raw_value = state.get("state")
             if raw_value in (None, "unknown", "unavailable"):
-                return None
+                return None, None
 
             try:
                 value = float(raw_value)
             except (TypeError, ValueError):
-                return None
+                return None, None
 
             # Get unit of measurement for normalization (handles Wh, kWh, MWh)
             attributes = state.get("attributes", {})
             unit = attributes.get("unit_of_measurement")
 
             # Normalize to kWh
-            return _normalize_energy_to_kwh(value, unit)
+            kwh = _normalize_energy_to_kwh(value, unit)
+
+            # Extract the sensor's own timestamp for time-proportional scaling
+            sensor_ts: datetime | None = None
+            for ts_key in ("last_updated", "last_changed"):
+                ts_str = state.get(ts_key)
+                if ts_str:
+                    try:
+                        sensor_ts = datetime.fromisoformat(ts_str)
+                        break
+                    except (ValueError, TypeError):
+                        continue
+
+            return kwh, sensor_ts
         except Exception:
-            return None
+            return None, None
 
     # Current Power State (Snapshot)
     pv_kw = await get_kw("pv_power")
@@ -291,9 +349,11 @@ async def record_observation_from_current_state(
             - energy_kwh: Calculated energy in kWh
             - used_cumulative: True if cumulative sensor was used, False if fallback
         """
-        cumulative = await get_cumulative_kwh(cumulative_key)
+        cumulative, sensor_ts = await get_cumulative_kwh(cumulative_key)
         if cumulative is not None:
-            delta, is_valid = state_store.get_delta(state_key, cumulative, now)
+            delta, is_valid = state_store.get_delta(
+                state_key, cumulative, now, sensor_timestamp=sensor_ts
+            )
             if delta is not None and is_valid:
                 logger.debug(f"Using cumulative {cumulative_key}: delta={delta:.3f} kWh")
                 return delta, True
@@ -326,16 +386,16 @@ async def record_observation_from_current_state(
         )
     else:
         # For net meter, try to get cumulative import and export if available
-        import_cumulative = await get_cumulative_kwh("total_grid_import")
-        export_cumulative = await get_cumulative_kwh("total_grid_export")
+        import_cumulative, import_ts = await get_cumulative_kwh("total_grid_import")
+        export_cumulative, export_ts = await get_cumulative_kwh("total_grid_export")
 
         if import_cumulative is not None and export_cumulative is not None:
             # Use cumulative sensors for both
             import_delta, import_valid = state_store.get_delta(
-                "grid_import_total", import_cumulative, now
+                "grid_import_total", import_cumulative, now, sensor_timestamp=import_ts
             )
             export_delta, export_valid = state_store.get_delta(
-                "grid_export_total", export_cumulative, now
+                "grid_export_total", export_cumulative, now, sensor_timestamp=export_ts
             )
 
             if import_delta is not None and import_valid:

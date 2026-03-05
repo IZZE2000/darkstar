@@ -617,3 +617,278 @@ class TestRecorderSpikeValidation:
 
                 # Should still store the record
                 assert len(stored_records) == 1
+
+
+class TestRecorderTimeScaling:
+    """Test suite for time-proportional scaling to fix sawtooth pattern."""
+
+    def test_time_proportional_scaling_short_interval(self):
+        """Task 4.1: Scale up when sensor interval is shorter than 15 min.
+
+        Raw delta covers 10 min, scaled to 15 min.
+        """
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_file = Path(tmpdir) / "state.json"
+            store = RecorderStateStore(state_file)
+            store.load()
+
+            # First reading at 10:43
+            ts1 = datetime(2024, 1, 1, 10, 43, 0)
+            store.get_delta("pv_total", 100.0, ts1, sensor_timestamp=ts1)
+
+            # Second reading at 10:53 (10 min later)
+            ts2 = datetime(2024, 1, 1, 10, 53, 0)
+            sensor_ts2 = datetime(2024, 1, 1, 10, 53, 0)
+            delta, is_valid = store.get_delta("pv_total", 102.0, ts2, sensor_timestamp=sensor_ts2)
+
+            # Raw delta: 2.0 kWh over 10 min
+            # Scaled: 2.0 * (15/10) = 3.0 kWh
+            assert delta == pytest.approx(3.0, abs=0.01)
+            assert is_valid is True
+
+    def test_time_proportional_scaling_long_interval(self):
+        """Task 4.1: Scale down when sensor interval is longer than 15 min.
+
+        Raw delta covers 20 min, scaled to 15 min.
+        """
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_file = Path(tmpdir) / "state.json"
+            store = RecorderStateStore(state_file)
+            store.load()
+
+            # First reading at 10:33
+            ts1 = datetime(2024, 1, 1, 10, 33, 0)
+            store.get_delta("pv_total", 100.0, ts1, sensor_timestamp=ts1)
+
+            # Second reading at 10:53 (20 min later)
+            ts2 = datetime(2024, 1, 1, 10, 53, 0)
+            sensor_ts2 = datetime(2024, 1, 1, 10, 53, 0)
+            delta, is_valid = store.get_delta("pv_total", 104.0, ts2, sensor_timestamp=sensor_ts2)
+
+            # Raw delta: 4.0 kWh over 20 min
+            # Scaled: 4.0 * (15/20) = 3.0 kWh
+            assert delta == pytest.approx(3.0, abs=0.01)
+            assert is_valid is True
+
+    def test_backward_compatibility_missing_sensor_timestamp(self):
+        """Task 4.2: No scaling when sensor_timestamp is None.
+
+        Old state files or missing HA timestamps should use raw delta.
+        """
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_file = Path(tmpdir) / "state.json"
+            store = RecorderStateStore(state_file)
+            store.load()
+
+            # First reading without sensor timestamp
+            ts1 = datetime(2024, 1, 1, 10, 0, 0)
+            store.get_delta("pv_total", 100.0, ts1, sensor_timestamp=None)
+
+            # Second reading also without sensor timestamp
+            ts2 = datetime(2024, 1, 1, 10, 15, 0)
+            delta, is_valid = store.get_delta("pv_total", 103.0, ts2, sensor_timestamp=None)
+
+            # No scaling applied
+            assert delta == 3.0
+            assert is_valid is True
+
+    def test_backward_compatibility_old_state_file(self):
+        """Task 4.2: Old state files without sensor_timestamp field work.
+
+        Simulate loading from an old-format state file.
+        """
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_file = Path(tmpdir) / "state.json"
+            # Create old-format state file (no sensor_timestamp)
+            old_state = {
+                "pv_total": {
+                    "value": 100.0,
+                    "timestamp": "2024-01-01T10:00:00",
+                    # No sensor_timestamp field
+                }
+            }
+            state_file.write_text(json.dumps(old_state))
+
+            store = RecorderStateStore(state_file)
+            store.load()
+
+            # New reading with sensor timestamp
+            ts2 = datetime(2024, 1, 1, 10, 15, 0)
+            sensor_ts2 = datetime(2024, 1, 1, 10, 13, 0)  # 13 min gap
+            delta, is_valid = store.get_delta("pv_total", 102.6, ts2, sensor_timestamp=sensor_ts2)
+
+            # Old state has no sensor_timestamp, so no scaling
+            assert delta == pytest.approx(2.6, abs=0.001)
+            assert is_valid is True
+
+            # State file should now have sensor_timestamp for next cycle
+            store2 = RecorderStateStore(state_file)
+            store2.load()
+            assert "sensor_timestamp" in store2._state["pv_total"]
+
+    def test_scaling_window_bounds_too_short(self):
+        """Task 4.3: No scaling when interval < 5 minutes.
+
+        Likely sensor glitch or rapid updates.
+        """
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_file = Path(tmpdir) / "state.json"
+            store = RecorderStateStore(state_file)
+            store.load()
+
+            ts1 = datetime(2024, 1, 1, 10, 0, 0)
+            store.get_delta("pv_total", 100.0, ts1, sensor_timestamp=ts1)
+
+            # Only 3 minutes later (too short)
+            ts2 = datetime(2024, 1, 1, 10, 3, 0)
+            sensor_ts2 = datetime(2024, 1, 1, 10, 3, 0)
+            delta, is_valid = store.get_delta("pv_total", 101.0, ts2, sensor_timestamp=sensor_ts2)
+
+            # No scaling (outside 5-60 min window)
+            assert delta == 1.0
+            assert is_valid is True
+
+    def test_scaling_window_bounds_too_long(self):
+        """Task 4.3: No scaling when interval > 60 minutes.
+
+        Likely restart or long gap.
+        """
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_file = Path(tmpdir) / "state.json"
+            store = RecorderStateStore(state_file)
+            store.load()
+
+            ts1 = datetime(2024, 1, 1, 10, 0, 0)
+            store.get_delta("pv_total", 100.0, ts1, sensor_timestamp=ts1)
+
+            # 90 minutes later (too long)
+            ts2 = datetime(2024, 1, 1, 11, 30, 0)
+            sensor_ts2 = datetime(2024, 1, 1, 11, 30, 0)
+            delta, is_valid = store.get_delta("pv_total", 110.0, ts2, sensor_timestamp=sensor_ts2)
+
+            # No scaling (outside 5-60 min window)
+            assert delta == 10.0
+            assert is_valid is True
+
+    def test_scaling_window_bounds_exactly_5_min(self):
+        """Task 4.3: Scaling applied at exactly 5 minutes.
+
+        Lower boundary of the valid window.
+        """
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_file = Path(tmpdir) / "state.json"
+            store = RecorderStateStore(state_file)
+            store.load()
+
+            ts1 = datetime(2024, 1, 1, 10, 0, 0)
+            store.get_delta("pv_total", 100.0, ts1, sensor_timestamp=ts1)
+
+            # Exactly 5 minutes later
+            ts2 = datetime(2024, 1, 1, 10, 5, 0)
+            sensor_ts2 = datetime(2024, 1, 1, 10, 5, 0)
+            delta, is_valid = store.get_delta("pv_total", 101.0, ts2, sensor_timestamp=sensor_ts2)
+
+            # Should scale: 1.0 * (15/5) = 3.0
+            assert delta == pytest.approx(3.0, abs=0.01)
+            assert is_valid is True
+
+    def test_scaling_window_bounds_exactly_60_min(self):
+        """Task 4.3: Scaling applied at exactly 60 minutes.
+
+        Upper boundary of the valid window.
+        """
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_file = Path(tmpdir) / "state.json"
+            store = RecorderStateStore(state_file)
+            store.load()
+
+            ts1 = datetime(2024, 1, 1, 10, 0, 0)
+            store.get_delta("pv_total", 100.0, ts1, sensor_timestamp=ts1)
+
+            # Exactly 60 minutes later
+            ts2 = datetime(2024, 1, 1, 11, 0, 0)
+            sensor_ts2 = datetime(2024, 1, 1, 11, 0, 0)
+            delta, is_valid = store.get_delta("pv_total", 104.0, ts2, sensor_timestamp=sensor_ts2)
+
+            # Should scale: 4.0 * (15/60) = 1.0
+            assert delta == pytest.approx(1.0, abs=0.01)
+            assert is_valid is True
+
+    def test_sensor_timestamp_persisted_to_state_file(self):
+        """Task 4.2: sensor_timestamp is stored in state file."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_file = Path(tmpdir) / "state.json"
+            store = RecorderStateStore(state_file)
+            store.load()
+
+            ts1 = datetime(2024, 1, 1, 10, 0, 0)
+            sensor_ts1 = datetime(2024, 1, 1, 9, 58, 0)
+            store.get_delta("pv_total", 100.0, ts1, sensor_timestamp=sensor_ts1)
+
+            # Verify state file includes sensor_timestamp
+            content = json.loads(state_file.read_text())
+            assert "sensor_timestamp" in content["pv_total"]
+            assert content["pv_total"]["sensor_timestamp"] == "2024-01-01T09:58:00"
+
+
+class TestBackfillInterpolation:
+    """Test suite for backfill interpolation fix."""
+
+    def test_interpolation_produces_consistent_deltas(self):
+        """Task 4.4: Interpolation eliminates sawtooth in backfill.
+
+        Simulates the sawtooth scenario: readings at 10:53 and 11:03
+        should produce consistent deltas when interpolated.
+        """
+        from backend.learning.engine import LearningEngine
+
+        # Simulate readings that would cause sawtooth with ffill
+        # Sensor updates at :03, :13, :23, :33, :43, :53
+        # Backfill slots at :00, :15, :30, :45
+        cumulative_data = {
+            "sensor.pv_total": [
+                # 10:53 reading (sensor timestamp)
+                (datetime(2024, 1, 1, 10, 53, 0), 100.0),
+                # 11:03 reading (10 min later)
+                (datetime(2024, 1, 1, 11, 3, 0), 102.0),
+                # 11:13 reading (10 min later)
+                (datetime(2024, 1, 1, 11, 13, 0), 104.0),
+                # 11:23 reading (10 min later)
+                (datetime(2024, 1, 1, 11, 23, 0), 106.0),
+            ]
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create minimal config for LearningEngine
+            config = {
+                "timezone": "UTC",
+                "learning": {"sqlite_path": str(Path(tmpdir) / "test.db"), "sensor_map": {}},
+                "input_sensors": {},
+                "system": {"grid": {"max_power_kw": 10.0}},
+            }
+            config_path = Path(tmpdir) / "config.yaml"
+            config_path.write_text(json.dumps(config))
+
+            # Patch config loading
+            with patch.object(LearningEngine, "_load_config", return_value=config):
+                engine = LearningEngine(str(config_path))
+                result = engine.etl_cumulative_to_slots(cumulative_data, resolution_minutes=15)
+
+                # With interpolation, deltas should be consistent
+                # 100 kWh at 10:53, 106 kWh at 11:23
+                # Total time: 30 min, total delta: 6 kWh
+                # Rate: 6 kWh / 30 min = 0.2 kWh per min
+                # Per 15-min slot: 3.0 kWh
+
+                if len(result) > 0 and "pv_kwh" in result.columns:
+                    pv_deltas = result["pv_kwh"].tolist()
+                    # All non-zero deltas should be approximately equal
+                    non_zero = [d for d in pv_deltas if d > 0]
+                    if len(non_zero) > 1:
+                        # Variation should be small (not sawtooth pattern)
+                        max_delta = max(non_zero)
+                        min_delta = min(non_zero)
+                        # Ratio should be close to 1:1 (not 2:1 sawtooth)
+                        assert max_delta / min_delta < 1.5, (
+                            f"Deltas show sawtooth pattern: {non_zero}"
+                        )

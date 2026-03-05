@@ -201,8 +201,19 @@ class LearningEngine:
         for sensor_name, df in slot_records.items():
             canonical = self._canonical_sensor_name(sensor_name)
             base_series = df.set_index("timestamp")["cumulative_value"]
-            reindexed = base_series.reindex(slots, method="ffill")
-            reindexed = reindexed.ffill().fillna(0)
+
+            # --- FIX: interpolate to exact slot boundaries --------------------
+            # Forward-fill (`method="ffill"`) picked up sensor values from
+            # variable times before each boundary, producing alternating
+            # short/long deltas (sawtooth).  Linear interpolation estimates the
+            # true cumulative value at each boundary, giving consistent deltas.
+            combined_index = base_series.index.union(slots).sort_values()
+            combined = base_series.reindex(combined_index)
+            combined = combined.interpolate(method="index")  # linear on time
+            combined = combined.ffill().bfill()  # handle edges
+            reindexed = combined.reindex(slots)
+            # --- END FIX ------------------------------------------------------
+
             raw_diff = reindexed.diff().fillna(0)
 
             # Filter out huge spikes using config-derived threshold
