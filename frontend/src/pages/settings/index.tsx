@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
     Settings as SettingsIcon,
@@ -61,7 +61,8 @@ export default function Settings() {
         localStorage.setItem(STORAGE_KEY, String(advancedMode))
     }, [advancedMode])
 
-    useEffect(() => {
+    // Load system flags on mount and when config changes
+    const loadSystemFlags = useCallback(() => {
         Api.config()
             .then((config) => {
                 const system = ((config as Record<string, unknown>).system as Record<string, unknown>) || {}
@@ -75,6 +76,20 @@ export default function Settings() {
             .catch((err) => console.error('Failed to load config for tab visibility:', err))
             .finally(() => setConfigLoading(false))
     }, [])
+
+    useEffect(() => {
+        loadSystemFlags()
+    }, [loadSystemFlags])
+
+    // Listen for config changes to update tab visibility instantly
+    useEffect(() => {
+        const handleConfigChanged = () => {
+            loadSystemFlags()
+        }
+
+        window.addEventListener('config-changed', handleConfigChanged)
+        return () => window.removeEventListener('config-changed', handleConfigChanged)
+    }, [loadSystemFlags])
 
     const setActiveTab = React.useCallback(
         (tab: string) => {
