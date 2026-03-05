@@ -68,6 +68,7 @@ class SlotPlan(Base):
     planned_charge_kwh: Mapped[float | None] = mapped_column(Float)
     planned_discharge_kwh: Mapped[float | None] = mapped_column(Float)
     planned_soc_percent: Mapped[float | None] = mapped_column(Float)
+    projected_soc_percent: Mapped[float | None] = mapped_column(Float)
     planned_import_kwh: Mapped[float | None] = mapped_column(Float)
     planned_export_kwh: Mapped[float | None] = mapped_column(Float)
     planned_water_heating_kwh: Mapped[float | None] = mapped_column(Float)

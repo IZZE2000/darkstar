@@ -81,3 +81,85 @@ async def test_store_plan_mappings(store, memory_db_path):
         rows = cursor.fetchall()
         assert rows[0]["planned_water_heating_kwh"] == 0.5
         assert rows[1]["planned_water_heating_kwh"] == 0.5
+
+
+@pytest.mark.asyncio
+async def test_store_plan_projected_soc_percent(store, memory_db_path):
+    """
+    Verify that store_plan correctly persists projected_soc_percent to database.
+    """
+    now = datetime.now(TZ).replace(second=0, microsecond=0)
+
+    # Create 4 slots with varying projected SoC values
+    slots = []
+    for i in range(4):
+        t = now + timedelta(minutes=15 * i)
+        slots.append(
+            {
+                "start_time": t,
+                "kepler_charge_kwh": 1.0,
+                "kepler_discharge_kwh": 0.0,
+                "soc_target_percent": 80.0,  # Target SoC (same for all slots in a charge block)
+                "projected_soc_percent": 50.0 + (i * 10),  # Projected SoC increases each slot
+                "kepler_import_kwh": 0.0,
+                "kepler_export_kwh": 0.0,
+                "water_heating_kw": 0.0,
+                "planned_cost_sek": 5.0,
+            }
+        )
+
+    df = pd.DataFrame(slots)
+    await store.store_plan(df)
+
+    # Verify DB contents using sqlite3 (sync)
+    with sqlite3.connect(memory_db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        # Check Projected SoC values
+        cursor.execute("SELECT projected_soc_percent FROM slot_plans ORDER BY slot_start")
+        rows = cursor.fetchall()
+        assert len(rows) == 4
+        assert rows[0]["projected_soc_percent"] == 50.0
+        assert rows[1]["projected_soc_percent"] == 60.0
+        assert rows[2]["projected_soc_percent"] == 70.0
+        assert rows[3]["projected_soc_percent"] == 80.0
+
+
+@pytest.mark.asyncio
+async def test_get_plans_range_returns_projected_soc_percent(store):
+    """
+    Verify that get_plans_range returns projected_soc_percent for each slot.
+    """
+    now = datetime.now(TZ).replace(second=0, microsecond=0)
+
+    # Create and store slots with projected_soc_percent
+    slots = []
+    for i in range(4):
+        t = now + timedelta(minutes=15 * i)
+        slots.append(
+            {
+                "start_time": t,
+                "kepler_charge_kwh": 1.0,
+                "kepler_discharge_kwh": 0.0,
+                "soc_target_percent": 80.0,
+                "projected_soc_percent": 50.0 + (i * 10),
+                "kepler_import_kwh": 0.0,
+                "kepler_export_kwh": 0.0,
+                "water_heating_kw": 0.0,
+                "planned_cost_sek": 5.0,
+            }
+        )
+
+    df = pd.DataFrame(slots)
+    await store.store_plan(df)
+
+    # Retrieve plans using get_plans_range
+    plans = await store.get_plans_range(now)
+
+    # Verify projected_soc_percent is returned
+    assert len(plans) == 4
+    assert plans[0]["projected_soc_percent"] == 50.0
+    assert plans[1]["projected_soc_percent"] == 60.0
+    assert plans[2]["projected_soc_percent"] == 70.0
+    assert plans[3]["projected_soc_percent"] == 80.0

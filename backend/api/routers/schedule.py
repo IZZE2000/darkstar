@@ -284,6 +284,7 @@ async def schedule_today_with_history(
                     "battery_discharge_kw": float(row["planned_discharge_kwh"] or 0.0)
                     / duration_hours,
                     "soc_target_percent": float(row["planned_soc_percent"] or 0.0),
+                    "projected_soc_percent": float(row["projected_soc_percent"] or 0.0),
                     "export_kwh": float(row["planned_export_kwh"] or 0.0),
                     "water_heating_kw": float(row["planned_water_heating_kwh"] or 0.0)
                     / duration_hours,
@@ -400,6 +401,9 @@ async def schedule_today_with_history(
                     slot["battery_discharge_kw"] = p["battery_discharge_kw"]
                 if "soc_target_percent" not in slot or slot.get("soc_target_percent") is None:
                     slot["soc_target_percent"] = p["soc_target_percent"]
+                # Attach projected_soc_percent from database for historical slots
+                if "projected_soc_percent" not in slot or slot.get("projected_soc_percent") is None:
+                    slot["projected_soc_percent"] = p.get("projected_soc_percent", 0.0)
                 if "export_kwh" not in slot or slot.get("export_kwh") is None:
                     slot["export_kwh"] = p.get("export_kwh", 0.0)
                 if "water_heating_kw" not in slot or slot.get("water_heating_kw") is None:

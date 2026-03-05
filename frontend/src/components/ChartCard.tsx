@@ -509,7 +509,7 @@ const createChartData = (
                 pointRadius: 0,
                 borderWidth: 2,
                 yAxisID: 'y4',
-                stepped: 'after',
+                tension: 0.4,
                 hidden: true,
                 order: 1,
             } as ChartDataset,

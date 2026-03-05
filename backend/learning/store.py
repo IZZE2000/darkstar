@@ -285,6 +285,12 @@ class LearningStore:
                     planned_soc_percent=float(
                         row.get("soc_target_percent", row.get("kepler_soc_percent", 0.0)) or 0.0
                     ),
+                    projected_soc_percent=float(
+                        row.get(
+                            "projected_soc_percent", row.get("kepler_projected_soc_percent", 0.0)
+                        )
+                        or 0.0
+                    ),
                     planned_import_kwh=float(row.get("kepler_import_kwh", 0.0) or 0.0),
                     planned_export_kwh=float(row.get("kepler_export_kwh", 0.0) or 0.0),
                     planned_water_heating_kwh=float(row.get("water_heating_kw", 0.0) or 0.0) * 0.25,
@@ -298,6 +304,7 @@ class LearningStore:
                         "planned_charge_kwh": stmt.excluded.planned_charge_kwh,
                         "planned_discharge_kwh": stmt.excluded.planned_discharge_kwh,
                         "planned_soc_percent": stmt.excluded.planned_soc_percent,
+                        "projected_soc_percent": stmt.excluded.projected_soc_percent,
                         "planned_import_kwh": stmt.excluded.planned_import_kwh,
                         "planned_export_kwh": stmt.excluded.planned_export_kwh,
                         "planned_water_heating_kwh": stmt.excluded.planned_water_heating_kwh,
@@ -863,6 +870,7 @@ class LearningStore:
                     SlotPlan.planned_charge_kwh,
                     SlotPlan.planned_discharge_kwh,
                     SlotPlan.planned_soc_percent,
+                    SlotPlan.projected_soc_percent,
                     SlotPlan.planned_export_kwh,
                     SlotPlan.planned_water_heating_kwh,
                 )
