@@ -169,6 +169,38 @@ class TestOverrideEvaluatorSlotFailure:
 
         assert result.override_type != OverrideType.SLOT_FAILURE_FALLBACK
 
+    def test_slot_failure_without_water_heater_excludes_water_temp(self):
+        """Slot failure without water heater - no water_temp in actions."""
+        evaluator = OverrideEvaluator(water_temp_off=40)
+        state = SystemState(
+            has_water_heater=False,
+            slot_exists=False,
+            current_soc_percent=50.0,
+        )
+
+        result = evaluator.evaluate(state)
+
+        assert result.override_type == OverrideType.SLOT_FAILURE_FALLBACK
+        assert "water_temp" not in result.actions
+        assert result.actions["grid_charging"] is False
+        assert result.actions["soc_target"] == 50
+
+    def test_slot_failure_with_water_heater_includes_water_temp(self):
+        """Slot failure with water heater - water_temp included in actions."""
+        evaluator = OverrideEvaluator(water_temp_off=40)
+        state = SystemState(
+            has_water_heater=True,
+            slot_exists=False,
+            current_soc_percent=50.0,
+        )
+
+        result = evaluator.evaluate(state)
+
+        assert result.override_type == OverrideType.SLOT_FAILURE_FALLBACK
+        assert result.actions["water_temp"] == 40
+        assert result.actions["grid_charging"] is False
+        assert result.actions["soc_target"] == 50
+
 
 class TestOverrideEvaluatorExcessPVHeating:
     """Test Priority 5: Excess PV heating."""
@@ -240,6 +272,42 @@ class TestOverrideEvaluatorExcessPVHeating:
         result = evaluator.evaluate(state)
 
         assert result.override_type != OverrideType.EXCESS_PV_HEATING
+
+    def test_no_water_heater_skips_heating(self):
+        """No water heater configured - skip PV heating override."""
+        evaluator = OverrideEvaluator(
+            excess_pv_threshold_kw=2.0,
+            water_temp_max=85,
+        )
+        state = SystemState(
+            has_water_heater=False,
+            current_pv_kw=5.0,
+            current_load_kw=2.0,  # Excess = 3 kW
+            current_soc_percent=95.0,  # Healthy
+        )
+
+        result = evaluator.evaluate(state)
+
+        assert result.override_type != OverrideType.EXCESS_PV_HEATING
+
+    def test_water_heater_enabled_triggers_heating(self):
+        """Water heater configured - PV heating override can trigger."""
+        evaluator = OverrideEvaluator(
+            excess_pv_threshold_kw=2.0,
+            water_temp_max=85,
+        )
+        state = SystemState(
+            has_water_heater=True,
+            current_pv_kw=5.0,
+            current_load_kw=2.0,  # Excess = 3 kW
+            current_soc_percent=95.0,  # Healthy
+            current_water_temp=55.0,  # Below max
+        )
+
+        result = evaluator.evaluate(state)
+
+        assert result.override_type == OverrideType.EXCESS_PV_HEATING
+        assert result.actions["water_temp"] == 85
 
 
 class TestOverrideEvaluatorNoOverride:

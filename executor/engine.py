@@ -1537,6 +1537,9 @@ class ExecutorEngine:
                 if water_str:
                     state.current_water_temp = float(water_str)
 
+            # Pass water heater configuration to state
+            state.has_water_heater = self._has_water_heater
+
             # Check manual override toggle (optional - don't fail if missing)
             if self.config.manual_override_entity:
                 manual = await self.ha_client.get_state_value(self.config.manual_override_entity)
