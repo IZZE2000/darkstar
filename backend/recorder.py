@@ -368,7 +368,7 @@ async def record_observation_from_current_state(
     pv_kwh, _ = await calculate_energy_from_cumulative("total_pv_production", pv_kw, "pv_total")
 
     # Calculate load energy
-    load_kwh, _ = await calculate_energy_from_cumulative(
+    load_kwh, used_cumulative_load = await calculate_energy_from_cumulative(
         "total_load_consumption", load_kw, "load_total"
     )
 
@@ -417,8 +417,21 @@ async def record_observation_from_current_state(
             export_kwh = export_kw * 0.25
 
     # Water and EV still use power snapshots (no cumulative sensors available)
+    # Calculate early so we can subtract from total load when using cumulative sensor
     water_kwh = water_kw * 0.25
     ev_charging_kwh = ev_charging_kw * 0.25
+
+    # Isolate base load from deferrable loads when cumulative sensor was used
+    # Power snapshot path already uses disaggregator's base_load_kw
+    if used_cumulative_load:
+        base_load_kwh = load_kwh - ev_charging_kwh - water_kwh
+        if base_load_kwh < 0:
+            logger.warning(
+                f"Negative base load: total={load_kwh:.3f}kWh, EV={ev_charging_kwh:.3f}kWh, "
+                f"water={water_kwh:.3f}kWh. Clamping to 0."
+            )
+            base_load_kwh = 0.0
+        load_kwh = base_load_kwh
 
     # Standard inverter convention: positive = discharge, negative = charge
     batt_discharge_kwh = (battery_kw * 0.25) if battery_kw > 0 else 0.0
