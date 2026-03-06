@@ -1,15 +1,18 @@
-"""
-Unit tests for residual PV training pipeline.
-"""
-
+import sqlite3
+import tempfile
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import pytz
 
-from ml.train import _build_time_features  # type: ignore[reportPrivateUsage]
+from backend.learning import LearningEngine
+from ml.train import (  # type: ignore[reportPrivateUsage]
+    _build_time_features,
+    _load_slot_observations,
+)
 
 
 class TestResidualTrainingPipeline(unittest.TestCase):
@@ -189,6 +192,58 @@ class TestTrainingDataPreparation(unittest.TestCase):
 
         # Sun below horizon -> 0
         assert physics_kwh == 0.0
+
+
+class TestSpikeFiltering(unittest.TestCase):
+    """Tests for spike filtering in ML training data loading."""
+
+    def test_load_slot_observations_filters_spikes(self):
+        """Verify that _load_slot_observations filters out spike values."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "test.db"
+            config = {
+                "system": {"grid": {"max_power_kw": 10.0}},
+                "timezone": "Europe/Stockholm",
+            }
+
+            engine = LearningEngine.__new__(LearningEngine)
+            engine.db_path = str(db_path)
+            engine.config = config
+            engine.timezone = pytz.timezone("Europe/Stockholm")
+
+            with sqlite3.connect(db_path) as conn:
+                conn.execute("""
+                    CREATE TABLE slot_observations (
+                        slot_start TEXT PRIMARY KEY,
+                        load_kwh REAL,
+                        pv_kwh REAL
+                    )
+                """)
+
+                tz = pytz.timezone("Europe/Stockholm")
+                base_time = tz.localize(datetime(2024, 6, 21, 12, 0))
+
+                test_data = [
+                    (base_time.isoformat(), 1.5, 2.0),
+                    ((base_time + timedelta(minutes=15)).isoformat(), 100.0, 2.0),
+                    ((base_time + timedelta(minutes=30)).isoformat(), 1.5, 100.0),
+                    ((base_time + timedelta(minutes=45)).isoformat(), 100.0, 100.0),
+                ]
+
+                for slot_start, load_kwh, pv_kwh in test_data:
+                    conn.execute(
+                        "INSERT INTO slot_observations VALUES (?, ?, ?)",
+                        (slot_start, load_kwh, pv_kwh),
+                    )
+                conn.commit()
+
+            start_time = base_time - timedelta(minutes=15)
+            end_time = base_time + timedelta(minutes=15)
+            df = _load_slot_observations(engine, start_time, end_time)
+
+            max_kwh = 10.0 * 0.25 * 2.0
+            assert all(df["load_kwh"] <= max_kwh)
+            assert all(df["pv_kwh"] <= max_kwh)
 
 
 if __name__ == "__main__":

@@ -106,6 +106,18 @@ All analytical read paths that consume `pv_kwh` or `load_kwh` from `slot_observa
 - **WHEN** `LearningStore.calculate_metrics` computes forecast MAE
 - **THEN** the query SHALL exclude rows where `pv_kwh` or `load_kwh` exceeds `max_kwh_per_slot`
 
+#### Scenario: ML model training excludes spike rows
+- **WHEN** `ml/train.py` `_load_slot_observations` loads data for Aurora model training
+- **THEN** rows where `pv_kwh` or `load_kwh` exceeds `max_kwh_per_slot` SHALL be excluded from training data
+
+#### Scenario: ML error correction training excludes spike rows
+- **WHEN** `ml/corrector.py` `_load_training_frame` loads data for error correction model training
+- **THEN** rows where `pv_kwh` or `load_kwh` exceeds `max_kwh_per_slot` SHALL be excluded
+
+#### Scenario: ML evaluation metrics exclude spike rows
+- **WHEN** `ml/evaluate.py` `_compute_mae` calculates forecast accuracy metrics
+- **THEN** rows where `pv_kwh` or `load_kwh` exceeds `max_kwh_per_slot` SHALL be excluded from MAE calculation
+
 ### Requirement: Persistent Sensor Timestamp Storage
 The recorder SHALL store the sensor's `last_updated` timestamp alongside each cumulative meter reading in the state file to enable time-proportional scaling on subsequent recordings.
 

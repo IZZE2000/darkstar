@@ -15,6 +15,7 @@ import numpy as np
 import pandas as pd
 
 from backend.learning import LearningEngine, get_learning_engine
+from backend.validation import get_max_energy_per_slot
 from ml.context_features import get_vacation_mode_series
 from ml.train import _build_time_features  # type: ignore[reportPrivateUsage]
 from ml.weather import get_weather_series
@@ -71,6 +72,7 @@ def _load_training_frame(engine: LearningEngine, days_back: int = 30) -> pd.Data
     """
     tz = engine.timezone
     cutoff_date = (datetime.now(tz) - timedelta(days=days_back)).date().isoformat()
+    max_kwh = get_max_energy_per_slot(engine.config)
 
     with sqlite3.connect(engine.db_path, timeout=30.0) as conn:
         query = """
@@ -87,8 +89,10 @@ def _load_training_frame(engine: LearningEngine, days_back: int = 30) -> pd.Data
               AND o.load_kwh IS NOT NULL
               AND f.pv_forecast_kwh IS NOT NULL
               AND f.load_forecast_kwh IS NOT NULL
+              AND o.pv_kwh <= ?
+              AND o.load_kwh <= ?
         """
-        df = pd.read_sql_query(query, conn, params=(cutoff_date,))
+        df = pd.read_sql_query(query, conn, params=(cutoff_date, max_kwh, max_kwh))
 
     if df.empty:
         return df
@@ -228,6 +232,7 @@ def _compute_stats_bias(
     """
     tz = engine.timezone
     cutoff_date = (datetime.now(tz) - timedelta(days=days_back)).date().isoformat()
+    max_kwh = get_max_energy_per_slot(engine.config)
 
     sql = """
         SELECT
@@ -243,12 +248,14 @@ def _compute_stats_bias(
           AND o.load_kwh IS NOT NULL
           AND f.pv_forecast_kwh IS NOT NULL
           AND f.load_forecast_kwh IS NOT NULL
+          AND o.pv_kwh <= ?
+          AND o.load_kwh <= ?
     """
 
     buckets: dict[tuple[int, int], list[tuple[float, float]]] = {}
     with sqlite3.connect(engine.db_path, timeout=30.0) as conn:
         for slot_start, pv_kwh, load_kwh, pv_forecast, load_forecast in conn.execute(
-            sql, (cutoff_date,)
+            sql, (cutoff_date, max_kwh, max_kwh)
         ):
             try:
                 ts = pd.Timestamp(slot_start)

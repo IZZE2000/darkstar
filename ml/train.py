@@ -19,6 +19,7 @@ import numpy as np
 import pandas as pd
 
 from backend.learning import LearningEngine, get_learning_engine
+from backend.validation import get_max_energy_per_slot
 from ml.context_features import get_alarm_armed_series, get_vacation_mode_series
 from ml.weather import calculate_physics_pv, get_weather_series
 
@@ -71,10 +72,9 @@ def _load_slot_observations(
     start_time: datetime,
     end_time: datetime,
 ) -> pd.DataFrame:
-    """Load slot observations, strictly filtering out zero-artifacts."""
-    # We filter load_kwh > 0.001 to exclude rows that were created by
-    # store_slot_prices (default 0.0) but never updated with actual sensor data.
-    # Real household load is effectively never exactly 0.000.
+    """Load slot observations, strictly filtering out zero-artifacts and sensor spikes."""
+    max_kwh = get_max_energy_per_slot(engine.config)
+
     query = """
         SELECT
             slot_start,
@@ -83,13 +83,15 @@ def _load_slot_observations(
         FROM slot_observations
         WHERE slot_start >= ? AND slot_start < ?
           AND load_kwh > 0.001
+          AND load_kwh <= ?
+          AND pv_kwh <= ?
         ORDER BY slot_start ASC
     """
     with sqlite3.connect(engine.db_path, timeout=30.0) as conn:
         df = pd.read_sql_query(
             query,
             conn,
-            params=(start_time.isoformat(), end_time.isoformat()),
+            params=(start_time.isoformat(), end_time.isoformat(), max_kwh, max_kwh),
         )
     if df.empty:
         return df

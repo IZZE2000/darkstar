@@ -16,6 +16,7 @@ import numpy as np
 import pandas as pd
 
 from backend.learning import LearningEngine, get_learning_engine
+from backend.validation import get_max_energy_per_slot
 from ml.context_features import get_alarm_armed_series, get_vacation_mode_series
 from ml.train import (
     _build_time_features,  # type: ignore[reportPrivateUsage]
@@ -206,6 +207,8 @@ def _calculate_mae(
     forecast_version: str,
 ) -> tuple[float | None, float | None]:
     """Calculate MAE for PV and load for a given forecast_version."""
+    max_kwh = get_max_energy_per_slot(engine.config)
+
     with sqlite3.connect(engine.db_path, timeout=30.0) as conn:
         cursor = conn.cursor()
         rows = cursor.execute(
@@ -220,8 +223,10 @@ def _calculate_mae(
               ON o.slot_start = f.slot_start
             WHERE o.slot_start >= ? AND o.slot_start < ?
               AND f.forecast_version = ?
+              AND o.pv_kwh <= ?
+              AND o.load_kwh <= ?
             """,
-            (start_time.isoformat(), end_time.isoformat(), forecast_version),
+            (start_time.isoformat(), end_time.isoformat(), forecast_version, max_kwh, max_kwh),
         ).fetchall()
 
     if not rows:
