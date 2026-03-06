@@ -1367,7 +1367,6 @@ function buildLiveData(
         labels.push(formatHour(bucketStart.toISOString()))
 
         if (slot) {
-            const isExec = slot.is_executed === true
             const hourFraction = resolutionMinutes / 60
 
             price.push(slot.import_price_sek_kwh ?? null)

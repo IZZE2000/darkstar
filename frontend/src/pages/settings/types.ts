@@ -163,6 +163,13 @@ export const systemSections: SettingsSection[] = [
                 helper: 'Select "Net" if you have one sensor (+/-). Select "Dual" if you have separate import/export sensors.',
             },
             {
+                key: 'system.grid.max_power_kw',
+                label: 'Grid Max Power (kW)',
+                helper: 'HARD limit from your grid fuse. The planner will never exceed this.',
+                path: ['system', 'grid', 'max_power_kw'],
+                type: 'number',
+            },
+            {
                 key: 'export.enable_export',
                 label: 'Enable grid export',
                 path: ['export', 'enable_export'],
