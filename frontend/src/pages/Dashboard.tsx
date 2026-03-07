@@ -395,19 +395,21 @@ export default function Dashboard() {
 
             if (historyData.status === 'fulfilled') {
                 setHistorySlots(historyData.value.slots ?? [])
-                // Fallback PV Total logic - sum the WHOLE day from history
-                if (historyData.value.slots) {
+                // Fallback PV Total logic - only use if Aurora returned nothing
+                if (pvForecastTotal === 0 && historyData.value.slots) {
                     const todayStart = new Date()
                     todayStart.setHours(0, 0, 0, 0)
+                    const tomorrowStart = new Date(todayStart)
+                    tomorrowStart.setDate(tomorrowStart.getDate() + 1)
                     let dailyTotal = 0
                     historyData.value.slots.forEach((s) => {
                         const sTime = new Date(s.start_time)
-                        if (sTime >= todayStart) {
+                        if (sTime >= todayStart && sTime < tomorrowStart) {
                             dailyTotal += s.pv_forecast_kwh ?? 0
                         }
                     })
 
-                    if (dailyTotal > 0 || pvForecastTotal === 0) {
+                    if (dailyTotal > 0) {
                         setTodayStats((prev) =>
                             prev
                                 ? {
