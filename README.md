@@ -221,6 +221,18 @@ Darkstar reads sensors and controls your inverter through Home Assistant:
 - Grid charging switch
 - Water heater temperature (optional)
 
+**Supported Inverter Profiles:**
+
+| Brand | OEM / Resold As | Profile Name | Control Unit |
+|-------|----------------|--------------|--------------|
+| Deye | SunSynk, Sol-Ark, Turbo Energy | `deye` | A |
+| Fronius | GEN24 hybrid series | `fronius` | W |
+| Sungrow | Sungrow hybrid series | `sungrow` | W |
+| Solinteg | Reco, Solinteg MHT series | `solinteg` | W |
+| Generic | Any inverter | `generic` | A (configurable) |
+
+> **Solinteg / Reco note:** This inverter uses a single bidirectional power register instead of separate charge/discharge entities. Set the working mode to `Charge-Discharge` once before use — Darkstar never changes it (EEPROM protection). See `profiles/solinteg.yaml` for full setup instructions.
+
 ## Dashboard
 
 The web UI provides:

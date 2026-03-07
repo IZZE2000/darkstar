@@ -56,6 +56,12 @@ class ModeAction:
     entity: str
     value: str | int | float | bool
     settle_ms: int | None = None
+    scale: float | None = None
+    """Optional multiplier applied to resolved template values before writing.
+    Use to convert Darkstar's internal Watt values to inverter register units.
+    Negative scale flips the sign (e.g., scale: -0.1 converts 5000W → -500 for discharge).
+    Only applied when value is a template ({{...}}); ignored for static values.
+    """
 
 
 @dataclass
@@ -271,6 +277,7 @@ def _parse_mode_action(data: dict[str, Any]) -> ModeAction:
         entity=data.get("entity", ""),
         value=value,
         settle_ms=data.get("settle_ms"),
+        scale=data.get("scale"),
     )
 
 
