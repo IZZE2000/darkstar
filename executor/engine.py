@@ -239,6 +239,7 @@ class ExecutorEngine:
             self.status.enabled = self.config.enabled
             self.status.shadow_mode = self.config.shadow_mode
             if self.dispatcher:
+                self.dispatcher.config = self.config  # propagate updated entities/settings
                 self.dispatcher.shadow_mode = self.config.shadow_mode
 
             # Reload inverter profile if changed (REV FIX: Profile switch now takes effect immediately)
