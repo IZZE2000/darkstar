@@ -12,9 +12,9 @@ arch:
   - amd64
   - aarch64
 
-# Pre-built Docker images (built via GitHub Actions)
-# HA uses the 'version' field as the image tag automatically
-image: ghcr.io/ergetie/darkstar-{arch}
+# Fork image — built by GitHub Actions, pushed to IZZE2000 GHCR
+# Includes Solinteg profile + scale support not in upstream
+image: ghcr.io/izze2000/darkstar-{arch}
 
 # Startup configuration
 init: false
