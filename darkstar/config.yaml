@@ -1,7 +1,7 @@
 # Darkstar Energy Manager - Home Assistant Add-on
 # https://github.com/ergetie/darkstar
 
-name: "Darkstar Energy Manager"
+name: "Darkstar Energy Manager (Solinteg)"
 description: "AI-powered home battery optimization with MILP scheduling"
 version: "2.5.12-beta"
 slug: "darkstar"
@@ -12,9 +12,8 @@ arch:
   - amd64
   - aarch64
 
-# Pre-built Docker images (built via GitHub Actions)
-# HA uses the 'version' field as the image tag automatically
-image: ghcr.io/ergetie/darkstar-{arch}
+# Build from source (fork — ensures Solinteg profile and scale support are included)
+# image: ghcr.io/ergetie/darkstar-{arch}  ← commented out: upstream image bypasses fork code
 
 # Startup configuration
 init: false
