@@ -1,0 +1,160 @@
+# ============================================================
+# Inverter Profile: Solinteg
+# Schema Version: 2
+# ============================================================
+#
+# Tested hardware: Solinteg MHT-25-50 (also sold as "Reco" in Sweden and other markets)
+# Integration: solax_modbus HACS custom component (Solinteg plugin)
+#
+# IMPORTANT — EEPROM protection:
+#   Register 50000 (working_mode) is EEPROM-backed with limited write cycles.
+#   Set select.<prefix>_working_mode to "Charge-Discharge" ONCE before using Darkstar.
+#   This profile never writes to work_mode — Darkstar's control is 100% via RAM register.
+#
+#   Register 50207 (charge_discharge_power_target) is RAM-backed — safe for
+#   frequent writes every 5 minutes.
+#
+# Power register unit: x0.01 kW — value = watts / 10
+#   Register value +500 = +5.00 kW (charge from grid)
+#   Register value -500 = -5.00 kW (discharge to grid / cover load)
+#   Register value    0 = self-consumption (inverter self-manages PV and load)
+#
+# Control model difference vs other inverters:
+#   Deye, Fronius, Sungrow: separate charge entity + discharge entity (both positive)
+#   Solinteg: single bidirectional register (positive = charge, negative = discharge)
+#
+# Setup steps:
+#   1. Install solax_modbus HACS integration with Solinteg plugin
+#   2. In HA Developer Tools > Services, call select.select_option:
+#        entity: select.<your_prefix>_working_mode
+#        option: Charge-Discharge
+#   3. Set profile: solinteg in Darkstar config.yaml
+#   4. Override entity IDs in executor.inverter if your prefix differs from "inverter":
+#        charge_discharge_power: number.reco_inverter_battery_charge_discharge_power_target
+
+metadata:
+  name: "solinteg"
+  version: "1.0.0"
+  schema_version: 2
+  description: >
+    Solinteg hybrid inverters (also sold as Reco, and other OEM brands).
+    Uses a single bidirectional power register in permanent Charge-Discharge mode.
+    Working mode must be set to "Charge-Discharge" once before first use and is
+    never changed by Darkstar (EEPROM wear protection).
+  supported_brands:
+    - "Solinteg"
+    - "Reco"
+    - "Solinteg MHT"
+
+entities:
+  # work_mode: required false — set to "Charge-Discharge" once manually, never written by Darkstar.
+  # Register 50000 is EEPROM-backed — do not include in automated mode actions.
+  work_mode:
+    default_entity: "select.inverter_working_mode"
+    domain: "select"
+    category: "system"
+    description: >
+      Inverter working mode (EEPROM register 50000).
+      Set to "Charge-Discharge" once at setup via HA Developer Tools.
+      Darkstar never writes this entity — all control is via charge_discharge_power.
+    required: false
+
+  # Primary control entity — bidirectional RAM register, safe for frequent writes.
+  # Positive = charge (W/10), negative = discharge (W/10), 0 = self-consumption.
+  charge_discharge_power:
+    default_entity: "number.inverter_battery_charge_discharge_power_target"
+    domain: "number"
+    category: "battery"
+    description: >
+      Bidirectional power target register (x0.01 kW, RAM register 50207).
+      Positive = charge from grid, negative = discharge to grid/load, 0 = self-consumption.
+      Range: -20000 to +20000. Write value = watts / 10.
+    required: true
+
+  soc_min_on_grid:
+    default_entity: "number.inverter_battery_soc_min_on_grid"
+    domain: "number"
+    category: "battery"
+    description: >
+      Hardware-level minimum battery SoC on grid (%).
+      Set to 10% as a safety backstop independent of Darkstar's software SoC floor.
+      Not written by Darkstar mode actions.
+    required: false
+
+modes:
+  charge:
+    description: "Grid charge — Force charge battery from AC grid"
+    actions:
+      - entity: "charge_discharge_power"
+        value: "{{charge_value}}"
+        scale: 0.1        # W → register units (x0.01 kW): 5000 W * 0.1 = 500
+        settle_ms: 3000
+
+  export:
+    description: "Grid export — Discharge battery to cover load and export to grid"
+    actions:
+      - entity: "charge_discharge_power"
+        value: "{{export_with_load_w}}"
+        scale: -0.1       # W → negative register units: 8000 W * -0.1 = -800
+        settle_ms: 3000
+
+  self_consumption:
+    description: "Self-consumption — PV to load and battery, no forced charge or discharge"
+    actions:
+      - entity: "charge_discharge_power"
+        value: 0
+        settle_ms: 3000
+
+  idle:
+    description: >
+      Hold — Write 0 for self-consumption behavior.
+      Note: in Charge-Discharge mode with target=0, the inverter will still discharge
+      to cover home load. True discharge-block requires changing working_mode (EEPROM).
+      Rely on Darkstar SoC floor and HA reactive peak guard automation as backstop.
+    actions:
+      - entity: "charge_discharge_power"
+        value: 0
+        settle_ms: 3000
+
+behavior:
+  control_unit: "W"
+  min_charge_w: 100.0
+  round_step_w: 100.0
+  write_threshold_w: 100.0
+  mode_settling_ms: 3000
+
+# ============================================================
+# NOTES
+# ============================================================
+#
+# 1. BIDIRECTIONAL REGISTER:
+#    Unlike all other Darkstar profiles, Solinteg uses a single bidirectional
+#    register rather than separate charge and discharge entities.
+#    The sign encodes direction: positive = charge, negative = discharge.
+#
+# 2. CHARGE MODE:
+#    charge_value (W) / 10 = register value (x0.01 kW).
+#    Example: 5000 W → register 500 → 5.00 kW charge.
+#
+# 3. EXPORT MODE:
+#    export_with_load_w accounts for both home load and planned grid export.
+#    This ensures the battery discharges at the correct total rate.
+#    Example: 3 kW load + 5 kW export target = -800 register → 8.00 kW discharge.
+#
+# 4. IDLE / HOLD LIMITATION:
+#    Solinteg in Charge-Discharge mode with target=0 performs self-consumption
+#    (battery discharges to cover load if needed). True "block discharge" requires
+#    changing working_mode to "General", which writes EEPROM register 50000.
+#    This profile intentionally avoids that write. Configure Darkstar's
+#    battery_min_soc in config.yaml as the discharge floor instead.
+#
+# 5. EEPROM PROTECTION:
+#    Register 50000 (working_mode) must only be written during initial setup.
+#    Switching modes such as "General" <-> "Charge-Discharge" multiple times
+#    per day will deplete the EEPROM write cycle budget. This profile is designed
+#    to require exactly ONE write (at setup) for the lifetime of the system.
+#
+# 6. SETTLING TIME:
+#    3000ms settling is conservative and appropriate for Solinteg firmware.
+#    The register is RAM-backed so writes take effect immediately, but the
+#    inverter's internal control loop needs time to respond.

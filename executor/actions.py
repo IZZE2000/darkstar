@@ -510,20 +510,35 @@ class ActionDispatcher:
 
         return entity_def.default_entity
 
-    def _resolve_value(self, value: str | int | float | bool, decision: ControllerDecision) -> Any:
+    def _resolve_value(
+        self,
+        value: str | int | float | bool,
+        decision: ControllerDecision,
+        scale: float | None = None,
+    ) -> Any:
         """
         Resolve dynamic template values from ControllerDecision.
 
         Templates are strings in the form {{field_name}} where field_name
         is a property on ControllerDecision.
+
+        If scale is provided and the resolved value is numeric, it is multiplied
+        by scale before returning. Use negative scale to flip sign (e.g., discharge
+        inverters that use a single bidirectional register).
         """
         if isinstance(value, str) and value.startswith("{{") and value.endswith("}}"):
             field_name = value[2:-2]
             if not hasattr(decision, field_name):
                 logger.error("Unknown template variable: %s", field_name)
                 return value
-            return getattr(decision, field_name)
-        return value
+            resolved = getattr(decision, field_name)
+        else:
+            resolved = value
+
+        if scale is not None and isinstance(resolved, (int, float)):
+            resolved = int(resolved * scale)
+
+        return resolved
 
     async def _write_entity(
         self,
@@ -686,7 +701,7 @@ class ActionDispatcher:
                 duration_ms=int((time.time() - start_time) * 1000),
             )
 
-        resolved_value = self._resolve_value(action.value, decision)
+        resolved_value = self._resolve_value(action.value, decision, action.scale)
 
         previous_value = await self.ha.get_state_value(entity_id)
 

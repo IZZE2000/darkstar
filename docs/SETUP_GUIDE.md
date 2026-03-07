@@ -14,7 +14,7 @@ Navigate to **Settings -> System**. These are the "foundations" of your optimiza
 
 ### 1.1 Inverter Profile
 The first and most important setting is your **Inverter Profile**. Darkstar uses profiles to automatically configure the correct entities and control logic for your specific hardware.
-- **Select Profile**: Choose your brand (e.g., `Deye`, `Fronius`).
+- **Select Profile**: Choose your brand (e.g., `Deye`, `Fronius`, `Solinteg`).
 - **Generic Profile**: Use this if your brand is not listed. You will need to manually map all entities.
 - **Custom Profiles**: If you want to create your own profile, see the **[Profile Creation Guide](CREATING_INVERTER_PROFILES.md)**.
 
@@ -92,7 +92,10 @@ Darkstar writes to these entities to execute the plan:
 > | **Huawei** | `General Mode` | `Time of Use` |
 > | **GoodWe** | `General Mode` | `Eco Mode` |
 > | **Fronius** | `Discharge to grid` | `Auto` |
+> | **Solinteg / Reco** | *(bidirectional register — use `solinteg` profile, no mode strings needed)* | *(same)* |
 > *Check your inverter integration documentation for exact case-sensitive strings.*
+>
+> **Solinteg / Reco users:** Do not use the Generic profile. Use the dedicated `solinteg` profile which handles the bidirectional power register automatically. Set `select.<prefix>_working_mode` to `Charge-Discharge` once before starting Darkstar.
 - **Grid Charging Switch**: Toggles charging from the grid.
 - **Current Limits**: Entities to set max Amps for charging/discharging.
 
