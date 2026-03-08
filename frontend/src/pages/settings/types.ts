@@ -99,7 +99,7 @@ export interface SettingsSection<T extends BaseField = BaseField> {
 export const systemSections: SettingsSection[] = [
     {
         title: 'System Profile',
-            description: 'Core hardware toggles.',
+        description: 'Core hardware toggles.',
         fields: [
             {
                 key: 'system.inverter_profile',
