@@ -7,6 +7,7 @@
   "system.has_solar": "Enable PV forecasting & solar-related features",
   "system.has_battery": "Enable battery control & grid arbitrage",
   "system.has_water_heater": "Enable water heating optimization",
+  "system.has_ev_charger": "Enable EV charging optimization",
   "system.grid.max_power_kw": "HARD limit: max grid import (cannot be exceeded)",
   "system.inverter.max_power_kw": "Maximum inverter AC power output",
   "system.location.latitude": "Decimal degrees, positive north (for PV forecasting)",

@@ -99,7 +99,7 @@ export interface SettingsSection<T extends BaseField = BaseField> {
 export const systemSections: SettingsSection[] = [
     {
         title: 'System Profile',
-        description: 'Core hardware toggles. ⚠️ Non-Deye profiles are currently Work In Progress.',
+            description: 'Core hardware toggles.',
         fields: [
             {
                 key: 'system.inverter_profile',
@@ -119,24 +119,28 @@ export const systemSections: SettingsSection[] = [
                 label: 'Solar panels installed',
                 path: ['system', 'has_solar'],
                 type: 'boolean',
+                subsection: 'Hardware Features',
             },
             {
                 key: 'system.has_battery',
                 label: 'Home battery installed',
                 path: ['system', 'has_battery'],
                 type: 'boolean',
+                subsection: 'Hardware Features',
             },
             {
                 key: 'system.has_water_heater',
                 label: 'Smart water heater',
                 path: ['system', 'has_water_heater'],
                 type: 'boolean',
+                subsection: 'Hardware Features',
             },
             {
                 key: 'system.has_ev_charger',
                 label: 'EV charger installed',
                 path: ['system', 'has_ev_charger'],
                 type: 'boolean',
+                subsection: 'Hardware Features',
             },
             {
                 key: 'executor.inverter.control_unit',
