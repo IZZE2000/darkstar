@@ -18,7 +18,7 @@ from backend.learning import LearningEngine, get_learning_engine
 from ml.context_features import get_alarm_armed_series, get_vacation_mode_series
 from ml.corrector import _determine_graduation_level  # type: ignore[reportPrivateUsage]
 from ml.train import _build_time_features  # type: ignore[reportPrivateUsage]
-from ml.weather import calculate_physics_pv, get_weather_series
+from ml.weather import async_get_weather_series, calculate_physics_pv
 
 logger = logging.getLogger("darkstar.ml.forward")
 
@@ -121,7 +121,7 @@ async def generate_forward_slots(
 
     # Enrich with forecast weather
     print("   Fetching weather data...")
-    weather_df = get_weather_series(slot_start, horizon_end, config=engine.config)
+    weather_df = await async_get_weather_series(slot_start, horizon_end, config=engine.config)
     if not weather_df.empty:
         df = df.merge(weather_df, left_on="slot_start", right_index=True, how="left")
 

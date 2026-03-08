@@ -7,6 +7,7 @@ Coordinates Input → Strategy → Solver → Output flow.
 
 from __future__ import annotations
 
+import asyncio
 import copy
 import logging
 from pathlib import Path
@@ -621,7 +622,7 @@ class PlannerPipeline:
             kepler_config.target_soc_penalty_sek = RISK_PENALTY_MAP.get(risk_appetite, 8.0)
 
         solver = KeplerSolver()
-        result = solver.solve(kepler_input, kepler_config)
+        result = await asyncio.to_thread(solver.solve, kepler_input, kepler_config)
 
         if result.slots:
             logger.info(

@@ -13,7 +13,7 @@ class TestAuroraForward(unittest.IsolatedAsyncioTestCase):
     @patch("ml.forward.datetime")
     @patch("ml.forward.get_learning_engine")
     @patch("ml.forward._load_models")
-    @patch("ml.forward.get_weather_series")
+    @patch("ml.forward.async_get_weather_series")
     @patch("ml.forward.get_vacation_mode_series")
     @patch("ml.forward.get_alarm_armed_series")
     @patch("backend.astro.SunCalculator")

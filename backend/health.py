@@ -5,6 +5,7 @@ Centralized health monitoring for Darkstar.
 Validates HA connection, entity availability, config validity, and planner metrics via SQLite.
 """
 
+import asyncio
 import logging
 import threading
 from collections import deque
@@ -667,51 +668,65 @@ class HealthChecker:
                 )
             )
 
-        # Check each entity
+        # Check each entity concurrently using asyncio.gather
         headers = {"Authorization": f"Bearer {token}"}
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            for entity_id, config_key, is_required in entities_to_check:
-                try:
+
+        async def check_single_entity(entity_data: tuple[str, str, bool]) -> HealthIssue | None:
+            """Check a single entity and return a HealthIssue if there's a problem."""
+            entity_id, config_key, is_required = entity_data
+            try:
+                async with httpx.AsyncClient(timeout=5.0) as client:
                     response = await client.get(
                         f"{url}/api/states/{entity_id}",
                         headers=headers,
                     )
 
-                    if response.status_code == 404:
-                        # Downgrade severity if not a hard requirement
-                        severity = "critical" if is_required else "warning"
-                        issues.append(
-                            HealthIssue(
-                                category="entity",
-                                severity=severity,
-                                message=f"Entity not found: {entity_id}",
-                                guidance=(
-                                    f"Check that '{entity_id}' exists in Home Assistant. "
-                                    f"Update {config_key} in config.yaml if renamed."
-                                ),
-                                entity_id=entity_id,
-                            )
+                if response.status_code == 404:
+                    # Downgrade severity if not a hard requirement
+                    severity = "critical" if is_required else "warning"
+                    return HealthIssue(
+                        category="entity",
+                        severity=severity,
+                        message=f"Entity not found: {entity_id}",
+                        guidance=(
+                            f"Check that '{entity_id}' exists in Home Assistant. "
+                            f"Update {config_key} in config.yaml if renamed."
+                        ),
+                        entity_id=entity_id,
+                    )
+                elif response.status_code == 200:
+                    # Check for unavailable state
+                    state_data = response.json()
+                    state_value = state_data.get("state")
+                    if state_value == "unavailable":
+                        return HealthIssue(
+                            category="entity",
+                            severity="warning",
+                            message=f"Entity unavailable: {entity_id}",
+                            guidance=(
+                                f"The entity '{entity_id}' exists but is "
+                                "currently unavailable. Check your device/integration."
+                            ),
+                            entity_id=entity_id,
                         )
-                    elif response.status_code == 200:
-                        # Check for unavailable state
-                        state_data = response.json()
-                        state_value = state_data.get("state")
-                        if state_value == "unavailable":
-                            issues.append(
-                                HealthIssue(
-                                    category="entity",
-                                    severity="warning",
-                                    message=f"Entity unavailable: {entity_id}",
-                                    guidance=(
-                                        f"The entity '{entity_id}' exists but is "
-                                        "currently unavailable. Check your device/integration."
-                                    ),
-                                    entity_id=entity_id,
-                                )
-                            )
-                except httpx.RequestError:
-                    # Connection issues already reported in check_ha_connection
-                    pass
+            except httpx.RequestError:
+                # Connection issues already reported in check_ha_connection
+                pass
+            return None
+
+        # Run all entity checks concurrently
+        entity_results = await asyncio.gather(
+            *[check_single_entity(entity_data) for entity_data in entities_to_check],
+            return_exceptions=True,
+        )
+
+        # Collect results (filter out None and exceptions)
+        for result in entity_results:
+            if isinstance(result, HealthIssue):
+                issues.append(result)
+            elif isinstance(result, Exception):
+                # Log unexpected errors but don't fail the entire health check
+                logger.debug(f"Unexpected error checking entity: {result}")
 
         return issues
 
@@ -897,4 +912,17 @@ class HealthChecker:
 async def get_health_status(config_path: str = "config.yaml") -> HealthStatus:
     """Convenience function to get current health status."""
     checker = HealthChecker(config_path)
-    return await checker.check_all()
+    try:
+        return await asyncio.wait_for(checker.check_all(), timeout=15.0)
+    except TimeoutError:
+        return HealthStatus(
+            healthy=False,
+            issues=[
+                HealthIssue(
+                    category="ha_connection",
+                    severity="critical",
+                    message="Health check timed out after 15 seconds",
+                    guidance="The system is experiencing connectivity issues. Check network and Home Assistant availability.",
+                )
+            ],
+        )

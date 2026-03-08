@@ -14,7 +14,7 @@ from backend.core.cache import cache_sync
 from backend.exceptions import PVForecastError
 from backend.health import set_load_forecast_status
 from ml.api import get_forecast_slots
-from ml.weather import get_weather_volatility
+from ml.weather import async_get_weather_volatility
 
 logger = logging.getLogger("darkstar.inputs")
 
@@ -225,9 +225,15 @@ async def get_nordpool_data(config_path: str = "config.yaml") -> list[dict[str, 
     prices_client = Prices(currency=currency)
 
     try:
-        # Fetch prices for today and tomorrow using to_thread
-        raw_today = await asyncio.to_thread(
-            prices_client.fetch, end_date=today, areas=[price_area], resolution=resolution_minutes
+        # Fetch prices for today and tomorrow using to_thread with timeout
+        raw_today = await asyncio.wait_for(
+            asyncio.to_thread(
+                prices_client.fetch,
+                end_date=today,
+                areas=[price_area],
+                resolution=resolution_minutes,
+            ),
+            timeout=10.0,
         )
         today_values = []
         if raw_today and "areas" in raw_today and price_area in raw_today["areas"]:
@@ -237,11 +243,14 @@ async def get_nordpool_data(config_path: str = "config.yaml") -> list[dict[str, 
         tomorrow_values = []
         if now.hour >= 13:
             tomorrow = today + timedelta(days=1)
-            raw_tomorrow = await asyncio.to_thread(
-                prices_client.fetch,
-                end_date=tomorrow,
-                areas=[price_area],
-                resolution=resolution_minutes,
+            raw_tomorrow = await asyncio.wait_for(
+                asyncio.to_thread(
+                    prices_client.fetch,
+                    end_date=tomorrow,
+                    areas=[price_area],
+                    resolution=resolution_minutes,
+                ),
+                timeout=10.0,
             )
             if raw_tomorrow and "areas" in raw_tomorrow and price_area in raw_tomorrow["areas"]:
                 all_raw = raw_tomorrow["areas"][price_area].get("values", [])
@@ -257,6 +266,9 @@ async def get_nordpool_data(config_path: str = "config.yaml") -> list[dict[str, 
         processed = _process_nordpool_data(all_entries, config)
         cache_sync.set(cache_key, processed, ttl_seconds=3600.0)
         return processed
+    except TimeoutError:
+        print("Warning: Nordpool price fetch timed out after 10 seconds, returning empty data")
+        return []
     except Exception as exc:
         print(f"Warning: Failed to fetch Nordpool prices: {exc}")
         import traceback
@@ -957,7 +969,7 @@ async def get_all_input_data(config_path: str = "config.yaml") -> dict[str, Any]
     now_local = datetime.now(local_tz)
     horizon_end = now_local + timedelta(hours=48)
 
-    volatility_raw = get_weather_volatility(now_local, horizon_end, config)
+    volatility_raw = await async_get_weather_volatility(now_local, horizon_end, config)
     cloud_vol = float(volatility_raw.get("cloud_volatility", 0.0) or 0.0)
     temp_vol = float(volatility_raw.get("temp_volatility", 0.0) or 0.0)
 

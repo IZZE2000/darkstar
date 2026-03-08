@@ -18,7 +18,7 @@ from backend.learning import LearningEngine, get_learning_engine
 from backend.validation import get_max_energy_per_slot
 from ml.context_features import get_vacation_mode_series
 from ml.train import _build_time_features  # type: ignore[reportPrivateUsage]
-from ml.weather import get_weather_series
+from ml.weather import async_get_weather_series, get_weather_series
 
 
 @dataclass
@@ -392,7 +392,7 @@ async def predict_corrections(
     # Build feature frame for the horizon, mirroring forward.py
     df = pd.DataFrame({"slot_start": [rec["slot_start"] for rec in base_records]})
 
-    weather_df = get_weather_series(slot_start, horizon_end, config=engine.config)
+    weather_df = await async_get_weather_series(slot_start, horizon_end, config=engine.config)
     if not weather_df.empty:
         df = df.merge(weather_df, left_on="slot_start", right_index=True, how="left")
     else:
