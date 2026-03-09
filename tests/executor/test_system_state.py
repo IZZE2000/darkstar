@@ -1,13 +1,31 @@
 import pytest
+import pytest_asyncio
 import pytz
+from sqlalchemy.ext.asyncio import create_async_engine
 
+from backend.learning.models import Base
 from backend.learning.store import LearningStore
 
 
+@pytest_asyncio.fixture
+async def db_store():
+    """Create a LearningStore with initialized DB schema."""
+    db_path = "data/test_planner.db"
+    engine = create_async_engine(f"sqlite+aiosqlite:///{db_path}")
+
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    store = LearningStore(db_path, pytz.UTC)
+    yield store
+
+    await store.close()
+    await engine.dispose()
+
+
 @pytest.mark.asyncio
-async def test_system_state_persistence():
-    # Use the same path as conftest.py
-    store = LearningStore("data/test_planner.db", pytz.UTC)
+async def test_system_state_persistence(db_store):
+    store = db_store
 
     # Test 1: Get non-existent key
     val = await store.get_system_state("non_existent")
@@ -22,5 +40,3 @@ async def test_system_state_persistence():
     await store.set_system_state("test_key", "updated_value")
     val = await store.get_system_state("test_key")
     assert val == "updated_value"
-
-    await store.close()
