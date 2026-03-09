@@ -61,7 +61,16 @@ export default function Dashboard() {
         pvForecast: number | null
         loadConsumption: number | null
         netCost: number | null
+        evCharging: number | null
+        waterHeating: number | null
     } | null>(null)
+    // System configuration flags for conditional rendering
+    const [systemFlags, setSystemFlags] = useState<{
+        hasSolar: boolean
+        hasBattery: boolean
+        hasWaterHeater: boolean
+        hasEvCharger: boolean
+    }>({ hasSolar: true, hasBattery: true, hasWaterHeater: true, hasEvCharger: false })
     const [waterBoostActive, setWaterBoostActive] = useState<{
         boost: boolean
         expires_at?: string
@@ -233,6 +242,15 @@ export default function Dashboard() {
                 const sIndex = (data as Record<string, unknown>).s_index as Record<string, unknown> | undefined
                 if (typeof sIndex?.risk_appetite === 'number') setRiskAppetite(sIndex.risk_appetite)
 
+                // System flags for conditional rendering
+                const systemConfig = data.system || {}
+                setSystemFlags({
+                    hasSolar: systemConfig.has_solar ?? true,
+                    hasBattery: systemConfig.has_battery ?? true,
+                    hasWaterHeater: systemConfig.has_water_heater ?? true,
+                    hasEvCharger: systemConfig.has_ev_charger ?? false,
+                })
+
                 // Battery capacity
                 if (data.battery?.capacity_kwh != null) setBatteryCapacity(data.battery.capacity_kwh)
                 else if (data.system?.battery?.capacity_kwh != null)
@@ -339,14 +357,12 @@ export default function Dashboard() {
             const [
                 haAverageData,
                 todayStatsData,
-                waterData,
                 auroraData,
                 historyData,
                 executorHealthData, // Phase 3
             ] = await Promise.allSettled([
                 Api.haAverage(), // Cached for 60s
                 Api.energyToday(),
-                Api.haWaterToday(),
                 Api.aurora.dashboard(),
                 Api.scheduleTodayWithHistory(),
                 Api.executor.health(), // Phase 3
@@ -382,16 +398,14 @@ export default function Dashboard() {
                     pvProduction: data.pv_production_kwh ?? null,
                     pvForecast: pvForecastTotal >= 0 ? parseFloat(pvForecastTotal.toFixed(1)) : null,
                     loadConsumption: data.load_consumption_kwh ?? null,
-                    netCost: data.net_cost_kr ?? null,
+                    netCost: data.net_cost_sek ?? data.net_cost_kr ?? null,
+                    evCharging: data.ev_charging_kwh ?? null,
+                    waterHeating: data.water_heating_kwh ?? null,
                 })
             }
 
-            if (waterData.status === 'fulfilled') {
-                setWaterToday({
-                    kwh: waterData.value.water_kwh_today ?? 0,
-                    source: waterData.value.source ?? 'unknown',
-                })
-            }
+            // REV 2.6.1-beta: Water data now comes from unified energy/today endpoint
+            // Old Api.haWaterToday() call removed - data is in todayStats.waterHeating
 
             if (historyData.status === 'fulfilled') {
                 setHistorySlots(historyData.value.slots ?? [])
@@ -898,7 +912,12 @@ export default function Dashboard() {
                     pvForecast={todayStats?.pvForecast ?? null}
                     loadActual={todayStats?.loadConsumption ?? null}
                     loadAvg={avgLoad?.dailyKwh ?? null}
-                    waterKwh={waterToday?.kwh ?? null}
+                    waterKwh={todayStats?.waterHeating ?? null}
+                    evChargingKwh={todayStats?.evCharging ?? null}
+                    hasSolar={systemFlags.hasSolar}
+                    hasBattery={systemFlags.hasBattery}
+                    hasWaterHeater={systemFlags.hasWaterHeater}
+                    hasEvCharger={systemFlags.hasEvCharger}
                     batteryCapacity={batteryCapacity}
                 />
 

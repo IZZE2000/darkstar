@@ -1,8 +1,6 @@
-import asyncio
 import json
 import logging
 import traceback
-from collections.abc import Coroutine  # noqa: TC003
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
@@ -16,7 +14,6 @@ from backend.api.deps import get_learning_store
 from backend.learning.store import LearningStore
 from inputs import (
     get_ha_entity_state,
-    get_ha_sensor_float,
     load_home_assistant_config,
     load_yaml,
     make_ha_headers,
@@ -284,11 +281,19 @@ async def get_performance_data(days: int = 7) -> dict[str, Any]:
 
 @router_ha.get(
     "/water_today",
-    summary="Get Water Heating Energy",
-    description="Get today's water heating energy usage.",
+    summary="[DEPRECATED] Get Water Heating Energy",
+    description="DEPRECATED: Use /api/services/energy/today instead. Returns water_heating_kwh field.",
 )
 async def get_water_today() -> dict[str, Any]:
-    """Get today's water heating energy usage."""
+    """DEPRECATED: Get today's water heating energy from unified energy endpoint.
+
+    This endpoint is deprecated and will be removed in a future version.
+    Use /api/services/energy/today which now includes water_heating_kwh field.
+    """
+    logger.warning(
+        "Deprecated endpoint /api/ha/water_today called. Use /api/services/energy/today instead."
+    )
+
     config = load_yaml("config.yaml")
 
     # Check if water heater feature is enabled
@@ -296,13 +301,22 @@ async def get_water_today() -> dict[str, Any]:
     has_water_heater = system_config.get("has_water_heater", False)
 
     if not has_water_heater:
-        return {"water_kwh_today": 0.0, "cost": 0.0, "source": "disabled"}
+        return {
+            "water_kwh_today": 0.0,
+            "cost": 0.0,
+            "source": "disabled",
+            "deprecated": True,
+            "note": "Use /api/services/energy/today endpoint instead",
+        }
 
-    sensors: dict[str, Any] = config.get("input_sensors", {})
-    entity_id = sensors.get("water_heater_consumption", "sensor.vvb_energy_daily")
-
-    kwh = await get_ha_sensor_float(str(entity_id)) or 0.0
-    return {"water_kwh_today": kwh, "cost": 0.0, "source": "home_assistant"}
+    # Return deprecation notice - clients should migrate to energy/today
+    return {
+        "water_kwh_today": 0.0,
+        "cost": 0.0,
+        "source": "deprecated",
+        "deprecated": True,
+        "note": "Use /api/services/energy/today endpoint which now includes water_heating_kwh field",
+    }
 
 
 # --- Services Endpoints ---
@@ -400,66 +414,54 @@ async def cancel_water_boost() -> dict[str, str]:
 @router_services.get(
     "/energy/today",
     summary="Get Today's Energy",
-    description="Get today's energy summary from HA sensors using parallel async fetching.",
+    description="Get today's energy summary from database (SlotObservation table).",
 )
-async def get_energy_today() -> dict[str, float]:
-    """Get today's energy summary from HA sensors in parallel."""
+async def get_energy_today(
+    store: LearningStore = Depends(get_learning_store),
+) -> dict[str, float]:
+    """Get today's energy summary from database aggregation."""
+    # Delegate to energy/range with period="today" to avoid duplicate query logic
+    range_data = await get_energy_range(period="today", store=store)
+
+    # Extract values from range response (using unified keys)
+    grid_imp_kwh = range_data.get("grid_import_kwh", 0.0)
+    grid_exp_kwh = range_data.get("grid_export_kwh", 0.0)
+    pv_kwh = range_data.get("pv_production_kwh", 0.0)
+    load_kwh = range_data.get("load_consumption_kwh", 0.0)
+    batt_chg_kwh = range_data.get("battery_charge_kwh", 0.0)
+    batt_dis_kwh = range_data.get("battery_discharge_kwh", 0.0)
+    ev_kwh = range_data.get("ev_charging_kwh", 0.0)
+    water_kwh = range_data.get("water_heating_kwh", 0.0)
+    net_cost = range_data.get("net_cost_sek", 0.0)
+
+    # Calculate battery cycles
     config = load_yaml("config.yaml")
-    sensors: dict[str, Any] = config.get("input_sensors", {})
-
-    # Define keys we want to fetch
-    keys = [
-        "today_grid_import",
-        "today_grid_export",
-        "today_pv_production",
-        "today_load_consumption",
-        "today_battery_charge",
-        "today_battery_discharge",
-        "today_net_cost",
-    ]
-
-    # Map keys to entity IDs
-    tasks: list[Coroutine[Any, Any, float | None]] = []
-    for key in keys:
-        eid = sensors.get(key)
-        if eid:
-            tasks.append(get_ha_sensor_float(str(eid)))
-        else:
-            tasks.append(asyncio.sleep(0, result=0.0))  # Placeholder for missing config
-
-    # Fetch all in parallel!
-    results: list[float | None] = await asyncio.gather(*tasks)
-
-    # Map back to variables
-    grid_imp_kwh = results[0] or 0.0
-    grid_exp_kwh = results[1] or 0.0
-    pv_kwh = results[2] or 0.0
-    load_kwh = results[3] or 0.0
-    batt_chg_kwh = results[4] or 0.0
-    batt_dis_kwh = results[5] or 0.0
-    net_cost = results[6] or 0.0
-
-    # Calculate Cycles
     battery_cycles = 0.0
     try:
         cap = float(config.get("battery", {}).get("capacity_kwh", 0.0))
         if cap > 0:
-            # Cycles = Discharged Energy / Capacity
             battery_cycles = batt_dis_kwh / cap
     except Exception:
         pass
 
+    # Return unified response with both legacy aliases and new keys
     return {
-        "solar": round(pv_kwh, 2),
-        "grid_import": round(grid_imp_kwh, 2),
-        "grid_export": round(grid_exp_kwh, 2),
-        "consumption": round(load_kwh, 2),
+        # New unified keys (match energy/range)
+        "pv_production_kwh": round(pv_kwh, 2),
+        "load_consumption_kwh": round(load_kwh, 2),
         "grid_import_kwh": round(grid_imp_kwh, 2),
         "grid_export_kwh": round(grid_exp_kwh, 2),
         "battery_charge_kwh": round(batt_chg_kwh, 2),
+        "battery_discharge_kwh": round(batt_dis_kwh, 2),
+        "ev_charging_kwh": round(ev_kwh, 2),
+        "water_heating_kwh": round(water_kwh, 2),
+        "net_cost_sek": round(net_cost, 2),
         "battery_cycles": round(battery_cycles, 2),
-        "pv_production_kwh": round(pv_kwh, 2),
-        "load_consumption_kwh": round(load_kwh, 2),
+        # Legacy aliases (for backwards compatibility during transition)
+        "solar": round(pv_kwh, 2),
+        "consumption": round(load_kwh, 2),
+        "grid_import": round(grid_imp_kwh, 2),
+        "grid_export": round(grid_exp_kwh, 2),
         "net_cost_kr": round(net_cost, 2),
     }
 
@@ -467,7 +469,7 @@ async def get_energy_today() -> dict[str, float]:
 @router_services.get(
     "/energy/range",
     summary="Get Energy Range",
-    description="Get energy range data (today, yesterday, week, month, custom).",
+    description="Get energy range data (today, yesterday, week, month, custom) from database.",
 )
 async def get_energy_range(
     period: str = "today",
@@ -475,22 +477,14 @@ async def get_energy_range(
     end_date: str | None = None,
     store: LearningStore = Depends(get_learning_store),
 ) -> dict[str, Any]:
-    """Get energy range data."""
+    """Get energy range data from database (SlotObservation table)."""
     import pytz
     from sqlalchemy import func, select
 
     from backend.learning.models import SlotObservation
 
     config = load_yaml("config.yaml")
-    sensors: dict[str, Any] = config.get("input_sensors", {})
 
-    async def get_val(key: str, default: float = 0.0) -> float:
-        eid = sensors.get(key)
-        if not eid:
-            return default
-        return await get_ha_sensor_float(str(eid)) or default
-
-    # All periods now query the database for financial metrics
     try:
         tz = pytz.timezone(config.get("timezone", "Europe/Stockholm"))
         now_local = datetime.now(tz)
@@ -549,6 +543,7 @@ async def get_energy_range(
                 func.sum(func.coalesce(SlotObservation.water_kwh, 0)),
                 func.sum(func.coalesce(SlotObservation.pv_kwh, 0)),
                 func.sum(func.coalesce(SlotObservation.load_kwh, 0)),
+                func.sum(func.coalesce(SlotObservation.ev_charging_kwh, 0)),
                 # Costs
                 func.sum(
                     func.coalesce(SlotObservation.import_kwh, 0)
@@ -591,34 +586,18 @@ async def get_energy_range(
         water_kwh = float(row[4] or 0.0)
         pv_kwh = float(row[5] or 0.0)
         load_kwh = float(row[6] or 0.0)
+        ev_kwh = float(row[7] or 0.0)
 
-        import_cost = float(row[7] or 0.0)
-        export_rev = float(row[8] or 0.0)
-        grid_charge_cost = float(row[9] or 0.0)
-        self_cons_savings = float(row[10] or 0.0)
-        slot_count = int(row[11] or 0)
+        import_cost = float(row[8] or 0.0)
+        export_rev = float(row[9] or 0.0)
+        grid_charge_cost = float(row[10] or 0.0)
+        self_cons_savings = float(row[11] or 0.0)
+        slot_count = int(row[12] or 0)
 
         net_cost = import_cost - export_rev
 
-        # For "today", overlay real-time HA sensor values for energy totals
-        # This ensures dashboard shows up-to-date energy values even if DB lags
-        if period == "today":
-            ha_grid_imp = await get_val("today_grid_import")
-            ha_grid_exp = await get_val("today_grid_export")
-            ha_pv = await get_val("today_pv_production")
-            ha_load = await get_val("today_load_consumption")
-            ha_batt_chg = await get_val("today_battery_charge")
-            ha_batt_dis = await get_val("today_battery_discharge")
-            ha_water = await get_val("water_heater_consumption")
-
-            # Use HA values if they're larger (more current) than DB values
-            grid_imp_kwh = max(grid_imp_kwh, ha_grid_imp)
-            grid_exp_kwh = max(grid_exp_kwh, ha_grid_exp)
-            pv_kwh = max(pv_kwh, ha_pv)
-            load_kwh = max(load_kwh, ha_load)
-            batt_chg_kwh = max(batt_chg_kwh, ha_batt_chg)
-            batt_dis_kwh = max(batt_dis_kwh, ha_batt_dis)
-            water_kwh = max(water_kwh, ha_water)
+        # NOTE: No longer overlaying HA sensor values - using DB-only data
+        # This ensures consistency with the recorder's isolation logic
 
         return {
             "period": period,
@@ -631,6 +610,7 @@ async def get_energy_range(
             "water_heating_kwh": round(water_kwh, 2),
             "pv_production_kwh": round(pv_kwh, 2),
             "load_consumption_kwh": round(load_kwh, 2),
+            "ev_charging_kwh": round(ev_kwh, 2),
             "import_cost_sek": round(import_cost, 2),
             "export_revenue_sek": round(export_rev, 2),
             "grid_charge_cost_sek": round(grid_charge_cost, 2),
@@ -639,7 +619,6 @@ async def get_energy_range(
             "slot_count": slot_count,
         }
     except Exception as e:
-        # logger.warning(f"Failed to get historical energy data for {period}: {e}")
         # Fallback with zeros
         return {
             "period": period,
@@ -652,6 +631,7 @@ async def get_energy_range(
             "water_heating_kwh": 0.0,
             "pv_production_kwh": 0.0,
             "load_consumption_kwh": 0.0,
+            "ev_charging_kwh": 0.0,
             "import_cost_sek": 0.0,
             "export_revenue_sek": 0.0,
             "grid_charge_cost_sek": 0.0,

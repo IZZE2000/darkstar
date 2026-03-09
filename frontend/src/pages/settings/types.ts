@@ -285,41 +285,6 @@ export const systemSections: SettingsSection[] = [
         ],
     },
     {
-        title: '── Energy Totals (Dashboard) ──',
-        isHA: true,
-        description: "Today's energy totals for Dashboard display. Optional - if not set, Dashboard shows 0.0.",
-        fields: [
-            {
-                key: 'input_sensors.today_load_consumption',
-                label: "Today's Load Consumption (kWh)",
-                path: ['input_sensors', 'today_load_consumption'],
-                type: 'entity',
-                helper: "Today's total load consumption. Dashboard shows 0.0 if not configured.",
-                required: false,
-            },
-            {
-                key: 'input_sensors.today_grid_import',
-                label: "Today's Grid Import (kWh)",
-                path: ['input_sensors', 'today_grid_import'],
-                type: 'entity',
-                helper: "Today's grid import energy. Dashboard shows 0.0 if not configured.",
-                required: false,
-            },
-            {
-                key: 'input_sensors.today_grid_export',
-                label: "Today's Grid Export (kWh)",
-                path: ['input_sensors', 'today_grid_export'],
-                type: 'entity',
-                helper: "Today's grid export energy. Dashboard shows 0.0 if not configured.",
-                required: false,
-                showIf: {
-                    configKey: 'export.enable_export',
-                    disabledText: 'Enable "Grid Export" in System Profile to configure',
-                },
-            },
-        ],
-    },
-    {
         title: '── Lifetime Energy Totals ──',
         isHA: true,
         description: 'Cumulative lifetime energy sensors for forecasting accuracy.',
@@ -876,21 +841,6 @@ export const solarSections: SettingsSection[] = [
         ],
     },
     {
-        title: '── Energy Totals (Dashboard) ──',
-        isHA: true,
-        description: "Today's solar energy for Dashboard display. Optional - if not set, Dashboard shows 0.0.",
-        fields: [
-            {
-                key: 'input_sensors.today_pv_production',
-                label: "Today's PV Production (kWh)",
-                path: ['input_sensors', 'today_pv_production'],
-                type: 'entity',
-                helper: "Today's solar energy production. Dashboard shows 0.0 if not configured.",
-                required: false,
-            },
-        ],
-    },
-    {
         title: '── Lifetime Energy Totals ──',
         isHA: true,
         description: 'Cumulative lifetime solar production for forecasting accuracy.',
@@ -1032,29 +982,6 @@ export const batterySections: SettingsSection[] = [
                 path: ['input_sensors', 'battery_power'],
                 type: 'entity',
                 companionKey: 'input_sensors.battery_power_inverted',
-            },
-        ],
-    },
-    {
-        title: '── Energy Totals (Dashboard) ──',
-        isHA: true,
-        description: "Today's battery energy for Dashboard display. Optional - if not set, Dashboard shows 0.0.",
-        fields: [
-            {
-                key: 'input_sensors.today_battery_charge',
-                label: "Today's Battery Charge (kWh)",
-                path: ['input_sensors', 'today_battery_charge'],
-                type: 'entity',
-                helper: "Today's battery charge energy. Dashboard shows 0.0 if not configured.",
-                required: false,
-            },
-            {
-                key: 'input_sensors.today_battery_discharge',
-                label: "Today's Battery Discharge (kWh)",
-                path: ['input_sensors', 'today_battery_discharge'],
-                type: 'entity',
-                helper: "Today's battery discharge energy. Dashboard shows 0.0 if not configured.",
-                required: false,
             },
         ],
     },

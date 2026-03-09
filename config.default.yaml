@@ -271,15 +271,6 @@ input_sensors:
   total_pv_production: ""           # Cumulative PV production (kWh)
   water_heater_consumption: ""               # Water heater daily energy (kWh)
 
-  # Daily sensors for Dashboard "Today's Stats" card
-  today_grid_import: ""          # Today's grid import (kWh)
-  today_grid_export: ""          # Today's grid export (kWh)
-  today_battery_charge: ""       # Today's battery charge (kWh)
-  today_battery_discharge: "" # Today's battery discharge (kWh)
-  today_pv_production: ""           # Today's PV production (kWh)
-  today_load_consumption: ""  # Today's load consumption (kWh)
-  today_net_cost: ""                               # Today's net electricity cost
-
 # Executor (control loop that WRITES to Home Assistant)
 executor:
   enabled: true                                  # Enable executor control loop

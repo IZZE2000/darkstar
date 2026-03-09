@@ -1,8 +1,38 @@
-## [v2.6.1-beta] - Bug Fixes - 2026-03-09
+## [v2.6.1-beta] - DB-First Energy Display & Bug Fixes - 2026-03-09
+
+> [!IMPORTANT]
+> **BREAKING CHANGE: Today Sensors Removed**
+> This release removes the requirement for `today_*` sensors. Darkstar now sources all daily energy totals from the database (SlotObservation table) instead of Home Assistant sensors. This ensures consistent data across Dashboard, ML training, and planning.
+>
+> **Migration Required:**
+> 1. Remove all `today_*` sensors from your `config.yaml` input_sensors section
+> 2. Keep your cumulative sensors (total_load_consumption, total_grid_import, etc.)
+> 3. Restart Darkstar
+>
+> The Dashboard will now display water heating and EV charging data from the unified energy endpoint.
 
 > [!IMPORTANT]
 > **BUG FIXES**
 > This release contains important fixes for EV charging replan functionality.
+
+**✨ New Features**
+
+- **Unified Energy Endpoint**: `/api/services/energy/today` now returns all daily energy metrics from the database, including:
+    - `ev_charging_kwh` — Daily EV charging total (new field)
+    - `water_heating_kwh` — Daily water heating total (new field)
+    - All existing metrics (solar, load, grid import/export, battery cycles)
+- **Conditional Dashboard Rendering**: The Energy Resources card now conditionally displays:
+    - Solar Production (only when `has_solar: true`)
+    - Battery metrics (only when `has_battery: true`)
+    - Water Heating (only when `has_water_heater: true`)
+    - EV Charging (only when `has_ev_charger: true`)
+- **Deprecated Endpoint**: `GET /api/ha/water_today` is now deprecated. Use `/api/services/energy/today` which includes `water_heating_kwh`.
+
+**🔧 Improvements**
+
+- **Data Consistency**: Dashboard and ML training now use the same data source (SlotObservation table), eliminating discrepancies between displayed and actual energy usage.
+- **Simplified Configuration**: Removed 7 `today_*` sensors from required configuration. Users now only need cumulative sensors for forecasting.
+- **Database-First Architecture**: All daily energy totals are aggregated from 15-minute observations stored in SQLite, removing dependency on HA's daily sensor reset timing.
 
 **🐛 Bug Fixes**
 

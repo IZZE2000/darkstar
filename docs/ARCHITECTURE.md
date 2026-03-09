@@ -208,6 +208,51 @@ new_cost = (old_kwh * old_cost) / (old_kwh + pv_surplus_kwh)
 ### Storage
 Persists in `planner_learning.db` table `battery_cost` with single row (id=1).
 
+---
+
+## 5.5 Database-First Energy Architecture (Rev 2.6.1)
+
+As of **v2.6.1-beta**, Darkstar uses the **SQLite database** as the single source of truth for all daily energy metrics displayed in the Dashboard.
+
+### The Problem (Pre-2.6.1)
+Previously, the Dashboard fetched daily energy totals from Home Assistant's `today_*` sensors:
+- **Inconsistent Data**: HA sensors reported total load (EV included), while the recorder stored base load (EV subtracted)
+- **Extra Configuration**: Users had to configure 7 additional "today_*" sensors
+- **Timing Issues**: HA sensor resets could cause discrepancies
+
+### The Solution (Post-2.6.1)
+All daily energy totals are now aggregated from the `SlotObservation` table:
+
+```
+┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
+│  Cumulative HA  │────▶│  Recorder        │────▶│  SlotObservation│
+│  Sensors        │     │  (15-min deltas) │     │  (SQLite)       │
+└─────────────────┘     └──────────────────┘     └────────┬────────┘
+                                                          │
+                                    ┌─────────────────────┘
+                                    │
+                                    ▼
+┌──────────────────────────────────────────────────────────────────┐
+│  Energy API (/api/services/energy/today)                         │
+│  ├── SUM(load_kwh) → load_consumption_kwh                        │
+│  ├── SUM(pv_kwh) → pv_production_kwh                             │
+│  ├── SUM(ev_charging_kwh) → ev_charging_kwh    [NEW]             │
+│  ├── SUM(water_kwh) → water_heating_kwh        [NEW]             │
+│  └── SUM(import_kwh) * price → net_cost_sek                      │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+### Benefits
+1. **Data Consistency**: Dashboard, ML training, and planning all use the same data
+2. **Simplified Config**: Removed 7 `today_*` sensors from configuration requirements
+3. **EV Isolation**: EV charging is properly isolated from house load in all displays
+4. **Historical Accuracy**: No dependency on HA's daily reset timing
+
+### API Changes
+- **Unified Response**: Both `/energy/today` and `/energy/range` return the same key structure
+- **Legacy Aliases**: Old keys (`solar`, `consumption`, `net_cost_kr`) maintained for compatibility
+- **New Fields**: `ev_charging_kwh` and `water_heating_kwh` now included in all responses
+
 ## 6. Modular Planner Pipeline
 
 The planner has been refactored from a monolithic "God class" into a modular `planner/` package:
@@ -1084,7 +1129,7 @@ As of **REV UI20**, the settings page has been reorganized into **device-centric
 |-----|------------|----------|
 | **System** | Always | System profile toggles (has_solar, has_battery, etc.), Grid config, Pricing, Timezone, HA Connection, Inverter control entities, Non-device sensors (load_power, grid_power) |
 | **Parameters** | Always | Forecasting & Strategy, Arbitrage & Economics, Battery Economics, Learning, S-Index, Charging Strategy |
-| **Solar** | has_solar=true | Location coordinates, Solar arrays configuration, PV sensors (pv_power, today_pv_production, total_pv_production) |
+| **Solar** | has_solar=true | Location coordinates, Solar arrays configuration, PV sensors (pv_power, total_pv_production) |
 | **Battery** | has_battery=true | Battery specifications (capacity, SoC limits, max power), Battery sensors (battery_soc, battery_power, charge/discharge totals), Work mode selector |
 | **EV** | has_ev_charger=true | EV chargers array, EV sensors (ev_soc, ev_plug, ev_power), Charger controls (switch, replan triggers) |
 | **Water** | has_water_heater=true | Water heaters array, Water sensors (water_power, consumption), Scheduling params, Temperature setpoints, Vacation mode |

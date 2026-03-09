@@ -338,13 +338,23 @@ export type ExecutorHealthResponse = {
 }
 
 export type EnergyTodayResponse = {
+    // Unified keys (new standard)
+    pv_production_kwh: number | null
+    load_consumption_kwh: number | null
     grid_import_kwh: number | null
     grid_export_kwh: number | null
     battery_charge_kwh: number | null
+    battery_discharge_kwh: number | null
+    ev_charging_kwh: number | null
+    water_heating_kwh: number | null
+    net_cost_sek: number | null
     battery_cycles: number | null
-    pv_production_kwh: number | null
-    load_consumption_kwh: number | null
-    net_cost_kr: number | null
+    // Legacy aliases (for backwards compatibility)
+    solar?: number | null
+    consumption?: number | null
+    grid_import?: number | null
+    grid_export?: number | null
+    net_cost_kr?: number | null
 }
 
 export type EnergyRangeResponse = {

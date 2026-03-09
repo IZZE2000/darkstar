@@ -508,7 +508,8 @@ class HealthChecker:
 
         # Define which sensors are HARD requirements for core functionality
         # If False, a missing entity is a WARNING, not a CRITICAL error.
-        # REV F65: Cumulative and today sensors are REQUIRED for forecasting/ML
+        # REV F65: Cumulative sensors are REQUIRED for forecasting/ML
+        # NOTE: today_* sensors are DEPRECATED (v2.6.1-beta) - energy data comes from DB
         learning_cfg = self._config.get("learning", {})
         is_learning_enabled = learning_cfg.get("enable", False)
 
@@ -527,13 +528,6 @@ class HealthChecker:
             "total_grid_export": is_learning_enabled,
             "total_battery_charge": is_learning_enabled,
             "total_battery_discharge": is_learning_enabled,
-            # Today's sensors (REQUIRED for dashboard - F65)
-            "today_load_consumption": True,
-            "today_pv_production": True,
-            "today_grid_import": True,
-            "today_grid_export": True,
-            "today_battery_charge": True,
-            "today_battery_discharge": True,
             # Features (WARNING if missing but enabled)
             "water_power": has_water_heater,
             "water_heater_consumption": has_water_heater,
@@ -641,32 +635,6 @@ class HealthChecker:
                         ),
                     )
                 )
-
-        # REV F65: Add Today's Stats warning
-        today_sensors = [
-            "today_load_consumption",
-            "today_pv_production",
-            "today_grid_import",
-            "today_grid_export",
-            "today_battery_charge",
-            "today_battery_discharge",
-        ]
-        missing_today = [
-            s for s in today_sensors if s not in input_sensors or not input_sensors.get(s)
-        ]
-        if missing_today:
-            issues.append(
-                HealthIssue(
-                    category="config",
-                    severity="warning",
-                    message="Dashboard 'Today's Stats' will show incomplete data",
-                    guidance=(
-                        f"Missing today's sensors: {', '.join(missing_today)}. "
-                        f"The dashboard 'Today's Stats' card will not display correctly. "
-                        f"Add these sensors to input_sensors for complete daily statistics."
-                    ),
-                )
-            )
 
         # Check each entity concurrently using asyncio.gather
         headers = {"Authorization": f"Bearer {token}"}
