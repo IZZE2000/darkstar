@@ -1191,13 +1191,16 @@ class ExecutorEngine:
                         self._ev_power_fetch_failed = True
                     actual_ev_power_kw = float("inf")  # Fail-safe: assume EV charging
 
-            # Block discharge if scheduled OR actual EV charging detected
+            # Rev EVFIX: Separate switch control from source isolation
             actual_ev_charging: bool = actual_ev_power_kw > 0.1
-            ev_should_charge: bool = scheduled_ev_charging or actual_ev_charging
+            # Switch control: ONLY scheduled charging can turn on the switch
+            ev_should_charge_switch: bool = scheduled_ev_charging
+            # Source isolation: Block discharge for both scheduled AND actual charging
+            ev_should_charge_block: bool = scheduled_ev_charging or actual_ev_charging
 
             # Source Isolation: Block battery discharge when EV charging
-            if ev_should_charge and self._has_battery:
-                # REV F76 Phase 5 (Issue 4): Smart state-based logging
+            if ev_should_charge_block and self._has_battery:
+                # Rev EVFIX: Updated logging to distinguish switch control vs source isolation
                 if not self._ev_detected_last_tick:
                     # State transition: EV started charging
                     if self._ev_power_fetch_failed:
@@ -1206,12 +1209,12 @@ class ExecutorEngine:
                         )
                     elif actual_ev_charging and not scheduled_ev_charging:
                         logger.info(
-                            "EV charging started: %.2f kW detected (not in schedule) - Source isolation: Blocking battery discharge",
+                            "EV charging detected: %.2f kW (not in schedule) - Source isolation active (blocking discharge), switch remains OFF",
                             actual_ev_power_kw,
                         )
                     else:
                         logger.info(
-                            "EV charging started: %.1f kW scheduled, %.2f kW actual - Source isolation: Blocking battery discharge",
+                            "EV charging active: %.1f kW scheduled, %.2f kW actual - Source isolation: Blocking battery discharge",
                             ev_charging_kw,
                             actual_ev_power_kw,
                         )
@@ -1252,7 +1255,7 @@ class ExecutorEngine:
 
             # Control EV Charger Switch
             if self._has_ev_charger and self.config.ev_charger.switch_entity:
-                await self._control_ev_charger(ev_should_charge, ev_charging_kw, now)
+                await self._control_ev_charger(ev_should_charge_switch, ev_charging_kw, now)
 
             # 6. Execute actions
             action_results: list[ActionResult] = []

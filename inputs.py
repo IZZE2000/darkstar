@@ -845,9 +845,16 @@ async def _get_forecast_data_async(
     }
 
 
-async def get_initial_state(config_path: str = "config.yaml") -> dict[str, Any]:
+async def get_initial_state(
+    config_path: str = "config.yaml",
+    ev_plugged_in_override: bool | None = None,
+) -> dict[str, Any]:
     """
     Get the initial battery state (Asynchronous).
+
+    Args:
+        config_path: Path to config.yaml
+        ev_plugged_in_override: If provided, use this value instead of fetching from HA
     """
     with Path(config_path).open() as f:
         config = yaml.safe_load(f)
@@ -920,7 +927,13 @@ async def get_initial_state(config_path: str = "config.yaml") -> dict[str, Any]:
         else:
             logger.warning("has_ev_charger is true but ev_soc sensor is not configured")
 
-        if ev_plug_entity:
+        # Rev EVFIX: Use override if provided (avoids WebSocket-vs-REST race)
+        if ev_plugged_in_override is not None:
+            ev_plugged_in = ev_plugged_in_override
+            logger.debug(
+                "Using ev_plugged_in_override=%s (skipping HA REST fetch)", ev_plugged_in_override
+            )
+        elif ev_plug_entity:
             ev_plugged_in = await get_ha_bool(ev_plug_entity)
         else:
             logger.warning("has_ev_charger is true but ev_plug sensor is not configured")
@@ -935,9 +948,16 @@ async def get_initial_state(config_path: str = "config.yaml") -> dict[str, Any]:
     }
 
 
-async def get_all_input_data(config_path: str = "config.yaml") -> dict[str, Any]:
+async def get_all_input_data(
+    config_path: str = "config.yaml",
+    ev_plugged_in_override: bool | None = None,
+) -> dict[str, Any]:
     """
     Orchestrate all input data fetching.
+
+    Args:
+        config_path: Path to config.yaml
+        ev_plugged_in_override: If provided, passed to get_initial_state to avoid REST race
     """
     # Load config
     with Path(config_path).open() as f:
@@ -987,7 +1007,9 @@ async def get_all_input_data(config_path: str = "config.yaml") -> dict[str, Any]
 
     forecast_result = await get_forecast_data(price_data, config)
     forecast_data = forecast_result.get("slots", [])
-    initial_state = await get_initial_state(config_path)
+    initial_state = await get_initial_state(
+        config_path, ev_plugged_in_override=ev_plugged_in_override
+    )
 
     return {
         "price_data": price_data,

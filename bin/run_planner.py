@@ -33,7 +33,9 @@ def get_version_string() -> str:
         return os.environ.get("DARKSTAR_VERSION", "dev")
 
 
-async def main(progress_callback: Any | None = None) -> int:
+async def main(
+    progress_callback: Any | None = None, ev_plugged_in_override: bool | None = None
+) -> int:
     config: dict[str, Any] = load_yaml("config.yaml")
     automation: dict[str, Any] = config.get("automation", {})
     if not automation.get("enable_scheduler", False):
@@ -45,7 +47,9 @@ async def main(progress_callback: Any | None = None) -> int:
         await progress_callback("fetching_prices")
 
     # Build inputs and run planner
-    input_data = await get_all_input_data("config.yaml")
+    input_data = await get_all_input_data(
+        "config.yaml", ev_plugged_in_override=ev_plugged_in_override
+    )
 
     # Phase: Applying learning
     if progress_callback:

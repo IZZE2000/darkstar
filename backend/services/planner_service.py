@@ -73,12 +73,15 @@ class PlannerService:
             "is_running": self._lock.locked(),
         }
 
-    async def run_once(self) -> PlannerResult:
+    async def run_once(self, ev_plugged_in_override: bool | None = None) -> PlannerResult:
         """
         Run the planner asynchronously.
         Handles cache invalidation and WebSocket notification automatically.
 
         Uses a lock to prevent concurrent planner executions.
+
+        Args:
+            ev_plugged_in_override: If True, passes plugged-in state to avoid REST race
         """
         # Prevent concurrent runs
         if self._lock.locked():
@@ -99,7 +102,10 @@ class PlannerService:
 
                 from bin.run_planner import main as run_planner_main
 
-                exit_code = await run_planner_main(progress_callback=self._emit_progress)
+                exit_code = await run_planner_main(
+                    progress_callback=self._emit_progress,
+                    ev_plugged_in_override=ev_plugged_in_override,
+                )
 
                 if exit_code == 0:
                     slot_count = self._count_schedule_slots()
