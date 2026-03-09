@@ -460,20 +460,24 @@ export function ResourcesDomain({
                             <span>EV Charging</span>
                         </div>
                         <div className="text-sm font-medium text-text">
-                            {evChargingKwh?.toFixed(1) ?? '0.0'} <span className="text-[10px] text-muted font-normal">kWh</span>
+                            {evChargingKwh?.toFixed(1) ?? '0.0'}{' '}
+                            <span className="text-[10px] text-muted font-normal">kWh</span>
                         </div>
                     </div>
                 )}
 
                 {/* Water Section - conditional on hasWaterHeater */}
                 {hasWaterHeater && (
-                    <div className={`flex items-center justify-between pt-2${hasEvCharger ? '' : ' border-t border-line/30'}`}>
+                    <div
+                        className={`flex items-center justify-between pt-2${hasEvCharger ? '' : ' border-t border-line/30'}`}
+                    >
                         <div className="flex items-center gap-1.5 text-[11px] text-water">
                             <Droplets className="h-3 w-3" />
                             <span>Water Heating</span>
                         </div>
                         <div className="text-sm font-medium text-text">
-                            {waterKwh?.toFixed(1) ?? '—'} <span className="text-[10px] text-muted font-normal">kWh</span>
+                            {waterKwh?.toFixed(1) ?? '—'}{' '}
+                            <span className="text-[10px] text-muted font-normal">kWh</span>
                         </div>
                     </div>
                 )}

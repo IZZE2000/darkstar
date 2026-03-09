@@ -1260,10 +1260,16 @@ class ExecutorEngine:
             # 6. Execute actions
             action_results: list[ActionResult] = []
             if self.dispatcher:
+                # Control Water Heater Temperature
+                if self._has_water_heater and self.config.water_heater.target_entity:
+                    water_result = await self.dispatcher.set_water_temp(decision.water_temp)
+                    action_results.append(water_result)
+
                 # REV UI11 Phase 7: Execute async actions
                 try:
                     # Fix Issue 0: Await expected coroutine properly
-                    action_results = await self.dispatcher.execute(decision)
+                    profile_results = await self.dispatcher.execute(decision)
+                    action_results.extend(profile_results)
                 except Exception as e:
                     logger.error("Failed to execute async actions: %s", e)
                     # Create a dummy failed result for the log
