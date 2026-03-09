@@ -1,3 +1,15 @@
+## [v2.6.1-beta] - Bug Fixes - 2026-03-09
+
+> [!IMPORTANT]
+> **BUG FIXES**
+> This release contains important fixes for EV charging replan functionality.
+
+**🐛 Bug Fixes**
+
+- Fixed EV replan failing silently on plug-in: now triggers schedule recalculation correctly and prevents unscheduled charging
+
+---
+
 ## [v2.6.0-beta] - EV Charging, Inverter Profiles v2 & Onboarding - 2026-03-07
 
 > [!IMPORTANT]
