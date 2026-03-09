@@ -333,6 +333,10 @@ async def predict_corrections(
     if not base_records:
         return [], "none"
 
+    # Convert slot_start strings → timezone-aware Timestamps (api.py returns ISO strings)
+    for rec in base_records:
+        rec["slot_start"] = pd.Timestamp(rec["slot_start"]).tz_convert(tz)
+
     corrections: list[dict[str, Any]] = []
 
     if level.level == 0:
