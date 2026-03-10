@@ -607,27 +607,43 @@ async def _get_forecast_data_aurora(
             daily_pv_forecast[date_key] = daily_pv_forecast.get(date_key, 0.0) + pv_val
             daily_load_forecast[date_key] = daily_load_forecast.get(date_key, 0.0) + load_val
 
-            if rec.get("pv_p10") is not None:
+            if rec.get("probabilistic", {}).get("pv_p10") is not None:
                 daily_pv_p10[date_key] = (
-                    daily_pv_p10.get(date_key, 0.0) + float(rec["pv_p10"]) + pv_corr
+                    daily_pv_p10.get(date_key, 0.0)
+                    + float(rec["probabilistic"]["pv_p10"])
+                    + pv_corr
                 )
-            if rec.get("pv_p90") is not None:
+            if rec.get("probabilistic", {}).get("pv_p90") is not None:
                 daily_pv_p90[date_key] = (
-                    daily_pv_p90.get(date_key, 0.0) + float(rec["pv_p90"]) + pv_corr
+                    daily_pv_p90.get(date_key, 0.0)
+                    + float(rec["probabilistic"]["pv_p90"])
+                    + pv_corr
                 )
-            if rec.get("load_p10") is not None:
+            if rec.get("probabilistic", {}).get("load_p10") is not None:
                 daily_load_p10[date_key] = (
-                    daily_load_p10.get(date_key, 0.0) + float(rec["load_p10"]) + load_corr
+                    daily_load_p10.get(date_key, 0.0)
+                    + float(rec["probabilistic"]["load_p10"])
+                    + load_corr
                 )
-            if rec.get("load_p90") is not None:
+            if rec.get("probabilistic", {}).get("load_p90") is not None:
                 daily_load_p90[date_key] = (
-                    daily_load_p90.get(date_key, 0.0) + float(rec["load_p90"]) + load_corr
+                    daily_load_p90.get(date_key, 0.0)
+                    + float(rec["probabilistic"]["load_p90"])
+                    + load_corr
                 )
 
     return {
         "slots": forecast_data,
         "daily_pv_forecast": daily_pv_forecast,
         "daily_load_forecast": daily_load_forecast,
+        "daily_probabilistic": {
+            "pv_p10": daily_pv_p10,
+            "pv_p90": daily_pv_p90,
+            "pv_p50": daily_pv_forecast,  # P50 = corrected base forecast
+            "load_p10": daily_load_p10,
+            "load_p90": daily_load_p90,
+            "load_p50": daily_load_forecast,  # P50 = corrected base forecast
+        },
     }
 
 
