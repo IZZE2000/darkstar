@@ -34,6 +34,11 @@ interface ResourcesCardProps {
     loadActual: number | null
     loadAvg: number | null
     waterKwh: number | null
+    evChargingKwh?: number | null
+    hasSolar?: boolean
+    hasBattery?: boolean
+    hasWaterHeater?: boolean
+    hasEvCharger?: boolean
     batteryCapacity?: number | null
 }
 
@@ -390,6 +395,11 @@ export function ResourcesDomain({
     loadActual,
     loadAvg,
     waterKwh,
+    evChargingKwh,
+    hasSolar = true,
+    hasBattery = true,
+    hasWaterHeater = true,
+    hasEvCharger = false,
     batteryCapacity,
 }: ResourcesCardProps) {
     return (
@@ -402,29 +412,31 @@ export function ResourcesDomain({
                     <Zap className="h-4 w-4" />
                 </div>
                 <span className="text-sm font-medium text-text">Energy Resources</span>
-                {batteryCapacity != null && batteryCapacity > 0 && (
+                {hasBattery && batteryCapacity != null && batteryCapacity > 0 && (
                     <span className="ml-auto text-[9px] text-muted opacity-60">{batteryCapacity} kWh Cap</span>
                 )}
             </div>
 
             <div className="space-y-4 relative z-10">
-                {/* PV Section */}
-                <div>
-                    <div className="flex items-center justify-between mb-1">
-                        <div className="flex items-center gap-1.5 text-[11px] text-accent">
-                            <Sun className="h-3 w-3" />
-                            <span>Solar Production</span>
+                {/* PV Section - conditional on hasSolar */}
+                {hasSolar && (
+                    <div>
+                        <div className="flex items-center justify-between mb-1">
+                            <div className="flex items-center gap-1.5 text-[11px] text-accent">
+                                <Sun className="h-3 w-3" />
+                                <span>Solar Production</span>
+                            </div>
+                            <div className="text-[10px] text-muted">
+                                <span className="text-text font-medium">{pvActual?.toFixed(1) ?? '—'}</span>
+                                <span className="mx-1">/</span>
+                                {pvForecast?.toFixed(1) ?? '—'} kWh
+                            </div>
                         </div>
-                        <div className="text-[10px] text-muted">
-                            <span className="text-text font-medium">{pvActual?.toFixed(1) ?? '—'}</span>
-                            <span className="mx-1">/</span>
-                            {pvForecast?.toFixed(1) ?? '—'} kWh
-                        </div>
+                        <ProgressBar value={pvActual ?? 0} total={pvForecast ?? 1} colorClass="bg-accent" />
                     </div>
-                    <ProgressBar value={pvActual ?? 0} total={pvForecast ?? 1} colorClass="bg-accent" />
-                </div>
+                )}
 
-                {/* Load Section */}
+                {/* Load Section - always displayed */}
                 <div>
                     <div className="flex items-center justify-between mb-1">
                         <div className="flex items-center gap-1.5 text-[11px] text-house">
@@ -440,16 +452,35 @@ export function ResourcesDomain({
                     <ProgressBar value={loadActual ?? 0} total={loadAvg ?? 1} colorClass="bg-house" />
                 </div>
 
-                {/* Water Section */}
-                <div className="flex items-center justify-between pt-2 border-t border-line/30">
-                    <div className="flex items-center gap-1.5 text-[11px] text-water">
-                        <Droplets className="h-3 w-3" />
-                        <span>Water Heating</span>
+                {/* EV Charging Section - conditional on hasEvCharger */}
+                {hasEvCharger && (
+                    <div className="flex items-center justify-between pt-2 border-t border-line/30">
+                        <div className="flex items-center gap-1.5 text-[11px] text-ev">
+                            <BatteryCharging className="h-3 w-3" />
+                            <span>EV Charging</span>
+                        </div>
+                        <div className="text-sm font-medium text-text">
+                            {evChargingKwh?.toFixed(1) ?? '0.0'}{' '}
+                            <span className="text-[10px] text-muted font-normal">kWh</span>
+                        </div>
                     </div>
-                    <div className="text-sm font-medium text-text">
-                        {waterKwh?.toFixed(1) ?? '—'} <span className="text-[10px] text-muted font-normal">kWh</span>
+                )}
+
+                {/* Water Section - conditional on hasWaterHeater */}
+                {hasWaterHeater && (
+                    <div
+                        className={`flex items-center justify-between pt-2${hasEvCharger ? '' : ' border-t border-line/30'}`}
+                    >
+                        <div className="flex items-center gap-1.5 text-[11px] text-water">
+                            <Droplets className="h-3 w-3" />
+                            <span>Water Heating</span>
+                        </div>
+                        <div className="text-sm font-medium text-text">
+                            {waterKwh?.toFixed(1) ?? '—'}{' '}
+                            <span className="text-[10px] text-muted font-normal">kWh</span>
+                        </div>
                     </div>
-                </div>
+                )}
             </div>
         </Card>
     )

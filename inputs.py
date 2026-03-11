@@ -14,7 +14,7 @@ from backend.core.cache import cache_sync
 from backend.exceptions import PVForecastError
 from backend.health import set_load_forecast_status
 from ml.api import get_forecast_slots
-from ml.weather import get_weather_volatility
+from ml.weather import async_get_weather_volatility
 
 logger = logging.getLogger("darkstar.inputs")
 
@@ -225,9 +225,15 @@ async def get_nordpool_data(config_path: str = "config.yaml") -> list[dict[str, 
     prices_client = Prices(currency=currency)
 
     try:
-        # Fetch prices for today and tomorrow using to_thread
-        raw_today = await asyncio.to_thread(
-            prices_client.fetch, end_date=today, areas=[price_area], resolution=resolution_minutes
+        # Fetch prices for today and tomorrow using to_thread with timeout
+        raw_today = await asyncio.wait_for(
+            asyncio.to_thread(
+                prices_client.fetch,
+                end_date=today,
+                areas=[price_area],
+                resolution=resolution_minutes,
+            ),
+            timeout=10.0,
         )
         today_values = []
         if raw_today and "areas" in raw_today and price_area in raw_today["areas"]:
@@ -237,11 +243,14 @@ async def get_nordpool_data(config_path: str = "config.yaml") -> list[dict[str, 
         tomorrow_values = []
         if now.hour >= 13:
             tomorrow = today + timedelta(days=1)
-            raw_tomorrow = await asyncio.to_thread(
-                prices_client.fetch,
-                end_date=tomorrow,
-                areas=[price_area],
-                resolution=resolution_minutes,
+            raw_tomorrow = await asyncio.wait_for(
+                asyncio.to_thread(
+                    prices_client.fetch,
+                    end_date=tomorrow,
+                    areas=[price_area],
+                    resolution=resolution_minutes,
+                ),
+                timeout=10.0,
             )
             if raw_tomorrow and "areas" in raw_tomorrow and price_area in raw_tomorrow["areas"]:
                 all_raw = raw_tomorrow["areas"][price_area].get("values", [])
@@ -257,6 +266,9 @@ async def get_nordpool_data(config_path: str = "config.yaml") -> list[dict[str, 
         processed = _process_nordpool_data(all_entries, config)
         cache_sync.set(cache_key, processed, ttl_seconds=3600.0)
         return processed
+    except TimeoutError:
+        print("Warning: Nordpool price fetch timed out after 10 seconds, returning empty data")
+        return []
     except Exception as exc:
         print(f"Warning: Failed to fetch Nordpool prices: {exc}")
         import traceback
@@ -595,27 +607,43 @@ async def _get_forecast_data_aurora(
             daily_pv_forecast[date_key] = daily_pv_forecast.get(date_key, 0.0) + pv_val
             daily_load_forecast[date_key] = daily_load_forecast.get(date_key, 0.0) + load_val
 
-            if rec.get("pv_p10") is not None:
+            if rec.get("probabilistic", {}).get("pv_p10") is not None:
                 daily_pv_p10[date_key] = (
-                    daily_pv_p10.get(date_key, 0.0) + float(rec["pv_p10"]) + pv_corr
+                    daily_pv_p10.get(date_key, 0.0)
+                    + float(rec["probabilistic"]["pv_p10"])
+                    + pv_corr
                 )
-            if rec.get("pv_p90") is not None:
+            if rec.get("probabilistic", {}).get("pv_p90") is not None:
                 daily_pv_p90[date_key] = (
-                    daily_pv_p90.get(date_key, 0.0) + float(rec["pv_p90"]) + pv_corr
+                    daily_pv_p90.get(date_key, 0.0)
+                    + float(rec["probabilistic"]["pv_p90"])
+                    + pv_corr
                 )
-            if rec.get("load_p10") is not None:
+            if rec.get("probabilistic", {}).get("load_p10") is not None:
                 daily_load_p10[date_key] = (
-                    daily_load_p10.get(date_key, 0.0) + float(rec["load_p10"]) + load_corr
+                    daily_load_p10.get(date_key, 0.0)
+                    + float(rec["probabilistic"]["load_p10"])
+                    + load_corr
                 )
-            if rec.get("load_p90") is not None:
+            if rec.get("probabilistic", {}).get("load_p90") is not None:
                 daily_load_p90[date_key] = (
-                    daily_load_p90.get(date_key, 0.0) + float(rec["load_p90"]) + load_corr
+                    daily_load_p90.get(date_key, 0.0)
+                    + float(rec["probabilistic"]["load_p90"])
+                    + load_corr
                 )
 
     return {
         "slots": forecast_data,
         "daily_pv_forecast": daily_pv_forecast,
         "daily_load_forecast": daily_load_forecast,
+        "daily_probabilistic": {
+            "pv_p10": daily_pv_p10,
+            "pv_p90": daily_pv_p90,
+            "pv_p50": daily_pv_forecast,  # P50 = corrected base forecast
+            "load_p10": daily_load_p10,
+            "load_p90": daily_load_p90,
+            "load_p50": daily_load_forecast,  # P50 = corrected base forecast
+        },
     }
 
 
@@ -833,9 +861,16 @@ async def _get_forecast_data_async(
     }
 
 
-async def get_initial_state(config_path: str = "config.yaml") -> dict[str, Any]:
+async def get_initial_state(
+    config_path: str = "config.yaml",
+    ev_plugged_in_override: bool | None = None,
+) -> dict[str, Any]:
     """
     Get the initial battery state (Asynchronous).
+
+    Args:
+        config_path: Path to config.yaml
+        ev_plugged_in_override: If provided, use this value instead of fetching from HA
     """
     with Path(config_path).open() as f:
         config = yaml.safe_load(f)
@@ -908,7 +943,13 @@ async def get_initial_state(config_path: str = "config.yaml") -> dict[str, Any]:
         else:
             logger.warning("has_ev_charger is true but ev_soc sensor is not configured")
 
-        if ev_plug_entity:
+        # Rev EVFIX: Use override if provided (avoids WebSocket-vs-REST race)
+        if ev_plugged_in_override is not None:
+            ev_plugged_in = ev_plugged_in_override
+            logger.debug(
+                "Using ev_plugged_in_override=%s (skipping HA REST fetch)", ev_plugged_in_override
+            )
+        elif ev_plug_entity:
             ev_plugged_in = await get_ha_bool(ev_plug_entity)
         else:
             logger.warning("has_ev_charger is true but ev_plug sensor is not configured")
@@ -923,9 +964,16 @@ async def get_initial_state(config_path: str = "config.yaml") -> dict[str, Any]:
     }
 
 
-async def get_all_input_data(config_path: str = "config.yaml") -> dict[str, Any]:
+async def get_all_input_data(
+    config_path: str = "config.yaml",
+    ev_plugged_in_override: bool | None = None,
+) -> dict[str, Any]:
     """
     Orchestrate all input data fetching.
+
+    Args:
+        config_path: Path to config.yaml
+        ev_plugged_in_override: If provided, passed to get_initial_state to avoid REST race
     """
     # Load config
     with Path(config_path).open() as f:
@@ -957,7 +1005,7 @@ async def get_all_input_data(config_path: str = "config.yaml") -> dict[str, Any]
     now_local = datetime.now(local_tz)
     horizon_end = now_local + timedelta(hours=48)
 
-    volatility_raw = get_weather_volatility(now_local, horizon_end, config)
+    volatility_raw = await async_get_weather_volatility(now_local, horizon_end, config)
     cloud_vol = float(volatility_raw.get("cloud_volatility", 0.0) or 0.0)
     temp_vol = float(volatility_raw.get("temp_volatility", 0.0) or 0.0)
 
@@ -975,7 +1023,9 @@ async def get_all_input_data(config_path: str = "config.yaml") -> dict[str, Any]
 
     forecast_result = await get_forecast_data(price_data, config)
     forecast_data = forecast_result.get("slots", [])
-    initial_state = await get_initial_state(config_path)
+    initial_state = await get_initial_state(
+        config_path, ev_plugged_in_override=ev_plugged_in_override
+    )
 
     return {
         "price_data": price_data,

@@ -54,7 +54,10 @@ export const SettingsField: React.FC<SettingsFieldProps> = ({
                             onCheckedChange={(checked) => onChange(field.key, checked ? 'true' : 'false')}
                             disabled={isDisabled}
                         />
-                        <span className="text-sm font-semibold">{field.label}</span>
+                        <div className="flex items-center gap-1.5">
+                            <span className="text-sm font-semibold">{field.label}</span>
+                            <Tooltip text={(configHelp as Record<string, string>)[field.key] || field.helper} />
+                        </div>
                     </div>
                 )
 
@@ -261,7 +264,7 @@ export const SettingsField: React.FC<SettingsFieldProps> = ({
                     {field.label}
                 </span>
                 {field.notImplemented && <Badge variant="warning">NOT IMPLEMENTED</Badge>}
-                {field.type !== 'info' && (
+                {field.type !== 'info' && field.type !== 'boolean' && (
                     <Tooltip text={(configHelp as Record<string, string>)[field.key] || field.helper} />
                 )}
             </label>

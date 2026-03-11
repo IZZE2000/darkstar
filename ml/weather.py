@@ -4,6 +4,7 @@ Weather data fetching and processing for Aurora.
 
 from __future__ import annotations
 
+import asyncio
 import math
 import time
 from pathlib import Path
@@ -387,6 +388,24 @@ def get_weather_series(
     return df
 
 
+async def async_get_weather_series(
+    start_time: datetime,
+    end_time: datetime,
+    config: dict[str, Any] | None = None,
+    *,
+    config_path: str = "config.yaml",
+) -> pd.DataFrame:
+    """
+    Asynchronous wrapper for get_weather_series using asyncio.to_thread.
+
+    This allows the event loop to remain responsive during the synchronous
+    network call to Open-Meteo API.
+    """
+    return await asyncio.to_thread(
+        get_weather_series, start_time, end_time, config, config_path=config_path
+    )
+
+
 def get_weather_volatility(
     start_time: datetime,
     end_time: datetime,
@@ -410,6 +429,46 @@ def get_weather_volatility(
     with each value in the range [0.0, 1.0].
     """
     df = get_weather_series(start_time, end_time, config=config, config_path=config_path)
+
+    if df.empty:
+        return {"cloud_volatility": 0.0, "temp_volatility": 0.0}
+
+    cloud_std = float(df["cloud_cover_pct"].std()) if "cloud_cover_pct" in df.columns else 0.0
+    temp_std = float(df["temp_c"].std()) if "temp_c" in df.columns else 0.0
+
+    cloud_norm = 20.0
+    temp_norm = 5.0
+
+    cloud_volatility = 0.0
+    temp_volatility = 0.0
+
+    if cloud_std > 0.0 and cloud_norm > 0.0:
+        cloud_volatility = min(1.0, cloud_std / cloud_norm)
+
+    if temp_std > 0.0 and temp_norm > 0.0:
+        temp_volatility = min(1.0, temp_std / temp_norm)
+
+    return {
+        "cloud_volatility": float(cloud_volatility),
+        "temp_volatility": float(temp_volatility),
+    }
+
+
+async def async_get_weather_volatility(
+    start_time: datetime,
+    end_time: datetime,
+    config: dict[str, Any] | None = None,
+    *,
+    config_path: str = "config.yaml",
+) -> dict[str, float]:
+    """
+    Asynchronous wrapper for get_weather_volatility.
+
+    Fetches weather data asynchronously and calculates volatility scores.
+    """
+    df = await async_get_weather_series(
+        start_time, end_time, config=config, config_path=config_path
+    )
 
     if df.empty:
         return {"cloud_volatility": 0.0, "temp_volatility": 0.0}

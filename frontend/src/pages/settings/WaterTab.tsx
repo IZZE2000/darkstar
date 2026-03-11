@@ -13,11 +13,8 @@ import { useUnsavedChangesGuard } from './hooks/useUnsavedChangesGuard'
 
 export const WaterTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }) => {
     const navigate = useNavigate()
-    const { form, fieldErrors, loading, saving, handleChange, save, isDirty, haEntities, haLoading } = useSettingsForm(
-        waterFieldList,
-        [],
-        'water',
-    )
+    const { config, form, fieldErrors, loading, saving, handleChange, save, isDirty, haEntities, haLoading } =
+        useSettingsForm(waterFieldList, [])
 
     const blocker = useUnsavedChangesGuard(isDirty)
     const hasHiddenSections = waterSections.some((s) => s.fields.every((f) => f.isAdvanced))
@@ -77,7 +74,8 @@ export const WaterTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode })
                                 </div>
                                 <div className="grid grid-cols-1 gap-4 p-6 md:grid-cols-2">
                                     {section.fields.map((field) => {
-                                        if (!shouldRenderField(field, form)) return null
+                                        if (!shouldRenderField(field, form, config as Record<string, unknown>))
+                                            return null
                                         return (
                                             <SettingsField
                                                 key={field.key}
@@ -87,6 +85,8 @@ export const WaterTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode })
                                                 error={fieldErrors[field.key]}
                                                 haEntities={haEntities}
                                                 haLoading={haLoading}
+                                                fullForm={form}
+                                                config={config as Record<string, unknown>}
                                             />
                                         )
                                     })}

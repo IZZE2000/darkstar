@@ -99,7 +99,7 @@ export interface SettingsSection<T extends BaseField = BaseField> {
 export const systemSections: SettingsSection[] = [
     {
         title: 'System Profile',
-        description: 'Core hardware toggles. ⚠️ Non-Deye profiles are currently Work In Progress.',
+        description: 'Core hardware toggles.',
         fields: [
             {
                 key: 'system.inverter_profile',
@@ -119,24 +119,28 @@ export const systemSections: SettingsSection[] = [
                 label: 'Solar panels installed',
                 path: ['system', 'has_solar'],
                 type: 'boolean',
+                subsection: 'Hardware Features',
             },
             {
                 key: 'system.has_battery',
                 label: 'Home battery installed',
                 path: ['system', 'has_battery'],
                 type: 'boolean',
+                subsection: 'Hardware Features',
             },
             {
                 key: 'system.has_water_heater',
                 label: 'Smart water heater',
                 path: ['system', 'has_water_heater'],
                 type: 'boolean',
+                subsection: 'Hardware Features',
             },
             {
                 key: 'system.has_ev_charger',
                 label: 'EV charger installed',
                 path: ['system', 'has_ev_charger'],
                 type: 'boolean',
+                subsection: 'Hardware Features',
             },
             {
                 key: 'executor.inverter.control_unit',
@@ -161,6 +165,13 @@ export const systemSections: SettingsSection[] = [
                     { label: 'Dual Meter (Separate Import/Export)', value: 'dual' },
                 ],
                 helper: 'Select "Net" if you have one sensor (+/-). Select "Dual" if you have separate import/export sensors.',
+            },
+            {
+                key: 'system.grid.max_power_kw',
+                label: 'Grid Max Power (kW)',
+                helper: 'HARD limit from your grid fuse. The planner will never exceed this.',
+                path: ['system', 'grid', 'max_power_kw'],
+                type: 'number',
             },
             {
                 key: 'export.enable_export',
@@ -269,41 +280,6 @@ export const systemSections: SettingsSection[] = [
                 showIf: {
                     configKey: 'system.grid_meter_type',
                     value: 'dual',
-                },
-            },
-        ],
-    },
-    {
-        title: '── Energy Totals (Dashboard) ──',
-        isHA: true,
-        description: "Today's energy totals for Dashboard display. Optional - if not set, Dashboard shows 0.0.",
-        fields: [
-            {
-                key: 'input_sensors.today_load_consumption',
-                label: "Today's Load Consumption (kWh)",
-                path: ['input_sensors', 'today_load_consumption'],
-                type: 'entity',
-                helper: "Today's total load consumption. Dashboard shows 0.0 if not configured.",
-                required: false,
-            },
-            {
-                key: 'input_sensors.today_grid_import',
-                label: "Today's Grid Import (kWh)",
-                path: ['input_sensors', 'today_grid_import'],
-                type: 'entity',
-                helper: "Today's grid import energy. Dashboard shows 0.0 if not configured.",
-                required: false,
-            },
-            {
-                key: 'input_sensors.today_grid_export',
-                label: "Today's Grid Export (kWh)",
-                path: ['input_sensors', 'today_grid_export'],
-                type: 'entity',
-                helper: "Today's grid export energy. Dashboard shows 0.0 if not configured.",
-                required: false,
-                showIf: {
-                    configKey: 'export.enable_export',
-                    disabledText: 'Enable "Grid Export" in System Profile to configure',
                 },
             },
         ],
@@ -865,21 +841,6 @@ export const solarSections: SettingsSection[] = [
         ],
     },
     {
-        title: '── Energy Totals (Dashboard) ──',
-        isHA: true,
-        description: "Today's solar energy for Dashboard display. Optional - if not set, Dashboard shows 0.0.",
-        fields: [
-            {
-                key: 'input_sensors.today_pv_production',
-                label: "Today's PV Production (kWh)",
-                path: ['input_sensors', 'today_pv_production'],
-                type: 'entity',
-                helper: "Today's solar energy production. Dashboard shows 0.0 if not configured.",
-                required: false,
-            },
-        ],
-    },
-    {
         title: '── Lifetime Energy Totals ──',
         isHA: true,
         description: 'Cumulative lifetime solar production for forecasting accuracy.',
@@ -1021,29 +982,6 @@ export const batterySections: SettingsSection[] = [
                 path: ['input_sensors', 'battery_power'],
                 type: 'entity',
                 companionKey: 'input_sensors.battery_power_inverted',
-            },
-        ],
-    },
-    {
-        title: '── Energy Totals (Dashboard) ──',
-        isHA: true,
-        description: "Today's battery energy for Dashboard display. Optional - if not set, Dashboard shows 0.0.",
-        fields: [
-            {
-                key: 'input_sensors.today_battery_charge',
-                label: "Today's Battery Charge (kWh)",
-                path: ['input_sensors', 'today_battery_charge'],
-                type: 'entity',
-                helper: "Today's battery charge energy. Dashboard shows 0.0 if not configured.",
-                required: false,
-            },
-            {
-                key: 'input_sensors.today_battery_discharge',
-                label: "Today's Battery Discharge (kWh)",
-                path: ['input_sensors', 'today_battery_discharge'],
-                type: 'entity',
-                helper: "Today's battery discharge energy. Dashboard shows 0.0 if not configured.",
-                required: false,
             },
         ],
     },

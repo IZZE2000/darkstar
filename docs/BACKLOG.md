@@ -151,6 +151,12 @@ Items that require design work or have unclear requirements before implementatio
 
 Code quality improvements that don't directly affect user experience.
 
+#### [Config] Inverter Max Power Config Orphan
+
+**Goal:** Wire `system.inverter.max_power_kw` to the planner/executor or remove if superseded.
+
+**Notes:** Config key is defined but never used in code. Related to "Inverter Clipping Support" backlog item. Either implement the feature or remove the config key to avoid confusion.
+
 #### [Refactor] Move inputs.py to Proper Module
 
 **Goal:** Move `inputs.py` from project root to a proper module location (e.g., `planner/inputs.py` or `core/inputs.py`) for cleaner project structure.

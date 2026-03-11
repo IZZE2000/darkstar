@@ -77,11 +77,15 @@ class SchedulerService:
 
         logger.info("Scheduler stopped")
 
-    async def trigger_now(self) -> PlannerResult:
-        """Manually trigger an immediate planner run."""
+    async def trigger_now(self, ev_plugged_in_override: bool | None = None) -> PlannerResult:
+        """Manually trigger an immediate planner run.
+
+        Args:
+            ev_plugged_in_override: If True, passes plugged-in state to planner to avoid REST race
+        """
         self._status.current_task = "planning"
         try:
-            result = await planner_service.run_once()
+            result = await planner_service.run_once(ev_plugged_in_override=ev_plugged_in_override)
             self._update_status_from_result(result)
             return result
         finally:

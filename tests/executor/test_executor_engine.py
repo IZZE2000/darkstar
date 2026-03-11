@@ -468,3 +468,74 @@ class TestRunOnce:
         # Check history has the record
         records = engine.history.get_history()
         assert len(records) >= 1
+
+    async def test_tick_calls_set_water_temp_when_enabled(self, engine, temp_schedule):
+        """_tick calls set_water_temp when water heater is enabled."""
+        tz = pytz.timezone("Europe/Stockholm")
+        now = datetime.now(tz)
+        slot_start = now - timedelta(minutes=5)
+
+        # Enable water heater and set target entity
+        engine._has_water_heater = True
+        engine.config.water_heater.target_entity = "input_number.water_heater_target"
+
+        schedule = make_schedule(
+            [
+                make_slot(slot_start, water_kw=3.0, soc_target=50),
+            ]
+        )
+        with Path(temp_schedule).open("w", encoding="utf-8") as f:
+            json.dump(schedule, f)
+
+        # Mock the dispatcher's set_water_temp method (it's async)
+        from unittest.mock import AsyncMock
+
+        from executor.actions import ActionResult
+
+        mock_result = ActionResult(
+            action_type="water_temp",
+            success=True,
+            message="Set water temp to 50°C",
+            previous_value=40,
+            new_value=50,
+            entity_id="input_number.water_heater_target",
+            skipped=False,
+        )
+        engine.dispatcher.set_water_temp = AsyncMock(return_value=mock_result)
+
+        result = await engine.run_once()
+
+        # Assert set_water_temp was called
+        engine.dispatcher.set_water_temp.assert_called_once()
+        # Assert the result is in the actions
+        assert any(a.get("type") == "water_temp" for a in result["actions"])
+
+    async def test_tick_skips_water_temp_when_disabled(self, engine, temp_schedule):
+        """_tick skips set_water_temp when water heater is disabled."""
+        tz = pytz.timezone("Europe/Stockholm")
+        now = datetime.now(tz)
+        slot_start = now - timedelta(minutes=5)
+
+        # Disable water heater
+        engine._has_water_heater = False
+        engine.config.water_heater.target_entity = "input_number.water_heater_target"
+
+        schedule = make_schedule(
+            [
+                make_slot(slot_start, water_kw=3.0, soc_target=50),
+            ]
+        )
+        with Path(temp_schedule).open("w", encoding="utf-8") as f:
+            json.dump(schedule, f)
+
+        # Mock the dispatcher's set_water_temp method (it's async)
+        from unittest.mock import AsyncMock
+
+        engine.dispatcher.set_water_temp = AsyncMock()
+
+        result = await engine.run_once()
+
+        # Assert set_water_temp was NOT called
+        engine.dispatcher.set_water_temp.assert_not_called()
+        # Assert no water_temp action in results
+        assert not any(a.get("type") == "water_temp" for a in result["actions"])

@@ -14,9 +14,9 @@ echo "🧪 Running Pytest tests..."
 uv run python -m pytest -q
 
 echo "🎨 Formatting frontend..."
-cd frontend && pnpm format && cd ..
+(cd frontend && pnpm format)
 
 echo "🔍 Linting frontend..."
-cd frontend && pnpm lint && cd ..
+(cd frontend && pnpm lint)
 
 echo "✅ All checks passed!"

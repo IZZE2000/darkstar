@@ -351,3 +351,151 @@ class TestHAClientCrossThreadSafety:
         assert session2 is mock_session
         assert session1 is session2
         assert client._session_loop == loop
+
+
+class TestSetWaterTemp:
+    """Test ActionDispatcher.set_water_temp() method."""
+
+    @pytest.fixture
+    def base_config(self):
+        """Create base config for water heater tests."""
+        from executor.config import (
+            ControllerConfig,
+            ExecutorConfig,
+            InverterConfig,
+            NotificationConfig,
+            WaterHeaterConfig,
+        )
+
+        return ExecutorConfig(
+            inverter=InverterConfig(),
+            controller=ControllerConfig(),
+            water_heater=WaterHeaterConfig(
+                target_entity="input_number.water_heater_target",
+                temp_normal=50,
+                temp_off=40,
+            ),
+            notifications=NotificationConfig(),
+        )
+
+    @pytest.mark.asyncio
+    async def test_set_water_temp_skips_when_already_at_target(self, base_config):
+        """Idempotency: skip when current temperature equals target."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        from executor.actions import ActionDispatcher
+
+        # Mock HA client returns current temp = 50 (same as target)
+        ha_client = MagicMock()
+        ha_client.get_state_value = AsyncMock(return_value="50")
+
+        dispatcher = ActionDispatcher(
+            ha_client=ha_client,
+            config=base_config,
+            shadow_mode=False,
+        )
+
+        result = await dispatcher.set_water_temp(50)
+
+        # Assert skipped because already at target
+        assert result.success is True
+        assert result.skipped is True
+        assert result.action_type == "water_temp"
+        assert result.previous_value == 50
+        assert result.new_value == 50
+        assert "Already at 50°C" in result.message
+
+        # Assert no HA write was attempted
+        ha_client.set_input_number.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_set_water_temp_respects_shadow_mode(self, base_config):
+        """Shadow mode: return skipped result without HA call."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        from executor.actions import ActionDispatcher
+
+        # Mock HA client returns current temp = 40
+        ha_client = MagicMock()
+        ha_client.get_state_value = AsyncMock(return_value="40")
+
+        dispatcher = ActionDispatcher(
+            ha_client=ha_client,
+            config=base_config,
+            shadow_mode=True,  # Enable shadow mode
+        )
+
+        result = await dispatcher.set_water_temp(50)
+
+        # Assert skipped due to shadow mode
+        assert result.success is True
+        assert result.skipped is True
+        assert result.action_type == "water_temp"
+        assert result.previous_value == 40
+        assert result.new_value == 50
+        assert "[SHADOW]" in result.message
+        assert "40°C → 50°C" in result.message
+
+        # Assert no HA write was attempted
+        ha_client.set_input_number.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_set_water_temp_skips_when_entity_not_configured(self, base_config):
+        """Skip when target entity is not configured."""
+        from unittest.mock import MagicMock
+
+        from executor.actions import ActionDispatcher
+
+        # Set target_entity to None (not configured)
+        base_config.water_heater.target_entity = None
+
+        ha_client = MagicMock()
+
+        dispatcher = ActionDispatcher(
+            ha_client=ha_client,
+            config=base_config,
+            shadow_mode=False,
+        )
+
+        result = await dispatcher.set_water_temp(50)
+
+        # Assert skipped due to entity not configured
+        assert result.success is True
+        assert result.skipped is True
+        assert result.action_type == "water_temp"
+        assert "not configured" in result.message.lower()
+
+        # Assert no HA calls were made
+        ha_client.get_state_value.assert_not_called()
+        ha_client.set_input_number.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_set_water_temp_success(self, base_config):
+        """Successfully set water temperature when conditions are met."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        from executor.actions import ActionDispatcher
+
+        # Mock HA client returns current temp = 40, set succeeds
+        ha_client = MagicMock()
+        ha_client.get_state_value = AsyncMock(return_value="40")
+        ha_client.set_input_number = AsyncMock(return_value=True)
+
+        dispatcher = ActionDispatcher(
+            ha_client=ha_client,
+            config=base_config,
+            shadow_mode=False,
+        )
+
+        result = await dispatcher.set_water_temp(50)
+
+        # Assert successful execution
+        assert result.success is True
+        assert result.skipped is False
+        assert result.action_type == "water_temp"
+        assert result.previous_value == 40
+        assert result.new_value == 50
+        assert "Changed 40°C → 50°C" in result.message
+
+        # Assert HA write was attempted
+        ha_client.set_input_number.assert_called_once_with("input_number.water_heater_target", 50.0)

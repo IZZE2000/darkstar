@@ -26,6 +26,9 @@ class HAWebSocketClient:
         ] = {}  # Must init before _get_monitored_entities (F64 writes ev_chargers here)
         self.monitored_entities = self._get_monitored_entities()
         self.running = False
+        self.main_loop: asyncio.AbstractEventLoop | None = (
+            None  # Rev EVFIX: Store main event loop for cross-thread dispatch
+        )
 
         # Runtime Statistics (Production Observability)
         self.stats: dict[str, Any] = {
@@ -603,22 +606,54 @@ class HAWebSocketClient:
         self.monitored_entities = self._get_monitored_entities()
 
     def _trigger_ev_replan(self):
-        """Trigger immediate re-planning for EV state changes (Rev K25)."""
+        """Trigger immediate re-planning for EV state changes (Rev K25 + EVFIX)."""
         try:
-            # Check if replan_on_plugin is enabled in config
+            # Check if replan_on_plugin is enabled in config (Rev EVFIX: use ev_chargers[])
             cfg = load_yaml("config.yaml")
-            ev_cfg = cfg.get("executor", {}).get("ev_charger", {})
-            if not ev_cfg.get("replan_on_plugin", True):
-                logger.debug("EV replan on plugin disabled in config")
+            ev_chargers = cfg.get("ev_chargers", [])
+
+            # Find first enabled EV charger
+            first_enabled_ev = None
+            for ev in ev_chargers:
+                if ev.get("enabled", True):
+                    first_enabled_ev = ev
+                    break
+
+            if not first_enabled_ev:
+                logger.debug("No enabled EV charger found, skipping replan")
+                return
+
+            if not first_enabled_ev.get("replan_on_plugin", True):
+                logger.debug(
+                    "EV replan on plugin disabled for charger: %s",
+                    first_enabled_ev.get("name", "unknown"),
+                )
                 return
 
             # Import here to avoid circular imports
             from backend.services.scheduler_service import scheduler_service
 
-            # Trigger immediate re-planning
-            logger.info("Triggering immediate EV re-plan via scheduler_service")
-            # Note: Fire-and-forget is acceptable here; the task runs independently
-            asyncio.create_task(scheduler_service.trigger_now())  # noqa: RUF006
+            # Trigger immediate re-planning with plug state override
+            logger.info("Triggering immediate EV re-plan via scheduler_service (plugged_in=True)")
+
+            # Rev EVFIX: Use run_coroutine_threadsafe for cross-thread dispatch
+            if self.main_loop is None:
+                logger.error("Main event loop not set, cannot trigger replan")
+                return
+
+            future = asyncio.run_coroutine_threadsafe(
+                scheduler_service.trigger_now(ev_plugged_in_override=True), self.main_loop
+            )
+
+            # Add done callback to log any exceptions
+            def _on_replan_done(fut: Any) -> None:
+                try:
+                    fut.result()
+                except Exception as exc:
+                    logger.error(f"EV re-plan task failed: {exc}")
+
+            future.add_done_callback(_on_replan_done)
+
         except Exception as e:
             logger.error(f"Failed to trigger EV re-plan: {e}")
 
@@ -634,6 +669,14 @@ def start_ha_socket_client():
     if _ha_client is None:
         try:
             _ha_client = HAWebSocketClient()
+            # Rev EVFIX: Capture main event loop for cross-thread dispatch
+            try:
+                _ha_client.main_loop = asyncio.get_running_loop()
+                logger.debug("Captured main event loop for cross-thread dispatch")
+            except RuntimeError:
+                logger.warning(
+                    "No running event loop - EV replan will not work until loop is available"
+                )
             _ha_client.start()
             logger.info("✅ HA WebSocket client initialized")
         except Exception as e:

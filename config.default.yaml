@@ -24,6 +24,8 @@ system:
   grid:
     max_power_kw: 8                    # HARD limit: max grid import (cannot be exceeded)
   inverter:
+    # NOTE: Currently not implemented. Planned for future inverter clipping feature.
+    # See docs/BACKLOG.md "Inverter Clipping Support" for details.
     max_power_kw: 8.0                 # Maximum inverter AC power output
   location:
     latitude: 55.123                # Decimal degrees, positive north (for PV forecasting)
@@ -45,6 +47,8 @@ battery:
   max_discharge_w: 5000.0             # Max discharging power (W)
   min_soc_percent: 12
   max_soc_percent: 100                # Planner target ceiling
+  # NOTE: Used only in planner/simulation.py. Separate from charge_efficiency
+  # which is used by the MILP solver. Derives one-way efficiency as sqrt(roundtrip).
   roundtrip_efficiency_percent: 95.0
   charge_efficiency: 0.92             # Charging efficiency (0-1)
 
@@ -228,6 +232,8 @@ forecasting:
 # Grid Limits (Soft Constraint)
 # This is a SOFT limit with penalty - planner prefers to stay under but can breach if needed.
 # See system.grid.max_power_kw for the HARD limit (cannot be exceeded).
+# NOTE: Soft limit feature exists in KeplerConfig but not wired to config.
+# Planned for effekttariff feature. Currently unused.
 grid:
   import_limit_kw: 11.0                # Soft limit for effekttariff (breached with high penalty)
 
@@ -264,15 +270,6 @@ input_sensors:
   total_load_consumption: ""  # Cumulative load (kWh)
   total_pv_production: ""           # Cumulative PV production (kWh)
   water_heater_consumption: ""               # Water heater daily energy (kWh)
-
-  # Daily sensors for Dashboard "Today's Stats" card
-  today_grid_import: ""          # Today's grid import (kWh)
-  today_grid_export: ""          # Today's grid export (kWh)
-  today_battery_charge: ""       # Today's battery charge (kWh)
-  today_battery_discharge: "" # Today's battery discharge (kWh)
-  today_pv_production: ""           # Today's PV production (kWh)
-  today_load_consumption: ""  # Today's load consumption (kWh)
-  today_net_cost: ""                               # Today's net electricity cost
 
 # Executor (control loop that WRITES to Home Assistant)
 executor:

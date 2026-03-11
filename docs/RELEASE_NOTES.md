@@ -1,3 +1,107 @@
+## [v2.6.1-beta] - DB-First Energy Display & Bug Fixes - 2026-03-09
+
+> [!IMPORTANT]
+> **BREAKING CHANGE: Today Sensors Removed**
+> This release removes the requirement for `today_*` sensors. Darkstar now sources all daily energy totals from the database (SlotObservation table) instead of Home Assistant sensors. This ensures consistent data across Dashboard, ML training, and planning.
+>
+> **Migration Required:**
+> 1. Remove all `today_*` sensors from your `config.yaml` input_sensors section
+> 2. Keep your cumulative sensors (total_load_consumption, total_grid_import, etc.)
+> 3. Restart Darkstar
+>
+> The Dashboard will now display water heating and EV charging data from the unified energy endpoint.
+
+> [!IMPORTANT]
+> **BUG FIXES**
+> This release contains important fixes for EV charging replan functionality.
+
+**✨ New Features**
+
+- **Unified Energy Endpoint**: `/api/services/energy/today` now returns all daily energy metrics from the database, including:
+    - `ev_charging_kwh` — Daily EV charging total (new field)
+    - `water_heating_kwh` — Daily water heating total (new field)
+    - All existing metrics (solar, load, grid import/export, battery cycles)
+- **Conditional Dashboard Rendering**: The Energy Resources card now conditionally displays:
+    - Solar Production (only when `has_solar: true`)
+    - Battery metrics (only when `has_battery: true`)
+    - Water Heating (only when `has_water_heater: true`)
+    - EV Charging (only when `has_ev_charger: true`)
+- **Deprecated Endpoint**: `GET /api/ha/water_today` is now deprecated. Use `/api/services/energy/today` which includes `water_heating_kwh`.
+
+**🔧 Improvements**
+
+- **Data Consistency**: Dashboard and ML training now use the same data source (SlotObservation table), eliminating discrepancies between displayed and actual energy usage.
+- **Simplified Configuration**: Removed 7 `today_*` sensors from required configuration. Users now only need cumulative sensors for forecasting.
+- **Database-First Architecture**: All daily energy totals are aggregated from 15-minute observations stored in SQLite, removing dependency on HA's daily sensor reset timing.
+
+**🐛 Bug Fixes**
+
+- Fixed EV replan failing silently on plug-in: now triggers schedule recalculation correctly and prevents unscheduled charging
+
+---
+
+## [v2.6.0-beta] - EV Charging, Inverter Profiles v2 & Onboarding - 2026-03-07
+
+> [!IMPORTANT]
+> **ELECTRIC VEHICLE CHARGING & PROFILE SYSTEM v2**
+> This release introduces full EV charging support with intelligent scheduling, a completely rewritten Inverter Profile system, and a guided Startup Wizard for new users.
+
+> [!WARNING]
+> **Breaking Configuration Changes for Existing Users**
+> This version includes significant configuration restructuring. Auto-migration will attempt to preserve your settings, but **please backup your `config.yaml` before upgrading**. If migration fails, you may need to start fresh. New installations are unaffected.
+
+**✨ Major Features**
+
+- **Electric Vehicle Charging**
+    - **Smart Scheduling**: Darkstar now optimizes when your EV charges based on electricity prices, solar forecast, and your departure time. Set it, forget it, wake up to a charged car.
+    - **Departure Time Constraints**: Configure when you need the car ready by (e.g., 07:00 every morning). The planner guarantees completion by the deadline while choosing the cheapest slots.
+    - **Source Isolation**: The house battery will never discharge to charge your EV. Darkstar actively monitors power flow and blocks battery discharge whenever EV charging is active.
+    - **Manual Charge Detection**: Even if you start charging manually (via Tesla app, physical button, or HA), Darkstar detects it and protects your house battery.
+    - **Multiple Chargers**: Support for multiple EV chargers with individual settings and schedules.
+
+- **Inverter Profiles v2 (Stable)**
+    - **Declarative Profiles**: Complete rewrite of the profile system. Each inverter brand (Deye, Sungrow, Fronius, Generic) now has a clean, declarative YAML profile that defines exactly how to control it.
+    - **Dynamic Settings UI**: Required control entities are now auto-generated from your selected profile. No more brand-specific fields cluttering the UI for other inverters.
+    - **4 Core Modes**: Simplified to `charge`, `export`, `idle`, and `self_consumption`. Gone are the confusing composite mode workarounds.
+    - **Per-Action Delays**: Profiles can now specify settle delays per action (critical for Fronius inverters).
+    - **Better Error Messages**: Missing required entities are now reported clearly with guidance, not silent failures.
+
+- **Startup Wizard**
+    - **Guided Onboarding**: New users are greeted with a step-by-step wizard to configure essential settings before using the system.
+    - **Progressive Disclosure**: Configure basics first, then optionally dive into advanced settings.
+
+- **Device-Centric Settings Tabs**
+    - **Logical Organization**: Settings are now organized by device: System, Parameters, Solar, Battery, EV, Water.
+    - **Conditional Visibility**: Tabs only appear when the corresponding hardware is enabled. No EV? No EV tab cluttering your screen.
+    - **All-in-One**: Each device tab contains ALL related settings—sensors, controls, and parameters—in one place.
+
+**🚀 Improvements**
+
+- **Hybrid PV Forecasting**
+    - **Physics-First**: New hybrid forecasting engine combining physical irradiance models with ML corrections for improved accuracy.
+    - **72-Hour Horizon**: The Forecast Horizon card now shows 3 days ahead, giving you better visibility into upcoming solar production.
+    - **Open-Meteo Comparison**: Side-by-side comparison with Open-Meteo forecasts for validation.
+
+- **Executor Reliability**
+    - **Async HTTP Client**: Migrated from synchronous `requests` to async `aiohttp`. No more executor freezes when your inverter becomes unresponsive.
+    - **Timeout Protection**: 5-second timeout on all Home Assistant API calls prevents the executor from hanging.
+    - **Exponential Backoff**: Automatic retry with backoff for transient network errors.
+
+- **Energy Recording**
+    - **Spike Protection**: Outlier sensor readings are now filtered out, preventing garbage data from corrupting your ML models.
+    - **Cumulative Sensors**: Full support for cumulative energy sensors with automatic delta calculation.
+    - **Unit Normalization**: Automatic W/kW conversion based on sensor `unit_of_measurement`. Configure once, works everywhere.
+    - **Deferrable Load Isolation**: EV and water heater energy consumption is now isolated from house load for cleaner ML training data.
+
+**🛠️ Technical Improvements**
+
+- **Non-Blocking Validation**: Configuration warnings no longer block saves. Configure incrementally across tabs without getting stuck.
+- **Configuration Incomplete Banner**: Persistent banner shows missing required settings with direct links to the relevant tab.
+- **SoC Oscillation Fix**: Removed the emergency charge override that caused battery SoC to oscillate when set near minimum.
+- **Forecast Timestamp Alignment**: Fixed bug where forecasts showed zeros due to timestamp misalignment with price slots.
+
+---
+
 ## [v2.5.13-beta] - Sungrow Composite Entity Fixes - 2026-02-12
 
 > [!IMPORTANT]

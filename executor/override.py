@@ -70,6 +70,7 @@ class SystemState:
     grid_charging_enabled: bool = False
 
     # Water heater
+    has_water_heater: bool = True
     current_water_temp: float = 50.0
     water_temp_target: float = 60.0
 
@@ -164,23 +165,26 @@ class OverrideEvaluator:
         # Priority 8: Slot failure fallback
         # If no valid slot exists, preserve current battery state
         if not state.slot_exists or not state.slot_valid:
+            actions: dict[str, Any] = {
+                "grid_charging": False,
+                "soc_target": round(state.current_soc_percent),  # Keep current SoC
+            }
+            if state.has_water_heater:
+                actions["water_temp"] = self.water_temp_off
             return OverrideResult(
                 override_needed=True,
                 override_type=OverrideType.SLOT_FAILURE_FALLBACK,
                 priority=8.0,
                 reason="No valid slot plan found - preserving current battery state",
-                actions={
-                    "grid_charging": False,
-                    "soc_target": round(state.current_soc_percent),  # Keep current SoC
-                    "water_temp": self.water_temp_off,
-                },
+                actions=actions,
             )
 
         # Priority 5: Excess PV heating (PV dump to thermal storage)
         # If we have excess PV and water isn't at max temp, heat to max
         excess_pv = state.current_pv_kw - state.current_load_kw
         if (
-            excess_pv >= self.excess_pv_threshold_kw
+            state.has_water_heater
+            and excess_pv >= self.excess_pv_threshold_kw
             and state.current_water_temp < self.water_temp_max
             and state.current_soc_percent >= 95  # Only if battery is healthy
         ):

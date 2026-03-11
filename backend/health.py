@@ -5,6 +5,7 @@ Centralized health monitoring for Darkstar.
 Validates HA connection, entity availability, config validity, and planner metrics via SQLite.
 """
 
+import asyncio
 import logging
 import threading
 from collections import deque
@@ -507,7 +508,8 @@ class HealthChecker:
 
         # Define which sensors are HARD requirements for core functionality
         # If False, a missing entity is a WARNING, not a CRITICAL error.
-        # REV F65: Cumulative and today sensors are REQUIRED for forecasting/ML
+        # REV F65: Cumulative sensors are REQUIRED for forecasting/ML
+        # NOTE: today_* sensors are DEPRECATED (v2.6.1-beta) - energy data comes from DB
         learning_cfg = self._config.get("learning", {})
         is_learning_enabled = learning_cfg.get("enable", False)
 
@@ -526,13 +528,6 @@ class HealthChecker:
             "total_grid_export": is_learning_enabled,
             "total_battery_charge": is_learning_enabled,
             "total_battery_discharge": is_learning_enabled,
-            # Today's sensors (REQUIRED for dashboard - F65)
-            "today_load_consumption": True,
-            "today_pv_production": True,
-            "today_grid_import": True,
-            "today_grid_export": True,
-            "today_battery_charge": True,
-            "today_battery_discharge": True,
             # Features (WARNING if missing but enabled)
             "water_power": has_water_heater,
             "water_heater_consumption": has_water_heater,
@@ -641,77 +636,65 @@ class HealthChecker:
                     )
                 )
 
-        # REV F65: Add Today's Stats warning
-        today_sensors = [
-            "today_load_consumption",
-            "today_pv_production",
-            "today_grid_import",
-            "today_grid_export",
-            "today_battery_charge",
-            "today_battery_discharge",
-        ]
-        missing_today = [
-            s for s in today_sensors if s not in input_sensors or not input_sensors.get(s)
-        ]
-        if missing_today:
-            issues.append(
-                HealthIssue(
-                    category="config",
-                    severity="warning",
-                    message="Dashboard 'Today's Stats' will show incomplete data",
-                    guidance=(
-                        f"Missing today's sensors: {', '.join(missing_today)}. "
-                        f"The dashboard 'Today's Stats' card will not display correctly. "
-                        f"Add these sensors to input_sensors for complete daily statistics."
-                    ),
-                )
-            )
-
-        # Check each entity
+        # Check each entity concurrently using asyncio.gather
         headers = {"Authorization": f"Bearer {token}"}
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            for entity_id, config_key, is_required in entities_to_check:
-                try:
+
+        async def check_single_entity(entity_data: tuple[str, str, bool]) -> HealthIssue | None:
+            """Check a single entity and return a HealthIssue if there's a problem."""
+            entity_id, config_key, is_required = entity_data
+            try:
+                async with httpx.AsyncClient(timeout=5.0) as client:
                     response = await client.get(
                         f"{url}/api/states/{entity_id}",
                         headers=headers,
                     )
 
-                    if response.status_code == 404:
-                        # Downgrade severity if not a hard requirement
-                        severity = "critical" if is_required else "warning"
-                        issues.append(
-                            HealthIssue(
-                                category="entity",
-                                severity=severity,
-                                message=f"Entity not found: {entity_id}",
-                                guidance=(
-                                    f"Check that '{entity_id}' exists in Home Assistant. "
-                                    f"Update {config_key} in config.yaml if renamed."
-                                ),
-                                entity_id=entity_id,
-                            )
+                if response.status_code == 404:
+                    # Downgrade severity if not a hard requirement
+                    severity = "critical" if is_required else "warning"
+                    return HealthIssue(
+                        category="entity",
+                        severity=severity,
+                        message=f"Entity not found: {entity_id}",
+                        guidance=(
+                            f"Check that '{entity_id}' exists in Home Assistant. "
+                            f"Update {config_key} in config.yaml if renamed."
+                        ),
+                        entity_id=entity_id,
+                    )
+                elif response.status_code == 200:
+                    # Check for unavailable state
+                    state_data = response.json()
+                    state_value = state_data.get("state")
+                    if state_value == "unavailable":
+                        return HealthIssue(
+                            category="entity",
+                            severity="warning",
+                            message=f"Entity unavailable: {entity_id}",
+                            guidance=(
+                                f"The entity '{entity_id}' exists but is "
+                                "currently unavailable. Check your device/integration."
+                            ),
+                            entity_id=entity_id,
                         )
-                    elif response.status_code == 200:
-                        # Check for unavailable state
-                        state_data = response.json()
-                        state_value = state_data.get("state")
-                        if state_value == "unavailable":
-                            issues.append(
-                                HealthIssue(
-                                    category="entity",
-                                    severity="warning",
-                                    message=f"Entity unavailable: {entity_id}",
-                                    guidance=(
-                                        f"The entity '{entity_id}' exists but is "
-                                        "currently unavailable. Check your device/integration."
-                                    ),
-                                    entity_id=entity_id,
-                                )
-                            )
-                except httpx.RequestError:
-                    # Connection issues already reported in check_ha_connection
-                    pass
+            except httpx.RequestError:
+                # Connection issues already reported in check_ha_connection
+                pass
+            return None
+
+        # Run all entity checks concurrently
+        entity_results = await asyncio.gather(
+            *[check_single_entity(entity_data) for entity_data in entities_to_check],
+            return_exceptions=True,
+        )
+
+        # Collect results (filter out None and exceptions)
+        for result in entity_results:
+            if isinstance(result, HealthIssue):
+                issues.append(result)
+            elif isinstance(result, Exception):
+                # Log unexpected errors but don't fail the entire health check
+                logger.debug(f"Unexpected error checking entity: {result}")
 
         return issues
 
@@ -897,4 +880,17 @@ class HealthChecker:
 async def get_health_status(config_path: str = "config.yaml") -> HealthStatus:
     """Convenience function to get current health status."""
     checker = HealthChecker(config_path)
-    return await checker.check_all()
+    try:
+        return await asyncio.wait_for(checker.check_all(), timeout=15.0)
+    except TimeoutError:
+        return HealthStatus(
+            healthy=False,
+            issues=[
+                HealthIssue(
+                    category="ha_connection",
+                    severity="critical",
+                    message="Health check timed out after 15 seconds",
+                    guidance="The system is experiencing connectivity issues. Check network and Home Assistant availability.",
+                )
+            ],
+        )
