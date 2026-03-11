@@ -644,7 +644,7 @@ class ActionDispatcher:
             result = await self._execute_action(action, decision, mode_intent)
             results.append(result)
 
-            if action.settle_ms and action.settle_ms > 0:
+            if action.settle_ms and action.settle_ms > 0 and result and not result.skipped:
                 logger.debug("Settle delay: %dms after %s", action.settle_ms, action.entity)
                 await asyncio.sleep(action.settle_ms / 1000.0)
 
