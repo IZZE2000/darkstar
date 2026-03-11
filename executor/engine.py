@@ -155,6 +155,7 @@ class ExecutorEngine:
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
         self._lock = threading.Lock()
+        self._config_mtime: float = 0.0  # last seen config file modification time
 
         # Quick action storage (user-initiated time-limited overrides)
         self._quick_action: dict[str, Any] | None = None  # {type, expires_at, reason}
@@ -813,8 +814,14 @@ class ExecutorEngine:
             return
 
         while not self._stop_event.is_set():
-            # Reload config to get latest settings
-            self.reload_config()
+            # Reload config only when config file has changed on disk
+            try:
+                mtime = Path(self.config_path).stat().st_mtime
+                if mtime != self._config_mtime:
+                    self.reload_config()
+                    self._config_mtime = mtime
+            except OSError:
+                pass  # file temporarily unavailable, keep existing config
 
             # Check if enabled
             if not self.config.enabled:
