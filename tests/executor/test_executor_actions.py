@@ -140,6 +140,24 @@ class TestHAClientCallService:
 
             assert exc_info.value.exception_type == "ClientError"
 
+    @pytest.mark.asyncio
+    async def test_call_service_timeout_raises_ha_call_error(self):
+        """call_service raises HACallError on TimeoutError."""
+        client = HAClient("http://ha:8123", "token123")
+
+        # Create mock session that raises TimeoutError
+        mock_session = MagicMock()
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(side_effect=TimeoutError("Request timed out"))
+        mock_cm.__aexit__ = AsyncMock(return_value=None)
+        mock_session.post.return_value = mock_cm
+
+        with patch.object(client, "_get_session", return_value=mock_session):
+            with pytest.raises(HACallError) as exc_info:
+                await client.call_service("switch", "turn_on", "switch.test")
+
+            assert exc_info.value.exception_type == "TimeoutError"
+
 
 class TestHAClientSetMethods:
     """Test HAClient setter methods."""

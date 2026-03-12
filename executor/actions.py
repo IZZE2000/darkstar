@@ -322,14 +322,17 @@ class HAClient:
             "HA call_service: %s.%s on %s with payload: %s", domain, service, entity_id, payload
         )
 
-        try:
+        async def _post() -> None:
             session = await self._get_session()
             async with session.post(
                 f"{self.base_url}/api/services/{domain}/{service}",
                 json=payload,
             ) as response:
                 response.raise_for_status()
-                return True
+
+        try:
+            await _retry_with_backoff(_post, max_retries=3, base_delay=1.0)
+            return True
         except aiohttp.ClientResponseError as e:
             raise HACallError(
                 message=f"Failed to call service {domain}.{service} on {entity_id}",
@@ -337,7 +340,7 @@ class HAClient:
                 response_body=str(e.message),
                 exception_type=type(e).__name__,
             ) from e
-        except aiohttp.ClientError as e:
+        except (aiohttp.ClientError, TimeoutError) as e:
             raise HACallError(
                 message=f"Failed to call service {domain}.{service} on {entity_id}",
                 exception_type=type(e).__name__,
