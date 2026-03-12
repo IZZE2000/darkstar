@@ -141,7 +141,7 @@ class PlannerService:
                 result = PlannerResult(
                     success=False,
                     planned_at=start,
-                    error=str(e),
+                    error=f"{type(e).__name__}: {e!s}",
                     duration_ms=(datetime.now() - start).total_seconds() * 1000,
                 )
                 await self._notify_error(result)

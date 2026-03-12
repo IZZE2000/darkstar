@@ -44,6 +44,34 @@ async def test_planner_service_failure():
 
 
 @pytest.mark.asyncio
+async def test_planner_service_error_includes_exception_type():
+    """Verify that error payload includes exception type for better debugging.
+
+    This is a regression test for vague error messages that only showed "incomplete format"
+    without indicating it was a ValueError.
+
+    The fix: Exception handler now prepends type(e).__name__ to the error message.
+
+    Scenario: Exception Caught in Planner
+    WHEN a ValueError is raised during planner execution
+    THEN the WebSocket notification includes "ValueError: incomplete format"
+    instead of just "incomplete format"
+    """
+    service = PlannerService()
+    # Patch run_planner.main to raise a ValueError
+    with patch("bin.run_planner.main", new_callable=AsyncMock) as mock_main:
+        mock_main.side_effect = ValueError("incomplete format")
+
+        result = await service.run_once()
+        # run_once catches exception and returns PlannerResult with enriched error
+        assert result.success is False
+        # Error should include the exception type
+        assert result.error == "ValueError: incomplete format"
+        # Should NOT be just the message without the type
+        assert result.error != "incomplete format"
+
+
+@pytest.mark.asyncio
 async def test_scheduler_service_lifecycle():
     scheduler = SchedulerService()
 

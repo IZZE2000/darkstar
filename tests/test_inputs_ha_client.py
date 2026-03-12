@@ -10,6 +10,66 @@ import pytest
 
 
 @pytest.mark.asyncio
+async def test_ev_soc_fallback_logging_no_crash():
+    """Verify that EV SoC fallback logging with '0%%' does not crash due to formatting.
+
+    This is a regression test for the ValueError: incomplete format bug where
+    the logging statement in get_initial_state() contained an unescaped percent sign.
+
+    The fix: Escape the percent sign as '0%%' so Python's logging percent-formatting
+    interprets it as a literal '%' character.
+
+    Scenario: Logging EV SoC fallback
+    WHEN EV SoC sensor returns no data
+    THEN the system logs a warning with the literal "0%" without crashing
+    """
+    import yaml
+
+    from inputs import get_initial_state
+
+    # Config with EV charger enabled but sensor returns no data
+    test_config = {
+        "system": {"has_ev_charger": True, "battery": {"capacity_kwh": 10.0}},
+        "ev_chargers": [
+            {
+                "enabled": True,
+                "soc_sensor": "sensor.test_ev_soc",
+                "plug_sensor": "sensor.test_ev_plug",
+            }
+        ],
+        "input_sensors": {"battery_soc": "sensor.battery_soc"},
+    }
+
+    # Track if the warning was called with proper format
+    warning_calls = []
+
+    with patch("inputs.Path.open") as mock_file:
+        mock_file.return_value.__enter__.return_value.read.return_value = yaml.dump(test_config)
+
+        with patch("inputs.get_ha_sensor_float") as mock_get_sensor:
+            # Battery SoC returns valid data
+            mock_get_sensor.side_effect = lambda entity_id: {
+                "sensor.battery_soc": 50.0,
+                "sensor.test_ev_soc": None,  # EV SoC returns no data
+                "sensor.test_ev_plug": False,
+            }.get(entity_id)
+
+            with patch("inputs.logger") as mock_logger:
+                mock_logger.warning = lambda msg, *args: warning_calls.append((msg, args))
+
+                # This should NOT raise ValueError: incomplete format
+                result = await get_initial_state()
+
+                # Verify the warning was logged with 0%%
+                ev_soc_warnings = [call for call in warning_calls if "defaulting to" in call[0]]
+                assert len(ev_soc_warnings) == 1
+                assert "0%%" in ev_soc_warnings[0][0]  # Format string has escaped %%
+
+                # Verify result has default EV SoC of 0
+                assert result["ev_soc_percent"] == 0.0
+
+
+@pytest.mark.asyncio
 async def test_get_ha_entity_state_uses_async_context_manager():
     """Verify that get_ha_entity_state() uses async with for proper resource cleanup.
 
