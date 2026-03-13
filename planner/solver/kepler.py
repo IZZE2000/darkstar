@@ -137,9 +137,6 @@ class KeplerSolver:
         target_under_violation: Any = pulp.LpVariable(  # type: ignore[call-arg]
             "target_under_violation_kwh", lowBound=0.0
         )  # Penalty for being BELOW target at end of horizon
-        target_over_violation: Any = pulp.LpVariable(  # type: ignore[call-arg]
-            "target_over_violation_kwh", lowBound=0.0
-        )  # Penalty for being ABOVE target at end of horizon
         import_breach: dict[int, Any] = pulp.LpVariable.dicts(  # type: ignore[reportUnknownMemberType]
             "import_breach_kwh", range(T), lowBound=0.0
         )
@@ -349,14 +346,9 @@ class KeplerSolver:
         if config.target_soc_kwh is not None:
             # Under target: soc[T] >= target - under_violation
             prob += soc[T] >= target_soc_kwh - target_under_violation  # type: ignore[operator]
-            # Over target: soc[T] <= target + over_violation
-            prob += soc[T] <= target_soc_kwh + target_over_violation  # type: ignore[operator]
 
             # Penalize UNDER target (important)
             total_cost.append(target_soc_penalty * target_under_violation)  # type: ignore[arg-type]
-            # Penalize OVER target (only if target is > 0 to avoid dumping to 0)
-            if target_soc_kwh > 0:
-                total_cost.append(target_soc_penalty * target_over_violation)  # type: ignore[arg-type]
         else:
             # If no target, we don't care where we end up (within min_soc limits)
             pass
@@ -463,15 +455,6 @@ class KeplerSolver:
                 if water_enabled
                 else 0.0
             )  # Rev K16: Soft Block Penalty
-            + (
-                pulp.lpSum(water_start[t] for t in range(T)) * config.water_block_start_penalty_sek  # type: ignore[index,reportUnknownVariableType]
-                if water_enabled and needs_water_start and config.water_block_start_penalty_sek > 0
-                else 0.0
-            )  # Rev WH2: Block start penalty
-            # Rev K16 Phase 5: Symmetry Breaker
-            # Add tiny cost (increasing with t) to break ties in flat price scenarios
-            + (pulp.lpSum(water_heat[t] * (t * 1e-5) for t in range(T)) if water_enabled else 0.0)
-            # Rev K16 Phase 2: Reliability Penalties
             + (
                 pulp.lpSum(water_start[t] for t in range(T)) * config.water_block_start_penalty_sek  # type: ignore[index,reportUnknownVariableType]
                 if water_enabled and needs_water_start and config.water_block_start_penalty_sek > 0

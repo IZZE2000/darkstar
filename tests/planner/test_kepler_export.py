@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
+from planner.solver.adapter import config_to_kepler_config
 from planner.solver.kepler import KeplerSolver
 from planner.solver.types import KeplerConfig, KeplerInput, KeplerInputSlot
 
@@ -53,3 +54,81 @@ def test_kepler_solver_export_disabled():
         assert s.grid_export_kwh == pytest.approx(0.0, abs=0.01)
         # Should NOT discharge since there is no load and we can't export
         assert s.discharge_kwh == pytest.approx(0.0, abs=0.01)
+
+
+def test_export_threshold_config_mapping():
+    """
+    Regression test: config_to_kepler_config() must correctly map
+    export_threshold_sek_per_kwh from config to KeplerConfig.
+    """
+    planner_config = {
+        "config_version": 2,
+        "system": {
+            "battery": {
+                "capacity_kwh": 10.0,
+                "min_soc_percent": 10.0,
+                "max_soc_percent": 100.0,
+                "max_charge_a": 100.0,
+                "max_discharge_a": 100.0,
+                "nominal_voltage_v": 48.0,
+                "charge_efficiency": 0.95,
+                "discharge_efficiency": 0.95,
+            },
+            "grid": {"max_power_kw": 11.0},
+        },
+        "export_threshold_sek_per_kwh": 0.25,
+        "battery_economics": {"battery_cycle_cost_kwh": 0.10},
+        "executor": {"inverter": {"control_unit": "A"}},
+    }
+
+    kepler_cfg = config_to_kepler_config(planner_config)
+
+    assert kepler_cfg.export_threshold_sek_per_kwh == pytest.approx(0.25), (
+        f"export_threshold_sek_per_kwh should be 0.25, got "
+        f"{kepler_cfg.export_threshold_sek_per_kwh}"
+    )
+
+
+def test_export_threshold_prevents_unprofitable_export():
+    """
+    Regression test: High export threshold should prevent marginal exports.
+
+    Scenario: Export price is 0.50 SEK/kWh, but threshold is 0.60 SEK/kWh.
+    Expected: No export because adjusted profit is negative.
+    """
+    start = datetime(2025, 1, 1, 12, 0)
+    slots = [
+        KeplerInputSlot(
+            start_time=start,
+            end_time=start + timedelta(minutes=15),
+            load_kwh=0.0,
+            pv_kwh=0.0,
+            import_price_sek_kwh=1.0,
+            export_price_sek_kwh=0.50,  # Export at 0.50 SEK
+        )
+    ]
+
+    input_data = KeplerInput(slots=slots, initial_soc_kwh=5.0)
+
+    # Threshold higher than export price -> should not export
+    config = KeplerConfig(
+        capacity_kwh=10.0,
+        min_soc_percent=0,
+        max_soc_percent=100,
+        max_charge_power_kw=10,
+        max_discharge_power_kw=10,
+        charge_efficiency=1.0,
+        discharge_efficiency=1.0,
+        wear_cost_sek_per_kwh=0.0,
+        export_threshold_sek_per_kwh=0.60,  # Higher than 0.50 export price
+    )
+
+    result = KeplerSolver().solve(input_data, config)
+    assert result.is_optimal
+
+    # Should NOT export because effective price = 0.50 - 0.60 = -0.10 < 0
+    assert result.slots[0].grid_export_kwh == pytest.approx(0.0, abs=0.01), (
+        f"Should not export when threshold ({config.export_threshold_sek_per_kwh}) "
+        f"> export price ({slots[0].export_price_sek_kwh}). "
+        f"Exported: {result.slots[0].grid_export_kwh} kWh"
+    )

@@ -72,7 +72,9 @@ def build_price_dataframe(price_data: list[dict[str, Any]], tz_name: str) -> pd.
                 "end_time": end,
                 "import_price_sek_kwh": float(slot.get("import_price_sek_kwh") or 0.0),
                 "export_price_sek_kwh": float(
-                    slot.get("export_price_sek_kwh") or slot.get("import_price_sek_kwh") or 0.0
+                    slot["export_price_sek_kwh"]
+                    if slot.get("export_price_sek_kwh") is not None
+                    else (slot.get("import_price_sek_kwh") or 0.0)
                 ),
             }
         )

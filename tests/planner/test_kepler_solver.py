@@ -324,3 +324,67 @@ def test_ramping_cost_k5():
     res_ramp = KeplerSolver().solve(input_data, config_ramp)
     # S2 discharge should be suppressed by ramping penalty
     assert res_ramp.slots[1].discharge_kwh == pytest.approx(0.0)
+
+
+def test_no_force_dumping_with_target_soc():
+    """
+    Regression test: Solver should NOT export battery energy at zero/negative
+    prices to reduce end-of-horizon SoC to the target (Safety Floor).
+
+    Scenario: Battery starts full, target_soc is set low (Safety Floor),
+    export price is zero. The solver should keep the energy in the battery,
+    not discharge it to zero to hit the target.
+    """
+    start = datetime(2025, 1, 1, 12, 0)
+    slots = []
+    # 4 slots (1 hour) with zero export price and minimal load
+    for i in range(4):
+        slots.append(
+            KeplerInputSlot(
+                start_time=start + timedelta(minutes=15 * i),
+                end_time=start + timedelta(minutes=15 * (i + 1)),
+                load_kwh=0.1,  # Tiny load to make the problem feasible
+                pv_kwh=0.0,  # No solar
+                import_price_sek_kwh=1.0,  # Import is expensive
+                export_price_sek_kwh=0.0,  # Zero export price
+            )
+        )
+
+    # Battery starts full (10 kWh), capacity 10 kWh
+    # Target SoC = 2 kWh (20%) - Safety Floor
+    # With the old bidirectional penalty, solver would dump 8 kWh to reach 2 kWh
+    # With the fix, solver should keep energy and maybe discharge slowly for the load
+    input_data = KeplerInput(slots=slots, initial_soc_kwh=10.0)
+
+    config = KeplerConfig(
+        capacity_kwh=10.0,
+        max_charge_power_kw=10.0,
+        max_discharge_power_kw=10.0,
+        charge_efficiency=1.0,
+        discharge_efficiency=1.0,
+        min_soc_percent=0.0,
+        max_soc_percent=100.0,
+        wear_cost_sek_per_kwh=0.01,
+        target_soc_kwh=2.0,  # Safety Floor at 2 kWh (20%)
+        target_soc_penalty_sek=200.0,  # High penalty for being UNDER target
+        curtailment_penalty_sek=0.1,
+    )
+
+    solver = KeplerSolver()
+    result = solver.solve(input_data, config)
+
+    assert result.is_optimal
+
+    # Ending SoC should be well above target (>2 kWh)
+    # It might discharge slightly for the 0.1 kWh load per slot (0.4 kWh total)
+    final_soc = result.slots[-1].soc_kwh
+    assert final_soc >= 9.0, (
+        f"Should NOT discharge battery to hit target. "
+        f"Final SoC: {final_soc}, target: {config.target_soc_kwh}"
+    )
+
+    # Should NOT export to zero-price grid
+    total_export = sum(s.grid_export_kwh for s in result.slots)
+    assert total_export == pytest.approx(0.0, abs=0.01), (
+        f"Should NOT export energy at zero price. Total export: {total_export} kWh"
+    )

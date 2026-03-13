@@ -400,6 +400,7 @@ def config_to_kepler_config(
         curtailment_penalty_sek=float(
             planner_config.get("kepler", {}).get("curtailment_penalty_sek", 0.1)
         ),
+        export_threshold_sek_per_kwh=get_val("export_threshold_sek_per_kwh", 0.0),
         # Water heating as deferrable load
         water_heating_power_kw=float(wh_cfg.get("power_kw", 0.0)),
         water_heating_min_kwh=float(wh_cfg.get("min_kwh_per_day", 0.0)),
