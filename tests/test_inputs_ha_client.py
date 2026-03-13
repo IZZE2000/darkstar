@@ -23,7 +23,6 @@ async def test_ev_soc_fallback_logging_no_crash():
     WHEN EV SoC sensor returns no data
     THEN the system logs a warning with the literal "0%" without crashing
     """
-    import yaml
 
     from inputs import get_initial_state
 
@@ -43,30 +42,33 @@ async def test_ev_soc_fallback_logging_no_crash():
     # Track if the warning was called with proper format
     warning_calls = []
 
-    with patch("inputs.Path.open") as mock_file:
-        mock_file.return_value.__enter__.return_value.read.return_value = yaml.dump(test_config)
+    def mock_yaml_load(f):
+        return test_config
 
-        with patch("inputs.get_ha_sensor_float") as mock_get_sensor:
-            # Battery SoC returns valid data
-            mock_get_sensor.side_effect = lambda entity_id: {
-                "sensor.battery_soc": 50.0,
-                "sensor.test_ev_soc": None,  # EV SoC returns no data
-                "sensor.test_ev_plug": False,
-            }.get(entity_id)
+    with (
+        patch("yaml.safe_load", side_effect=mock_yaml_load),
+        patch("inputs.get_ha_sensor_float") as mock_get_sensor,
+        patch("inputs.logger") as mock_logger,
+    ):
+        # Battery SoC returns valid data
+        mock_get_sensor.side_effect = lambda entity_id: {
+            "sensor.battery_soc": 50.0,
+            "sensor.test_ev_soc": None,  # EV SoC returns no data
+            "sensor.test_ev_plug": False,
+        }.get(entity_id)
 
-            with patch("inputs.logger") as mock_logger:
-                mock_logger.warning = lambda msg, *args: warning_calls.append((msg, args))
+        mock_logger.warning = lambda msg, *args: warning_calls.append((msg, args))
 
-                # This should NOT raise ValueError: incomplete format
-                result = await get_initial_state()
+        # This should NOT raise ValueError: incomplete format
+        result = await get_initial_state()
 
-                # Verify the warning was logged with 0%%
-                ev_soc_warnings = [call for call in warning_calls if "defaulting to" in call[0]]
-                assert len(ev_soc_warnings) == 1
-                assert "0%%" in ev_soc_warnings[0][0]  # Format string has escaped %%
+        # Verify the warning was logged with 0%%
+        ev_soc_warnings = [call for call in warning_calls if "defaulting to" in call[0]]
+        assert len(ev_soc_warnings) == 1
+        assert "0%%" in ev_soc_warnings[0][0]  # Format string has escaped %%
 
-                # Verify result has default EV SoC of 0
-                assert result["ev_soc_percent"] == 0.0
+        # Verify result has default EV SoC of 0
+        assert result["ev_soc_percent"] == 0.0
 
 
 @pytest.mark.asyncio
@@ -155,31 +157,31 @@ async def test_get_load_profile_from_ha_uses_async_context_manager():
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=None)
 
-    with patch("httpx.AsyncClient") as mock_async_client:
+    # Mock config
+    config = {
+        "timezone": "Europe/Stockholm",
+        "input_sensors": {"total_load_consumption": "sensor.test_consumption"},
+    }
+
+    with (
+        patch("httpx.AsyncClient") as mock_async_client,
+        patch("inputs.load_home_assistant_config") as mock_load_config,
+    ):
         mock_async_client.return_value = mock_client
+        mock_load_config.return_value = {
+            "url": "http://homeassistant:8123",
+            "token": "test_token",
+            "consumption_entity_id": "sensor.test_consumption",
+        }
 
-        # Mock HA config to have valid credentials
-        with patch("inputs.load_home_assistant_config") as mock_load_config:
-            mock_load_config.return_value = {
-                "url": "http://homeassistant:8123",
-                "token": "test_token",
-                "consumption_entity_id": "sensor.test_consumption",
-            }
+        # Call the function
+        result = await get_load_profile_from_ha(config)
 
-            # Mock config
-            config = {
-                "timezone": "Europe/Stockholm",
-                "input_sensors": {"total_load_consumption": "sensor.test_consumption"},
-            }
+        # Verify AsyncClient was used with context manager
+        mock_async_client.assert_called_once()
+        mock_client.__aenter__.assert_called_once()
+        mock_client.__aexit__.assert_called_once()
 
-            # Call the function
-            result = await get_load_profile_from_ha(config)
-
-            # Verify AsyncClient was used with context manager
-            mock_async_client.assert_called_once()
-            mock_client.__aenter__.assert_called_once()
-            mock_client.__aexit__.assert_called_once()
-
-            # Should return a list of 96 values
-            assert isinstance(result, list)
-            assert len(result) == 96  # 96 slots for 24 hours
+        # Should return a list of 96 values
+        assert isinstance(result, list)
+        assert len(result) == 96  # 96 slots for 24 hours

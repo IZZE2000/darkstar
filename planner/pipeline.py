@@ -364,6 +364,14 @@ class PlannerPipeline:
 
             # Rev K23 Phase 3: Physical Deficit Logic
             # Replaces legacy Risk Factor + Dynamic Target SoC logic
+            # Temporal Safety Floor: Build full forecast DataFrame beyond price horizon
+            from planner.inputs.data_prep import build_forecast_dataframe
+
+            price_horizon_end = df.index[-1] if len(df) > 0 else None
+            full_forecast_df = build_forecast_dataframe(
+                input_data.get("forecast_data") or [], timezone_name
+            )
+
             soc_debug: dict[str, Any] = {}
             target_soc_kwh, soc_debug = calculate_safety_floor(
                 df,
@@ -373,6 +381,8 @@ class PlannerPipeline:
                 fetch_temperature_fn=lambda days, t: fetch_temperature_forecast(
                     days, t, active_config
                 ),
+                full_forecast_df=full_forecast_df,
+                price_horizon_end=price_horizon_end,
             )
 
             # Derive percentage for UI/Legacy compatibility
@@ -381,8 +391,8 @@ class PlannerPipeline:
             raw_factor: float | None = None
 
             logger.info(
-                "S-Index: Mode=physical_deficit, Deficit=%.3f, Floor=%.2f kWh (Start: %.2f%%), Risk=%d",
-                soc_debug.get("deficit_ratio", 0.0),
+                "S-Index: Mode=temporal_deficit, TemporalDeficit=%.2f kWh, Floor=%.2f kWh (%.2f%%), Risk=%d",
+                soc_debug.get("temporal_deficit_kwh", 0.0),
                 target_soc_kwh,
                 target_soc_pct,
                 s_index_cfg.get("risk_appetite", 3),

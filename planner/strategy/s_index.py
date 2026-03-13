@@ -661,32 +661,67 @@ def calculate_deficit_ratio(
     return min(1.0, deficit / total_load)
 
 
+def calculate_temporal_deficit(df: pd.DataFrame) -> float:
+    """
+    Calculate temporal (per-slot) deficit: sum(max(0, load - pv)) for each slot.
+
+    This captures the energy the battery must provide when PV is unavailable,
+    regardless of aggregate surplus/deficit over the entire horizon.
+
+    Args:
+        df: DataFrame with 'load_forecast_kwh' and 'pv_forecast_kwh' columns
+
+    Returns:
+        Total temporal deficit in kWh
+    """
+    if df.empty:
+        return 0.0
+
+    load = df["load_forecast_kwh"]
+    pv = df["pv_forecast_kwh"]
+
+    # Per-slot net deficit: max(0, load - pv)
+    slot_deficit = (load - pv).clip(lower=0.0)
+
+    return float(slot_deficit.sum())
+
+
 def calculate_safety_floor(
     df: pd.DataFrame,
     battery_config: dict[str, Any],
     s_index_cfg: dict[str, Any],
     timezone_name: str,
     fetch_temperature_fn: Callable[[list[int], Any], Any] | None = None,
+    full_forecast_df: pd.DataFrame | None = None,
+    price_horizon_end: datetime | pd.Timestamp | None = None,
 ) -> tuple[float, dict[str, Any]]:
     """
-    Calculate the Safety Floor (Min kWh) based on Physical Deficit.
+    Calculate the Safety Floor (Min kWh) based on Temporal Deficit.
 
-    Logic:
-    1. Calculate Deficit Ratio over horizon (Load - PV)
-    2. Base Reserve = Deficit Ratio * Capacity * Risk Multiplier
-    3. Weather Buffer = Snow + Temp + Clouds
-    4. Floor = MinSoC + Base Reserve + Weather Buffer
+    Temporal Safety Floor Logic:
+    1. Calculate temporal deficit over 24h window beyond price horizon:
+       sum(max(0, load - pv)) per slot
+    2. Apply risk margin to the deficit (higher risk = lower margin)
+    3. Add minimum floor per risk level (ensures floor never collapses to min_soc)
+    4. Add weather buffer (temp, snow, clouds)
+    5. Cap at max_safety_buffer_pct
 
     Args:
-        df: DataFrame with 'load_forecast_kwh', 'pv_forecast_kwh', etc.
+        df: DataFrame with 'load_forecast_kwh', 'pv_forecast_kwh', etc. (price-truncated)
         battery_config: Battery config (capacity, min_soc)
-        s_index_cfg: Strategy config (risk_appetite)
+        s_index_cfg: Strategy config (risk_appetite, max_safety_buffer_pct)
         timezone_name: Timezone string
         fetch_temperature_fn: Callback for weather data
+        full_forecast_df: Full forecast DataFrame extending beyond price horizon
+        price_horizon_end: Timestamp where price data ends (start of look-ahead window)
 
     Returns:
         Tuple of (safety_floor_kwh, debug_data)
     """
+    import logging
+
+    logger = logging.getLogger("darkstar.planner")
+
     # 1. Config & Inputs
     capacity_kwh = float(battery_config.get("capacity_kwh", 13.5))
     min_soc_pct = float(battery_config.get("min_soc_percent", 5.0))
@@ -694,86 +729,181 @@ def calculate_safety_floor(
 
     risk_appetite = int(s_index_cfg.get("risk_appetite", 3))
 
-    # Scaling Factor: What % of capacity corresponds to a 100% Deficit?
-    # Default 0.5 (50%) means if Deficit=1.0, we hold 50% capacity as buffer (before Risk mult).
-    # This prevents holding 100% capacity just because it's winter.
-    max_safety_buffer_pct = float(s_index_cfg.get("max_safety_buffer_percent", 50.0)) / 100.0
+    # Max buffer as % of capacity (default 20% to prevent runaway)
+    max_safety_buffer_pct = float(s_index_cfg.get("max_safety_buffer_percent", 20.0)) / 100.0
+    max_buffer_kwh = capacity_kwh * max_safety_buffer_pct
 
-    # 2. Calculate Deficit Ratio (Horizon = Next 24-48h)
-    # We look at the full available forecast in df
-    total_load = df["load_forecast_kwh"].sum()
-    total_pv = df["pv_forecast_kwh"].sum()
-
-    deficit_ratio = calculate_deficit_ratio(total_load, total_pv)
-
-    # 3. Risk Multipliers (How much of the deficit do we need to cover?)
-    # Risk 1 (Safety): Cover 130% of deficit (Paranoid)
-    # Risk 3 (Neutral): Cover 100% of deficit
-    # Risk 5 (Gambler): Cover 80% of deficit
-    RISK_MULTIPLIERS = {
-        1: 1.30,
-        2: 1.15,
-        3: 1.00,
-        4: 0.50,
-        5: 0.00,
+    # 2. Risk Configuration: margin on deficit + minimum floor above min_soc
+    # Risk 1 (Safety): 30% margin, minimum 25% capacity buffer
+    # Risk 2 (Conservative): 20% margin, minimum 15% capacity buffer
+    # Risk 3 (Neutral): 15% margin, minimum 10% capacity buffer
+    # Risk 4 (Aggressive): 5% margin, minimum 3% capacity buffer
+    # Risk 5 (Gambler): 0% margin, 0% minimum (returns min_soc)
+    RISK_CONFIG = {
+        1: {"margin": 1.30, "min_buffer_pct": 0.25},  # Safety
+        2: {"margin": 1.20, "min_buffer_pct": 0.15},  # Conservative
+        3: {"margin": 1.15, "min_buffer_pct": 0.10},  # Neutral
+        4: {"margin": 1.05, "min_buffer_pct": 0.03},  # Aggressive
+        5: {"margin": 1.00, "min_buffer_pct": 0.00},  # Gambler
     }
-    risk_multiplier = RISK_MULTIPLIERS.get(risk_appetite, 1.0)
 
-    # Base Reserve = Deficit Ratio * (Capacity * Scaling Limit) * Risk Multiplier
-    base_reserve_kwh = deficit_ratio * (capacity_kwh * max_safety_buffer_pct) * risk_multiplier
+    risk_config = RISK_CONFIG.get(risk_appetite, RISK_CONFIG[3])
+    risk_margin = risk_config["margin"]
+    min_buffer_kwh = capacity_kwh * risk_config["min_buffer_pct"]
 
-    # 4. Weather Buffer (Explicit adders)
+    # 3. Determine the look-ahead window (24h beyond price horizon)
+    lookahead_start: datetime | pd.Timestamp
+    using_extended_data = False
+    fallback_warning = False
+
+    if price_horizon_end is not None:
+        lookahead_start = price_horizon_end
+    elif not df.empty and isinstance(df.index, pd.DatetimeIndex):
+        # Fallback: use end of current df
+        lookahead_start = df.index[-1]
+        logger.warning(
+            "Temporal Safety Floor: price_horizon_end not provided, using last timestamp of df"
+        )
+    elif df.empty:
+        # No data available
+        logger.warning("Temporal Safety Floor: No forecast data available, using minimum floor")
+        safety_floor_kwh = min_soc_kwh + min_buffer_kwh
+        return safety_floor_kwh, {
+            "method": "temporal_deficit",
+            "temporal_deficit_kwh": 0.0,
+            "risk_appetite": risk_appetite,
+            "risk_margin": risk_margin,
+            "min_buffer_kwh": round(min_buffer_kwh, 2),
+            "base_reserve_kwh": 0.0,
+            "weather_buffer_kwh": 0.0,
+            "max_buffer_kwh": round(max_buffer_kwh, 2),
+            "min_soc_kwh": round(min_soc_kwh, 2),
+            "calculated_floor_kwh": round(safety_floor_kwh, 2),
+            "fallback": "no_data",
+        }
+    else:
+        # Has data but no DatetimeIndex (e.g., test DataFrames)
+        # Use a default lookahead window
+        lookahead_start = datetime.now(pytz.timezone(timezone_name))
+        logger.debug(
+            "Temporal Safety Floor: Using current time as lookahead start (no DatetimeIndex)"
+        )
+
+    lookahead_end = lookahead_start + timedelta(hours=24)
+
+    # 4. Calculate temporal deficit over the look-ahead window
+    temporal_deficit_kwh = 0.0
+    deficit_df: pd.DataFrame | None = None
+
+    # Try to use extended forecast data beyond price horizon
+    if full_forecast_df is not None and not full_forecast_df.empty:
+        # Filter to the look-ahead window
+        # Cast timestamps for proper type compatibility with DatetimeIndex
+        start_ts = pd.Timestamp(lookahead_start)
+        end_ts = pd.Timestamp(lookahead_end)
+        mask = (full_forecast_df.index > start_ts) & (full_forecast_df.index <= end_ts)
+        deficit_df = full_forecast_df.loc[mask].copy()
+
+        if not deficit_df.empty:
+            temporal_deficit_kwh = calculate_temporal_deficit(deficit_df)
+            using_extended_data = True
+
+    # Fallback: if extended data not available or insufficient, use available df
+    if not using_extended_data:
+        fallback_warning = True
+
+        # Try to use as much of df as falls within the lookahead window
+        # Only filter by timestamp if df has a DatetimeIndex
+        if not df.empty and isinstance(df.index, pd.DatetimeIndex):
+            # Cast to Timestamp for proper type compatibility
+            start_ts = pd.Timestamp(lookahead_start)
+            end_ts = pd.Timestamp(lookahead_end)
+            mask = (df.index > start_ts) & (df.index <= end_ts)
+            deficit_df = df.loc[mask].copy()
+
+            if not deficit_df.empty:
+                temporal_deficit_kwh = calculate_temporal_deficit(deficit_df)
+        elif not df.empty:
+            # No DatetimeIndex - use entire df (for backwards compatibility in tests)
+            deficit_df = df.copy()
+            temporal_deficit_kwh = calculate_temporal_deficit(deficit_df)
+
+        if fallback_warning:
+            logger.warning(
+                "Temporal Safety Floor: Extended forecast data unavailable or insufficient, "
+                "using available horizon only. Look-ahead window: %s to %s",
+                lookahead_start,
+                lookahead_end,
+            )
+
+    # 5. Calculate Base Reserve
+    # Base reserve = temporal deficit * risk margin
+    # This is the energy we want to preserve for the period beyond the horizon
+    base_reserve_kwh = temporal_deficit_kwh * risk_margin
+
+    # 6. Weather Buffer (Explicit adders)
     weather_buffer_kwh = 0.0
     weather_debug: dict[str, float] = {}
 
-    # Needs weather data (Temp, Snow, Cloud)
-    # We assume 'snow_prob', 'temperature_c', 'cloud_cover' might be in DF or fetchable
-    # For now, check DF columns if available, or use fetch_fn/heuristics
+    # Use the deficit_df if available for weather data, otherwise use df
+    weather_source_df = deficit_df if deficit_df is not None and not deficit_df.empty else df
 
-    # A. Temperature (Cold = High risk)
-    avg_temp = 20.0
-    if "temperature_c" in df.columns:
-        avg_temp = df["temperature_c"].mean()
+    if not weather_source_df.empty:
+        # A. Temperature (Cold = High risk)
+        avg_temp = 20.0
+        if "temperature_c" in weather_source_df.columns:
+            avg_temp = float(weather_source_df["temperature_c"].mean())
 
-    if avg_temp < 0:
-        weather_buffer_kwh += 1.0  # Sub-zero
-        weather_debug["temp_adder"] = 1.0
-    if avg_temp < -10:
-        weather_buffer_kwh += 1.0  # Extreme cold (Total +2.0)
-        weather_debug["temp_adder"] = 2.0
+        if avg_temp < 0:
+            weather_buffer_kwh += 1.0  # Sub-zero
+            weather_debug["temp_adder"] = 1.0
+        if avg_temp < -10:
+            weather_buffer_kwh += 1.0  # Extreme cold (Total +2.0)
+            weather_debug["temp_adder"] = 2.0
 
-    # B. Snow (If available in forecast)
-    if "snow_prob" in df.columns:
-        snow_hours = (df["snow_prob"] > 50).sum()
-        if snow_hours > 0:
-            snow_adder = 0.5 * (snow_hours / 24.0)
-            weather_buffer_kwh += snow_adder
-            weather_debug["snow_adder"] = round(snow_adder, 2)
+        # B. Snow (If available in forecast)
+        if "snow_prob" in weather_source_df.columns:
+            snow_hours = int((weather_source_df["snow_prob"] > 50).sum())
+            if snow_hours > 0:
+                snow_adder = 0.5 * (snow_hours / 24.0)
+                weather_buffer_kwh += snow_adder
+                weather_debug["snow_adder"] = round(snow_adder, 2)
 
-    # C. Cloud Cover (High clouds = PV uncertainty)
-    if "cloud_cover" in df.columns:
-        avg_cloud = df["cloud_cover"].mean()
-        if avg_cloud > 70:
-            weather_buffer_kwh += 0.5
-            weather_debug["cloud_adder"] = 0.5
+        # C. Cloud Cover (High clouds = PV uncertainty)
+        if "cloud_cover" in weather_source_df.columns:
+            avg_cloud = float(weather_source_df["cloud_cover"].mean())
+            if avg_cloud > 70:
+                weather_buffer_kwh += 0.5
+                weather_debug["cloud_adder"] = 0.5
 
-    # 5. Calculate Final Floor
-    raw_floor = min_soc_kwh + base_reserve_kwh + weather_buffer_kwh
+    # 7. Calculate Final Floor
+    # Floor = min_soc + max(temporal_deficit_reserve, min_buffer) + weather_buffer
+    # The minimum buffer ensures we never collapse to min_soc even with zero deficit
+    effective_reserve = max(base_reserve_kwh, min_buffer_kwh)
 
-    # Clamp to physical limits
-    safety_floor_kwh = max(min_soc_kwh, min(capacity_kwh, raw_floor))
+    raw_floor = min_soc_kwh + effective_reserve + weather_buffer_kwh
+
+    # Apply max_safety_buffer_pct cap to total buffer above min_soc
+    safety_floor_kwh = min(raw_floor, min_soc_kwh + max_buffer_kwh)
+
+    # Clamp to physical limits (can't exceed capacity)
+    safety_floor_kwh = max(min_soc_kwh, min(capacity_kwh, safety_floor_kwh))
 
     debug: dict[str, Any] = {
-        "method": "physical_deficit",
-        "total_load": round(total_load, 2),
-        "total_pv": round(total_pv, 2),
-        "deficit_ratio": round(deficit_ratio, 4),
+        "method": "temporal_deficit",
+        "temporal_deficit_kwh": round(temporal_deficit_kwh, 2),
+        "lookahead_start": str(lookahead_start),
+        "lookahead_end": str(lookahead_end),
+        "using_extended_data": using_extended_data,
+        "fallback_warning": fallback_warning,
         "risk_appetite": risk_appetite,
-        "risk_multiplier": risk_multiplier,
-        "max_safety_buffer_pct": max_safety_buffer_pct,
+        "risk_margin": risk_margin,
+        "min_buffer_kwh": round(min_buffer_kwh, 2),
         "base_reserve_kwh": round(base_reserve_kwh, 2),
+        "effective_reserve_kwh": round(effective_reserve, 2),
         "weather_buffer_kwh": round(weather_buffer_kwh, 2),
         "weather_details": weather_debug,
+        "max_buffer_kwh": round(max_buffer_kwh, 2),
         "min_soc_kwh": round(min_soc_kwh, 2),
         "calculated_floor_kwh": round(safety_floor_kwh, 2),
     }

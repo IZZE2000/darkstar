@@ -82,7 +82,7 @@ export default function Dashboard() {
     const [batteryCapacity, setBatteryCapacity] = useState<number>(0)
     const [avgLoad, setAvgLoad] = useState<{ kw: number; dailyKwh: number } | null>(null)
     const [currentSlotTarget, setCurrentSlotTarget] = useState<number>(0)
-    const [waterToday, setWaterToday] = useState<{ kwh: number; source: string } | null>(null)
+    const [waterToday] = useState<{ kwh: number; source: string } | null>(null)
     const [comfortLevel, setComfortLevel] = useState<number>(0)
     const [vacationMode, setVacationMode] = useState<boolean>(false)
     const [vacationModeHA, setVacationModeHA] = useState<boolean>(false)
