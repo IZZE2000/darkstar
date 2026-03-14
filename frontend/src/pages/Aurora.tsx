@@ -19,7 +19,7 @@ import KPIStrip from '../components/KPIStrip'
 import ProbabilisticChart from '../components/ProbabilisticChart'
 import SystemHealthCard from '../components/SystemHealthCard'
 import ModelTrainingCard from '../components/aurora/ModelTrainingCard'
-import { Line, Bar } from 'react-chartjs-2'
+import { Bar } from 'react-chartjs-2'
 import { Api } from '../lib/api'
 import type { AuroraDashboardResponse, SchedulerStatusResponse, AuroraPerformanceData } from '../lib/api'
 
@@ -45,8 +45,7 @@ export default function Aurora() {
     const [schedulerStatus, setSchedulerStatus] = useState<SchedulerStatusResponse | null>(null)
     const [loading, setLoading] = useState(false)
     const [riskAppetite, setRiskAppetite] = useState<number>(3)
-    const [chartMode, setChartMode] = useState<'load' | 'pv'>('load')
-    const [viewMode, setViewMode] = useState<'forecast' | 'soc'>('forecast')
+    const [chartMode, setChartMode] = useState<'load' | 'pv'>('pv')
     const [reflexEnabled, setReflexEnabled] = useState<boolean>(false)
     const [togglingReflex, setTogglingReflex] = useState(false)
     const [probabilisticMode, setProbabilisticMode] = useState<boolean>(false)
@@ -147,33 +146,6 @@ export default function Aurora() {
     const strategyEvents = dashboard?.history?.strategy_events ?? []
 
     // Performance Charts Data
-    const socChartData = useMemo(() => {
-        if (!perfData || !perfData.soc_series || perfData.soc_series.length === 0) return null
-        return {
-            datasets: [
-                {
-                    label: 'Planned',
-                    data: perfData.soc_series.map((d) => ({ x: d.time, y: d.planned })),
-                    borderColor: '#94a3b8',
-                    borderDash: [5, 5],
-                    borderWidth: 1.5,
-                    pointRadius: 0,
-                    tension: 0.4,
-                },
-                {
-                    label: 'Actual',
-                    data: perfData.soc_series.map((d) => ({ x: d.time, y: d.actual })),
-                    borderColor: '#60a5fa',
-                    backgroundColor: 'rgba(96, 165, 250, 0.1)',
-                    borderWidth: 1.5,
-                    pointRadius: 0,
-                    fill: true,
-                    tension: 0.4,
-                },
-            ],
-        }
-    }, [perfData])
-
     const costChartData = useMemo(() => {
         if (!perfData || !perfData.cost_series || perfData.cost_series.length === 0) return null
         return {
@@ -525,96 +497,41 @@ export default function Aurora() {
                 <Card className="lg:col-span-12 p-4 flex flex-col h-[350px] overflow-hidden">
                     <div className="flex items-center justify-between mb-3 shrink-0">
                         <div>
-                            <div className="text-xs font-medium text-text">
-                                {viewMode === 'forecast' ? 'Forecast Horizon (3 Days)' : 'SoC Tunnel'}
-                            </div>
+                            <div className="text-xs font-medium text-text">Forecast Horizon (3 Days)</div>
                             <div className="text-[11px] text-muted">
-                                {viewMode === 'forecast'
-                                    ? probabilisticMode
-                                        ? `Probabilistic View (${chartMode.toUpperCase()})`
-                                        : `Decomposition View (${chartMode.toUpperCase()})`
-                                    : 'Plan vs Reality'}
-                                {viewMode === 'forecast' && (
-                                    <>
-                                        {' • '}
-                                        {new Date().toISOString().slice(0, 10)} -{' '}
-                                        {new Date(originalHorizonEnd).toISOString().slice(0, 10)}
-                                    </>
-                                )}
+                                {probabilisticMode
+                                    ? `Probabilistic View (${chartMode.toUpperCase()})`
+                                    : `Decomposition View (${chartMode.toUpperCase()})`}
+                                {' • '}
+                                {new Date().toISOString().slice(0, 10)} -{' '}
+                                {new Date(originalHorizonEnd).toISOString().slice(0, 10)}
                             </div>
                         </div>
 
                         <div className="flex items-center gap-2">
-                            {/* View Toggle */}
-                            <div className="inline-flex items-center gap-1 rounded-full border border-line/70 bg-surface2 px-1 py-0.5 text-[11px] mr-2">
+                            {/* Forecast Mode Toggles */}
+                            <div className="inline-flex items-center gap-1 rounded-full border border-line/70 bg-surface2 px-1 py-0.5 text-[11px]">
                                 <button
-                                    className={`px-3 py-0.5 rounded-full ${viewMode === 'forecast' ? 'bg-accent text-[#0F1216]' : 'text-muted'}`}
-                                    onClick={() => setViewMode('forecast')}
+                                    type="button"
+                                    className={`px-2 py-0.5 rounded-full ${chartMode === 'load' ? 'bg-accent text-[#0F1216]' : 'text-muted'}`}
+                                    onClick={() => setChartMode('load')}
                                 >
-                                    Forecast
+                                    <Zap className="h-3 w-3" />
                                 </button>
                                 <button
-                                    className={`px-3 py-0.5 rounded-full ${viewMode === 'soc' ? 'bg-accent text-[#0F1216]' : 'text-muted'}`}
-                                    onClick={() => setViewMode('soc')}
+                                    type="button"
+                                    className={`px-2 py-0.5 rounded-full ${chartMode === 'pv' ? 'bg-accent text-[#0F1216]' : 'text-muted'}`}
+                                    onClick={() => setChartMode('pv')}
                                 >
-                                    SoC
+                                    <SunMedium className="h-3 w-3" />
                                 </button>
                             </div>
-
-                            {/* Forecast Mode Toggles (Only visible in forecast view) */}
-                            {viewMode === 'forecast' && (
-                                <div className="inline-flex items-center gap-1 rounded-full border border-line/70 bg-surface2 px-1 py-0.5 text-[11px]">
-                                    <button
-                                        type="button"
-                                        className={`px-2 py-0.5 rounded-full ${chartMode === 'load' ? 'bg-accent text-[#0F1216]' : 'text-muted'}`}
-                                        onClick={() => setChartMode('load')}
-                                    >
-                                        <Zap className="h-3 w-3" />
-                                    </button>
-                                    <button
-                                        type="button"
-                                        className={`px-2 py-0.5 rounded-full ${chartMode === 'pv' ? 'bg-accent text-[#0F1216]' : 'text-muted'}`}
-                                        onClick={() => setChartMode('pv')}
-                                    >
-                                        <SunMedium className="h-3 w-3" />
-                                    </button>
-                                </div>
-                            )}
                         </div>
                     </div>
 
                     <div className="flex-1 min-h-0">
                         {loading ? (
                             <div className="text-[11px] text-muted">Loading...</div>
-                        ) : viewMode === 'soc' ? (
-                            // SoC Chart
-                            <div className="h-full w-full">
-                                {socChartData && (
-                                    <Line
-                                        data={socChartData}
-                                        options={{
-                                            responsive: true,
-                                            maintainAspectRatio: false,
-                                            interaction: { mode: 'index', intersect: false },
-                                            scales: {
-                                                x: {
-                                                    type: 'time',
-                                                    time: { unit: 'hour', displayFormats: { hour: 'HH:mm' } },
-                                                    grid: { color: '#334155', display: false },
-                                                    ticks: { color: '#94a3b8', maxTicksLimit: 6 },
-                                                },
-                                                y: {
-                                                    min: 0,
-                                                    max: 100,
-                                                    grid: { color: '#334155' },
-                                                    ticks: { color: '#94a3b8', display: false },
-                                                },
-                                            },
-                                            plugins: { legend: { display: false } },
-                                        }}
-                                    />
-                                )}
-                            </div>
                         ) : probabilisticMode ? (
                             <div className="h-full w-full">
                                 <ProbabilisticChart

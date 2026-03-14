@@ -12,7 +12,7 @@ import pandas as pd
 import pytz
 
 from backend.learning import LearningEngine, get_learning_engine
-from ml.weather import calculate_per_array_pv, calculate_physics_pv, get_weather_series
+from ml.weather import calculate_physics_pv, get_weather_series
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -105,20 +105,14 @@ async def get_forecast_slots(
             }
 
     # Legacy Open-Meteo data (kept for backward compatibility)
+    # Now uses physics-based calculation from already-computed physics_data
     open_meteo_data: dict[str, dict[str, Any]] = {}
     if include_open_meteo and solar_arrays:
-        try:
-            if not weather_df.empty and "shortwave_radiation_w_m2" in weather_df.columns:
-                for ts_idx, row_data in weather_df.iterrows():
-                    ts_str = ts_idx.isoformat()  # type: ignore[attr-defined]
-                    radiation = row_data.get("shortwave_radiation_w_m2")
-                    total_kwh, per_array = calculate_per_array_pv(radiation, solar_arrays)
-                    open_meteo_data[ts_str] = {
-                        "open_meteo_kwh": total_kwh,
-                        "open_meteo_arrays": per_array if per_array else None,
-                    }
-        except Exception:
-            pass
+        for ts_str, phys_entry in physics_data.items():
+            open_meteo_data[ts_str] = {
+                "open_meteo_kwh": phys_entry.get("physics_kwh"),
+                "open_meteo_arrays": phys_entry.get("physics_arrays"),
+            }
 
     records: list[dict[str, Any]] = []
     for raw_row in df.to_dict("records"):

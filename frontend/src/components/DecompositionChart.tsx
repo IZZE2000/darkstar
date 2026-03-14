@@ -32,7 +32,12 @@ export default function DecompositionChart({ slots, mode, variant = 'field' }: P
     }
 
     const labels = slots.map((s) =>
-        new Date(s.slot_start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        new Date(s.slot_start).toLocaleString([], {
+            weekday: 'short',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false,
+        }),
     )
 
     // --- Variant Config ---

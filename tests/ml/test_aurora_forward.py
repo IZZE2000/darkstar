@@ -85,7 +85,8 @@ class TestAuroraForward(unittest.IsolatedAsyncioTestCase):
         # With physics model: POA irradiance calculation with panel orientation
         # Radiation = 800 W/m², total capacity = 15 kWp
         # Physics model accounts for solar position and panel orientation
-        # Expected: approximately 0.3-0.6 kWh depending on time of day
+        # At solar noon with south-facing panels: POA ≈ GHI, so
+        # PV ≈ (800/1000) * 15 * 0.85 * 0.25 ≈ 2.5 kWh per 15-min slot
 
         args, _ = mock_engine.store_forecasts.call_args
         forecasts = args[0]
@@ -95,7 +96,7 @@ class TestAuroraForward(unittest.IsolatedAsyncioTestCase):
         first_pv = forecasts[0]["pv_forecast_kwh"]
         # Physics model should give reasonable output (not zero, not huge)
         self.assertGreater(first_pv, 0.0, "PV forecast should be positive during daytime")
-        self.assertLess(first_pv, 2.0, "PV forecast should be reasonable for 15kWp system")
+        self.assertLess(first_pv, 4.0, "PV forecast should be reasonable for 15kWp system")
 
         print("✅ Aurora forward pass used physics-based calculation with 15.0 kWp total")
         print(f"✅ Calculated PV forecast: {first_pv:.4f} kWh")

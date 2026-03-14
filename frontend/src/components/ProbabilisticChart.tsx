@@ -49,7 +49,12 @@ function getAmberColor(): string {
 export default function ProbabilisticChart({ title, slots, color, showOpenMeteo = false }: Props) {
     const labels = slots.map((s) => {
         const d = new Date(s.time)
-        return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+        return d.toLocaleString([], {
+            weekday: 'short',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false,
+        })
     })
 
     const amberColor = getAmberColor()
