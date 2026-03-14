@@ -92,10 +92,16 @@ class TestEVReplanAsyncDispatch:
                 mock_run_threadsafe.return_value = mock_future
 
                 # Mock the scheduler service (imported inside the function)
-                with patch(
-                    "backend.services.scheduler_service.scheduler_service"
-                ) as mock_scheduler:
+                with (
+                    patch("backend.services.scheduler_service.scheduler_service") as mock_scheduler,
+                    patch("backend.ha_socket.load_yaml") as mock_load_yaml,
+                ):
                     mock_scheduler.trigger_now = AsyncMock(return_value=MagicMock(success=True))
+                    # Return the config literal
+                    mock_load_yaml.return_value = {
+                        "system": {"has_ev_charger": True},
+                        "ev_chargers": [{"enabled": True, "replan_on_plugin": True}],
+                    }
 
                     # Call the trigger method
                     client._trigger_ev_replan()
@@ -152,8 +158,16 @@ class TestEVReplanConfigPath:
             client = HAWebSocketClient()
             client.main_loop = asyncio.get_event_loop()
 
-            with patch("backend.services.scheduler_service.scheduler_service") as mock_scheduler:
+            with (
+                patch("backend.services.scheduler_service.scheduler_service") as mock_scheduler,
+                patch("backend.ha_socket.load_yaml") as mock_load_yaml,
+            ):
                 mock_scheduler.trigger_now = AsyncMock()
+                # Return the config literal
+                mock_load_yaml.return_value = {
+                    "system": {"has_ev_charger": True},
+                    "ev_chargers": [{"enabled": True, "replan_on_plugin": False}],
+                }
 
                 with patch("asyncio.run_coroutine_threadsafe") as mock_run_threadsafe:
                     client._trigger_ev_replan()
@@ -355,6 +369,70 @@ class TestExecutorEVSwitchGating:
 
                 # Should be False because only scheduled_ev_charging should enable switch
                 assert should_charge is False, "Switch should remain OFF without scheduled charging"
+
+
+class TestEVToggleReload:
+    from typing import ClassVar
+
+    _EV_CHARGERS: ClassVar[list[dict]] = [
+        {"enabled": True, "name": "Test EV", "sensor": "sensor.test_ev_power"}
+    ]
+
+    def _make_cfg(self, has_ev_charger: bool) -> dict:
+        return {
+            "system": {"has_ev_charger": has_ev_charger, "grid_meter_type": "net"},
+            "input_sensors": {},
+            "ev_chargers": self._EV_CHARGERS,
+        }
+
+    def test_reload_clears_ev_state_when_toggled_off(self, tmp_path):
+        """Task 2.1: reload_monitored_entities() clears EV state when has_ev_charger → false."""
+        from backend.ha_socket import HAWebSocketClient
+
+        with (
+            patch("backend.ha_socket.load_yaml", return_value=self._make_cfg(True)),
+            patch("backend.ha_socket.load_home_assistant_config", return_value={}),
+        ):
+            client = HAWebSocketClient()
+
+        # Sanity: EV state populated after init with has_ev_charger=True
+        assert len(client.ev_charger_configs) == 1
+        assert "ev_chargers" in client.latest_values
+
+        # Now flip the flag off and reload
+        with (
+            patch("backend.ha_socket.load_yaml", return_value=self._make_cfg(False)),
+            patch("backend.ha_socket.load_home_assistant_config", return_value={}),
+        ):
+            client.reload_monitored_entities()
+
+        assert client.ev_charger_configs == []
+        assert "ev_chargers" not in client.latest_values
+
+    def test_reload_rebuilds_ev_state_when_toggled_on(self, tmp_path):
+        """Task 2.2: reload_monitored_entities() rebuilds EV state when has_ev_charger → true."""
+        from backend.ha_socket import HAWebSocketClient
+
+        with (
+            patch("backend.ha_socket.load_yaml", return_value=self._make_cfg(False)),
+            patch("backend.ha_socket.load_home_assistant_config", return_value={}),
+        ):
+            client = HAWebSocketClient()
+
+        # Sanity: no EV state after init with has_ev_charger=False
+        assert client.ev_charger_configs == []
+        assert "ev_chargers" not in client.latest_values
+
+        # Now flip the flag on and reload
+        with (
+            patch("backend.ha_socket.load_yaml", return_value=self._make_cfg(True)),
+            patch("backend.ha_socket.load_home_assistant_config", return_value={}),
+        ):
+            client.reload_monitored_entities()
+
+        assert len(client.ev_charger_configs) == 1
+        assert "ev_chargers" in client.latest_values
+        assert len(client.latest_values["ev_chargers"]) == 1
 
 
 if __name__ == "__main__":

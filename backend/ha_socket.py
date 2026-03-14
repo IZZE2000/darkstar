@@ -151,6 +151,9 @@ class HAWebSocketClient:
                 logger.info(
                     f"✅ Initialized {len(self.ev_charger_configs)} EV chargers for monitoring"
                 )
+            else:
+                self.ev_charger_configs = []
+                self.latest_values.pop("ev_chargers", None)
 
             # Store inversion flags for efficient lookup in _handle_state_change
             self.inversion_flags = {
