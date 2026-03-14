@@ -70,7 +70,7 @@ def _calculate_solar_position(
     if utc_offset is not None:
         timezone_offset = utc_offset.total_seconds() / 3600.0
     time_offset = eq_time / 60.0 + (longitude / 15.0) - timezone_offset
-    hour_angle = 15.0 * (hour - 12.0 - time_offset)
+    hour_angle = 15.0 * (hour - 12.0 + time_offset)
     hour_angle_rad = math.radians(hour_angle)
 
     # Solar elevation angle
@@ -359,8 +359,9 @@ def get_weather_series(
         return pd.DataFrame(dtype="float64")
 
     dt_index = pd.to_datetime(times)
-    dt_index = dt_index.tz_localize("UTC") if dt_index.tz is None else dt_index.tz_convert("UTC")
-    dt_index = dt_index.tz_convert(tz)
+    # Open-Meteo returns local-time strings when timezone is specified in the request.
+    # Localize to the requested timezone (not UTC) to avoid shifting by the UTC offset.
+    dt_index = dt_index.tz_localize(tz) if dt_index.tz is None else dt_index.tz_convert(tz)
 
     data: dict[str, list[float]] = {}
     if temps and len(temps) == len(times):
