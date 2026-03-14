@@ -206,31 +206,8 @@ def apply_safety_margins(
     df["adjusted_pv_kwh"] = df["pv_forecast_kwh"] * pv_confidence
     df["adjusted_load_kwh"] = df["load_forecast_kwh"] * effective_load_margin
 
-    # Apply per-hour learning adjustments if available
-    pv_adj = overlays.get("pv_adjustment_by_hour_kwh")
-    load_adj = overlays.get("load_adjustment_by_hour_kwh")
-
-    if pv_adj or load_adj:
-        try:
-            timezone_name = config.get("timezone", "Europe/Stockholm")
-            tz = pytz.timezone(timezone_name)
-        except Exception:
-            tz = pytz.timezone("Europe/Stockholm")
-
-        try:
-            local_index = df.index.tz_convert(tz)  # type: ignore[union-attr]
-        except TypeError:
-            local_index = df.index.tz_localize(tz)  # type: ignore[union-attr]
-
-        hours = local_index.hour  # type: ignore[union-attr]
-        if pv_adj and len(pv_adj) == 24:
-            # Apply adjustment and clamp to 0 to prevent negative PV
-            raw_pv = df["adjusted_pv_kwh"] + hours.map(lambda h: float(pv_adj[h])).values  # type: ignore[union-attr]
-            df["adjusted_pv_kwh"] = raw_pv.clip(lower=0.0)  # type: ignore[union-attr]
-        if load_adj and len(load_adj) == 24:
-            # Apply adjustment and clamp to 0 to prevent negative load
-            raw_adjusted = df["adjusted_load_kwh"] + hours.map(lambda h: float(load_adj[h])).values  # type: ignore[union-attr]
-            df["adjusted_load_kwh"] = raw_adjusted.clip(lower=0.0)  # type: ignore[union-attr]
+    # Note: Per-hour learning adjustments (pv_adjustment_by_hour_kwh, load_adjustment_by_hour_kwh)
+    # have been removed. The base model with recency weighting handles adaptation automatically.
 
     return df
 

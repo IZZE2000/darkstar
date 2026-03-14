@@ -233,7 +233,10 @@ class SchedulerService:
         self._status.next_training_at = self._compute_next_training(config)
 
     def _compute_next_training(self, config: dict[str, Any]) -> datetime:
-        """Calculate next training date based on run_days and run_time."""
+        """Calculate next training date based on frequency and run_time.
+
+        Supports daily retraining (default) or weekly on specific days.
+        """
         import pytz
 
         try:
@@ -243,14 +246,8 @@ class SchedulerService:
             tz_str: str = glob_cfg.get("timezone", "Europe/Stockholm")
             tz = pytz.timezone(tz_str)
 
-            # Validate run_days (0-6)
-            run_days = config.get("run_days", [1, 4])
-            if not isinstance(run_days, list) or not all(
-                isinstance(d, int) and 0 <= d <= 6
-                for d in run_days  # type: ignore[arg-type]
-            ):
-                logger.warning(f"Invalid run_days {run_days}, using default [1, 4]")
-                run_days = [1, 4]
+            # Check frequency (daily or weekly)
+            frequency = config.get("frequency", "daily")
 
             # Validate run_time (HH:MM)
             run_time_str = config.get("run_time", "03:00")
@@ -264,25 +261,35 @@ class SchedulerService:
                 hour, minute = 3, 0
 
             now_local = datetime.now(tz)
-
-            # Try to find the next occurrence
-            days_checked = 0
             check_date = now_local.replace(hour=hour, minute=minute, second=0, microsecond=0)
 
-            # If today matches but run_time has passed, start checking from tomorrow
+            # If run_time has passed today, start from tomorrow
             if check_date <= now_local:
                 check_date += timedelta(days=1)
-                days_checked = 1
 
-            while days_checked < 8:
-                if check_date.weekday() in run_days:
-                    # Convert back to UTC for internal storage
-                    return check_date.astimezone(pytz.UTC)
-                check_date += timedelta(days=1)
-                days_checked += 1
+            if frequency == "daily":
+                # Daily retraining - next run is tomorrow at run_time
+                return check_date.astimezone(pytz.UTC)
+            else:
+                # Weekly retraining on specific days
+                run_days = config.get("run_days", [1, 4])  # Default Mon/Thu for backward compat
+                if not isinstance(run_days, list) or not all(
+                    isinstance(d, int) and 0 <= d <= 6
+                    for d in run_days  # type: ignore[arg-type]
+                ):
+                    logger.warning(f"Invalid run_days {run_days}, using default [1, 4]")
+                    run_days = [1, 4]
 
-            # Fallback (should not happen with valid run_days)
-            return now_local.astimezone(pytz.UTC) + timedelta(days=1)
+                # Find next matching day
+                days_checked = 0
+                while days_checked < 8:
+                    if check_date.weekday() in run_days:
+                        return check_date.astimezone(pytz.UTC)
+                    check_date += timedelta(days=1)
+                    days_checked += 1
+
+                # Fallback
+                return check_date.astimezone(pytz.UTC)
 
         except Exception as e:
             logger.error(f"Failed to compute next training time: {e}")

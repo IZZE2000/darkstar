@@ -23,7 +23,7 @@ class TestHybridPVIntegration(unittest.IsolatedAsyncioTestCase):
     @patch("ml.forward.get_vacation_mode_series")
     @patch("ml.forward.get_alarm_armed_series")
     @patch("backend.astro.SunCalculator")
-    @patch("ml.forward._determine_graduation_level")
+    @patch("ml.forward.determine_graduation_level")
     async def test_hybrid_physics_plus_ml_residual(
         self,
         mock_grad_level,
@@ -45,7 +45,7 @@ class TestHybridPVIntegration(unittest.IsolatedAsyncioTestCase):
         mock_datetime.side_effect = datetime
 
         # Mock graduation level
-        mock_grad_level.return_value = MagicMock(level=2)
+        mock_grad_level.return_value = (2, "graduate", 30.0)
 
         # Mock LearningEngine
         mock_engine = MagicMock(spec=LearningEngine)
@@ -112,7 +112,7 @@ class TestHybridPVIntegration(unittest.IsolatedAsyncioTestCase):
     @patch("ml.forward.get_vacation_mode_series")
     @patch("ml.forward.get_alarm_armed_series")
     @patch("backend.astro.SunCalculator")
-    @patch("ml.forward._determine_graduation_level")
+    @patch("ml.forward.determine_graduation_level")
     async def test_physics_only_mode(
         self,
         mock_grad_level,
@@ -133,7 +133,7 @@ class TestHybridPVIntegration(unittest.IsolatedAsyncioTestCase):
         mock_datetime.now.return_value = fixed_now
         mock_datetime.side_effect = datetime
 
-        mock_grad_level.return_value = MagicMock(level=2)
+        mock_grad_level.return_value = (2, "graduate", 30.0)
 
         mock_engine = MagicMock(spec=LearningEngine)
         mock_engine.store_forecasts = AsyncMock()

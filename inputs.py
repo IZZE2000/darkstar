@@ -566,13 +566,11 @@ async def _get_forecast_data_aurora(
             base_pv = float(rec["final"]["pv_kwh"])
             base_load = float(rec["final"]["load_kwh"])
 
-            pv_corr = float(rec.get("pv_correction_kwh", 0.0) or 0.0)
-            load_corr = float(rec.get("load_correction_kwh", 0.0) or 0.0)
-
-            pv_val = base_pv + pv_corr
+            # Corrector removed - using base forecasts only (recency-weighted training)
+            pv_val = base_pv
 
             # Fallback for Load if 0.0
-            if (base_load + load_corr) <= 0.001:
+            if base_load <= 0.001:
                 # Calculate 15-min slot index (0-95)
                 # ts is already localized or UTC, let's ensure local time for index match
                 ts_local = ts.astimezone(local_tz)
@@ -602,34 +600,26 @@ async def _get_forecast_data_aurora(
                     except Exception:
                         load_val = 0.0
             else:
-                load_val = base_load + load_corr
+                load_val = base_load
 
             daily_pv_forecast[date_key] = daily_pv_forecast.get(date_key, 0.0) + pv_val
             daily_load_forecast[date_key] = daily_load_forecast.get(date_key, 0.0) + load_val
 
             if rec.get("probabilistic", {}).get("pv_p10") is not None:
-                daily_pv_p10[date_key] = (
-                    daily_pv_p10.get(date_key, 0.0)
-                    + float(rec["probabilistic"]["pv_p10"])
-                    + pv_corr
+                daily_pv_p10[date_key] = daily_pv_p10.get(date_key, 0.0) + float(
+                    rec["probabilistic"]["pv_p10"]
                 )
             if rec.get("probabilistic", {}).get("pv_p90") is not None:
-                daily_pv_p90[date_key] = (
-                    daily_pv_p90.get(date_key, 0.0)
-                    + float(rec["probabilistic"]["pv_p90"])
-                    + pv_corr
+                daily_pv_p90[date_key] = daily_pv_p90.get(date_key, 0.0) + float(
+                    rec["probabilistic"]["pv_p90"]
                 )
             if rec.get("probabilistic", {}).get("load_p10") is not None:
-                daily_load_p10[date_key] = (
-                    daily_load_p10.get(date_key, 0.0)
-                    + float(rec["probabilistic"]["load_p10"])
-                    + load_corr
+                daily_load_p10[date_key] = daily_load_p10.get(date_key, 0.0) + float(
+                    rec["probabilistic"]["load_p10"]
                 )
             if rec.get("probabilistic", {}).get("load_p90") is not None:
-                daily_load_p90[date_key] = (
-                    daily_load_p90.get(date_key, 0.0)
-                    + float(rec["probabilistic"]["load_p90"])
-                    + load_corr
+                daily_load_p90[date_key] = daily_load_p90.get(date_key, 0.0) + float(
+                    rec["probabilistic"]["load_p90"]
                 )
 
     return {

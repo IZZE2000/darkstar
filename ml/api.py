@@ -1,7 +1,7 @@
 """
 API router for Aurora-based forecasting.
 
-Supports hybrid PV forecasting with physics base + ML residual + corrector.
+Supports hybrid PV forecasting with physics base + ML residual.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from datetime import datetime
 
 
-def _get_engine() -> LearningEngine:
+def get_engine() -> LearningEngine:
     """Return the shared LearningEngine instance."""
     return get_learning_engine()
 
@@ -48,11 +48,10 @@ async def get_forecast_slots(
     Hybrid PV Forecast Structure:
     - physics.pv_kwh: Physics-based forecast (POA irradiance calculation)
     - ml_residual.pv_kwh: ML residual correction (learns shadows, degradation)
-    - correction.pv_kwh: Corrector residual (short-term weather error)
-    - final.pv_kwh = physics + ml_residual + correction
+    - final.pv_kwh = physics + ml_residual
     - base.pv_kwh: Legacy field, equals physics.pv_kwh
     """
-    engine = _get_engine()
+    engine = get_engine()
     rows = await engine.store.get_forecasts_range(start_time, forecast_version)
 
     if not rows:
@@ -126,8 +125,6 @@ async def get_forecast_slots(
         row: dict[str, Any] = raw_row  # type: ignore[assignment]
         final_pv = float(row.get("pv_forecast_kwh") or 0.0)
         base_load = float(row.get("base_load_forecast_kwh") or row.get("load_forecast_kwh") or 0.0)
-        pv_correction = float(row.get("pv_correction_kwh") or 0.0)
-        load_corr = float(row.get("load_correction_kwh") or 0.0)
 
         pv_p10_val: float | None = row.get("pv_p10")
         pv_p90_val: float | None = row.get("pv_p90")
@@ -141,9 +138,8 @@ async def get_forecast_slots(
         phys_entry = physics_data.get(slot_ts_str, {})
         physics_kwh = float(phys_entry.get("physics_kwh", 0.0) or 0.0)
 
-        # Calculate ML residual: final - physics - correction
-        # Note: This is approximate since we don't store ml_residual separately
-        ml_residual_kwh = final_pv - physics_kwh - pv_correction
+        # Calculate ML residual: final - physics
+        ml_residual_kwh = final_pv - physics_kwh
 
         # Legacy Open-Meteo entry
         om_entry = open_meteo_data.get(slot_ts_str, {})
@@ -154,10 +150,9 @@ async def get_forecast_slots(
                 # Hybrid PV structure
                 "physics": {"pv_kwh": round(physics_kwh, 4)},
                 "ml_residual": {"pv_kwh": round(ml_residual_kwh, 4)},
-                "correction": {"pv_kwh": round(pv_correction, 4)},
                 "final": {
                     "pv_kwh": round(final_pv, 4),
-                    "load_kwh": round(base_load + load_corr, 4),
+                    "load_kwh": round(base_load, 4),
                 },
                 # Legacy fields (backward compatibility)
                 "base": {"pv_kwh": round(physics_kwh, 4), "load_kwh": round(base_load, 4)},

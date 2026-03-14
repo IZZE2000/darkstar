@@ -42,10 +42,8 @@ async def test_stale_lock_detection():
     # Training should succeed by clearing stale lock
     with (
         patch("ml.training_orchestrator.train_models"),
-        patch("ml.training_orchestrator._determine_graduation_level") as mock_grad,
-        patch("ml.training_orchestrator._get_engine") as mock_engine,
+        patch("ml.training_orchestrator.get_learning_engine") as mock_engine,
     ):
-        mock_grad.return_value = MagicMock(level=1, label="infant", days_of_data=10)
         mock_engine.return_value = MagicMock(
             store=MagicMock(
                 log_learning_run=AsyncMock(), cleanup_learning_runs=AsyncMock(return_value=0)
@@ -70,11 +68,9 @@ async def test_websocket_events_integration():
     with (
         patch("ml.training_orchestrator.ws_manager.emit", side_effect=mock_emit),
         patch("ml.training_orchestrator.train_models"),
-        patch("ml.training_orchestrator._determine_graduation_level") as mock_grad,
-        patch("ml.training_orchestrator._get_engine") as mock_engine,
+        patch("ml.training_orchestrator.get_learning_engine") as mock_engine,
         patch("ml.training_orchestrator._backup_models"),
-    ):  # Mock backup
-        mock_grad.return_value = MagicMock(level=1, label="infant", days_of_data=10)
+    ):
         mock_engine.return_value = MagicMock(
             store=MagicMock(
                 log_learning_run=AsyncMock(), cleanup_learning_runs=AsyncMock(return_value=0)
@@ -114,7 +110,11 @@ def test_dst_transition_schedule():
     scheduler = SchedulerService()
 
     # Test spring forward (2AM -> 3AM)
-    config = {"run_days": [0], "run_time": "02:30"}  # 2:30 AM on DST transition
+    config = {
+        "frequency": "weekly",
+        "run_days": [0],
+        "run_time": "02:30",
+    }  # 2:30 AM on DST transition
 
     with patch("pathlib.Path.open", mock_open(read_data='timezone: "Europe/Stockholm"')):
         # Mock current time to day before DST transition (March 30 2024 is Sat, DST is Sun Mar 31)
@@ -129,51 +129,15 @@ def test_dst_transition_schedule():
 
 
 @pytest.mark.asyncio
-async def test_config_change_affects_training():
-    """Test that error correction config changes affect training behavior."""
+async def test_config_daily_training_schedule():
+    """Test that daily training schedule configuration works."""
+    from backend.services.scheduler_service import SchedulerService
 
-    # Test with error correction enabled
-    config_enabled = {"learning": {"error_correction_enabled": True}}
+    scheduler = SchedulerService()
 
-    with (
-        patch("ml.training_orchestrator._load_config", return_value=config_enabled),
-        patch("ml.training_orchestrator.train_models"),
-        patch("ml.training_orchestrator.train_corrector") as mock_corrector,
-        patch("ml.training_orchestrator._determine_graduation_level") as mock_grad,
-        patch("ml.training_orchestrator._get_engine") as mock_engine,
-        patch("ml.training_orchestrator.ws_manager.emit", new_callable=AsyncMock),
-        patch("ml.training_orchestrator._backup_models"),
-    ):  # Mock backup
-        mock_grad.return_value = MagicMock(level=2, label="graduate", days_of_data=100)
-        mock_corrector.return_value = {"status": "trained", "models_trained": ["corr.lgb"]}
-        mock_engine.return_value = MagicMock(
-            store=MagicMock(
-                log_learning_run=AsyncMock(), cleanup_learning_runs=AsyncMock(return_value=0)
-            )
-        )
+    # Test daily frequency config
+    config_daily = {"frequency": "daily", "run_time": "03:00"}
 
-        result = await train_all_models()
-        assert mock_corrector.called  # Should train corrector
-
-    # Test with error correction disabled
-    config_disabled = {"learning": {"error_correction_enabled": False}}
-
-    with (
-        patch("ml.training_orchestrator._load_config", return_value=config_disabled),
-        patch("ml.training_orchestrator.train_models"),
-        patch("ml.training_orchestrator.train_corrector") as mock_corrector,
-        patch("ml.training_orchestrator._determine_graduation_level") as mock_grad,
-        patch("ml.training_orchestrator._get_engine") as mock_engine,
-        patch("ml.training_orchestrator.ws_manager.emit", new_callable=AsyncMock),
-        patch("ml.training_orchestrator._backup_models"),
-    ):  # Mock backup
-        mock_grad.return_value = MagicMock(level=2, label="graduate", days_of_data=100)
-        mock_engine.return_value = MagicMock(
-            store=MagicMock(
-                log_learning_run=AsyncMock(), cleanup_learning_runs=AsyncMock(return_value=0)
-            )
-        )
-
-        result = await train_all_models()
-        assert not mock_corrector.called  # Should NOT train corrector
-        assert result.get("corrector_status", {}).get("status") == "disabled"
+    with patch("pathlib.Path.open", mock_open(read_data='timezone: "Europe/Stockholm"')):
+        next_run = scheduler._compute_next_training(config_daily)
+        assert isinstance(next_run, datetime)

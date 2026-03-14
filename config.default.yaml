@@ -180,22 +180,18 @@ automation:
     enabled: true                      # Enable automatic ML model retraining
     run_days: [1, 4]                   # Days of week to train (0=Mon, 6=Sun)
     run_time: "03:00"                  # Time of day to run training (HH:MM)
-    error_correction_enabled: true     # Enable training of error correction models (requires graduated models)
 
 # Learning Engine (Aurora Reflex)
 # Learning Engine Configuration
-# The learning system has three main components:
+# The learning system has two main components:
 # 1. Telemetry: Records planner decisions, forecasts, and actual outcomes to SQLite
-# 2. Analyst (Auto-Tune): Adjusts forecast overlays based on historical bias (hourly load/PV corrections)
-# 3. Reflex: Tunes physical/policy parameters (S-Index, PV confidence, battery cost) based on safety/ROI analysis
+# 2. Reflex: Tunes physical/policy parameters (S-Index, PV confidence, battery cost) based on safety/ROI analysis
 learning:
   enable: true                         # Master switch: enables telemetry storage and learning features
   sqlite_path: "data/planner_learning.db"  # Database path for storing planner telemetry (observations, forecasts, plans, metrics)
   horizon_days: 3                      # Number of days of Aurora ML forecasts to generate (2-7 days, affects CPU usage)
   min_improvement_threshold: 0.015     # Minimum improvement (0-1 scale) required before applying learned adjustments (prevents noise)
-  auto_tune_enabled: true              # Enable Analyst: automatically adjusts forecast overlays based on historical bias (hourly load/PV corrections)
   reflex_enabled: true                 # Enable Reflex: tunes physical/policy parameters (S-Index, PV confidence, battery cost, capacity) based on safety/confidence/ROI/capacity analysis
-  error_correction_enabled: true       # Enable ML error correction models (requires graduated Aurora models, Level 2+)
   min_sample_threshold: 2              # Minimum data points required before applying learned adjustments (prevents premature tuning with insufficient data)
 
   # Rate Limits for Aurora Reflex Parameter Tuning

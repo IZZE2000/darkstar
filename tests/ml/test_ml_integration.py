@@ -119,9 +119,9 @@ async def test_run_ml_training_locking():
 
 
 def test_integration_config_validation():
-    # Verify that invalid days are caught
+    # Verify that invalid days are caught for weekly frequency
     scheduler = SchedulerService()
-    invalid_days_config = {"run_days": [7, -1], "run_time": "03:00"}
+    invalid_days_config = {"frequency": "weekly", "run_days": [7, -1], "run_time": "03:00"}
 
     with (
         patch("pathlib.Path.open", mock_open(read_data=yaml.dump(VALID_CONFIG))),

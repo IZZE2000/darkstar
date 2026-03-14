@@ -11,13 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from backend.core.websockets import ws_manager
-from backend.learning import LearningEngine  # type: ignore[reportPrivateUsage]  # noqa: TC001
-from ml.corrector import (
-    GraduationLevel,
-    _determine_graduation_level,  # type: ignore[reportPrivateUsage]
-    _get_engine,  # type: ignore[reportPrivateUsage]
-    train as train_corrector,
-)
+from backend.learning import get_learning_engine
 from ml.train import train_models
 
 logger = logging.getLogger(__name__)
@@ -94,18 +88,6 @@ def _restore_latest_backup() -> bool:
     return True
 
 
-def _load_config() -> dict[str, Any]:
-    """Load config.yaml for training decisions."""
-    import yaml
-
-    try:
-        with Path("config.yaml").open(encoding="utf-8") as f:
-            return yaml.safe_load(f) or {}
-    except Exception as e:
-        logger.warning(f"Failed to load config: {e}")
-        return {}
-
-
 def get_training_status() -> dict[str, Any]:
     """
     Get current training status and model information.
@@ -142,22 +124,21 @@ def get_training_status() -> dict[str, Any]:
 
 
 async def train_all_models(
-    days_back: int = 90, min_samples: int = 100, training_type: str = "automatic"
+    min_samples: int = 100, training_type: str = "automatic"
 ) -> dict[str, Any]:
     """
-    Train all ML models (AURORA main + Antares Corrector) with safety features.
+    Train all ML models (AURORA main) with safety features.
 
     Returns a status dict:
     {
         "status": "success" | "busy" | "error",
         "trained_models": list[str],
-        "corrector_status": dict,
         "duration_seconds": float,
         "error": str (optional)
     }
     """
     start_time = time.time()
-    engine: LearningEngine = _get_engine()
+    engine = get_learning_engine()
     store = engine.store
 
     # Notify start
@@ -197,7 +178,6 @@ async def train_all_models(
     results: dict[str, Any] = {
         "status": "success",
         "trained_models": [],
-        "corrector_status": {"status": "skipped", "reason": "not reached"},
         "duration_seconds": 0,
     }
 
@@ -207,7 +187,7 @@ async def train_all_models(
         logger.info("[ML-TRAIN] Model backup completed")
 
         # 2. Train Main Models (AURORA)
-        logger.info("[ML-TRAIN] Step 1/2: Training Main Models (AURORA)...")
+        logger.info("[ML-TRAIN] Training Main Models (AURORA)...")
         await ws_manager.emit(
             "training_progress",
             {
@@ -215,12 +195,12 @@ async def train_all_models(
                 "status": "busy",
                 "stage": "training_main_models",
                 "message": "Training main Aurora models (this may take a minute)...",
-                "progress": 0.2,
+                "progress": 0.5,
             },
         )
 
         # train_models is heavy and synchronous, offload to thread
-        await asyncio.to_thread(train_models, days_back=days_back, min_samples=min_samples)
+        await asyncio.to_thread(train_models, min_samples=min_samples)
 
         # Check if main models were actually created/updated
         main_models: list[Path] = list(MODELS_DIR.glob("*model*.lgb"))
@@ -231,55 +211,7 @@ async def train_all_models(
         else:
             logger.info(f"[ML-TRAIN] Main models trained: {len(main_models)} found")
 
-        # 3. Train Corrector Models (if graduate AND enabled)
-        level: GraduationLevel = _determine_graduation_level(engine)  # type: ignore[reportUnknownVariableType]
-        logger.info(
-            f"[ML-TRAIN] Graduation Status: {level.label.upper()} (Data: {level.days_of_data:.1f} days)"
-        )
-
-        # ARC11 Fix: Check if error correction is enabled in config
-        config: dict[str, Any] = _load_config()
-        error_correction_enabled: bool = config.get("learning", {}).get(
-            "error_correction_enabled", True
-        )
-
-        if level.level >= 2 and error_correction_enabled:
-            logger.info("[ML-TRAIN] Step 2/2: Training Corrector Models...")
-            await ws_manager.emit(
-                "training_progress",
-                {
-                    "type": "training_progress",
-                    "status": "busy",
-                    "stage": "training_corrector",
-                    "message": "Training error correction models...",
-                    "progress": 0.6,
-                },
-            )
-
-            # train_corrector is also heavy/sync
-            corr_res: Any = await asyncio.to_thread(train_corrector, models_dir=str(MODELS_DIR))
-            results["corrector_status"] = corr_res
-            if corr_res.get("status") == "trained":
-                results["trained_models"].extend(corr_res.get("models_trained", []))
-                logger.info(
-                    f"[ML-TRAIN] Corrector training successful. Models: {corr_res.get('models_trained', [])}"
-                )
-            else:
-                logger.warning(f"[ML-TRAIN] Corrector training info: {corr_res.get('status')}")
-
-        elif level.level >= 2 and not error_correction_enabled:
-            logger.info("[ML-TRAIN] Corrector training SKIPPED: Disabled in config")
-            results["corrector_status"] = {"status": "disabled", "reason": "disabled in config"}
-        else:
-            logger.info(
-                f"[ML-TRAIN] Corrector training SKIPPED: Insufficient graduation level (Need >= Graduate, have {level.label})"
-            )
-            results["corrector_status"] = {
-                "status": "skipped",
-                "reason": f"insufficient data (level: {level.label}, days: {level.days_of_data})",
-            }
-
-        # 4. Cleanup old history (ARC11 Phase 2)
+        # 3. Cleanup old history
         deleted_runs = await store.cleanup_learning_runs(days_back=30)
         if deleted_runs > 0:
             logger.info(f"Cleaned up {deleted_runs} old training records.")
@@ -311,17 +243,15 @@ async def train_all_models(
         results["duration_seconds"] = duration
         logger.info(f"Unified training finished: {results}")
 
-        # Log unified run result to DB (ARC11 Phase 2)
+        # Log unified run result to DB
         try:
             status: str = results["status"]
             trained_models: list[str] = results["trained_models"]
-            corrector_status: dict[str, Any] = results["corrector_status"]
             error_msg: str | None = results.get("error")
             await store.log_learning_run(
                 status=status,
                 result_metrics={
-                    "main_models_count": len([m for m in trained_models if "corrector" not in m]),
-                    "corrector_status": corrector_status.get("status"),
+                    "main_models_count": len(trained_models),
                 },
                 training_type=training_type,
                 models_trained=trained_models,

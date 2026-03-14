@@ -527,19 +527,6 @@ async def _sleep_until_next_quarter() -> None:
     await asyncio.sleep(sleep_seconds)
 
 
-async def run_analyst() -> None:
-    """Run the Learning Analyst to update s_index_base_factor and bias adjustments."""
-    try:
-        from backend.learning.analyst import Analyst
-
-        config = _load_config()
-        print("[recorder] Running Analyst (Learning Loop)...")
-        analyst = Analyst(config)
-        await analyst.update_learning_overlays()
-    except Exception as e:
-        print(f"[recorder] Analyst failed: {e}")
-
-
 async def backfill_missing_prices():
     """Backfill missing price data for historical observations."""
     try:
@@ -621,8 +608,6 @@ async def main() -> int:
     print("[recorder] Starting live observation recorder (15m cadence)")
 
     config = _load_config()
-    tz_name = config.get("timezone", "Europe/Stockholm")
-    tz = pytz.timezone(tz_name)
 
     # Run backfill on startup
     try:
@@ -632,14 +617,8 @@ async def main() -> int:
     except Exception as e:
         print(f"[recorder] Backfill failed: {e}")
 
-    # Run Analyst on startup
-    await run_analyst()
-
     # Run Price Backfill on startup
     await backfill_missing_prices()
-
-    # Track last analyst run date to run once daily at ~6 AM local
-    last_analyst_date = datetime.now(tz).date()
 
     # Initialize disaggregator (REV // ML2)
     disaggregator = LoadDisaggregator(config)
@@ -649,13 +628,6 @@ async def main() -> int:
             await record_observation_from_current_state(config, disaggregator)
         except Exception as exc:  # pragma: no cover - defensive logging
             print(f"[recorder] Error while recording observation: {exc}")
-
-        # Run Analyst once per day around 6 AM local time
-        now_local = datetime.now(tz)
-        if now_local.date() > last_analyst_date and now_local.hour >= 6:
-            print(f"[recorder] Daily Analyst run triggered ({now_local.date()})")
-            await run_analyst()
-            last_analyst_date = now_local.date()
 
         await _sleep_until_next_quarter()
 

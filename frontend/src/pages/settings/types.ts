@@ -1298,13 +1298,6 @@ export const advancedSections: SettingsSection[] = [
             },
 
             {
-                key: 'learning.auto_tune_enabled',
-                label: 'Enable Auto-Tuning',
-                helper: 'Automatically adjust system constants based on historical data.',
-                path: ['learning', 'auto_tune_enabled'],
-                type: 'boolean',
-            },
-            {
                 key: 'learning.reflex_enabled',
                 label: 'Enable Reflex Loop',
                 helper: 'Real-time parameter adjustment loop.',

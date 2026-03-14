@@ -14,7 +14,6 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-import pytz
 import yaml
 
 from backend.learning.backfill import BackfillEngine
@@ -22,7 +21,6 @@ from backend.loads.service import LoadDisaggregator
 from backend.recorder import (
     backfill_missing_prices,
     record_observation_from_current_state,
-    run_analyst,
 )
 
 logger = logging.getLogger("darkstar.services.recorder")
@@ -137,8 +135,6 @@ class RecorderService:
         logger.info("Recorder loop starting...")
 
         self._config = self._load_config()
-        tz_name: str = self._config.get("timezone", "Europe/Stockholm")
-        tz: pytz.BaseTzInfo = pytz.timezone(tz_name)
 
         # 1. Backfill energy on startup
         try:
@@ -150,13 +146,8 @@ class RecorderService:
         # 2. Backfill prices on startup
         await backfill_missing_prices()
 
-        # 3. Run Analyst on startup
-        await run_analyst()
-
-        # 4. Initialize disaggregator
+        # 3. Initialize disaggregator
         self._disaggregator = LoadDisaggregator(self._config)
-
-        last_analyst_date = datetime.now(tz).date()
 
         while self._running:
             try:
@@ -164,12 +155,6 @@ class RecorderService:
                 success = await self._record_with_retry()
                 if not success:
                     logger.warning("Observation gap detected, will backfill on next tick")
-
-                # Daily analyst run at ~6 AM
-                now_local = datetime.now(tz)
-                if now_local.date() > last_analyst_date and now_local.hour >= 6:
-                    await run_analyst()
-                    last_analyst_date = now_local.date()
 
                 # Sleep until next 15m boundary
                 await self._sleep_until_next_quarter()

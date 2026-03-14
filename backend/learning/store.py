@@ -238,7 +238,9 @@ class LearningStore:
                     temp_c=forecast.get("temp_c"),
                     forecast_version=forecast_version,
                 )
-                # Preserve corrections on conflict
+                # UPSERT: Update existing forecasts with new values
+                # Note: Correction columns (pv_correction_kwh, load_correction_kwh, correction_source)
+                # are no longer written but remain in DB schema for backward compatibility
                 stmt = stmt.on_conflict_do_update(
                     index_elements=["slot_start", "forecast_version"],
                     set_={

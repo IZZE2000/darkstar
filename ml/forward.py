@@ -16,9 +16,40 @@ import pandas as pd
 from backend.health import clear_load_forecast_status, set_load_forecast_status
 from backend.learning import LearningEngine, get_learning_engine
 from ml.context_features import get_alarm_armed_series, get_vacation_mode_series
-from ml.corrector import _determine_graduation_level  # type: ignore[reportPrivateUsage]
 from ml.train import _build_time_features  # type: ignore[reportPrivateUsage]
 from ml.weather import async_get_weather_series, calculate_physics_pv
+
+
+def determine_graduation_level(engine: LearningEngine) -> tuple[int, str, float]:
+    """Determine graduation level based on available training data."""
+    import sqlite3
+    from datetime import datetime, timedelta
+
+    tz = engine.timezone
+    cutoff = (datetime.now(tz) - timedelta(days=90)).date().isoformat()
+
+    try:
+        with sqlite3.connect(engine.db_path, timeout=30.0) as conn:
+            query = """
+                SELECT COUNT(DISTINCT DATE(o.slot_start))
+                FROM slot_observations o
+                JOIN slot_forecasts f ON o.slot_start = f.slot_start
+                WHERE DATE(o.slot_start) >= ?
+                  AND o.load_kwh IS NOT NULL
+                  AND f.load_forecast_kwh IS NOT NULL
+            """
+            row = conn.execute(query, (cutoff,)).fetchone()
+            days = int(row[0] or 0) if row else 0
+    except Exception:
+        days = 0
+
+    if days < 4:
+        return 0, "infant", float(days)
+    elif days < 14:
+        return 1, "statistician", float(days)
+    else:
+        return 2, "graduate", float(days)
+
 
 logger = logging.getLogger("darkstar.ml.forward")
 
@@ -211,8 +242,8 @@ async def generate_forward_slots(
         )
 
         # REV F65 Phase 5e: Distinguish new setup vs ML failure
-        level = _determine_graduation_level(engine)
-        if level.level == 0:
+        level, _, _ = determine_graduation_level(engine)
+        if level == 0:
             # New setup (< 4 days) - expected state, info level
             set_load_forecast_status("degraded", "baseline")
         else:

@@ -145,13 +145,16 @@ Darkstar's intelligence is powered by the **Aurora Suite**, which consists of th
 
 ### 5.1 Aurora Vision (The Eyes)
 *   **Role**: Forecasting.
-*   **Architecture**: Physics-First Hybrid PV Forecasting.
-*   **Mechanism**: Three-layer composition:
+*   **Architecture**: Physics-First Hybrid PV Forecasting with Recency-Weighted Training.
+*   **Mechanism**: Two-layer composition:
     1. **Physics Base**: `OpenMeteoSolarForecast` with panel tilt/azimuth calculates POA (Plane of Array) irradiance using solar position and radiation data.
     2. **ML Residual**: LightGBM model learns residual = actual - physics, capturing shadows, panel degradation, and system efficiency differences.
-    3. **Corrector**: Short-term adjustments for weather forecast errors.
 *   **Training Filter**: PV models train only on slots with `pv_kwh IS NOT NULL AND (radiation > 10 OR pv_kwh > 0.01)` to exclude nighttime noise.
 *   **Load Forecasting**: LightGBM with 11 features (time, weather, context).
+*   **Recency-Weighted Training**: LightGBM models use exponential decay sample weighting (half-life = 30 days by default) so recent observations have higher influence on training than older data.
+    *   **Formula**: `weight = exp(-lambda * days_ago)` where `lambda = ln(2) / half_life_days`
+    *   **Decay Profile**: 1-day-old ≈ 1.0 weight, 30-day-old ≈ 0.5 weight (half-life), 180-day-old ≈ 0.05 weight
+    *   **Benefits**: Automatically adapts to changing conditions (seasonal patterns, equipment changes) without manual retraining schedule adjustments
 *   **Uncertainty**: Provides p10/p50/p90 confidence intervals for probabilistic S-Index.
 *   **Extended Horizon**: Aurora forecasts 168 hours (7 days), enabling S-Index to use probabilistic bands for D+1 to D+4 even when price data only covers 48 hours.
 *   **Config**: `s_index.s_index_horizon_days` (integer, default 4) controls how many future days are considered.
@@ -160,7 +163,6 @@ Darkstar's intelligence is powered by the **Aurora Suite**, which consists of th
     {
       "physics": {"pv_kwh": 0.65},
       "ml_residual": {"pv_kwh": -0.08},
-      "correction": {"pv_kwh": -0.03},
       "final": {"pv_kwh": 0.54},
       "base": {"pv_kwh": 0.65, "load_kwh": 0.5}
     }
@@ -627,7 +629,7 @@ To ensure compatibility with Home Assistant Ingress (which exposes the add-on un
 As of **REV ARC11**, Darkstar has successfully completed its transition to a fully asynchronous architecture. The legacy "Hybrid Mode" has been eliminated.
 
 **Key Characteristics:**
-*   **Fully Asynchronous Services:** The Recorder, LearningEngine, BackfillEngine, and Analyst all run as native `asyncio` tasks.
+*   **Fully Asynchronous Services:** The Recorder, LearningEngine, and BackfillEngine all run as native `asyncio` tasks.
 *   **Unified Database Layer:** `LearningStore` uses `AsyncSession` (SQLAlchemy 2.0) exclusively. Synchronous engines and session factories have been removed to prevent blocking IO.
 *   **Non-blocking Background Loops:** All background services use `await asyncio.sleep()` for timing, ensuring the FastAPI event loop remains responsive.
 
@@ -646,7 +648,7 @@ To prevent `database is locked` errors, Darkstar uses **WAL (Write-Ahead Logging
 **Problem:** Multiple components write to `planner_learning.db`:
 - `ExecutionHistory` (sync engine, executor thread)
 - `LearningStore` (async engine, FastAPI services)
-- `Recorder`, `BackfillEngine`, `Analyst` (async engines)
+- `Recorder`, `BackfillEngine` (async engines)
 
 SQLite's default journal mode (`DELETE`) only allows one writer at a time, causing lock contention.
 

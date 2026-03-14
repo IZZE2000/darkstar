@@ -1,4 +1,4 @@
-## [v2.6.1-beta] - DB-First Energy Display & Bug Fixes - 2026-03-09
+## [v2.6.1-beta] [Unreleased!] - DB-First Energy Display & Recency-Weighted Training - 2026-03-09
 
 > [!IMPORTANT]
 > **BREAKING CHANGE: Today Sensors Removed**
@@ -27,12 +27,14 @@
     - Water Heating (only when `has_water_heater: true`)
     - EV Charging (only when `has_ev_charger: true`)
 - **Deprecated Endpoint**: `GET /api/ha/water_today` is now deprecated. Use `/api/services/energy/today` which includes `water_heating_kwh`.
+- **Recency-Weighted ML Training**: Aurora models now prioritize recent data using exponential decay weighting (30-day half-life). Models adapt faster to changing patterns without manual retraining schedules.
 
 **🔧 Improvements**
 
 - **Data Consistency**: Dashboard and ML training now use the same data source (SlotObservation table), eliminating discrepancies between displayed and actual energy usage.
 - **Simplified Configuration**: Removed 7 `today_*` sensors from required configuration. Users now only need cumulative sensors for forecasting.
 - **Database-First Architecture**: All daily energy totals are aggregated from 15-minute observations stored in SQLite, removing dependency on HA's daily sensor reset timing.
+- **Simplified ML Pipeline**: Removed the separate "Error Correction" and "Auto-Tuner" layers. Recency weighting in base models achieves better accuracy with less complexity.
 
 **🐛 Bug Fixes**
 

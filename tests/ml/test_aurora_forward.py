@@ -17,7 +17,7 @@ class TestAuroraForward(unittest.IsolatedAsyncioTestCase):
     @patch("ml.forward.get_vacation_mode_series")
     @patch("ml.forward.get_alarm_armed_series")
     @patch("backend.astro.SunCalculator")
-    @patch("ml.forward._determine_graduation_level")
+    @patch("ml.forward.determine_graduation_level")
     async def test_forward_pass_multi_array(
         self,
         mock_grad_level,
@@ -38,7 +38,7 @@ class TestAuroraForward(unittest.IsolatedAsyncioTestCase):
         mock_datetime.side_effect = datetime
 
         # 2. Mock graduation level
-        mock_grad_level.return_value = MagicMock(level=2)
+        mock_grad_level.return_value = (2, "graduate", 30.0)
 
         # 3. Mock LearningEngine
         mock_engine = MagicMock(spec=LearningEngine)

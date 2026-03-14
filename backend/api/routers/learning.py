@@ -246,10 +246,8 @@ async def learning_training_status() -> dict[str, Any]:
         import time
         from pathlib import Path
 
-        from ml.corrector import (
-            _determine_graduation_level,  # type: ignore[private-import]
-            _get_engine,  # type: ignore[private-import]
-        )
+        from ml.api import get_engine
+        from ml.forward import determine_graduation_level
         from ml.training_orchestrator import get_training_status
 
         LOCK_FILE = Path("data/ml/models/.training.lock")
@@ -276,13 +274,13 @@ async def learning_training_status() -> dict[str, Any]:
         try:
             # We recreate engine here to fetch fresh stats
             # In a long running process `get_learning_engine` is cached lru,
-            # but _determine_graduation_level queries DB directly so it's fine.
-            engine = _get_engine()
-            level = _determine_graduation_level(engine)
+            # but determine_graduation_level queries DB directly so it's fine.
+            engine = get_engine()
+            level, label, days = determine_graduation_level(engine)
             status["graduation_level"] = {
-                "level": level.level,
-                "label": level.label,
-                "days_of_data": level.days_of_data,
+                "level": level,
+                "label": label,
+                "days_of_data": days,
             }
         except Exception as e:
             logger.warning(f"Failed to determine graduation level: {e}")

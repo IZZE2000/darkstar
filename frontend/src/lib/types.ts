@@ -118,15 +118,11 @@ export type AuroraDashboardResponse = {
     state: {
         risk_profile: AuroraRiskProfile
         weather_volatility: AuroraWeatherVolatility
-        auto_tune_enabled: boolean
         reflex_enabled?: boolean
-        learning?: {
-            error_correction_enabled?: boolean
-        }
     }
     horizon: AuroraHorizon
     history: {
-        correction_volume_days: AuroraHistoryDay[]
+        strategy_events?: StrategyEvent[]
         strategy_events?: StrategyEvent[]
     }
     metrics?: {

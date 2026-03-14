@@ -389,7 +389,6 @@ async def aurora_dashboard() -> dict[str, Any]:
         "history": {"strategy_events": strategy_history},
         "status": "online" if engine else "offline",
         "state": {
-            "auto_tune_enabled": config.get("learning", {}).get("auto_tune_enabled", False),
             "reflex_enabled": config.get("learning", {}).get("reflex_enabled", False),
             "risk_profile": {
                 "risk_appetite": config.get("s_index", {}).get("risk_appetite", 3),

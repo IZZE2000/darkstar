@@ -811,28 +811,3 @@ async def reset_config() -> dict[str, str]:
         shutil.copy(str(default_cfg), "config.yaml")
         return {"status": "success"}
     return {"status": "error", "message": "Default config not found"}
-
-
-@router.post(
-    "/api/aurora/config/toggle_error_correction",
-    summary="Toggle Error Correction",
-    description="Toggle ML error correction in config.",
-)
-async def toggle_error_correction(enabled: bool = Body(..., embed=True)):
-    """Toggle error correction setting."""
-    try:
-        conf = load_yaml("config.yaml") or {}
-        if "learning" not in conf:
-            conf["learning"] = {}
-
-        conf["learning"]["error_correction_enabled"] = enabled
-
-        yaml_handler = YAML()
-        yaml_handler.preserve_quotes = True
-        with Path("config.yaml").open("w", encoding="utf-8") as f:
-            yaml_handler.dump(conf, f)  # type: ignore[no-untyped-call]
-
-        return {"status": "success", "enabled": enabled}
-    except Exception as e:
-        logger.exception("Failed to toggle error correction")
-        raise HTTPException(status_code=500, detail=str(e)) from e
