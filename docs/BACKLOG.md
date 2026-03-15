@@ -66,8 +66,6 @@ This document contains ideas, improvements, and tasks that are not yet scheduled
 
 ---
 
-Code quality improvements that don't directly affect user experience.
-
 #### [Config] Inverter Max Power Config Orphan
 
 **Goal:** Wire `system.inverter.max_power_kw` to the planner/executor or remove if superseded.
@@ -76,45 +74,7 @@ Code quality improvements that don't directly affect user experience.
 
 ---
 
-#### [Backend] Split services.py Router (REVIEW-2026-01-04)
-
-**Goal:** Improve maintainability by splitting the large `services.py` router (740 LOC) into focused modules.
-
-**Current State:** `backend/api/routers/services.py` contains two distinct responsibilities:
-1. Home Assistant integration endpoints (`/api/ha/*`)
-2. Energy data endpoints (`/api/energy/*`, `/api/water/*`)
-
-**Proposed Split:**
-
-1. **`backend/api/routers/ha.py`** - Home Assistant Integration
-   - `/api/ha/entity/{entity_id}`
-   - `/api/ha/average`
-   - `/api/ha/entities`
-   - `/api/ha/services`
-   - `/api/ha/connection/test`
-   - `/api/ha/socket/status`
-
-2. **`backend/api/routers/energy.py`** - Energy Data
-   - `/api/energy/today`
-   - `/api/energy/range`
-   - `/api/water/today`
-   - `/api/water/boost` (GET, POST, DELETE)
-   - `/api/performance`
-
-3. **Extract Shared Utilities:**
-   - `_fetch_ha_history_avg()` → `backend/utils/ha.py`
-   - Config loading helpers → reuse from `backend.core.secrets`
-
-**Benefits:**
-- Easier to navigate
-- Clearer separation of concerns
-- Reduced merge conflicts
-
----
-
 ### 💡 Future Ideas (Brainstorming)
-
-Ideas that need requirements gathering and design work before implementation.
 
 #### [UI] Advisor Overhaul
 

@@ -603,10 +603,12 @@ backend/
 │   └── routers/            # FastAPI APIRouters
 │       ├── system.py       # /api/version
 │       ├── config.py       # /api/config
-│       ├── schedule.py     # /api/schedule, /api/scheduler/status
+│       ├── schedule.py     # /api/schedule, /api/scheduler/status, /api/simulate
 │       ├── executor.py     # /api/executor/*
 │       ├── forecast.py     # /api/aurora/*, /api/forecast/*
-│       ├── services.py     # /api/ha/*, /api/status, /api/energy/*
+│       ├── ha.py           # /api/ha/*, /api/ha-socket
+│       ├── energy.py       # /api/energy/*, /api/performance/data
+│       ├── water.py        # /api/water/boost
 │       ├── learning.py     # /api/learning/*
 │       ├── debug.py        # /api/debug/*, /api/history/*
 │       ├── legacy.py       # /api/run_planner, /api/initial_state

@@ -35,7 +35,6 @@ DASHBOARD_ENDPOINTS = {
     "/api/learning/status": {"threshold_warn": 200, "threshold_error": 500, "critical": False},
     "/api/scheduler/status": {"threshold_warn": 100, "threshold_error": 300, "critical": False},
     "/api/energy/today": {"threshold_warn": 500, "threshold_error": 2000, "critical": False},
-    "/api/ha/water_today": {"threshold_warn": 300, "threshold_error": 1000, "critical": False},
     "/api/aurora/dashboard": {"threshold_warn": 800, "threshold_error": 3000, "critical": False},
     "/api/executor/status": {"threshold_warn": 100, "threshold_error": 300, "critical": True},
     "/api/schedule/today_with_history": {

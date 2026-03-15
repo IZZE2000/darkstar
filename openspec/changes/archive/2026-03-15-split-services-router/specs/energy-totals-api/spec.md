@@ -1,10 +1,4 @@
-# Energy Totals API
-
-## Purpose
-
-API endpoints for retrieving aggregated energy totals from the database.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Energy endpoints query database for totals
 The `/api/energy/today` and `/api/energy/range` endpoints SHALL query the database (SlotObservation table) to calculate energy totals, instead of reading Home Assistant sensors. These endpoints are served from `backend/api/routers/energy.py`.

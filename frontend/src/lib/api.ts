@@ -137,12 +137,6 @@ export type HaAverageResponse = {
     [key: string]: unknown
 }
 
-export type WaterTodayResponse = {
-    source?: 'home_assistant' | 'sqlite'
-    water_kwh_today?: number
-    [key: string]: unknown
-}
-
 export type LearningStatusResponse = {
     enabled?: boolean
     last_updated?: string
@@ -558,7 +552,6 @@ export const Api = {
     setTheme: (payload: { theme: string; accent_index?: number | null }) =>
         getJSON<ThemeSetResponse>('/api/theme', 'POST', payload),
     haAverage: () => getJSON<HaAverageResponse>('/api/ha/average'),
-    haWaterToday: () => getJSON<WaterTodayResponse>('/api/ha/water_today'),
     haTest: (payload: { url: string; token: string }) =>
         getJSON<{ status?: string; success?: boolean; message: string }>('/api/ha/test', 'POST', payload),
     haEntities: () =>
