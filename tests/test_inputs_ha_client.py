@@ -24,7 +24,7 @@ async def test_ev_soc_fallback_logging_no_crash():
     THEN the system logs a warning with the literal "0%" without crashing
     """
 
-    from inputs import get_initial_state
+    from backend.core.ha_client import get_initial_state
 
     # Config with EV charger enabled but sensor returns no data
     test_config = {
@@ -47,8 +47,8 @@ async def test_ev_soc_fallback_logging_no_crash():
 
     with (
         patch("yaml.safe_load", side_effect=mock_yaml_load),
-        patch("inputs.get_ha_sensor_float") as mock_get_sensor,
-        patch("inputs.logger") as mock_logger,
+        patch("backend.core.ha_client.get_ha_sensor_float") as mock_get_sensor,
+        patch("backend.core.ha_client.logger") as mock_logger,
     ):
         # Battery SoC returns valid data
         mock_get_sensor.side_effect = lambda entity_id: {
@@ -81,7 +81,7 @@ async def test_get_ha_entity_state_uses_async_context_manager():
     The fix: Use `async with httpx.AsyncClient() as client:` to ensure
     automatic cleanup via context manager.
     """
-    from inputs import get_ha_entity_state
+    from backend.core.ha_client import get_ha_entity_state
 
     # Mock the response
     mock_response = MagicMock()
@@ -117,7 +117,7 @@ async def test_get_ha_entity_state_closes_client_on_exception():
 
     This ensures resource cleanup happens in both success and error cases.
     """
-    from inputs import get_ha_entity_state
+    from backend.core.ha_client import get_ha_entity_state
 
     # Mock the client that raises an exception
     mock_client = AsyncMock()
@@ -145,7 +145,7 @@ async def test_get_load_profile_from_ha_uses_async_context_manager():
 
     This function fetches historical load data and also needs proper client cleanup.
     """
-    from inputs import get_load_profile_from_ha
+    from backend.core.ha_client import get_load_profile_from_ha
 
     # Mock the response with empty data (will trigger fallback)
     mock_response = MagicMock()
@@ -165,7 +165,7 @@ async def test_get_load_profile_from_ha_uses_async_context_manager():
 
     with (
         patch("httpx.AsyncClient") as mock_async_client,
-        patch("inputs.load_home_assistant_config") as mock_load_config,
+        patch("backend.core.secrets.load_home_assistant_config") as mock_load_config,
     ):
         mock_async_client.return_value = mock_client
         mock_load_config.return_value = {

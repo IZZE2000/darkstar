@@ -1045,7 +1045,10 @@ class TestLoadIsolationFromDeferrableLoads:
                     "backend.recorder.get_ha_sensor_kw_normalized",
                     side_effect=mock_get_ha_sensor_kw_normalized,
                 ),
-                patch("inputs.get_ha_entity_state", side_effect=mock_get_ha_entity_state),
+                patch(
+                    "backend.core.ha_client.get_ha_entity_state",
+                    side_effect=mock_get_ha_entity_state,
+                ),
                 patch("backend.recorder.get_current_slot_prices", return_value=None),
             ):
                 mock_store = MagicMock()

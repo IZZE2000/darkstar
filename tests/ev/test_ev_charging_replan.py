@@ -226,13 +226,13 @@ class TestEVInitialStateOverride:
 
             os.chdir(tmp_path)
 
-            from inputs import get_initial_state
+            from backend.core.ha_client import get_initial_state
 
             # Mock HA sensor calls
-            with patch("inputs.get_ha_sensor_float") as mock_float:
+            with patch("backend.core.ha_client.get_ha_sensor_float") as mock_float:
                 mock_float.return_value = 50.0  # SoC value
 
-                with patch("inputs.get_ha_bool") as mock_bool:
+                with patch("backend.core.ha_client.get_ha_bool") as mock_bool:
                     mock_bool.return_value = False  # Would normally return this
 
                     # Call with override=True

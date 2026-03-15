@@ -249,7 +249,15 @@ Darkstar is a monorepo containing the Python backend, React frontend, and ML pip
 │   ├── pipeline.py     # Main orchestrator
 │   ├── solver/         # Kepler MILP solver
 │   └── strategy/       # S-Index, Target SoC
-├── inputs.py           # Data ingestion (HA, Nordpool, Aurora)
+├── backend/
+│   ├── core/
+│   │   ├── secrets.py    # Config/secrets loading (YAML, HA config)
+│   │   ├── ha_client.py  # Home Assistant HTTP sensor access
+│   │   ├── prices.py     # Nordpool electricity price fetching
+│   │   ├── forecasts.py  # PV/load forecast orchestration
+│   │   ├── cache.py      # TTL cache (async/sync)
+│   │   ├── logging.py    # Logging utilities
+│   │   └── websockets.py # WebSocket manager
 └── config.yaml         # User configuration
 ```
 

@@ -13,9 +13,10 @@ from typing import Any, cast
 import pytz
 from fastapi import APIRouter, HTTPException, Query, Request
 
+from backend.core.ha_client import get_dummy_load_profile, get_load_profile_from_ha
 from backend.core.logging import get_ring_buffer
+from backend.core.secrets import load_yaml
 from backend.learning import get_learning_engine
-from inputs import get_dummy_load_profile, get_load_profile_from_ha, load_yaml
 
 logger = logging.getLogger("darkstar.api.debug")
 

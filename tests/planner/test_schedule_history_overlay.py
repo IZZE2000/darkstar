@@ -53,7 +53,7 @@ async def test_today_with_history_includes_planned_actions(tmp_path):
     fixed_now = today_start.replace(hour=12)
 
     with (
-        patch("inputs.load_yaml", return_value=mock_config),
+        patch("backend.api.routers.schedule.load_yaml", return_value=mock_config),
         patch("backend.api.routers.schedule.get_nordpool_data", new=AsyncMock(return_value=[])),
         patch("backend.api.routers.schedule.Path") as MockPath,
         patch("backend.api.routers.schedule.datetime") as mock_datetime,
@@ -130,7 +130,7 @@ async def test_today_with_history_includes_past(tmp_path):
     fixed_now = today_start.replace(hour=12)
 
     with (
-        patch("inputs.load_yaml", return_value=mock_config),
+        patch("backend.api.routers.schedule.load_yaml", return_value=mock_config),
         patch("backend.api.routers.schedule.get_nordpool_data", new=AsyncMock(return_value=[])),
         patch("backend.api.routers.schedule.Path") as MockPath,
         patch("backend.api.routers.schedule.datetime") as mock_datetime,

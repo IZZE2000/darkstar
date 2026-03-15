@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from inputs import get_ha_sensor_kw_normalized
+from backend.core.ha_client import get_ha_sensor_kw_normalized
 
 from .base import DeferrableLoad, LoadType
 

@@ -30,11 +30,10 @@ from typing import Any
 
 import pytz
 
-from backend.loads.service import LoadDisaggregator
-
 # import yaml
 # Import existing HA config loader
-from inputs import load_home_assistant_config
+from backend.core.secrets import load_home_assistant_config
+from backend.loads.service import LoadDisaggregator
 
 from .actions import ActionDispatcher, ActionResult, HAClient
 from .config import load_executor_config, load_yaml
@@ -1675,7 +1674,7 @@ class ExecutorEngine:
             # Get current import price
             import_price = 0.5  # Default fallback
             try:
-                from inputs import get_nordpool_data
+                from backend.core.prices import get_nordpool_data
 
                 # Rev Fix: Safe async execution
                 # Check for existing event loop to avoid RuntimeError

@@ -593,6 +593,11 @@ The backend was migrated from Flask (WSGI) to FastAPI (ASGI) for native async su
 backend/
 ├── main.py                 # ASGI app factory, Socket.IO wrapper
 ├── core/
+│   ├── secrets.py          # Config/secrets loading
+│   ├── ha_client.py        # Home Assistant HTTP client
+│   ├── prices.py           # Nordpool price fetching
+│   ├── forecasts.py        # PV/load forecast orchestration
+│   ├── cache.py            # TTL cache
 │   └── websockets.py       # AsyncServer singleton, sync→async bridge
 ├── api/
 │   └── routers/            # FastAPI APIRouters

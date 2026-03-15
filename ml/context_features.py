@@ -13,7 +13,8 @@ import pytz
 import requests
 import yaml
 
-from inputs import load_home_assistant_config, make_ha_headers
+from backend.core.ha_client import make_ha_headers
+from backend.core.secrets import load_home_assistant_config
 
 
 def _load_config(config_path: str = "config.yaml") -> dict[str, Any]:

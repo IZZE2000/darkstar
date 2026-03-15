@@ -11,8 +11,8 @@ from backend.config_migration import (
     remove_deprecated_keys,
     template_aware_merge,
 )
+from backend.core.secrets import load_home_assistant_config, load_notifications_config, load_yaml
 from executor.profiles import get_profile_from_config
-from inputs import load_home_assistant_config, load_notifications_config, load_yaml
 
 logger = logging.getLogger("darkstar.api.config")
 

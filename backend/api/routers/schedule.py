@@ -9,10 +9,11 @@ import pytz
 from fastapi import APIRouter, Depends
 
 from backend.api.deps import get_learning_store
-from backend.learning.store import LearningStore
 
 # Local imports (using absolute paths relative to project root)
-from inputs import get_nordpool_data, load_yaml
+from backend.core.prices import get_nordpool_data
+from backend.core.secrets import load_yaml
+from backend.learning.store import LearningStore
 
 # executor/history needs access
 # We might need to adjust python path in dev-backend.sh if not matching

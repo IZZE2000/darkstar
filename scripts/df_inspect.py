@@ -10,6 +10,7 @@ from sqlalchemy import func, select
 # Add root to sys.path
 sys.path.append(str(Path.cwd()))
 
+from backend.core.secrets import load_yaml
 from backend.learning.engine import LearningEngine
 from backend.learning.models import (
     LearningRun,
@@ -17,7 +18,6 @@ from backend.learning.models import (
     SlotObservation,
     SlotPlan,
 )
-from inputs import load_yaml
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("darkstar.inspect")

@@ -9,7 +9,7 @@ from typing import Any
 
 from fastapi import APIRouter
 
-from inputs import load_yaml
+from backend.core.secrets import load_yaml
 
 logger = logging.getLogger("darkstar.api.analyst")
 

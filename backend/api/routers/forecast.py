@@ -8,6 +8,8 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import func, select
 
+from backend.core.prices import get_nordpool_data
+from backend.core.secrets import load_yaml
 from backend.learning import LearningEngine, get_learning_engine
 from backend.learning.models import (
     LearningRun,
@@ -15,7 +17,6 @@ from backend.learning.models import (
     SlotObservation,
 )
 from backend.strategy.history import get_strategy_history
-from inputs import get_nordpool_data, load_yaml
 from ml.api import get_forecast_slots
 
 # from ml.weather import get_weather_volatility # Not strictly needed if we mock or reuse logic

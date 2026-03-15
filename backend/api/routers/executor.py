@@ -610,8 +610,8 @@ async def get_profile_suggestions(name: str) -> dict[str, Any]:
     in the profile's entity registry using the profile's default_entity values.
     """
     # Deferred imports to avoid circular dependencies
+    from backend.core.secrets import load_yaml
     from executor.profiles import load_profile
-    from inputs import load_yaml
 
     try:
         profile = load_profile(name)

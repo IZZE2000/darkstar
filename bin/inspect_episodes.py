@@ -27,7 +27,7 @@ from pathlib import Path
 def get_db_path() -> Path:
     """Get the database path from config."""
     try:
-        from inputs import load_yaml
+        from backend.core.secrets import load_yaml
 
         config = load_yaml("config.yaml")
         return Path(config.get("learning", {}).get("sqlite_path", "data/planner_learning.db"))

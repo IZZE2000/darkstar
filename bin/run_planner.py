@@ -10,7 +10,7 @@ sys.path.append(str(Path(__file__).parent.parent.resolve()))
 
 import yaml
 
-from inputs import get_all_input_data
+from backend.core.forecasts import get_all_input_data
 from planner.pipeline import generate_schedule
 
 

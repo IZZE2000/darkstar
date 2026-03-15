@@ -39,14 +39,14 @@ async def test_get_nordpool_data_times_out_gracefully(temp_config_file):
     The fix: Wrap prices_client.fetch in asyncio.wait_for(timeout=10.0) and
     catch TimeoutError to return an empty list gracefully.
     """
-    from inputs import get_nordpool_data
+    from backend.core.prices import get_nordpool_data
 
     # Mock cache and Prices class to be slow
-    with patch("inputs.cache_sync") as mock_cache:
+    with patch("backend.core.prices.cache_sync") as mock_cache:
         # Mock cache.get to always return None so fetch is always called
         mock_cache.get.return_value = None
 
-        with patch("inputs.Prices") as mock_prices_class:
+        with patch("backend.core.prices.Prices") as mock_prices_class:
             mock_prices = MagicMock()
 
             # Mock asyncio.to_thread to simulate timeout
@@ -69,7 +69,7 @@ async def test_get_nordpool_data_times_out_gracefully(temp_config_file):
 @pytest.mark.asyncio
 async def test_get_nordpool_data_succeeds_quickly(temp_config_file):
     """Verify that normal Nordpool fetches complete successfully within timeout."""
-    from inputs import get_nordpool_data
+    from backend.core.prices import get_nordpool_data
 
     tz = pytz.timezone("Europe/Stockholm")
     today = datetime.now(tz).date()
@@ -86,11 +86,11 @@ async def test_get_nordpool_data_succeeds_quickly(temp_config_file):
             }
         )
 
-    with patch("inputs.cache_sync") as mock_cache:
+    with patch("backend.core.prices.cache_sync") as mock_cache:
         # Mock cache.get to always return None so fetch is always called
         mock_cache.get.return_value = None
 
-        with patch("inputs.Prices") as mock_prices_class:
+        with patch("backend.core.prices.Prices") as mock_prices_class:
             mock_prices = MagicMock()
             mock_prices.fetch.return_value = {
                 "areas": {
@@ -112,7 +112,7 @@ async def test_get_nordpool_data_succeeds_quickly(temp_config_file):
 @pytest.mark.asyncio
 async def test_get_nordpool_tomorrow_fetch_also_has_timeout(temp_config_file):
     """Verify that tomorrow's price fetch (after 13:00) also has timeout protection."""
-    from inputs import get_nordpool_data
+    from backend.core.prices import get_nordpool_data
 
     tz = pytz.timezone("Europe/Stockholm")
 
@@ -128,9 +128,9 @@ async def test_get_nordpool_tomorrow_fetch_also_has_timeout(temp_config_file):
         raise TimeoutError("Simulated timeout")
 
     with (
-        patch("inputs.cache_sync") as mock_cache,
-        patch("inputs.Prices") as mock_prices_class,
-        patch("inputs.datetime") as mock_datetime,
+        patch("backend.core.prices.cache_sync") as mock_cache,
+        patch("backend.core.prices.Prices") as mock_prices_class,
+        patch("backend.core.prices.datetime") as mock_datetime,
         patch("asyncio.to_thread", side_effect=mock_to_thread),
     ):
         # Mock cache.get to always return None so fetch is always called
@@ -157,7 +157,7 @@ async def test_get_nordpool_tomorrow_fetch_also_has_timeout(temp_config_file):
 @pytest.mark.asyncio
 async def test_get_nordpool_partial_timeout(temp_config_file):
     """Verify behavior when today succeeds but tomorrow times out."""
-    from inputs import get_nordpool_data
+    from backend.core.prices import get_nordpool_data
 
     tz = pytz.timezone("Europe/Stockholm")
     today = datetime.now(tz).date()
@@ -192,9 +192,9 @@ async def test_get_nordpool_partial_timeout(temp_config_file):
             raise TimeoutError("Simulated timeout")
 
     with (
-        patch("inputs.cache_sync") as mock_cache,
-        patch("inputs.Prices") as mock_prices_class,
-        patch("inputs.datetime") as mock_datetime,
+        patch("backend.core.prices.cache_sync") as mock_cache,
+        patch("backend.core.prices.Prices") as mock_prices_class,
+        patch("backend.core.prices.datetime") as mock_datetime,
         patch("asyncio.to_thread", side_effect=mock_to_thread),
     ):
         # Mock cache.get to always return None so fetch is always called

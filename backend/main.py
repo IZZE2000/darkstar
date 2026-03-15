@@ -40,8 +40,8 @@ logger = logging.getLogger("darkstar.main")
 
 
 # Import inputs for config loading
+from backend.core.secrets import load_yaml
 from backend.learning.store import LearningStore
-from inputs import load_yaml
 
 
 @asynccontextmanager

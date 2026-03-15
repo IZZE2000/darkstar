@@ -8,8 +8,8 @@ import yaml
 # Add project root to path
 sys.path.insert(0, str(Path.cwd()))
 
+from backend.core.forecasts import get_all_input_data
 from backend.learning import get_learning_engine
-from inputs import get_all_input_data
 from planner.pipeline import PlannerPipeline
 
 

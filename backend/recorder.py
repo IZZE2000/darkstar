@@ -10,19 +10,19 @@ import pandas as pd
 import pytz
 import yaml
 
+from backend.core.ha_client import (
+    _normalize_energy_to_kwh,  # pyright: ignore[reportPrivateUsage]
+    get_ha_entity_state,
+    get_ha_sensor_float,
+    get_ha_sensor_kw_normalized,
+)
+from backend.core.prices import get_current_slot_prices
 from backend.learning.backfill import BackfillEngine
 
 # Local imports
 from backend.learning.store import LearningStore
 from backend.loads.service import LoadDisaggregator
 from backend.validation import get_max_energy_per_slot, validate_energy_values
-from inputs import (
-    _normalize_energy_to_kwh,  # pyright: ignore[reportPrivateUsage]
-    get_current_slot_prices,
-    get_ha_entity_state,
-    get_ha_sensor_float,
-    get_ha_sensor_kw_normalized,
-)
 
 logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
 logger = logging.getLogger("recorder")
@@ -530,7 +530,7 @@ async def _sleep_until_next_quarter() -> None:
 async def backfill_missing_prices():
     """Backfill missing price data for historical observations."""
     try:
-        from inputs import get_nordpool_data
+        from backend.core.prices import get_nordpool_data
 
         config = _load_config()
         db_path = config.get("learning", {}).get("sqlite_path", "data/planner_learning.db")

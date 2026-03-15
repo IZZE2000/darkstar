@@ -7,7 +7,7 @@ from typing import Any
 
 import websockets
 
-from inputs import load_home_assistant_config, load_yaml
+from backend.core.secrets import load_home_assistant_config, load_yaml
 
 logger = logging.getLogger("darkstar.ha_socket")
 
