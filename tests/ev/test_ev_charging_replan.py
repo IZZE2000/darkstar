@@ -112,6 +112,11 @@ class TestEVReplanAsyncDispatch:
                     args = mock_run_threadsafe.call_args
                     assert args[0][1] == loop  # Second arg should be the main loop
 
+                    # Close the coroutine that was passed to run_coroutine_threadsafe.
+                    # The mock intercepted it without consuming/awaiting it, so Python
+                    # would emit a "coroutine never awaited" warning during GC otherwise.
+                    mock_run_threadsafe.call_args[0][0].close()
+
                     # Verify add_done_callback was called
                     mock_future.add_done_callback.assert_called_once()
         finally:

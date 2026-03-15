@@ -492,35 +492,40 @@ class TestRecorderSpikeValidation:
             # Create a mock store to capture what gets stored
             tz = pytz.timezone("Europe/Stockholm")
             store = LearningStore(":memory:", tz)
-            await store.ensure_wal_mode()
+            try:
+                await store.ensure_wal_mode()
 
-            with patch("backend.recorder.LearningStore") as mock_store_class:
-                mock_store = AsyncMock()
-                mock_store_class.return_value = mock_store
+                with patch("backend.recorder.LearningStore") as mock_store_class:
+                    mock_store = AsyncMock()
+                    mock_store_class.return_value = mock_store
 
-                # Capture the DataFrame passed to store_slot_observations
-                stored_records = []
+                    # Capture the DataFrame passed to store_slot_observations
+                    stored_records = []
 
-                async def capture_store(df):
-                    stored_records.extend(df.to_dict("records"))
+                    async def capture_store(df):
+                        stored_records.extend(df.to_dict("records"))
 
-                mock_store.store_slot_observations = capture_store
-                mock_store.close = AsyncMock()
+                    mock_store.store_slot_observations = capture_store
+                    mock_store.close = AsyncMock()
 
-                # Record observation
-                await record_observation_from_current_state(config)
+                    # Record observation
+                    await record_observation_from_current_state(config)
 
-                # Verify store was called
-                assert len(stored_records) == 1
-                record = stored_records[0]
+                    # Verify store was called
+                    assert len(stored_records) == 1
+                    record = stored_records[0]
 
-                # All energy values should be validated
-                # With 100kW power, the energy would be 100 * 0.25 = 25 kWh
-                # This exceeds the 4.0 kWh threshold, so it should be zeroed
-                assert record["pv_kwh"] == 0.0, f"PV spike should be zeroed, got {record['pv_kwh']}"
-                assert record["load_kwh"] == 0.0, (
-                    f"Load spike should be zeroed, got {record['load_kwh']}"
-                )
+                    # All energy values should be validated
+                    # With 100kW power, the energy would be 100 * 0.25 = 25 kWh
+                    # This exceeds the 4.0 kWh threshold, so it should be zeroed
+                    assert record["pv_kwh"] == 0.0, (
+                        f"PV spike should be zeroed, got {record['pv_kwh']}"
+                    )
+                    assert record["load_kwh"] == 0.0, (
+                        f"Load spike should be zeroed, got {record['load_kwh']}"
+                    )
+            finally:
+                await store.close()
 
     @pytest.mark.asyncio
     async def test_valid_values_preserved_in_recorder(self):

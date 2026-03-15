@@ -32,7 +32,9 @@ async def learning_engine(tmp_path):
     async with engine.store.async_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-    return engine
+    yield engine
+
+    await engine.store.close()
 
 
 @pytest.mark.asyncio
