@@ -1,4 +1,6 @@
+import asyncio
 import logging
+from collections.abc import Callable, Coroutine
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
@@ -19,6 +21,40 @@ def make_ha_headers(token: str) -> dict[str, str]:
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
     }
+
+
+async def gather_sensor_reads(
+    reads: list[tuple[str, Callable[[], Coroutine[Any, Any, Any]]]],
+    context: str = "sensor_batch",
+) -> dict[str, Any]:
+    """Run multiple sensor reads concurrently using asyncio.gather().
+
+    Args:
+        reads: List of (name, coroutine_factory) pairs. Each factory is called
+               to produce a coroutine (e.g., lambda: get_ha_sensor_float(entity_id)).
+        context: Label included in log messages to identify the call site.
+
+    Returns:
+        Dict mapping each name to its result value, or None if that read failed.
+    """
+    names = [name for name, _ in reads]
+    coros = [fn() for _, fn in reads]
+    raw = await asyncio.gather(*coros, return_exceptions=True)
+
+    out: dict[str, Any] = {}
+    failures = 0
+    for name, result in zip(names, raw, strict=True):
+        if isinstance(result, Exception):
+            logger.warning("[%s] Sensor read failed for '%s': %s", context, name, result)
+            out[name] = None
+            failures += 1
+        else:
+            out[name] = result
+
+    if failures > 0 and failures == len(reads):
+        logger.warning("[%s] All %d sensor reads failed", context, failures)
+
+    return out
 
 
 async def get_ha_entity_state(entity_id: str) -> dict[str, Any] | None:
@@ -174,23 +210,17 @@ async def get_initial_state(
     has_water_heater = system_config.get("has_water_heater", False)
     water_heated_today_kwh = 0.0
 
-    if has_water_heater:
-        water_entity = input_sensors.get("water_heater_consumption", "sensor.vvb_energy_daily")
-        if water_entity:
-            ha_water = await get_ha_sensor_float(water_entity)
-            if ha_water is not None:
-                water_heated_today_kwh = ha_water
-
     # Rev K25: EV state (SoC and plug status)
     has_ev_charger = system_config.get("has_ev_charger", False)
     ev_soc_percent = 0.0
     ev_plugged_in = False
 
+    ev_soc_entity: str | None = None
+    ev_plug_entity: str | None = None
+    water_entity: str | None = None
+
     if has_ev_charger:
         # Rev F63: EV sensors are now only in ev_chargers[] array
-        ev_soc_entity = None
-        ev_plug_entity = None
-
         ev_chargers = config.get("ev_chargers", [])
         for ev in ev_chargers:
             if ev.get("enabled", True):
@@ -200,27 +230,47 @@ async def get_initial_state(
                     ev_plug_entity = ev["plug_sensor"]
                 break  # Only use first enabled EV charger
 
-        if ev_soc_entity:
-            ha_ev_soc = await get_ha_sensor_float(ev_soc_entity)
-            if ha_ev_soc is not None:
-                ev_soc_percent = ha_ev_soc
-            else:
-                logger.warning(
-                    "EV SoC sensor %s returned no data, defaulting to 0%%", ev_soc_entity
-                )
-        else:
+        if not ev_soc_entity:
             logger.warning("has_ev_charger is true but ev_soc sensor is not configured")
 
-        # Rev EVFIX: Use override if provided (avoids WebSocket-vs-REST race)
-        if ev_plugged_in_override is not None:
-            ev_plugged_in = ev_plugged_in_override
-            logger.debug(
-                "Using ev_plugged_in_override=%s (skipping HA REST fetch)", ev_plugged_in_override
-            )
-        elif ev_plug_entity:
-            ev_plugged_in = await get_ha_bool(ev_plug_entity)
+    if has_water_heater:
+        water_entity = input_sensors.get("water_heater_consumption", "sensor.vvb_energy_daily")
+
+    # Batch: water heater, EV SoC, and (optionally) EV plug reads in parallel
+    optional_reads: list[tuple[str, Any]] = []
+    if water_entity:
+        optional_reads.append(("water", lambda e=water_entity: get_ha_sensor_float(e)))
+    if ev_soc_entity:
+        optional_reads.append(("ev_soc", lambda e=ev_soc_entity: get_ha_sensor_float(e)))
+    # Only fetch EV plug from HA if no override is provided
+    if ev_plug_entity and ev_plugged_in_override is None:
+        optional_reads.append(("ev_plug", lambda e=ev_plug_entity: get_ha_bool(e)))
+
+    optional_results: dict[str, Any] = {}
+    if optional_reads:
+        optional_results = await gather_sensor_reads(optional_reads, context="initial_state")
+
+    ha_water = optional_results.get("water")
+    if ha_water is not None:
+        water_heated_today_kwh = ha_water
+
+    ha_ev_soc = optional_results.get("ev_soc")
+    if ev_soc_entity:
+        if ha_ev_soc is not None:
+            ev_soc_percent = ha_ev_soc
         else:
-            logger.warning("has_ev_charger is true but ev_plug sensor is not configured")
+            logger.warning("EV SoC sensor %s returned no data, defaulting to 0%%", ev_soc_entity)
+
+    # Rev EVFIX: Use override if provided (avoids WebSocket-vs-REST race)
+    if ev_plugged_in_override is not None:
+        ev_plugged_in = ev_plugged_in_override
+        logger.debug(
+            "Using ev_plugged_in_override=%s (skipping HA REST fetch)", ev_plugged_in_override
+        )
+    elif ev_plug_entity:
+        ev_plugged_in = bool(optional_results.get("ev_plug"))
+    elif has_ev_charger:
+        logger.warning("has_ev_charger is true but ev_plug sensor is not configured")
 
     return {
         "battery_soc_percent": battery_soc_percent,

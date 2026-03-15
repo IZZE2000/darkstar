@@ -1,13 +1,14 @@
 ## Context
 
-Currently, multiple components make sequential HTTP calls to Home Assistant to fetch sensor values:
+Multiple components make sequential HTTP calls to Home Assistant to fetch sensor values:
 
-- **executor/engine.py:_gather_system_state()**: 8-10 sequential calls every 60s (600-1000ms)
-- **backend/recorder.py:record_observation_from_current_state()**: 10+ sequential calls every 15m (1000ms+)
-- **inputs.py:get_initial_state()**: 4 sequential calls during planning (~400ms)
-- **backend/api/routers/services.py:get_energy_range()**: 7 sequential calls (~700ms)
+- **executor/engine.py:_gather_system_state()**: 9 sequential calls every 60s (~900ms)
+- **backend/recorder.py:record_observation_from_current_state()**: 6+ sequential power sensor reads every 15m (~600ms+)
+- **backend/core/ha_client.py:get_initial_state()**: 4 sequential calls during planning (~400ms)
 
-This pattern was already optimized in ARC5 for `/api/energy/today`, reducing latency from 600ms to 150ms using `asyncio.gather()`. We need to apply the same pattern consistently across all remaining locations.
+Note: `get_energy_range()` and `get_energy_today()` were converted to database queries during the services.py refactoring and no longer perform sensor reads.
+
+The existing pattern in `backend/health.py` already demonstrates the approach: `asyncio.gather()` with `return_exceptions=True` for concurrent entity checks. We need to apply this same pattern to sensor reading.
 
 The key insight: these sensor reads are **independent read operations** - no data dependencies between them, and HA handles concurrent connections well.
 
@@ -29,7 +30,7 @@ The key insight: these sensor reads are **independent read operations** - no dat
 
 **1. Create Centralized Helper Function**
 
-Instead of inline `asyncio.gather()` calls, create `gather_sensor_reads()` in a shared location (likely `inputs.py` or new `backend/utils/sensors.py`).
+Instead of inline `asyncio.gather()` calls, create `gather_sensor_reads()` in `backend/core/ha_client.py`.
 
 Rationale:
 - Single source of truth for batch reading logic
@@ -46,13 +47,13 @@ Rationale:
 - Provides partial results - better than complete failure
 - Allows caller to decide how to handle missing values
 
-**3. Place Helper in `inputs.py`**
+**3. Place Helper in `backend/core/ha_client.py`**
 
 The helper should live alongside existing sensor reading functions.
 
 Rationale:
-- Most sensor reading code is already in `inputs.py`
-- Avoids creating a new module for a single function
+- `inputs.py` was split during the inputs refactoring; sensor reading functions now live in `backend/core/ha_client.py`
+- `get_initial_state()`, `get_ha_sensor_float()`, and `get_ha_entity_state()` are already here
 - Natural location for sensor-related utilities
 
 **4. Keep Existing Function Signatures**
@@ -86,17 +87,17 @@ Rationale:
 
 ## Migration Plan
 
-1. Create `gather_sensor_reads()` helper
-2. Refactor `get_energy_today()` to use helper (already uses gather, just standardize)
-3. Refactor `_gather_system_state()`
-4. Refactor `record_observation_from_current_state()`
-5. Refactor `get_initial_state()`
-6. Refactor `get_energy_range()`
-7. Add regression tests
-8. Verify performance improvement in logs
+1. Create `gather_sensor_reads()` helper in `backend/core/ha_client.py`
+2. Refactor `executor/engine.py:_gather_system_state()` to use helper
+3. Refactor `backend/recorder.py:record_observation_from_current_state()` to batch power sensor reads
+4. Refactor `backend/core/ha_client.py:get_initial_state()` to use helper
+5. Add regression tests
+6. Verify performance improvement in logs
+
+Note: `get_energy_today()` and `get_energy_range()` were converted to database queries during the services/inputs refactoring and are no longer in scope.
 
 Rollback: Revert single commit - no data migration needed.
 
 ## Open Questions
 
-None - approach is clear and proven by existing implementation in ARC5.
+None - approach is clear and proven by existing `asyncio.gather()` usage in `backend/health.py`.

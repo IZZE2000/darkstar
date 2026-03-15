@@ -12,6 +12,7 @@ import yaml
 
 from backend.core.ha_client import (
     _normalize_energy_to_kwh,  # pyright: ignore[reportPrivateUsage]
+    gather_sensor_reads,
     get_ha_entity_state,
     get_ha_sensor_float,
     get_ha_sensor_kw_normalized,
@@ -276,9 +277,40 @@ async def record_observation_from_current_state(
         except Exception:
             return None, None
 
-    # Current Power State (Snapshot)
-    pv_kw = await get_kw("pv_power")
-    total_load_kw = await get_kw("load_power")
+    # Grid Metering Logic (REV // UI5)
+    meter_type = config.get("system", {}).get("grid_meter_type", "net")
+
+    # Build batch of independent power sensor reads (Current Power State Snapshot)
+    power_reads: list[tuple[str, Any]] = [
+        ("pv_power", lambda: get_kw("pv_power")),
+        ("load_power", lambda: get_kw("load_power")),
+        ("battery_power", lambda: get_kw("battery_power")),
+        ("water_power", lambda: get_kw("water_power")),
+    ]
+    if meter_type == "dual":
+        power_reads.append(("grid_import_power", lambda: get_kw("grid_import_power")))
+        power_reads.append(("grid_export_power", lambda: get_kw("grid_export_power")))
+    else:
+        power_reads.append(("grid_power", lambda: get_kw("grid_power")))
+
+    # Collect EV charger sensor reads into the batch
+    ev_charger_sensors: list[str] = []
+    ev_chargers = config.get("ev_chargers", [])
+    for ev_charger in ev_chargers:
+        if ev_charger.get("enabled", True):
+            sensor = ev_charger.get("sensor")
+            if sensor:
+                ev_charger_sensors.append(str(sensor))
+                power_reads.append(
+                    (f"ev_{sensor}", lambda s=str(sensor): get_ha_sensor_kw_normalized(s))
+                )
+
+    power_results = await gather_sensor_reads(power_reads, context="recorder_observation")
+
+    pv_kw: float = power_results.get("pv_power") or 0.0
+    total_load_kw: float = power_results.get("load_power") or 0.0
+    battery_kw: float = power_results.get("battery_power") or 0.0
+    water_kw: float = power_results.get("water_power") or 0.0
 
     # Disaggregate loads if disaggregator is provided (REV // ML2)
     controllable_kw = 0.0
@@ -291,38 +323,20 @@ async def record_observation_from_current_state(
     else:
         load_kw = total_load_kw
 
-    # Grid Metering Logic (REV // UI5)
-    meter_type = config.get("system", {}).get("grid_meter_type", "net")
     import_kw: float = 0.0
     export_kw: float = 0.0
     grid_net_kw: float = 0.0
 
     if meter_type == "dual":
-        # Dual sensors (Import/Export separate)
-        import_kw = await get_kw("grid_import_power")
-        export_kw = await get_kw("grid_export_power")
+        import_kw = power_results.get("grid_import_power") or 0.0
+        export_kw = power_results.get("grid_export_power") or 0.0
     else:
-        # Net Meter (Single sensor, positive = import, negative = export)
-        grid_net_kw = await get_kw("grid_power")
+        grid_net_kw = power_results.get("grid_power") or 0.0
         import_kw = max(0.0, grid_net_kw)
         export_kw = max(0.0, -grid_net_kw)
 
-    battery_kw = await get_kw("battery_power")
-    water_kw = await get_kw("water_power")
-
-    # Collect EV charging power from all configured EV chargers
-    ev_charging_kw = 0.0
-    ev_chargers = config.get("ev_chargers", [])
-    for ev_charger in ev_chargers:
-        if ev_charger.get("enabled", True):
-            sensor = ev_charger.get("sensor")
-            if sensor:
-                try:
-                    val = await get_ha_sensor_kw_normalized(str(sensor))
-                    if val is not None:
-                        ev_charging_kw += val
-                except Exception:
-                    pass  # Sensor not available, skip
+    # Collect EV charging power from batch results
+    ev_charging_kw = sum(power_results.get(f"ev_{s}") or 0.0 for s in ev_charger_sensors)
 
     # Apply inversion flags if configured (REV F55)
     input_sensors = config.get("input_sensors", {})

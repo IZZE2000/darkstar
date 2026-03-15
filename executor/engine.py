@@ -1480,79 +1480,100 @@ class ExecutorEngine:
         if not self.ha_client:
             return state
 
+        from backend.core.ha_client import gather_sensor_reads
+
         # Get entity IDs from config (input_sensors section)
         input_sensors = self._full_config.get("input_sensors", {})
         soc_entity = input_sensors.get("battery_soc", "sensor.inverter_battery")
         pv_power_entity = input_sensors.get("pv_power", "sensor.inverter_pv_power")
         load_power_entity = input_sensors.get("load_power", "sensor.inverter_load_power")
 
+        system_config = self._full_config.get("system", {})
+        meter_type = system_config.get("grid_meter_type", "net")
+
+        work_mode_entity: str | None = getattr(self.config.inverter, "work_mode_entity", None)
+        grid_charging_entity: str | None = getattr(
+            self.config.inverter, "grid_charging_entity", None
+        )
+
+        ha = self.ha_client
+
+        # Build batch of independent sensor reads
+        reads: list[tuple[str, Any]] = []
+
+        if self.config.has_battery:
+            reads.append(("soc", lambda e=soc_entity: ha.get_state_value(e)))
+        if self.config.has_solar:
+            reads.append(("pv_power", lambda e=pv_power_entity: ha.get_state_value(e)))
+
+        reads.append(("load_power", lambda e=load_power_entity: ha.get_state_value(e)))
+
+        import_entity: str | None = None
+        export_entity: str | None = None
+        if meter_type == "dual":
+            import_entity = input_sensors.get("grid_import_power")
+            export_entity = input_sensors.get("grid_export_power")
+            if import_entity:
+                reads.append(("grid_import", lambda e=import_entity: ha.get_state_value(e)))
+            if export_entity:
+                reads.append(("grid_export", lambda e=export_entity: ha.get_state_value(e)))
+
+        if self.config.has_battery and work_mode_entity:
+            reads.append(("work_mode", lambda e=work_mode_entity: ha.get_state_value(e)))
+
+        if self.config.has_battery and grid_charging_entity:
+            reads.append(("grid_charging", lambda e=grid_charging_entity: ha.get_state_value(e)))
+
+        water_entity: str | None = None
+        if self.config.has_water_heater and self.config.water_heater.target_entity:
+            water_entity = self.config.water_heater.target_entity
+            reads.append(("water_temp", lambda e=water_entity: ha.get_state_value(e)))
+
+        if self.config.manual_override_entity:
+            override_entity = self.config.manual_override_entity
+            reads.append(("manual_override", lambda e=override_entity: ha.get_state_value(e)))
+
         try:
-            # Get SoC (Rev O1)
-            if self.config.has_battery:
-                soc_str = await self.ha_client.get_state_value(soc_entity)
-                if soc_str and soc_str not in ("unknown", "unavailable"):
-                    state.current_soc_percent = float(soc_str)
+            results = await gather_sensor_reads(reads, context="executor_state")
 
-            # Get PV power (Rev O1)
-            if self.config.has_solar:
-                pv_str = await self.ha_client.get_state_value(pv_power_entity)
-                if pv_str and pv_str not in ("unknown", "unavailable"):
-                    state.current_pv_kw = float(pv_str) / 1000  # W to kW
+            soc_str = results.get("soc")
+            if soc_str and soc_str not in ("unknown", "unavailable"):
+                state.current_soc_percent = float(soc_str)
 
-            # Get load power
-            load_str = await self.ha_client.get_state_value(load_power_entity)
+            pv_str = results.get("pv_power")
+            if pv_str and pv_str not in ("unknown", "unavailable"):
+                state.current_pv_kw = float(pv_str) / 1000  # W to kW
+
+            load_str = results.get("load_power")
             if load_str and load_str not in ("unknown", "unavailable"):
                 state.current_load_kw = float(load_str) / 1000
 
-            # Get grid import/export (Rev E1) - only for dual metering
-            system_config = self._full_config.get("system", {})
-            meter_type = system_config.get("grid_meter_type", "net")
+            imp_str = results.get("grid_import")
+            if imp_str and imp_str not in ("unknown", "unavailable"):
+                state.current_import_kw = float(imp_str) / 1000
 
-            if meter_type == "dual":
-                import_entity = input_sensors.get("grid_import_power")
-                export_entity = input_sensors.get("grid_export_power")
+            exp_str = results.get("grid_export")
+            if exp_str and exp_str not in ("unknown", "unavailable"):
+                state.current_export_kw = float(exp_str) / 1000
 
-                if import_entity:
-                    imp_str = await self.ha_client.get_state_value(import_entity)
-                    if imp_str and imp_str not in ("unknown", "unavailable"):
-                        state.current_import_kw = float(imp_str) / 1000
+            work_mode = results.get("work_mode")
+            if work_mode:
+                state.current_work_mode = work_mode
 
-                if export_entity:
-                    exp_str = await self.ha_client.get_state_value(export_entity)
-                    if exp_str and exp_str not in ("unknown", "unavailable"):
-                        state.current_export_kw = float(exp_str) / 1000
-
-            # Get current work mode (only if entity configured)
-            work_mode_entity: str | None = getattr(self.config.inverter, "work_mode_entity", None)
-            if self.config.has_battery and work_mode_entity:
-                work_mode = await self.ha_client.get_state_value(work_mode_entity)
-                if work_mode:
-                    state.current_work_mode = work_mode
-
-            # Get grid charging state (only if entity configured)
-            grid_charging_entity: str | None = getattr(
-                self.config.inverter, "grid_charging_entity", None
-            )
-            if self.config.has_battery and grid_charging_entity and self.ha_client:
-                grid_charge = await self.ha_client.get_state_value(grid_charging_entity)
+            grid_charge = results.get("grid_charging")
+            if grid_charge is not None:
                 state.grid_charging_enabled = grid_charge == "on"
 
-            # Get water heater temp (Rev O1, only if entity configured)
-            if self.config.has_water_heater and self.config.water_heater.target_entity:
-                water_str = await self.ha_client.get_state_value(
-                    self.config.water_heater.target_entity
-                )
-                if water_str:
-                    state.current_water_temp = float(water_str)
+            water_str = results.get("water_temp")
+            if water_str:
+                state.current_water_temp = float(water_str)
 
             # Pass water heater configuration to state
             state.has_water_heater = self._has_water_heater
 
-            # Check manual override toggle (optional - don't fail if missing)
-            if self.config.manual_override_entity:
-                manual = await self.ha_client.get_state_value(self.config.manual_override_entity)
-                if manual is not None:
-                    state.manual_override_active = manual == "on"
+            manual = results.get("manual_override")
+            if manual is not None:
+                state.manual_override_active = manual == "on"
 
         except Exception as e:
             logger.warning("Failed to gather some system state: %s", e)

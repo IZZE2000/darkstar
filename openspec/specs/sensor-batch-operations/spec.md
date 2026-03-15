@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Defines requirements for reading multiple Home Assistant sensor values in parallel to minimize latency, with graceful error handling and a consistent API across all sensor reading locations in the codebase.
+
+## Requirements
 
 ### Requirement: Batch sensor reading with parallel execution
 The system SHALL provide a mechanism to read multiple Home Assistant sensor values in parallel using `asyncio.gather()` to minimize latency.
@@ -29,17 +33,22 @@ The system SHALL handle individual sensor read failures without failing the enti
 - **AND** the system SHALL log a single summary warning (not 10 individual warnings)
 
 ### Requirement: Consistent API across all sensor reading locations
-All locations that read multiple HA sensors SHALL use the centralized batch reading helper function.
+All locations that read multiple independent HA sensors SHALL use the centralized batch reading helper function.
 
 #### Scenario: Executor state gathering
-- **WHEN** the executor gathers system state with 8 sensors
+- **WHEN** the executor gathers system state (~9 sensors) in `executor/engine.py:_gather_system_state()`
 - **THEN** it SHALL call the batch helper function
 - **AND** latency SHALL be under 200ms
 
-#### Scenario: Recorder observation
-- **WHEN** the recorder records an observation with 10+ sensors
+#### Scenario: Recorder power sensor reads
+- **WHEN** the recorder reads power sensors (~6+) in `backend/recorder.py:record_observation_from_current_state()`
+- **THEN** it SHALL call the batch helper function for the power sensor reads
+- **AND** cumulative energy reads MAY remain separate (they have stateful logic)
+
+#### Scenario: Initial state gathering
+- **WHEN** planning gathers initial state (~4 sensors) in `backend/core/ha_client.py:get_initial_state()`
 - **THEN** it SHALL call the batch helper function
-- **AND** latency SHALL be under 200ms
+- **AND** critical SoC failure SHALL still raise an error (safety invariant)
 
 ### Requirement: Context-aware logging
 The batch reading function SHALL include context information in logs to aid debugging.
