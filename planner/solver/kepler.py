@@ -48,7 +48,7 @@ class KeplerSolver:
             slot_hours.append(duration)
 
         # Problem Definition
-        prob: Any = pulp.LpProblem("KeplerSchedule", pulp.LpMinimize)  # type: ignore[call-arg]
+        prob: Any = pulp.LpProblem("KeplerSchedule", pulp.LpMinimize)
 
         # Variables (all in kWh per slot)
         charge: dict[int, Any] = pulp.LpVariable.dicts("charge_kwh", range(T), lowBound=0.0)  # type: ignore[reportUnknownMemberType]
@@ -79,7 +79,7 @@ class KeplerSolver:
             else:
                 water_start = None
         else:
-            water_heat = dict.fromkeys(range(T), 0)  # type: ignore[assignment]
+            water_heat = dict.fromkeys(range(T), 0)
             water_start = None
             needs_water_start = False
 
@@ -114,8 +114,8 @@ class KeplerSolver:
                 "ev_bucket_charged", range(num_buckets), lowBound=0.0
             )
         else:
-            ev_charge = dict.fromkeys(range(T), 0)  # type: ignore[assignment]
-            ev_energy = dict.fromkeys(range(T), 0.0)  # type: ignore[assignment]
+            ev_charge = dict.fromkeys(range(T), 0)
+            ev_energy = dict.fromkeys(range(T), 0.0)
             ev_bucket_charged = {}
             num_buckets = 0
             buckets = []
@@ -134,7 +134,7 @@ class KeplerSolver:
         soc_violation: dict[int, Any] = pulp.LpVariable.dicts(  # type: ignore[reportUnknownMemberType]
             "soc_violation_kwh", range(T + 1), lowBound=0.0
         )
-        target_under_violation: Any = pulp.LpVariable(  # type: ignore[call-arg]
+        target_under_violation: Any = pulp.LpVariable(
             "target_under_violation_kwh", lowBound=0.0
         )  # Penalty for being BELOW target at end of horizon
         import_breach: dict[int, Any] = pulp.LpVariable.dicts(  # type: ignore[reportUnknownMemberType]
@@ -168,13 +168,13 @@ class KeplerSolver:
                 remaining_cap: float = max(0.0, bucket_capacity_kwh - already_full)
 
                 # Constrain bucket charging
-                prob += ev_bucket_charged[i] <= remaining_cap  # type: ignore[operator]
+                prob += ev_bucket_charged[i] <= remaining_cap
 
                 prev_threshold_soc = b.threshold_soc
                 accum_energy_cap += bucket_capacity_kwh
 
             # Total energy charged must equal sum of buckets
-            prob += pulp.lpSum(ev_energy[t] for t in range(T)) == pulp.lpSum(  # type: ignore[operator]
+            prob += pulp.lpSum(ev_energy[t] for t in range(T)) == pulp.lpSum(
                 ev_bucket_charged[i] for i in range(num_buckets)
             )
 
@@ -186,7 +186,7 @@ class KeplerSolver:
 
         # Initial SoC Constraint
         initial_soc: float = max(0.0, min(config.capacity_kwh, input_data.initial_soc_kwh))
-        prob += soc[0] == initial_soc  # type: ignore[operator]
+        prob += soc[0] == initial_soc
 
         # Objective Function Terms
         total_cost: list[Any] = []
@@ -204,24 +204,24 @@ class KeplerSolver:
             h: float = slot_hours[t]
 
             # Water heating load for this slot (kWh)
-            water_load_kwh: Any = (  # type: ignore[reportUnknownVariableType]
-                water_heat[t] * config.water_heating_power_kw * h if water_enabled else 0  # type: ignore[operator]
-            )  # type: ignore[reportUnknownVariableType]
+            water_load_kwh: Any = (
+                water_heat[t] * config.water_heating_power_kw * h if water_enabled else 0
+            )
 
             # EV charging load for this slot (kWh)
             if ev_enabled:
                 # Rev F78: Require strict binary switching (ON/OFF at max power)
-                prob += ev_energy[t] == ev_charge[t] * config.ev_max_power_kw * h  # type: ignore[operator]
+                prob += ev_energy[t] == ev_charge[t] * config.ev_max_power_kw * h
 
                 # REV K25 Phase 4: Enforce deadline constraint
                 # If slot end time is after deadline, no EV charging allowed
                 if config.ev_deadline is not None and s.end_time > config.ev_deadline:
-                    prob += ev_energy[t] == 0.0  # type: ignore[operator]
+                    prob += ev_energy[t] == 0.0
             else:
                 ev_energy[t] = 0.0
 
             # Energy Balance Constraint (water and EV loads added to demand side)
-            prob += (  # type: ignore[operator]
+            prob += (
                 s.load_kwh
                 + water_load_kwh
                 + ev_energy[t]
@@ -236,7 +236,7 @@ class KeplerSolver:
             if ev_enabled:
                 # EV can only charge from grid or solar (not from battery discharge)
                 # This ensures energy doesn't leave the house battery to the car
-                prob += (  # type: ignore[operator]
+                prob += (
                     ev_energy[t] <= grid_import[t] + s.pv_kwh + 1e-6
                 )  # Small epsilon for numerical stability
 
@@ -244,18 +244,18 @@ class KeplerSolver:
             if water_enabled and needs_water_start:
                 assert water_start is not None
                 if t == 0:
-                    prob += water_start[t] == water_heat[t]  # type: ignore[operator]
+                    prob += water_start[t] == water_heat[t]
                 else:
-                    prob += water_start[t] >= water_heat[t] - water_heat[t - 1]  # type: ignore[operator]
+                    prob += water_start[t] >= water_heat[t] - water_heat[t - 1]
 
             # Rev WH2: Force specific slots ON (Mid-block locking)
             if water_enabled and config.force_water_on_slots:
                 for t_idx in config.force_water_on_slots:
                     if 0 <= t_idx < T:
-                        prob += water_heat[t_idx] == 1  # type: ignore[operator]
+                        prob += water_heat[t_idx] == 1
 
             # Battery Dynamics Constraint
-            prob += soc[t + 1] == soc[t] + charge[t] * config.charge_efficiency - discharge[t] / (  # type: ignore[operator]
+            prob += soc[t + 1] == soc[t] + charge[t] * config.charge_efficiency - discharge[t] / (
                 config.discharge_efficiency if config.discharge_efficiency > 0 else 1.0
             )
 
@@ -263,48 +263,48 @@ class KeplerSolver:
             max_chg_kwh: float = config.max_charge_power_kw * h
             max_dis_kwh: float = config.max_discharge_power_kw * h
 
-            prob += charge[t] <= max_chg_kwh  # type: ignore[operator]
-            prob += discharge[t] <= max_dis_kwh  # type: ignore[operator]
+            prob += charge[t] <= max_chg_kwh
+            prob += discharge[t] <= max_dis_kwh
 
             if config.max_export_power_kw is not None:
-                prob += grid_export[t] <= config.max_export_power_kw * h  # type: ignore[operator]
+                prob += grid_export[t] <= config.max_export_power_kw * h
 
             if config.max_import_power_kw is not None:
-                prob += grid_import[t] <= config.max_import_power_kw * h  # type: ignore[operator]
+                prob += grid_import[t] <= config.max_import_power_kw * h
 
             # Soft Grid Import Limit
             if config.grid_import_limit_kw is not None:
                 limit_kwh: float = config.grid_import_limit_kw * h
-                prob += grid_import[t] <= limit_kwh + import_breach[t]  # type: ignore[operator]
+                prob += grid_import[t] <= limit_kwh + import_breach[t]
 
             # Rev E4: Strict Export Toggle
             if not config.enable_export:
-                prob += grid_export[t] == 0  # type: ignore[operator]
+                prob += grid_export[t] == 0
 
             # Ramping Constraints
             if t > 0:
-                prob += (charge[t] - discharge[t]) - (charge[t - 1] - discharge[t - 1]) == ramp_up[  # type: ignore[operator]
+                prob += (charge[t] - discharge[t]) - (charge[t - 1] - discharge[t - 1]) == ramp_up[
                     t
-                ] - ramp_down[t]  # type: ignore[index]
+                ] - ramp_down[t]
             else:
-                prob += ramp_up[t] == 0  # type: ignore[operator]
-                prob += ramp_down[t] == 0  # type: ignore[operator]
+                prob += ramp_up[t] == 0
+                prob += ramp_down[t] == 0
 
             # Objective Terms
             # Wear cost modeling: Apply 50% of config value per action (charge OR discharge)
             # so that a full cycle (charge + discharge) costs exactly config.wear_cost_sek_per_kwh
-            slot_wear_cost: Any = (charge[t] + discharge[t]) * config.wear_cost_sek_per_kwh * 0.5  # type: ignore[reportUnknownVariableType]
-            slot_import_cost: Any = grid_import[t] * s.import_price_sek_kwh  # type: ignore[reportUnknownVariableType]
+            slot_wear_cost: Any = (charge[t] + discharge[t]) * config.wear_cost_sek_per_kwh * 0.5
+            slot_import_cost: Any = grid_import[t] * s.import_price_sek_kwh
             effective_export_price: float = (
                 s.export_price_sek_kwh - config.export_threshold_sek_per_kwh
             )
-            slot_export_revenue: Any = grid_export[t] * effective_export_price  # type: ignore[reportUnknownVariableType]
-            slot_ramping_cost: Any = (  # type: ignore[reportUnknownVariableType]
+            slot_export_revenue: Any = grid_export[t] * effective_export_price
+            slot_ramping_cost: Any = (
                 (ramp_up[t] + ramp_down[t]) / h
             ) * config.ramping_cost_sek_per_kw
-            slot_curtailment_cost: Any = curtailment[t] * curtailment_penalty  # type: ignore[reportUnknownVariableType]
-            slot_shedding_cost: Any = load_shedding[t] * LOAD_SHEDDING_PENALTY  # type: ignore[reportUnknownVariableType]
-            slot_import_breach_cost: Any = import_breach[t] * IMPORT_BREACH_PENALTY  # type: ignore[reportUnknownVariableType]
+            slot_curtailment_cost: Any = curtailment[t] * curtailment_penalty
+            slot_shedding_cost: Any = load_shedding[t] * LOAD_SHEDDING_PENALTY
+            slot_import_breach_cost: Any = import_breach[t] * IMPORT_BREACH_PENALTY
 
             # NOTE: Rev K20 stored_energy_cost was removed - it incorrectly made
             # charging unprofitable by adding cost on discharge without offsetting
@@ -326,12 +326,12 @@ class KeplerSolver:
             )
 
             # Soft Min/Max SoC Constraints
-            prob += soc[t] >= min_soc_kwh - soc_violation[t]  # type: ignore[operator]
-            prob += soc[t] <= max_soc_kwh  # type: ignore[operator]
+            prob += soc[t] >= min_soc_kwh - soc_violation[t]
+            prob += soc[t] <= max_soc_kwh
 
         # Terminal constraints
-        prob += soc[T] >= min_soc_kwh - soc_violation[T]  # type: ignore[operator]
-        prob += soc[T] <= max_soc_kwh  # type: ignore[operator]
+        prob += soc[T] >= min_soc_kwh - soc_violation[T]
+        prob += soc[T] <= max_soc_kwh
 
         # Terminal SoC Target (BIDIRECTIONAL soft constraint)
         # Penalize both being UNDER target (risk) AND OVER target (missed discharge opportunity)
@@ -345,10 +345,10 @@ class KeplerSolver:
 
         if config.target_soc_kwh is not None:
             # Under target: soc[T] >= target - under_violation
-            prob += soc[T] >= target_soc_kwh - target_under_violation  # type: ignore[operator]
+            prob += soc[T] >= target_soc_kwh - target_under_violation
 
             # Penalize UNDER target (important)
-            total_cost.append(target_soc_penalty * target_under_violation)  # type: ignore[arg-type]
+            total_cost.append(target_soc_penalty * target_under_violation)
         else:
             # If no target, we don't care where we end up (within min_soc limits)
             pass
@@ -496,11 +496,11 @@ class KeplerSolver:
 
         try:
             # Try GLPK first (installed in Alpine Docker image) with timeout
-            solver_cmd: Any = pulp.GLPK_CMD(msg=False, timeLimit=30)  # type: ignore[arg-type]
+            solver_cmd: Any = pulp.GLPK_CMD(msg=False, timeLimit=30)
             prob.solve(solver_cmd)  # type: ignore[reportUnknownMemberType]
         except Exception:
             # Fall back to CBC if GLPK not available, also with timeout
-            solver_cmd: Any = pulp.PULP_CBC_CMD(msg=False, timeLimit=30)  # type: ignore[arg-type]
+            solver_cmd: Any = pulp.PULP_CBC_CMD(msg=False, timeLimit=30)
             prob.solve(solver_cmd)  # type: ignore[reportUnknownMemberType]
 
         solve_end: float = time.time()
@@ -543,21 +543,21 @@ class KeplerSolver:
                 # EV charging power (kW) from continuous energy - Rev // F51
                 if ev_enabled:
                     ev_energy_val: float | None = pulp.value(ev_energy[t])  # type: ignore[assignment]
-                    ev_kw: float = ev_energy_val / h if ev_energy_val is not None and h > 0 else 0.0  # type: ignore[reportUnknownVariableType]
+                    ev_kw: float = ev_energy_val / h if ev_energy_val is not None and h > 0 else 0.0
                 else:
                     ev_kw: float = 0.0
 
-                wear: float = (  # type: ignore[reportUnknownVariableType]
+                wear: float = (
                     (c_val + d_val) * config.wear_cost_sek_per_kwh * 0.5
                     if c_val is not None and d_val is not None
                     else 0.0
                 )
-                cost: float = (  # type: ignore[reportUnknownVariableType]
+                cost: float = (
                     (i_val * s.import_price_sek_kwh) - (e_val * s.export_price_sek_kwh) + wear
                     if i_val is not None and e_val is not None
                     else 0.0
                 )
-                final_total_cost += cost  # type: ignore[reportUnknownVariableType]
+                final_total_cost += cost
 
                 result_slots.append(
                     KeplerResultSlot(
@@ -568,11 +568,11 @@ class KeplerSolver:
                         grid_import_kwh=i_val,  # type: ignore[arg-type]
                         grid_export_kwh=e_val,  # type: ignore[arg-type]
                         soc_kwh=soc_val,  # type: ignore[arg-type]
-                        cost_sek=cost,  # type: ignore[arg-type]
+                        cost_sek=cost,
                         import_price_sek_kwh=s.import_price_sek_kwh,
                         export_price_sek_kwh=s.export_price_sek_kwh,
                         water_heat_kw=w_kw,
-                        ev_charge_kw=ev_kw,  # type: ignore[arg-type]
+                        ev_charge_kw=ev_kw,
                         is_optimal=True,
                     )
                 )
@@ -586,12 +586,12 @@ class KeplerSolver:
                 solve_duration,
                 var_count,
                 const_count,
-                final_total_cost,  # type: ignore[arg-type]
+                final_total_cost,
             )
 
         return KeplerResult(
             slots=result_slots,
-            total_cost_sek=final_total_cost,  # type: ignore[arg-type]
+            total_cost_sek=final_total_cost,
             is_optimal=is_optimal,
             status_msg=status,
         )
