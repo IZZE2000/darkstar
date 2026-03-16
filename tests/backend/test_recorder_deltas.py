@@ -137,14 +137,14 @@ class TestRecorderDeltaLogic:
                 "load_power": "sensor.load_power",
                 "grid_power": "sensor.grid_power",
                 "battery_power": "sensor.battery_power",
-                "water_power": "sensor.water_power",
                 "battery_soc": "sensor.battery_soc",
                 # Cumulative sensors
                 "total_pv_production": "sensor.total_pv_production",
                 "total_load_consumption": "sensor.total_load_consumption",
             },
             "system": {"grid_meter_type": "net", "has_battery": True},
-            "water_heaters": [],
+            # ARC15: water heater sensor now in water_heaters array
+            "water_heaters": [{"enabled": True, "sensor": "sensor.water_power"}],
             "ev_chargers": [],
         }
 
@@ -1000,6 +1000,8 @@ class TestLoadIsolationFromDeferrableLoads:
     async def test_water_heating_subtracted_from_total_load(self, base_config):
         """Spec: Load Isolation - Water heating subtracted from total load."""
         config = base_config.copy()
+        # ARC15: water heater sensor now in water_heaters array
+        config["water_heaters"] = [{"enabled": True, "sensor": "sensor.water_power"}]
 
         with tempfile.TemporaryDirectory() as tmpdir:
             state_file = Path(tmpdir) / "recorder_state.json"
@@ -1073,6 +1075,8 @@ class TestLoadIsolationFromDeferrableLoads:
         """Spec: Load Isolation - Both EV and water subtracted together."""
         config = base_config.copy()
         config["ev_chargers"] = [{"sensor": "sensor.ev_power", "enabled": True}]
+        # ARC15: water heater sensor now in water_heaters array
+        config["water_heaters"] = [{"enabled": True, "sensor": "sensor.water_power"}]
 
         with tempfile.TemporaryDirectory() as tmpdir:
             state_file = Path(tmpdir) / "recorder_state.json"
@@ -1147,6 +1151,8 @@ class TestLoadIsolationFromDeferrableLoads:
         """Spec: Load Isolation - Negative base load clamped to zero with warning."""
         config = base_config.copy()
         config["ev_chargers"] = [{"sensor": "sensor.ev_power", "enabled": True}]
+        # ARC15: water heater sensor now in water_heaters array
+        config["water_heaters"] = [{"enabled": True, "sensor": "sensor.water_power"}]
 
         with tempfile.TemporaryDirectory() as tmpdir:
             state_file = Path(tmpdir) / "recorder_state.json"
@@ -1227,6 +1233,8 @@ class TestLoadIsolationFromDeferrableLoads:
         config["input_sensors"].pop("total_load_consumption", None)
         config["input_sensors"].pop("total_pv_production", None)
         config["ev_chargers"] = [{"sensor": "sensor.ev_power", "enabled": True}]
+        # ARC15: water heater sensor now in water_heaters array
+        config["water_heaters"] = [{"enabled": True, "sensor": "sensor.water_power"}]
 
         with tempfile.TemporaryDirectory() as tmpdir:
             state_file = Path(tmpdir) / "recorder_state.json"

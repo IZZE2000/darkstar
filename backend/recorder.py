@@ -297,8 +297,23 @@ async def record_observation_from_current_state(
         ("pv_power", lambda: get_kw("pv_power")),
         ("load_power", lambda: get_kw("load_power")),
         ("battery_power", lambda: get_kw("battery_power")),
-        ("water_power", lambda: get_kw("water_power")),
     ]
+
+    # Collect water heater sensor reads (ARC15: read from water_heaters[] array)
+    water_heater_sensors: list[str] = []
+    water_heater_energy_sensors: list[tuple[str, str]] = []
+    for water_heater in config.get("water_heaters", []):
+        if water_heater.get("enabled", True):
+            sensor = water_heater.get("sensor")
+            if sensor:
+                water_heater_sensors.append(str(sensor))
+                power_reads.append(
+                    (f"wh_{sensor}", lambda s=str(sensor): get_ha_sensor_kw_normalized(s))
+                )
+            # Collect energy sensor for cumulative delta calculation
+            es = water_heater.get("energy_sensor", "")
+            if es:
+                water_heater_energy_sensors.append((str(water_heater["id"]), str(es)))
     if meter_type == "dual":
         power_reads.append(("grid_import_power", lambda: get_kw("grid_import_power")))
         power_reads.append(("grid_export_power", lambda: get_kw("grid_export_power")))
@@ -322,20 +337,13 @@ async def record_observation_from_current_state(
             if es:
                 ev_charger_energy_sensors.append((str(ev_charger["id"]), str(es)))
 
-    # Build list of water heater energy sensors for cumulative delta calculation
-    water_heater_energy_sensors: list[tuple[str, str]] = []
-    for water_heater in config.get("water_heaters", []):
-        if water_heater.get("enabled", True):
-            es = water_heater.get("energy_sensor", "")
-            if es:
-                water_heater_energy_sensors.append((str(water_heater["id"]), str(es)))
-
     power_results = await gather_sensor_reads(power_reads, context="recorder_observation")
 
     pv_kw: float = power_results.get("pv_power") or 0.0
     total_load_kw: float = power_results.get("load_power") or 0.0
     battery_kw: float = power_results.get("battery_power") or 0.0
-    water_kw: float = power_results.get("water_power") or 0.0
+    # Aggregate water heater power from array sensors (ARC15)
+    water_kw = sum(power_results.get(f"wh_{s}") or 0.0 for s in water_heater_sensors)
 
     # Disaggregate loads if disaggregator is provided (REV // ML2)
     controllable_kw = 0.0

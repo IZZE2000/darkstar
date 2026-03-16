@@ -198,3 +198,119 @@ class TestFullMigrationFlow:
             f"_write_config was called {len(write_calls)} time(s) but should not have been "
             f"for a clean config with no deprecated keys"
         )
+
+
+class TestWaterHeaterMigration:
+    """Test water heater field migration from legacy locations to water_heaters[] array."""
+
+    def test_migrate_all_water_heater_fields(self):
+        """Legacy config with all three keys → values migrate into water_heaters[0], old keys removed."""
+        from backend.config_migration import _migrate_water_heater_fields
+
+        config = {
+            "config_version": 2,
+            "input_sensors": {
+                "water_power": "sensor.boiler_power",
+                "water_heater_consumption": "sensor.boiler_energy",
+                "grid_power": "sensor.grid",
+            },
+            "executor": {
+                "water_heater": {
+                    "target_entity": "climate.boiler",
+                    "temp_off": 40,
+                    "temp_normal": 60,
+                }
+            },
+            "water_heaters": [
+                {
+                    "id": "main_tank",
+                    "sensor": "",
+                    "energy_sensor": "",
+                    "target_entity": "",
+                    "power_kw": 3.0,
+                }
+            ],
+        }
+
+        result, changed = _migrate_water_heater_fields(config)
+
+        assert changed is True
+        # Values should be migrated
+        assert result["water_heaters"][0]["sensor"] == "sensor.boiler_power"
+        assert result["water_heaters"][0]["energy_sensor"] == "sensor.boiler_energy"
+        assert result["water_heaters"][0]["target_entity"] == "climate.boiler"
+        # Old keys should be removed
+        assert "water_power" not in result["input_sensors"]
+        assert "water_heater_consumption" not in result["input_sensors"]
+        assert "target_entity" not in result["executor"]["water_heater"]
+        # Other keys should remain
+        assert result["input_sensors"]["grid_power"] == "sensor.grid"
+        assert result["executor"]["water_heater"]["temp_off"] == 40
+
+    def test_migrate_preserves_existing_sensor(self):
+        """Config with sensor already set → input_sensors.water_power is NOT copied, old key still removed."""
+        from backend.config_migration import _migrate_water_heater_fields
+
+        config = {
+            "config_version": 2,
+            "input_sensors": {
+                "water_power": "sensor.boiler_power",
+                "water_heater_consumption": "",
+            },
+            "executor": {
+                "water_heater": {
+                    "target_entity": "",
+                }
+            },
+            "water_heaters": [
+                {
+                    "id": "main_tank",
+                    "sensor": "sensor.existing_power",  # Already set
+                    "energy_sensor": "",
+                    "target_entity": "",
+                }
+            ],
+        }
+
+        result, changed = _migrate_water_heater_fields(config)
+
+        assert changed is True  # Still changed because old keys are removed
+        # Existing value should be preserved
+        assert result["water_heaters"][0]["sensor"] == "sensor.existing_power"
+        # Old key should still be removed
+        assert "water_power" not in result["input_sensors"]
+
+    def test_migrate_no_water_heaters(self):
+        """Config with no water_heaters array should not crash."""
+        from backend.config_migration import _migrate_water_heater_fields
+
+        config = {
+            "config_version": 2,
+            "input_sensors": {
+                "water_power": "sensor.boiler_power",
+            },
+        }
+
+        result, changed = _migrate_water_heater_fields(config)
+
+        # Should not crash, no changes made
+        assert changed is False
+        assert "input_sensors" in result
+
+    def test_migrate_empty_water_heaters(self):
+        """Config with empty water_heaters array should not crash."""
+        from backend.config_migration import _migrate_water_heater_fields
+
+        config = {
+            "config_version": 2,
+            "input_sensors": {
+                "water_power": "sensor.boiler_power",
+            },
+            "water_heaters": [],
+        }
+
+        result, changed = _migrate_water_heater_fields(config)
+
+        # Should not crash, no changes made to array
+        assert changed is False
+        assert result["water_heaters"] == []

@@ -233,13 +233,18 @@ async def get_initial_state(
         if not ev_soc_entity:
             logger.warning("has_ev_charger is true but ev_soc sensor is not configured")
 
+    # ARC15: Read water heater energy sensors from water_heaters[] array, sum across enabled
+    water_entities: list[str] = []
     if has_water_heater:
-        water_entity = input_sensors.get("water_heater_consumption", "sensor.vvb_energy_daily")
+        water_heaters = config.get("water_heaters", [])
+        for wh in water_heaters:
+            if wh.get("enabled", True) and wh.get("energy_sensor"):
+                water_entities.append(str(wh["energy_sensor"]))
 
     # Batch: water heater, EV SoC, and (optionally) EV plug reads in parallel
     optional_reads: list[tuple[str, Any]] = []
-    if water_entity:
-        optional_reads.append(("water", lambda e=water_entity: get_ha_sensor_float(e)))
+    for idx, water_entity in enumerate(water_entities):
+        optional_reads.append((f"water_{idx}", lambda e=water_entity: get_ha_sensor_float(e)))
     if ev_soc_entity:
         optional_reads.append(("ev_soc", lambda e=ev_soc_entity: get_ha_sensor_float(e)))
     # Only fetch EV plug from HA if no override is provided
@@ -250,9 +255,13 @@ async def get_initial_state(
     if optional_reads:
         optional_results = await gather_sensor_reads(optional_reads, context="initial_state")
 
-    ha_water = optional_results.get("water")
-    if ha_water is not None:
-        water_heated_today_kwh = ha_water
+    # Aggregate water heater energy across all enabled heaters
+    total_water_kwh = 0.0
+    for idx in range(len(water_entities)):
+        ha_water = optional_results.get(f"water_{idx}")
+        if ha_water is not None:
+            total_water_kwh += ha_water
+    water_heated_today_kwh = total_water_kwh
 
     ha_ev_soc = optional_results.get("ev_soc")
     if ev_soc_entity:

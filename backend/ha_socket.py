@@ -18,6 +18,7 @@ class HAWebSocketClient:
         self._load_config()
         self.id_counter = 1
         self.inversion_flags: dict[str, bool] = {}
+        self.water_heater_configs: list[dict[str, Any]] = []
         self.ev_charger_configs: list[
             dict[str, Any]
         ] = []  # Rev F64: Store EV config with index and name
@@ -107,8 +108,21 @@ class HAWebSocketClient:
                     mapping[sensors["grid_export_power"]] = "grid_export_kw"
             if "battery_power" in sensors:
                 mapping[sensors["battery_power"]] = "battery_kw"
-            if "water_power" in sensors:
-                mapping[sensors["water_power"]] = "water_kw"
+
+            # ARC15: Water heater sensors from water_heaters[] array
+            if system.get("has_water_heater", False):
+                water_heaters: list[dict[str, Any]] = cfg.get("water_heaters", [])
+                self.water_heater_configs: list[dict[str, Any]] = []
+                used_water_sensors: set[str] = set()
+                for idx, wh in enumerate(water_heaters):
+                    if wh.get("enabled", True):
+                        wh_name = wh.get("name", f"Water Heater {idx + 1}")
+                        active_idx = len(self.water_heater_configs)
+                        self.water_heater_configs.append({"index": active_idx, "name": wh_name})
+                        if wh.get("sensor") and wh["sensor"] not in used_water_sensors:
+                            mapping[wh["sensor"]] = f"water_kw_{active_idx}"
+                            used_water_sensors.add(wh["sensor"])
+
             if "vacation_mode" in sensors:
                 mapping[sensors["vacation_mode"]] = "vacation_mode"
 
@@ -509,6 +523,77 @@ class HAWebSocketClient:
                 )
             except Exception as e:
                 logger.error(f"Failed to handle EV power change: {e}")
+            return
+
+        # ARC15: Handle water heater power changes - indexed per heater
+        if key and key.startswith("water_kw_"):
+            try:
+                wh_idx = int(key.split("_")[-1])
+                state_val = new_state.get("state")
+                logger.debug(f"WH{wh_idx} power updated: {entity_id}={state_val}")
+
+                # Parse numeric value (handle unknown/unavailable gracefully)
+                value = 0.0
+                if state_val and str(state_val).lower() not in (
+                    "unknown",
+                    "unavailable",
+                    "none",
+                    "null",
+                    "",
+                ):
+                    value = float(state_val)
+                    # Normalize units if needed (kW vs W)
+                    unit = str(
+                        new_state.get("attributes", {}).get("unit_of_measurement", "")
+                    ).upper()
+                    if unit == "W":
+                        value = value / 1000.0
+
+                    # Apply inversion if configured
+                    if self.inversion_flags.get(key, False):
+                        value = -value
+
+                    # Sanitize value (prevent NaN/Inf from crashing JSON transport)
+                    import math
+
+                    if math.isnan(value) or math.isinf(value):
+                        logger.warning(f"DIAG: Sanitized invalid float for {key}: {value} -> 0.0")
+                        value = 0.0
+
+                # Initialize water_heater data structure if needed
+                water_heaters: list[dict[str, Any]] = self.latest_values.get("water_heaters", [])
+                if not water_heaters:
+                    self.latest_values["water_heaters"] = water_heaters = []
+
+                # Ensure we have entries for all configured water heaters
+                while len(water_heaters) < len(self.water_heater_configs):
+                    water_heaters.append(
+                        {
+                            "name": self.water_heater_configs[len(water_heaters)].get(
+                                "name", f"Water Heater {len(water_heaters) + 1}"
+                            ),
+                            "kw": 0.0,
+                        }
+                    )
+
+                # Update this water heater's power
+                if wh_idx < len(water_heaters):
+                    water_heaters[wh_idx]["kw"] = value
+
+                # Build aggregate for backward compat
+                total_wh_kw = sum(wh.get("kw", 0.0) for wh in water_heaters)
+
+                # Emit via live_metrics
+                from backend.events import emit_live_metrics
+
+                emit_live_metrics(
+                    {
+                        "water_heaters": water_heaters,
+                        "water_kw": total_wh_kw,
+                    }
+                )
+            except Exception as e:
+                logger.error(f"Failed to handle water heater power change: {e}")
             return
 
         # Handle numeric sensors (existing logic)

@@ -19,6 +19,7 @@ export interface WaterHeaterEntity {
     water_min_spacing_hours: number
     sensor: string
     energy_sensor: string
+    target_entity: string
     type: 'binary' | 'modulating'
     nominal_power_kw: number
 }
@@ -60,6 +61,7 @@ const createDefaultWaterHeater = (index: number): WaterHeaterEntity => ({
     water_min_spacing_hours: 4,
     sensor: '',
     energy_sensor: '',
+    target_entity: '',
     type: 'binary',
     nominal_power_kw: 3.0,
 })
@@ -375,6 +377,32 @@ export const EntityArrayEditor: React.FC<EntityArrayEditorProps> = ({
                                                 for clean training data.
                                             </p>
                                         </div>
+
+                                        {/* Target Entity (Water Heater only - ARC15) */}
+                                        {isWaterHeater && (
+                                            <div className="sm:col-span-2">
+                                                <label className="text-[10px] uppercase font-bold text-muted mb-1.5 block">
+                                                    Thermostat entity
+                                                </label>
+                                                <EntitySelect
+                                                    entities={haEntities}
+                                                    value={(entity as WaterHeaterEntity).target_entity}
+                                                    onChange={(val) =>
+                                                        updateEntity(index, {
+                                                            target_entity: val,
+                                                        } as Partial<WaterHeaterEntity>)
+                                                    }
+                                                    loading={haLoading}
+                                                    placeholder="Select Home Assistant thermostat..."
+                                                    disabled={disabled}
+                                                />
+                                                <p className="text-[10px] text-muted mt-1">
+                                                    Thermostat entity for controlling water heater temperature. The
+                                                    executor sets this to temp_off/temp_normal/temp_boost based on
+                                                    schedule.
+                                                </p>
+                                            </div>
+                                        )}
 
                                         {/* SoC Sensor (EV only) */}
                                         {!isWaterHeater && (

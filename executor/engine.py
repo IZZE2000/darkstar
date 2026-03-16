@@ -26,7 +26,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytz
 
@@ -381,13 +381,18 @@ class ExecutorEngine:
                     with contextlib.suppress(ValueError):
                         metrics["battery_kw"] = float(val) / 1000.0  # W to kW
 
-            # Water Heater Power
-            water_pwr_entity = input_sensors.get("water_power")
-            if water_pwr_entity:
-                val = await self.ha_client.get_state_value(water_pwr_entity)
-                if val and val not in ("unknown", "unavailable"):
-                    with contextlib.suppress(ValueError):
-                        metrics["water_kw"] = float(val) / 1000.0  # W to kW
+            # Water Heater Power (ARC15: read from water_heaters[] array, sum across enabled)
+            water_heaters_array = self._full_config.get("water_heaters", [])
+            total_water_kw = 0.0
+            for heater in cast("list[dict[str, Any]]", water_heaters_array):
+                sensor_entity = heater.get("sensor")
+                if heater.get("enabled", True) and sensor_entity:
+                    val = await self.ha_client.get_state_value(sensor_entity)
+                    if val and val not in ("unknown", "unavailable"):
+                        with contextlib.suppress(ValueError):
+                            total_water_kw += float(val) / 1000.0  # W to kW
+            if total_water_kw > 0:
+                metrics["water_kw"] = total_water_kw
 
         return metrics
 

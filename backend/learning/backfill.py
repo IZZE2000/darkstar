@@ -132,21 +132,29 @@ class BackfillEngine:
             raw_map_source: dict[str, str] | None = self.learning_config.get("sensor_map")
             raw_map: dict[str, str] = raw_map_source or {}
             if not raw_map:
-                logger.info("sensor_map is empty. Auto-detecting from input_sensors...")
+                logger.info("sensor_map is empty. Auto-detecting from config...")
                 input_sensors = self.config.get("input_sensors", {})
                 raw_map = {}
-                # Map cumulative sensors
+                # Map cumulative sensors (ARC15: water heater sensors now in water_heaters[])
                 mapping = {
                     "total_grid_import": "import",
                     "total_grid_export": "export",
                     "total_pv_production": "pv",
                     "total_load_consumption": "load",
-                    "water_heater_consumption": "water",
                     "battery_soc": "soc",
                 }
                 for config_key, canonical in mapping.items():
                     entity_id = input_sensors.get(config_key)
                     if entity_id:
+                        raw_map[entity_id] = canonical
+
+                # ARC15: Add water heater energy sensors from water_heaters[] array
+                water_heaters = self.config.get("water_heaters", [])
+                for idx, wh in enumerate(water_heaters):
+                    if wh.get("enabled", True) and wh.get("energy_sensor"):
+                        entity_id = wh["energy_sensor"]
+                        # Use indexed canonical name for multiple heaters
+                        canonical = f"water_{idx}" if len(water_heaters) > 1 else "water"
                         raw_map[entity_id] = canonical
 
             if not raw_map:

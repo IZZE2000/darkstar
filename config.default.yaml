@@ -97,6 +97,7 @@ water_heaters:
     water_min_spacing_hours: 4       # Minimum gap between heating starts
     sensor: sensor.vvb_power         # Home Assistant entity for power reading
     energy_sensor: ''                # Cumulative energy counter (recommended for accurate load isolation)
+    target_entity: ''                # Thermostat entity for controlling this heater
     type: binary                     # Load type: binary (on/off) or modulating
     nominal_power_kw: 3.0            # Nominal power for load calculations
 
@@ -109,6 +110,8 @@ water_heaters:
   #   max_hours_between_heating: 12
   #   water_min_spacing_hours: 4
   #   sensor: sensor.wh2_power
+  #   energy_sensor: ''
+  #   target_entity: ''
   #   type: binary
   #   nominal_power_kw: 3.0
 
@@ -255,7 +258,6 @@ input_sensors:
   pv_power: ""             # Current PV production (W or kW)
   load_power: ""         # Current load consumption (W or kW)
   battery_power: ""   # Current battery power (+ discharge, - charge)
-  water_power: ""                  # Current water heater power (W or kW)
   grid_power: ""         # Current grid power (+ import, - export) (Used if meter_type=net)
   grid_import_power: ""    # Current grid import power (W/kW) (Used if meter_type=dual)
   grid_export_power: ""    # Current grid export power (W/kW) (Used if meter_type=dual)
@@ -267,7 +269,6 @@ input_sensors:
   total_grid_import: ""          # Cumulative grid import (kWh)
   total_load_consumption: ""  # Cumulative load (kWh)
   total_pv_production: ""           # Cumulative PV production (kWh)
-  water_heater_consumption: ""               # Water heater daily energy (kWh)
 
 # Executor (control loop that WRITES to Home Assistant)
 executor:
@@ -319,7 +320,6 @@ executor:
   # The executor controls your water heater by setting a target temperature.
   # These temps define the operating modes:
   water_heater:
-    target_entity: ""  # HA entity to control
     temp_off: 40       # Idle mode (legionella-safe minimum)
     temp_normal: 60    # Scheduled heating target (used by planner)
     temp_boost: 70     # Manual boost button (Dashboard/Executor)

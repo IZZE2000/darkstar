@@ -153,6 +153,83 @@ def remove_deprecated_keys(config: dict[str, Any]) -> tuple[dict[str, Any], bool
     return config, changed
 
 
+def _migrate_water_heater_fields(config: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+    """Migrate legacy water heater config fields into water_heaters[] array.
+
+    Copies:
+      - input_sensors.water_power -> water_heaters[0].sensor (if sensor is empty)
+      - input_sensors.water_heater_consumption -> water_heaters[0].energy_sensor (if empty)
+      - executor.water_heater.target_entity -> water_heaters[0].target_entity (if missing/empty)
+
+    Then removes the old keys.
+
+    Returns:
+        Tuple of (modified_config, changed_flag)
+    """
+    changed = False
+
+    # Get water_heaters array, create if doesn't exist
+    water_heaters = config.get("water_heaters", [])
+    if not water_heaters or not isinstance(water_heaters, list):
+        # No water heaters configured, nothing to migrate
+        return config, changed
+
+    # Work on first heater
+    first_heater = cast("dict[str, Any]", water_heaters[0])
+
+    # Get input_sensors and executor.water_heater sections
+    input_sensors = cast("dict[str, Any]", config.get("input_sensors", {}))
+    executor = cast("dict[str, Any]", config.get("executor", {}))
+    water_heater_config = cast("dict[str, Any]", executor.get("water_heater", {}))
+
+    # 1. Migrate water_power -> sensor
+    old_water_power = input_sensors.get("water_power", "")
+    current_sensor = first_heater.get("sensor", "")
+    if old_water_power and not current_sensor:
+        first_heater["sensor"] = old_water_power
+        logger.info(
+            f"🔄 Migrated input_sensors.water_power -> water_heaters[0].sensor: {old_water_power}"
+        )
+        changed = True
+
+    # 2. Migrate water_heater_consumption -> energy_sensor
+    old_consumption = input_sensors.get("water_heater_consumption", "")
+    current_energy_sensor = first_heater.get("energy_sensor", "")
+    if old_consumption and not current_energy_sensor:
+        first_heater["energy_sensor"] = old_consumption
+        logger.info(
+            f"🔄 Migrated input_sensors.water_heater_consumption -> water_heaters[0].energy_sensor: {old_consumption}"
+        )
+        changed = True
+
+    # 3. Migrate executor.water_heater.target_entity -> target_entity
+    old_target = water_heater_config.get("target_entity", "")
+    current_target = first_heater.get("target_entity", "")
+    if old_target and not current_target:
+        first_heater["target_entity"] = old_target
+        logger.info(
+            f"🔄 Migrated executor.water_heater.target_entity -> water_heaters[0].target_entity: {old_target}"
+        )
+        changed = True
+
+    # 4. Remove old keys after migration
+    if "water_power" in input_sensors:
+        del input_sensors["water_power"]
+        logger.info("✂️  Removed deprecated key: 'input_sensors.water_power'")
+        changed = True
+    if "water_heater_consumption" in input_sensors:
+        del input_sensors["water_heater_consumption"]
+        logger.info("✂️  Removed deprecated key: 'input_sensors.water_heater_consumption'")
+        changed = True
+
+    if "target_entity" in water_heater_config:
+        del water_heater_config["target_entity"]
+        logger.info("✂️  Removed deprecated key: 'executor.water_heater.target_entity'")
+        changed = True
+
+    return config, changed
+
+
 def _validate_config_structure(config: dict[str, Any], strict: bool = True) -> bool:
     """
     Validates that the config has minimum expected structure.
@@ -491,6 +568,11 @@ async def migrate_config(
 
     # 2. Sweep deprecated keys from user config
     user_config, pre_merge_changes = remove_deprecated_keys(user_config)
+
+    # 2.5 Migrate water heater fields (must run after remove_deprecated_keys, before template merge)
+    user_config, migration_changes = _migrate_water_heater_fields(user_config)
+    if migration_changes:
+        pre_merge_changes = True
 
     # 3. Load Default Config (The Template)
     def_path_obj = Path(default_path)

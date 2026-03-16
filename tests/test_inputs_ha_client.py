@@ -312,9 +312,14 @@ class TestGatherSensorReadsBatchExecution:
                     "plug_sensor": "sensor.ev_plug",
                 }
             ],
+            "water_heaters": [
+                {
+                    "enabled": True,
+                    "energy_sensor": "sensor.water",
+                }
+            ],
             "input_sensors": {
                 "battery_soc": "sensor.batt_soc",
-                "water_heater_consumption": "sensor.water",
             },
         }
 

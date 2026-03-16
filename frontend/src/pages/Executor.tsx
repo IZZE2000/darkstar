@@ -15,7 +15,6 @@ import {
     X,
     BatteryCharging,
     Upload,
-    Droplets,
     ChevronDown,
     Download,
     Layers,
@@ -835,112 +834,6 @@ export default function Executor() {
                         </div>
                     )}
                 </Card>
-
-                {/* Quick Actions Card - Hidden as per user request */}
-                {/* <Card className="lg:col-span-3 p-4 md:p-5 flex flex-col">
-                    <div className="flex items-center gap-2 mb-4">
-                        <Zap className="h-4 w-4 text-accent" />
-                        <span className="text-xs font-medium text-text">Quick Actions</span>
-                    </div>
-
-                    {status?.quick_action && (
-                        <div className="mb-3 p-3 rounded-lg bg-accent/10 border border-accent/30">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <div className="text-[11px] font-medium text-accent capitalize">
-                                        {status.quick_action.type.replace('_', ' ')} Active
-                                    </div>
-                                    <div className="text-[10px] text-muted">
-                                        {status.quick_action.remaining_minutes.toFixed(0)} min remaining
-                                    </div>
-                                </div>
-                                <button
-                                    onClick={async () => {
-                                        try {
-                                            await executorApi.quickAction.clear()
-                                            fetchAll()
-                                        } catch (e) {
-                                            // ignore
-                                            console.error(e)
-                                        }
-                                    }}
-                                    className="text-[10px] px-2 py-1 rounded bg-bad/20 text-bad hover:bg-bad/30 transition-colors"
-                                >
-                                    Cancel
-                                </button>
-                            </div>
-                        </div>
-                    )}
-
-                    <div className="space-y-2 flex-1">
-                        {[
-                            {
-                                type: 'force_charge',
-                                label: 'Force Charge',
-                                icon: BatteryCharging,
-                                labelClass: 'text-good',
-                                btnClass: 'bg-good/10 border-good/20 text-good hover:bg-good/20',
-                            },
-                            {
-                                type: 'force_discharge',
-                                label: 'Force Export',
-                                icon: Upload,
-                                labelClass: 'text-warn',
-                                btnClass: 'bg-warn/10 border-warn/20 text-warn hover:bg-warn/20',
-                            },
-                            {
-                                type: 'force_water_heater',
-                                label: 'Boost Water',
-                                icon: Droplets,
-                                labelClass: 'text-warn',
-                                btnClass: 'bg-warn/10 border-warn/20 text-warn hover:bg-warn/20',
-                            },
-                            {
-                                type: 'inverter_off',
-                                label: 'Inverter Off',
-                                icon: Power,
-                                labelClass: 'text-bad',
-                                btnClass: 'bg-bad/10 border-bad/20 text-bad hover:bg-bad/20',
-                            },
-                        ].map((action) => (
-                            <div key={action.type} className="flex items-center gap-2">
-                                <span
-                                    className={`text-[11px] ${action.labelClass} w-20 font-medium flex items-center gap-1`}
-                                >
-                                    <action.icon className="h-3 w-3" />
-                                    {action.label}
-                                </span>
-                                <div className="flex gap-1 flex-1">
-                                    {[15, 30, 60].map((mins) => (
-                                        <button
-                                            key={mins}
-                                            onClick={async () => {
-                                                try {
-                                                    await executorApi.quickAction.set(action.type, mins)
-                                                    fetchAll()
-                                                } catch (e: any) {
-                                                    alert('Failed: ' + e.message)
-                                                }
-                                            }}
-                                            disabled={status?.quick_action?.type === action.type}
-                                            className={`flex-1 px-2 py-1.5 text-[10px] rounded-lg border transition-all ${
-                                                status?.quick_action?.type === action.type
-                                                    ? 'bg-accent/20 border-accent/40 text-accent'
-                                                    : action.btnClass
-                                            }`}
-                                        >
-                                            {mins}m
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-
-                    <div className="mt-3 text-[9px] text-muted/60 text-center">
-                        Overrides schedule for selected duration
-                    </div>
-                </Card> */}
             </div>
 
             {/* Execution History */}

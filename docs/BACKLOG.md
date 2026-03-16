@@ -33,12 +33,6 @@ This document contains ideas, improvements, and tasks that are not yet scheduled
 
 <!-- Add new bugs/requests here. AI should wipe the item after processing into a OpenSpec change. -->
 
-### [UI SETTINGS] Messy Water heater settings
-
-**Goal:** Water heater settings now have arrays, but some config keys are not in the array format like the "Water Heater Setpoint" or "Water Heater Power" is duplicated in both the array and the single value.
-
-**Notes:** Need to concider the whole page and make sure to migrate all to the array format in both UI and config.
-
 ### [DRAFT] Inverter Clipping Support
 
 **Goal:** Correctly model DC vs AC inverter limits in the Kepler solver to prevent over-optimistic planning on high-PV systems.

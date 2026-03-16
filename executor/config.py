@@ -282,8 +282,17 @@ def load_executor_config(config_path: str = "config.yaml") -> ExecutorConfig:
         if isinstance(executor_data.get("water_heater"), dict)
         else {}
     )
+
+    # Read target_entity from first enabled water_heaters[] item (ARC15 migration)
+    water_heaters_array = data.get("water_heaters", [])
+    target_entity = None
+    for heater in cast("list[dict[str, Any]]", water_heaters_array):
+        if heater.get("enabled", True) and heater.get("target_entity"):
+            target_entity = _str_or_none(heater.get("target_entity"))
+            break
+
     water_heater = WaterHeaterConfig(
-        target_entity=_str_or_none(water_data.get("target_entity")),
+        target_entity=target_entity,
         temp_normal=int(water_data.get("temp_normal", WaterHeaterConfig.temp_normal)),
         temp_off=int(water_data.get("temp_off", WaterHeaterConfig.temp_off)),
         temp_boost=int(water_data.get("temp_boost", WaterHeaterConfig.temp_boost)),

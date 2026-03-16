@@ -1091,39 +1091,6 @@ export const waterSections: SettingsSection[] = [
         ],
     },
     {
-        title: 'HA Sensors',
-        description: 'Home Assistant sensors for water heating monitoring.',
-        fields: [
-            {
-                key: 'input_sensors.water_power',
-                label: 'Water Heater Power (W/kW)',
-                path: ['input_sensors', 'water_power'],
-                type: 'entity',
-                helper: 'Power sensor of the water heater element. Used for live metrics and history.',
-            },
-            {
-                key: 'input_sensors.water_heater_consumption',
-                label: 'Water Heater Daily Energy',
-                path: ['input_sensors', 'water_heater_consumption'],
-                type: 'entity',
-                helper: 'Total energy consumed by the water heater today. Used for quota tracking.',
-            },
-        ],
-    },
-    {
-        title: 'Control',
-        description: 'Water heater control entity.',
-        fields: [
-            {
-                key: 'executor.water_heater.target_entity',
-                label: 'Water Heater Setpoint',
-                path: ['executor', 'water_heater', 'target_entity'],
-                type: 'entity',
-                helper: 'Thermostat entity that controls the water heater target temperature.',
-            },
-        ],
-    },
-    {
         title: 'Scheduling',
         description: 'Quota, deferral, and sizing controls for the water heater scheduler.',
         fields: [
