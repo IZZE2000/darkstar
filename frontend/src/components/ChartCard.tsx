@@ -1090,8 +1090,9 @@ export default function ChartCard({
             if (ds[12]) ds[12].hidden = !overlays.showActual || !overlays.load
             if (ds[13]) ds[13].hidden = !overlays.showActual || !overlays.charge
             if (ds[14]) ds[14].hidden = !overlays.showActual || !overlays.discharge
-            if (ds[15]) ds[15].hidden = !overlays.showActual || !overlays.export
-            if (ds[16]) ds[16].hidden = !overlays.showActual || !overlays.water
+            if (ds[15]) ds[15].hidden = !overlays.showActual || !overlays.ev
+            if (ds[16]) ds[16].hidden = !overlays.showActual || !overlays.export
+            if (ds[17]) ds[17].hidden = !overlays.showActual || !overlays.water
 
             try {
                 if (chartRef.current) {

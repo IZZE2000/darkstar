@@ -247,7 +247,7 @@ All daily energy totals are now aggregated from the `SlotObservation` table:
 ### Benefits
 1. **Data Consistency**: Dashboard, ML training, and planning all use the same data
 2. **Simplified Config**: Removed 7 `today_*` sensors from configuration requirements
-3. **EV Isolation**: EV charging is properly isolated from house load in all displays
+3. **EV Isolation**: EV charging is properly isolated from house load in all displays. Note: `ev_charging_kwh` accuracy depends on `energy_sensor` being configured for each EV charger; without it, the snapshot fallback is used (less accurate during partial slots)
 4. **Historical Accuracy**: No dependency on HA's daily reset timing
 
 ### API Changes
@@ -843,6 +843,7 @@ ev_chargers:
 3.  **Storage** (`backend/recorder.py`):
     - The `Recorder` stores this clean **Base Load** into the `slot_observations` table
     - Controllable loads are tracked separately for analytics
+    - `ev_charging_kwh` and `water_kwh` are computed from cumulative energy sensor deltas when `energy_sensor` is configured on the device (via Settings > EV/Water), providing accurate per-slot energy consumption. When no energy sensor is configured, the recorder falls back to power snapshot × 0.25h estimation.
 
 4.  **Forecasting** (`ml/forward.py`):
     - ML models are trained on this clean historical base load (without controllable loads)
@@ -909,7 +910,13 @@ heat_pumps:
 ```
 
 To add a new load type:
-1. Define the array schema in `config.default.yaml`
+1. Define the array schema in `config.default.yaml` with both `sensor` (power) and `energy_sensor` (cumulative energy) fields:
+   ```yaml
+   new_load_type:
+     - id: example
+       sensor: sensor.example_power
+       energy_sensor: ''  # Cumulative energy counter for accurate isolation
+   ```
 2. Add entity type to `backend/loads/models.py`
 3. Register the load type in `backend/loads/service.py`
 4. Add UI section in `frontend/src/pages/settings/types.ts`

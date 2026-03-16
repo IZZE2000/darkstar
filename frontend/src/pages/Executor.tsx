@@ -1071,11 +1071,17 @@ export default function Executor() {
                                 {status.current_slot_plan && (
                                     <div className="mt-2 grid grid-cols-4 gap-2 text-[10px]">
                                         {/* Primary mode badge from mode_intent */}
-                                        {status.current_slot_plan.mode_intent && MODE_BADGES[status.current_slot_plan.mode_intent] && (
-                                            <div className={`flex items-center gap-1 col-span-4 ${MODE_BADGES[status.current_slot_plan.mode_intent].className} px-1.5 py-0.5 rounded w-fit`}>
-                                                <span>{MODE_BADGES[status.current_slot_plan.mode_intent].emoji} {MODE_BADGES[status.current_slot_plan.mode_intent].label}</span>
-                                            </div>
-                                        )}
+                                        {status.current_slot_plan.mode_intent &&
+                                            MODE_BADGES[status.current_slot_plan.mode_intent] && (
+                                                <div
+                                                    className={`flex items-center gap-1 col-span-4 ${MODE_BADGES[status.current_slot_plan.mode_intent].className} px-1.5 py-0.5 rounded w-fit`}
+                                                >
+                                                    <span>
+                                                        {MODE_BADGES[status.current_slot_plan.mode_intent].emoji}{' '}
+                                                        {MODE_BADGES[status.current_slot_plan.mode_intent].label}
+                                                    </span>
+                                                </div>
+                                            )}
                                         {status.current_slot_plan.charge_kw > 0 && (
                                             <div className="flex items-center gap-1 text-good">
                                                 <BatteryCharging className="h-3 w-3" />
@@ -1138,8 +1144,11 @@ export default function Executor() {
                                             </span>
                                             {/* Primary mode badge from commanded_work_mode */}
                                             {record.commanded_work_mode && MODE_BADGES[record.commanded_work_mode] && (
-                                                <span className={`text-[9px] px-1.5 py-0.5 rounded ${MODE_BADGES[record.commanded_work_mode].className}`}>
-                                                    {MODE_BADGES[record.commanded_work_mode].emoji} {MODE_BADGES[record.commanded_work_mode].label}
+                                                <span
+                                                    className={`text-[9px] px-1.5 py-0.5 rounded ${MODE_BADGES[record.commanded_work_mode].className}`}
+                                                >
+                                                    {MODE_BADGES[record.commanded_work_mode].emoji}{' '}
+                                                    {MODE_BADGES[record.commanded_work_mode].label}
                                                 </span>
                                             )}
                                             {/* Context badges */}

@@ -1279,3 +1279,264 @@ class TestLoadIsolationFromDeferrableLoads:
                     assert record["ev_charging_kwh"] == pytest.approx(1.0, abs=0.01)
                     assert record["water_kwh"] == pytest.approx(0.25, abs=0.01)
                     assert record["load_kwh"] == pytest.approx(0.5, abs=0.01)
+
+    @pytest.mark.asyncio
+    async def test_ev_energy_sensor_cumulative_delta(self, base_config):
+        """Spec: EV charger with energy_sensor uses cumulative delta, not power snapshot."""
+        config = base_config.copy()
+        config["ev_chargers"] = [
+            {
+                "id": "ev1",
+                "sensor": "sensor.ev_power",
+                "energy_sensor": "sensor.ev_energy",
+                "enabled": True,
+            }
+        ]
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_file = Path(tmpdir) / "recorder_state.json"
+            state_store = RecorderStateStore(state_file)
+            state_store.load()
+            now = datetime.now(pytz.timezone("Europe/Stockholm"))
+            prev_time = now - timedelta(minutes=15)
+            state_store._state = {
+                "pv_total": {"value": 100.0, "timestamp": prev_time.isoformat()},
+                "load_total": {"value": 50.0, "timestamp": prev_time.isoformat()},
+                "ev_energy_ev1": {"value": 120.5, "timestamp": prev_time.isoformat()},
+            }
+            state_store.save()
+
+            async def mock_get_ha_sensor_kw_normalized(entity):
+                return {
+                    "sensor.pv_power": 5.0,
+                    "sensor.load_power": 7.0,
+                    "sensor.grid_power": 2.0,
+                    "sensor.battery_power": 0.0,
+                    "sensor.water_power": 0.0,
+                    "sensor.ev_power": 4.0,
+                }.get(entity, 0.0)
+
+            async def mock_get_ha_sensor_float(entity):
+                if entity == "sensor.battery_soc":
+                    return 50.0
+                return None
+
+            async def mock_get_ha_entity_state(entity):
+                return {
+                    "sensor.total_pv_production": {
+                        "state": "101.25",
+                        "attributes": {"unit_of_measurement": "kWh"},
+                        "last_updated": now.isoformat(),
+                    },
+                    "sensor.total_load_consumption": {
+                        "state": "53.0",
+                        "attributes": {"unit_of_measurement": "kWh"},
+                        "last_updated": now.isoformat(),
+                    },
+                    "sensor.ev_energy": {
+                        "state": "121.5",
+                        "attributes": {"unit_of_measurement": "kWh"},
+                        "last_updated": now.isoformat(),
+                    },
+                }.get(entity)
+
+            with (
+                patch(
+                    "backend.recorder.get_ha_sensor_kw_normalized",
+                    side_effect=mock_get_ha_sensor_kw_normalized,
+                ),
+                patch("backend.recorder.get_ha_sensor_float", side_effect=mock_get_ha_sensor_float),
+                patch("backend.recorder.get_ha_entity_state", side_effect=mock_get_ha_entity_state),
+                patch("backend.recorder.get_current_slot_prices", return_value=None),
+            ):
+                mock_store = MagicMock()
+                mock_store.get_system_state = AsyncMock(return_value=None)
+                mock_store.set_system_state = AsyncMock()
+                mock_store.store_slot_observations = AsyncMock()
+                mock_store.close = AsyncMock()
+
+                with patch("backend.recorder.LearningStore", return_value=mock_store):
+                    await record_observation_from_current_state(
+                        config=config, state_store=state_store
+                    )
+
+                    df = mock_store.store_slot_observations.call_args[0][0]
+                    record = df.iloc[0].to_dict()
+
+                    # Delta: 121.5 - 120.5 = 1.0 kWh
+                    assert record["ev_charging_kwh"] == pytest.approx(1.0, abs=0.01)
+                    # Total load 3.0 - EV 1.0 = 2.0 kWh
+                    assert record["load_kwh"] == pytest.approx(2.0, abs=0.01)
+
+    @pytest.mark.asyncio
+    async def test_water_energy_sensor_cumulative_delta(self, base_config):
+        """Spec: Water heater with energy_sensor uses cumulative delta, not power snapshot."""
+        config = base_config.copy()
+        config["water_heaters"] = [
+            {
+                "id": "wh1",
+                "sensor": "sensor.water_power",
+                "energy_sensor": "sensor.water_energy",
+                "enabled": True,
+            }
+        ]
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_file = Path(tmpdir) / "recorder_state.json"
+            state_store = RecorderStateStore(state_file)
+            state_store.load()
+            now = datetime.now(pytz.timezone("Europe/Stockholm"))
+            prev_time = now - timedelta(minutes=15)
+            state_store._state = {
+                "pv_total": {"value": 100.0, "timestamp": prev_time.isoformat()},
+                "load_total": {"value": 50.0, "timestamp": prev_time.isoformat()},
+                "water_energy_wh1": {"value": 50.0, "timestamp": prev_time.isoformat()},
+            }
+            state_store.save()
+
+            async def mock_get_ha_sensor_kw_normalized(entity):
+                return {
+                    "sensor.pv_power": 5.0,
+                    "sensor.load_power": 5.0,
+                    "sensor.grid_power": 2.0,
+                    "sensor.battery_power": 0.0,
+                    "sensor.water_power": 3.0,
+                }.get(entity, 0.0)
+
+            async def mock_get_ha_sensor_float(entity):
+                if entity == "sensor.battery_soc":
+                    return 50.0
+                return None
+
+            async def mock_get_ha_entity_state(entity):
+                return {
+                    "sensor.total_pv_production": {
+                        "state": "101.25",
+                        "attributes": {"unit_of_measurement": "kWh"},
+                        "last_updated": now.isoformat(),
+                    },
+                    "sensor.total_load_consumption": {
+                        "state": "52.0",
+                        "attributes": {"unit_of_measurement": "kWh"},
+                        "last_updated": now.isoformat(),
+                    },
+                    "sensor.water_energy": {
+                        "state": "50.75",
+                        "attributes": {"unit_of_measurement": "kWh"},
+                        "last_updated": now.isoformat(),
+                    },
+                }.get(entity)
+
+            with (
+                patch(
+                    "backend.recorder.get_ha_sensor_kw_normalized",
+                    side_effect=mock_get_ha_sensor_kw_normalized,
+                ),
+                patch("backend.recorder.get_ha_sensor_float", side_effect=mock_get_ha_sensor_float),
+                patch("backend.recorder.get_ha_entity_state", side_effect=mock_get_ha_entity_state),
+                patch("backend.recorder.get_current_slot_prices", return_value=None),
+            ):
+                mock_store = MagicMock()
+                mock_store.get_system_state = AsyncMock(return_value=None)
+                mock_store.set_system_state = AsyncMock()
+                mock_store.store_slot_observations = AsyncMock()
+                mock_store.close = AsyncMock()
+
+                with patch("backend.recorder.LearningStore", return_value=mock_store):
+                    await record_observation_from_current_state(
+                        config=config, state_store=state_store
+                    )
+
+                    df = mock_store.store_slot_observations.call_args[0][0]
+                    record = df.iloc[0].to_dict()
+
+                    # Delta: 50.75 - 50.0 = 0.75 kWh
+                    assert record["water_kwh"] == pytest.approx(0.75, abs=0.01)
+                    # Total load 2.0 - water 0.75 = 1.25 kWh
+                    assert record["load_kwh"] == pytest.approx(1.25, abs=0.01)
+
+    @pytest.mark.asyncio
+    async def test_energy_sensor_fallback_to_snapshot_when_no_prior_state(self, base_config):
+        """Spec: EV charger with energy_sensor falls back to power snapshot on first run."""
+        config = base_config.copy()
+        config["ev_chargers"] = [
+            {
+                "id": "ev1",
+                "sensor": "sensor.ev_power",
+                "energy_sensor": "sensor.ev_energy",
+                "enabled": True,
+            }
+        ]
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_file = Path(tmpdir) / "recorder_state.json"
+            state_store = RecorderStateStore(state_file)
+            state_store.load()
+            now = datetime.now(pytz.timezone("Europe/Stockholm"))
+            prev_time = now - timedelta(minutes=15)
+            # No ev_energy_ev1 in state (first run)
+            state_store._state = {
+                "pv_total": {"value": 100.0, "timestamp": prev_time.isoformat()},
+                "load_total": {"value": 50.0, "timestamp": prev_time.isoformat()},
+            }
+            state_store.save()
+
+            async def mock_get_ha_sensor_kw_normalized(entity):
+                return {
+                    "sensor.pv_power": 5.0,
+                    "sensor.load_power": 7.0,
+                    "sensor.grid_power": 2.0,
+                    "sensor.battery_power": 0.0,
+                    "sensor.water_power": 0.0,
+                    "sensor.ev_power": 4.0,
+                }.get(entity, 0.0)
+
+            async def mock_get_ha_sensor_float(entity):
+                if entity == "sensor.battery_soc":
+                    return 50.0
+                return None
+
+            async def mock_get_ha_entity_state(entity):
+                return {
+                    "sensor.total_pv_production": {
+                        "state": "101.25",
+                        "attributes": {"unit_of_measurement": "kWh"},
+                        "last_updated": now.isoformat(),
+                    },
+                    "sensor.total_load_consumption": {
+                        "state": "53.0",
+                        "attributes": {"unit_of_measurement": "kWh"},
+                        "last_updated": now.isoformat(),
+                    },
+                    "sensor.ev_energy": {
+                        "state": "121.5",
+                        "attributes": {"unit_of_measurement": "kWh"},
+                        "last_updated": now.isoformat(),
+                    },
+                }.get(entity)
+
+            with (
+                patch(
+                    "backend.recorder.get_ha_sensor_kw_normalized",
+                    side_effect=mock_get_ha_sensor_kw_normalized,
+                ),
+                patch("backend.recorder.get_ha_sensor_float", side_effect=mock_get_ha_sensor_float),
+                patch("backend.recorder.get_ha_entity_state", side_effect=mock_get_ha_entity_state),
+                patch("backend.recorder.get_current_slot_prices", return_value=None),
+            ):
+                mock_store = MagicMock()
+                mock_store.get_system_state = AsyncMock(return_value=None)
+                mock_store.set_system_state = AsyncMock()
+                mock_store.store_slot_observations = AsyncMock()
+                mock_store.close = AsyncMock()
+
+                with patch("backend.recorder.LearningStore", return_value=mock_store):
+                    await record_observation_from_current_state(
+                        config=config, state_store=state_store
+                    )
+
+                    df = mock_store.store_slot_observations.call_args[0][0]
+                    record = df.iloc[0].to_dict()
+
+                    # Fallback: 4.0 kW * 0.25h = 1.0 kWh
+                    assert record["ev_charging_kwh"] == pytest.approx(1.0, abs=0.01)
