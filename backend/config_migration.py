@@ -1,4 +1,11 @@
+"""Config migration module.
+
+Startup validation and migration: deprecated-key sweep, template merge, atomic write with backup.
+"""
+
 import contextlib
+import errno
+import io
 import logging
 import os
 import shutil
@@ -20,20 +27,7 @@ HOST_BACKUP_DIR = Path("/host_backups")
 
 
 def _get_persistent_backup_dir(config_path: Path) -> Path:
-    """Determine the persistent backup directory for the current environment.
-
-    Priority:
-    1. /share/darkstar/backups (HA add-on persistent storage)
-    2. /host_backups (bind-mounted from host - persistent in container)
-    3. BACKUP_DIR environment variable (custom location)
-    4. ./backups relative to config path (ephemeral fallback for standalone)
-
-    Args:
-        config_path: Path to the config file being backed up
-
-    Returns:
-        Path to the backup directory to use
-    """
+    """Return the backup directory to use for the given config path."""
     # Detect HA add-on deployment: config lives at /config/darkstar/
     if str(config_path).startswith("/config/darkstar/"):
         ha_backup_dir = Path("/share/darkstar/backups")
@@ -77,17 +71,17 @@ MigrationStep = Callable[[dict[str, Any]], tuple[dict[str, Any], bool]]
 
 # Root-level deprecated keys
 DEPRECATED_KEYS = {
-    "deferrable_loads",  # ARC15: Replaced by water_heaters[] and ev_chargers[]
-    "ev_charger",  # ARC15: Replaced by ev_chargers[] array (plural)
+    "deferrable_loads",  # Replaced by water_heaters[] and ev_chargers[]
+    "ev_charger",  # Replaced by ev_chargers[] array (plural)
     "solar_array",  # Replaced by solar_arrays[] array (plural)
     "version",  # Replaced by config_version
-    "schedule_future_only",  # REV F19: Removed
+    "schedule_future_only",  # Removed
 }
 
 # Nested deprecated keys (path.to.key format)
 DEPRECATED_NESTED_KEYS = {
     "executor.inverter": [
-        # IP4: Old _entity suffix keys replaced by standardized names
+        # Old _entity suffix keys replaced by standardized names
         "work_mode_entity",
         "soc_target_entity",
         "grid_charging_entity",
@@ -100,11 +94,11 @@ DEPRECATED_NESTED_KEYS = {
         "minimum_reserve_entity",
     ],
     "system": [
-        # ARC14: Replaced by solar_arrays[] array (plural)
+        # Replaced by solar_arrays[] array (plural)
         "solar_array",
     ],
     "water_heating": [
-        # F66b: These keys should be in water_heaters[] array items, not flat under water_heating
+        # These keys should be in water_heaters[] array items, not flat under water_heating
         "power_kw",
         "min_kwh_per_day",
         "target_temp_c",
@@ -119,7 +113,7 @@ DEPRECATED_NESTED_KEYS = {
 def remove_deprecated_keys(config: dict[str, Any]) -> tuple[dict[str, Any], bool]:
     """Remove all deprecated keys from config.
 
-    REV F57: Centralized cleanup to prevent corrupted configs with legacy keys.
+    Centralized cleanup to prevent corrupted configs with legacy keys.
 
     Args:
         config: Configuration dict to clean
@@ -155,606 +149,6 @@ def remove_deprecated_keys(config: dict[str, Any]) -> tuple[dict[str, Any], bool
                         del obj[key]
                         logger.info(f"✂️  Removed deprecated key: '{path}.{key}'")
                         changed = True
-
-    return config, changed
-
-
-def heal_orphaned_array_keys(config: dict[str, Any]) -> tuple[dict[str, Any], bool]:
-    """Heal keys that ended up at wrong indentation levels after merge.
-
-    REV F66b: Fixes malformed YAML where keys like `name:` appear between
-    array sections and nested sections (e.g., after solar_arrays[] but before battery).
-
-    Common patterns:
-    - `name: Main Array` appearing after solar_arrays[] closing bracket
-    - `power_kw`, `min_kwh_per_day` appearing under water_heating instead of water_heaters[]
-
-    Args:
-        config: Configuration dict
-
-    Returns:
-        Tuple of (healed_config, changed_flag)
-    """
-    changed = False
-
-    # Pattern 1: Fix solar_arrays[].name appearing at root level
-    # If there's a 'name' key at root that looks like a solar array name, move it
-    if "name" in config and "solar_arrays" in config:
-        name_val: Any = config.get("name")
-        if isinstance(name_val, str) and name_val in ["Main Array", "Secondary Array"]:
-            solar_arrays: list[Any] = config.get("solar_arrays", [])
-            if solar_arrays and len(solar_arrays) > 0:
-                first_array: dict[str, Any] = solar_arrays[0]
-                if "name" not in first_array:
-                    first_array["name"] = name_val
-                    del config["name"]
-                    logger.info(f"Healed orphaned 'name' into solar_arrays[0]: {name_val}")
-                    changed = True
-
-    # Pattern 2: Fix water_heating flat keys that should be in water_heaters[]
-    water_heating: dict[str, Any] = config.get("water_heating", {})
-    if water_heating:
-        water_heater_keys = [
-            "power_kw",
-            "min_kwh_per_day",
-            "target_temp_c",
-            "heating_element_entity",
-            "temperature_sensor_entity",
-            "daily_consumption_entity",
-            "max_price_per_kwh",
-        ]
-
-        orphaned_keys = [k for k in water_heater_keys if k in water_heating]
-
-        if orphaned_keys:
-            water_heaters: list[Any] = config.get("water_heaters", [])
-            if water_heaters and len(water_heaters) > 0:
-                first_heater: dict[str, Any] = water_heaters[0]
-                for key in orphaned_keys:
-                    val: Any = water_heating.pop(key)
-                    if key not in first_heater:
-                        first_heater[key] = val
-                        logger.info(
-                            f"Healed orphaned key '{key}' from water_heating to water_heaters[0]"
-                        )
-                        changed = True
-
-    return config, changed
-
-
-def migrate_version_key(config: dict[str, Any]) -> tuple[dict[str, Any], bool]:
-    """Migration: Rename 'version' to 'config_version'.
-
-    REV F57: Old configs used 'version' (string like "2.4.21-beta").
-    New configs use 'config_version' (integer like 2 for format tracking).
-
-    Args:
-        config: Configuration dict
-
-    Returns:
-        Tuple of (migrated_config, changed_flag)
-    """
-    changed = False
-
-    if "version" in config:
-        old_version = config.pop("version")
-
-        # Only set config_version if not already present
-        if "config_version" not in config:
-            config["config_version"] = 2  # Current format version
-            logger.info(f"📝 Migrated 'version' ({old_version}) -> 'config_version' (2)")
-            changed = True
-        else:
-            logger.info(
-                f"📝 Removed old 'version' key ({old_version}), 'config_version' already set"
-            )
-            changed = True
-
-    return config, changed
-
-
-def migrate_battery_config(config: dict[str, Any]) -> tuple[dict[str, Any], bool]:
-    """
-    Migration for REV F17: Unify Battery & Control Configuration.
-    Moves hardware limits from executor.controller to root battery section.
-    """
-    changed = False
-
-    # Target section
-    if "battery" not in config:
-        config["battery"] = {}
-    battery: dict[str, Any] = config.get("battery", {})
-
-    # Source section
-    executor: dict[str, Any] = config.get("executor", {})
-    controller: dict[str, Any] = executor.get("controller", {})
-
-    if not controller:
-        return config, False
-
-    # Mapping of (Legacy Key, New Key)
-    mapping = {
-        "battery_capacity_kwh": "capacity_kwh",
-        "system_voltage_v": "nominal_voltage_v",
-        "worst_case_voltage_v": "min_voltage_v",
-        "max_charge_a": "max_charge_a",
-        "max_discharge_a": "max_discharge_a",
-        "max_charge_w": "max_charge_w",
-        "max_discharge_w": "max_discharge_w",
-    }
-
-    for legacy_key, new_key in mapping.items():
-        if legacy_key in controller:
-            val = controller.pop(legacy_key)
-
-            # Only set if not already present in target (preserve existing battery settings)
-            if new_key not in battery:
-                battery[new_key] = val
-                logger.info(f"Migrated {legacy_key} -> battery.{new_key}")
-                changed = True
-            else:
-                logger.info(f"Removed legacy {legacy_key} (already exists in battery.{new_key})")
-                changed = True
-
-    return config, changed
-
-
-def cleanup_obsolete_keys(config: dict[str, Any]) -> tuple[dict[str, Any], bool]:
-    """
-    Migration for REV F19: Cleanup obsolete keys and move end_date.
-    Matches the actual observed nesting in config.yaml.
-    """
-    changed = False
-
-    # 1. Remove schedule_future_only (could be at root or under water_heating)
-    if "schedule_future_only" in config:
-        config.pop("schedule_future_only")
-        logger.info("Removed root level obsolete key: schedule_future_only")
-        changed = True
-
-    wh_check: dict[str, Any] = config.get("water_heating", {})
-    if wh_check and "schedule_future_only" in wh_check:
-        wh_check.pop("schedule_future_only")
-        logger.info("Removed water_heating level obsolete key: schedule_future_only")
-        changed = True
-
-    # 2. Re-anchor end_date if it is "leaking" past comments
-    end_date_val: Any = None
-    source_parent: str | None = None
-
-    if "end_date" in config:
-        end_date_val = config.pop("end_date")
-        source_parent = "root"
-    elif wh_check:
-        wh: dict[str, Any] = wh_check
-        if "end_date" in wh:
-            end_date_val = wh.pop("end_date")
-            source_parent = "water_heating"
-        elif "vacation_mode" in wh:
-            vm: dict[str, Any] = wh.get("vacation_mode", {})
-            if vm and "end_date" in vm:
-                end_date_val = vm.pop("end_date")
-                source_parent = "vacation_mode"
-
-    if end_date_val is not None:
-        if "water_heating" not in config:
-            config["water_heating"] = {}
-        if "vacation_mode" not in config["water_heating"]:
-            config["water_heating"]["vacation_mode"] = {}
-
-        config["water_heating"]["vacation_mode"]["end_date"] = end_date_val
-        logger.info(f"Re-aligned end_date to vacation_mode from {source_parent}")
-        changed = True
-
-    return config, changed
-
-
-def migrate_soc_target_entity(config: dict[str, Any]) -> tuple[dict[str, Any], bool]:
-    """
-    Migration for soc_target_entity: Move from root executor to executor.inverter.
-    """
-    changed = False
-
-    if "executor" not in config:
-        return config, False
-
-    executor = config["executor"]
-
-    # Check for legacy key
-    if "soc_target_entity" in executor:
-        legacy_val = executor.pop("soc_target_entity")
-
-        # Ensure target section exists
-        if "inverter" not in executor:
-            executor["inverter"] = {}
-
-        inverter = executor["inverter"]
-
-        # Only set if not already present (prefer existing new config)
-        if "soc_target_entity" not in inverter:
-            inverter["soc_target_entity"] = legacy_val
-            logger.info(
-                "Migrated executor.soc_target_entity -> executor.inverter.soc_target_entity"
-            )
-            changed = True
-        else:
-            logger.info("Removed legacy executor.soc_target_entity (already exists in inverter)")
-            changed = True
-
-    return config, changed
-
-
-def migrate_solar_arrays(config: dict[str, Any]) -> tuple[dict[str, Any], bool]:
-    """
-    Migration for REV ARC14: Multi-Array PV Support.
-    Converts legacy 'solar_array' object to 'solar_arrays' list.
-    """
-    changed = False
-
-    if "system" not in config:
-        return config, False
-
-    system: dict[str, Any] = config.get("system", {})
-
-    if "solar_array" in system:
-        legacy_array_raw: Any = system.pop("solar_array")
-        if isinstance(legacy_array_raw, dict):
-            legacy_array: dict[str, Any] = cast("dict[str, Any]", legacy_array_raw)
-            # Ensure name is present for migrated array
-            if "name" not in legacy_array:
-                legacy_array["name"] = "Main Array"
-
-            # Check for duplicate name before appending
-            existing_arrays_raw: Any = system.get("solar_arrays", [])
-            existing_arrays: list[dict[str, Any]] = (
-                cast("list[dict[str, Any]]", existing_arrays_raw)
-                if isinstance(existing_arrays_raw, list)
-                else []
-            )
-            existing_names: set[str] = {
-                str(arr.get("name")) for arr in existing_arrays if arr.get("name")
-            }
-            legacy_name_raw: Any = legacy_array.get("name", "Main Array")
-            legacy_name: str = str(legacy_name_raw)
-            if legacy_name in existing_names:
-                logger.warning(
-                    "Skipping legacy solar_array migration: name '%s' already exists",
-                    legacy_name,
-                )
-            else:
-                # Append instead of overwrite to preserve user arrays
-                solar_arrays_list_raw: Any = system.get("solar_arrays", [])
-                solar_arrays_list: list[dict[str, Any]] = (
-                    cast("list[dict[str, Any]]", solar_arrays_list_raw)
-                    if isinstance(solar_arrays_list_raw, list)
-                    else []
-                )
-                if "solar_arrays" not in system:
-                    system["solar_arrays"] = []
-                    solar_arrays_list = cast("list[dict[str, Any]]", system["solar_arrays"])
-                solar_arrays_list.append(legacy_array)
-                logger.info(
-                    "Migrated system.solar_array -> appended to system.solar_arrays "
-                    "(total arrays: %d)",
-                    len(solar_arrays_list),
-                )
-                changed = True
-        else:
-            logger.warning("Found legacy system.solar_array but it was not a dict.")
-
-    # REV F57: Verify solar_array is actually gone
-    if "solar_array" in system:
-        logger.warning("⚠️  'solar_array' still present after migration - forcing delete")
-        del system["solar_array"]
-        changed = True
-
-    return config, changed
-
-
-def migrate_inverter_profile_keys(config: dict[str, Any]) -> tuple[dict[str, Any], bool]:
-    """
-    Migration for REV IP4: Standardize Inverter Profile Keys.
-    Removes `_entity` suffixes to match new profile schema.
-    """
-    changed = False
-
-    if "executor" not in config:
-        return config, False
-
-    executor = config["executor"]
-    if "inverter" not in executor:
-        return config, False
-
-    inverter = executor["inverter"]
-
-    mapping = {
-        "work_mode_entity": "work_mode",
-        "soc_target_entity": "soc_target",
-        "grid_charging_entity": "grid_charging_enable",
-        "max_charging_current_entity": "max_charge_current",
-        "max_discharging_current_entity": "max_discharge_current",
-        "max_charging_power_entity": "max_charge_power",
-        "max_discharging_power_entity": "max_discharge_power",
-        "grid_max_export_power_entity": "grid_max_export_power",
-        "grid_charge_power_entity": "grid_charge_power",
-        "minimum_reserve_entity": "minimum_reserve",
-    }
-
-    for legacy, new in mapping.items():
-        if legacy in inverter:
-            val = inverter.pop(legacy)
-            if new not in inverter:
-                inverter[new] = val
-                logger.info(f"Migrated executor.inverter.{legacy} -> {new}")
-                changed = True
-            else:
-                logger.info(f"Removed legacy executor.inverter.{legacy} (already exists as {new})")
-                changed = True
-
-    return config, changed
-
-
-def migrate_root_inverter_profile(config: dict[str, Any]) -> tuple[dict[str, Any], bool]:
-    """
-    Migration for REV F68: Move inverter_profile from root level to system.inverter_profile.
-
-    Some older configs have inverter_profile at root level instead of under system.
-    This migration ensures it's in the correct location before merge.
-    """
-    changed = False
-
-    # Check if inverter_profile exists at root level
-    if "inverter_profile" in config:
-        root_profile = config.pop("inverter_profile")
-        logger.info(f"Migrated 'inverter_profile' from root to system (value: {root_profile})")
-
-        # Ensure system exists
-        if "system" not in config:
-            config["system"] = {}
-
-        # Only set if not already present (preserve user value if already in system)
-        if "inverter_profile" not in config["system"]:
-            config["system"]["inverter_profile"] = root_profile
-            changed = True
-        else:
-            logger.info("system.inverter_profile already exists, keeping existing value")
-            # Restore root level one since we popped it
-            config["inverter_profile"] = root_profile
-
-    return config, changed
-
-
-def migrate_arc15_entity_config(config: dict[str, Any]) -> tuple[dict[str, Any], bool]:
-    """
-    Migration for REV ARC15: Entity-Centric Config Restructure.
-
-    Converts old deferrable_loads array to new water_heaters[] and ev_chargers[] arrays.
-    This provides a single source of truth for each entity type and eliminates
-    duplication between system toggles, input_sensors, and deferrable_loads.
-
-    Migration rules:
-    - deferrable_loads with id="water_heater" -> water_heaters[]
-    - deferrable_loads with id="ev_charger" or type="ev" -> ev_chargers[]
-    - Preserves all settings and maps sensors appropriately
-    - Sets config_version to 2
-    """
-    changed = False
-
-    # Check if already migrated (config_version >= 2 or new arrays exist)
-    current_version = config.get("config_version", 1)
-    if current_version >= 2:
-        logger.debug("Config already at version %d, skipping ARC15 migration", current_version)
-        return config, False
-
-    if "water_heaters" in config and "ev_chargers" in config:
-        logger.debug("New entity arrays already exist, marking as migrated")
-        config["config_version"] = 2
-        return config, True
-
-    deferrable_loads = config.get("deferrable_loads", [])
-    if not deferrable_loads:
-        logger.debug("No deferrable_loads to migrate")
-        # Still mark as migrated if we have the new arrays or nothing to migrate
-        if "water_heaters" in config or "ev_chargers" in config:
-            config["config_version"] = 2
-            changed = True
-        return config, changed
-
-    input_sensors = config.get("input_sensors", {})
-    water_heating = config.get("water_heating", {})
-    ev_charger: dict[str, Any] = config.get("ev_charger", {})
-    system: dict[str, Any] = config.get("system", {})
-
-    # Initialize new arrays if they don't exist
-    if "water_heaters" not in config:
-        config["water_heaters"] = []
-    if "ev_chargers" not in config:
-        config["ev_chargers"] = []
-
-    water_heaters: list[dict[str, Any]] = config.get("water_heaters", [])
-    ev_chargers: list[dict[str, Any]] = config.get("ev_chargers", [])
-
-    # Track existing IDs to avoid duplicates
-    existing_water_ids: set[Any] = {wh.get("id") for wh in water_heaters if wh.get("id")}
-    existing_ev_ids: set[Any] = {ev.get("id") for ev in ev_chargers if ev.get("id")}
-
-    for load in deferrable_loads:
-        load_id = load.get("id", "")
-        load_type = load.get("type", "").lower()
-
-        if load_id == "water_heater" or load_type == "binary":
-            # Migrate to water_heaters
-            if "main_tank" in existing_water_ids:
-                logger.debug("Water heater 'main_tank' already exists, skipping")
-                continue
-
-            has_water = system.get("has_water_heater", False)
-            sensor_key = load.get("sensor_key", "water_power")
-            sensor_entity = input_sensors.get(sensor_key, f"sensor.{sensor_key}")
-
-            water_heater = {
-                "id": "main_tank",
-                "name": load.get("name", "Main Water Heater"),
-                "enabled": has_water,
-                "power_kw": load.get("nominal_power_kw", 3.0),
-                "min_kwh_per_day": water_heating.get("min_kwh_per_day", 6.0),
-                "max_hours_between_heating": water_heating.get("max_hours_between_heating", 8),
-                "water_min_spacing_hours": water_heating.get("min_spacing_hours", 4),
-                "sensor": sensor_entity,
-                "type": load_type or "binary",
-                "nominal_power_kw": load.get("nominal_power_kw", 3.0),
-            }
-
-            water_heaters.append(water_heater)
-            existing_water_ids.add("main_tank")
-            logger.info(
-                "Migrated water heater from deferrable_loads: id=%s, enabled=%s, power=%.1fkW",
-                water_heater["id"],
-                water_heater["enabled"],
-                water_heater["power_kw"],
-            )
-            changed = True
-
-        elif load_id in ["ev_charger", "ev"] or load_type == "variable":
-            # Migrate to ev_chargers
-            # If existing ev_chargers entries exist (with any ID), populate their sensors
-            if existing_ev_ids:
-                for ev in ev_chargers:
-                    if not ev.get("soc_sensor"):
-                        ev["soc_sensor"] = input_sensors.get("ev_soc", "")
-                        logger.info("Populated soc_sensor for existing EV entry: %s", ev.get("id"))
-                        changed = True
-                    if not ev.get("plug_sensor"):
-                        ev["plug_sensor"] = input_sensors.get("ev_plug", "")
-                        logger.info("Populated plug_sensor for existing EV entry: %s", ev.get("id"))
-                        changed = True
-                continue
-
-            if "main_ev" in existing_ev_ids:
-                logger.debug("EV charger 'main_ev' already exists, skipping")
-                continue
-
-            has_ev = system.get("has_ev_charger", False)
-            sensor_key = load.get("sensor_key", "ev_power")
-            sensor_entity = input_sensors.get(sensor_key, f"sensor.{sensor_key}")
-
-            ev_entry = {
-                "id": "main_ev",
-                "name": load.get("name", "EV Charger"),
-                "enabled": has_ev,
-                "max_power_kw": load.get("nominal_power_kw", 7.4),
-                "battery_capacity_kwh": ev_charger.get("battery_capacity_kwh", 77.0),
-                "sensor": sensor_entity,
-                "soc_sensor": input_sensors.get("ev_soc", ""),
-                "plug_sensor": input_sensors.get("ev_plug", ""),
-                "type": load_type or "variable",
-                "nominal_power_kw": load.get("nominal_power_kw", 7.4),
-            }
-
-            ev_chargers.append(ev_entry)
-            existing_ev_ids.add("main_ev")
-            logger.info(
-                "Migrated EV charger from deferrable_loads: id=%s, enabled=%s, power=%.1fkW, capacity=%.1fkWh",
-                ev_entry["id"],
-                ev_entry["enabled"],
-                ev_entry["max_power_kw"],
-                ev_entry["battery_capacity_kwh"],
-            )
-            changed = True
-        else:
-            logger.warning("Unknown deferrable_load type: id=%s, type=%s", load_id, load_type)
-
-    # REV F57: ACTUALLY DELETE deprecated keys (not just log intent)
-    if "deferrable_loads" in config:
-        del config["deferrable_loads"]
-        logger.info("✂️  Deleted deprecated 'deferrable_loads' array")
-        changed = True
-
-    if "ev_charger" in config:
-        del config["ev_charger"]
-        logger.info("✂️  Deleted deprecated 'ev_charger' section")
-        changed = True
-
-    # REV F63: Delete migrated EV sensors from input_sensors (now in ev_chargers[])
-    if isinstance(input_sensors, dict):
-        for key in ["ev_soc", "ev_plug", "ev_power"]:
-            if key in input_sensors:
-                del input_sensors[key]
-                logger.info(f"✂️  Deleted migrated EV sensor from input_sensors: {key}")
-                changed = True
-
-    # Update config version
-    if changed or water_heaters or ev_chargers:
-        config["config_version"] = 2
-        logger.info("Set config_version to 2 (ARC15 migration)")
-        changed = True
-
-    return config, changed
-
-
-def cleanup_water_heating_duplicates(config: dict[str, Any]) -> tuple[dict[str, Any], bool]:
-    """
-    Cleanup: Remove duplicate keys from water_heating that now exist in water_heaters[].
-
-    These keys are per-device settings and should not be duplicated in the global section:
-    - power_kw (now in water_heaters[].power_kw)
-    - min_kwh_per_day (now in water_heaters[].min_kwh_per_day)
-    - max_hours_between_heating (now in water_heaters[].max_hours_between_heating)
-    - min_spacing_hours (different name in array: water_min_spacing_hours)
-    """
-    changed = False
-
-    # Only cleanup if new array format exists
-    if "water_heaters" not in config or not config.get("water_heaters", []):
-        return config, changed
-
-    water_heating = config.get("water_heating", {})
-    if not water_heating:
-        return config, changed
-
-    # Keys to remove (they're now per-device in water_heaters[])
-    duplicate_keys = [
-        "power_kw",
-        "min_kwh_per_day",
-        "max_hours_between_heating",
-        "min_spacing_hours",
-    ]
-
-    for key in duplicate_keys:
-        if key in water_heating:
-            water_heating.pop(key)
-            logger.info(f"Removed duplicate key from water_heating: {key}")
-            changed = True
-
-    return config, changed
-
-
-def fix_s_index_horizon_days_type(config: dict[str, Any]) -> tuple[dict[str, Any], bool]:
-    """Fix s_index_horizon_days type from string to integer.
-
-    REV F66b: Fixes configs where s_index_horizon_days was saved as string '4' instead of integer 4.
-
-    Args:
-        config: Configuration dict
-
-    Returns:
-        Tuple of (modified_config, changed_flag)
-    """
-    changed = False
-
-    s_index: dict[str, Any] = config.get("s_index", {})
-    if not s_index:
-        s_index = {}
-        config["s_index"] = s_index
-
-    horizon: Any = s_index.get("s_index_horizon_days")
-    if horizon is not None and not isinstance(horizon, int):
-        try:
-            s_index["s_index_horizon_days"] = int(horizon)
-            logger.info(f"Fixed s_index_horizon_days type: {horizon!r} -> {int(horizon)}")
-            changed = True
-        except (ValueError, TypeError):
-            logger.warning(f"Could not convert s_index_horizon_days: {horizon!r}")
 
     return config, changed
 
@@ -814,7 +208,7 @@ def _validate_config_structure(config: dict[str, Any], strict: bool = True) -> b
 def validate_config_for_write(config: dict[str, Any], strict: bool = True) -> bool:
     """Enhanced validation before writing config to disk.
 
-    REV F57: Ensures no deprecated keys survive and structure is intact.
+    Ensures no deprecated keys survive and structure is intact.
 
     Args:
         config: The configuration dict to validate
@@ -832,7 +226,7 @@ def validate_config_for_write(config: dict[str, Any], strict: bool = True) -> bo
                 logger.error(f"❌ Validation failed: Deprecated key '{key}' still present")
                 return False
 
-        # Check nested deprecated keys (REV F62: Critical for solar_array cleanup)
+        # Check nested deprecated keys
         for path, keys in DEPRECATED_NESTED_KEYS.items():
             parts = path.split(".")
             obj = config
@@ -886,7 +280,7 @@ def template_aware_merge(default_cfg: dict[str, Any], user_cfg: dict[str, Any]) 
     Appends extra keys from user_cfg (recursively).
     Modifies default_cfg IN PLACE.
 
-    REV F66: Fixed array handling - merge arrays by unique ID instead of overwriting.
+    Fixed array handling - merge arrays by unique ID instead of overwriting.
     """
 
     ARRAY_UNIQUE_KEYS = {
@@ -984,8 +378,7 @@ def _extract_critical_values(config: dict[str, Any]) -> dict[str, Any]:
     system: dict[str, Any] = config.get("system", {})
     inverter_profile = system.get("inverter_profile")
 
-    # REV F66: Also check root level for misplaced inverter_profile
-    # This handles configs where user put inverter_profile at root instead of under system
+    # Also check root level for misplaced inverter_profile
     if inverter_profile is None and "inverter_profile" in config:
         inverter_profile = config.get("inverter_profile")
         if inverter_profile:
@@ -1043,100 +436,13 @@ def _validate_critical_values_preserved(before: dict[str, Any], after: dict[str,
     return True
 
 
-def migrate_inverter_custom_entities(config: dict[str, Any]) -> tuple[dict[str, Any], bool]:
-    """
-    Migration for REV F69: Move profile-specific entity keys to custom_entities.
-
-    Profile-specific keys (ems_mode, forced_charge_discharge_cmd) should live in
-    executor.inverter.custom_entities, not directly in executor.inverter.
-
-    Also handles the case where STANDARD_ENTITY_KEYS (like max_discharge_power)
-    are used in set_entities but entity_id is stored in custom_entities.
-
-    Args:
-        config: Configuration dict
-
-    Returns:
-        Tuple of (migrated_config, changed_flag)
-    """
-    changed = False
-
-    executor: dict[str, Any] = config.get("executor", {})
-    inverter: dict[str, Any] = executor.get("inverter", {})
-
-    # Profile-specific keys that should be in custom_entities
-    profile_keys = [
-        "ems_mode",
-        "ems_mode_entity",
-        "forced_charge_discharge_cmd",
-        "forced_charge_discharge_cmd_entity",
-    ]
-
-    # Ensure custom_entities exists
-    if "custom_entities" not in inverter:
-        inverter["custom_entities"] = {}
-
-    custom_entities: dict[str, Any] = inverter.get("custom_entities", {})
-
-    for key in profile_keys:
-        if key in inverter:
-            val = inverter.pop(key)
-            # Strip _entity suffix for the new key
-            new_key = key.replace("_entity", "") if key.endswith("_entity") else key
-
-            if new_key not in custom_entities:
-                custom_entities[new_key] = val
-                logger.info(
-                    f"Migrated executor.inverter.{key} -> executor.inverter.custom_entities.{new_key}"
-                )
-                changed = True
-            else:
-                logger.info(f"Skipped legacy {key} (already exists in custom_entities.{new_key})")
-                changed = True
-
-    return config, changed
-
-
-def migrate_ev_charger_legacy_fields(config: dict[str, Any]) -> tuple[dict[str, Any], bool]:
-    """
-    Migration for REV K25 Phase 1: Remove legacy min_soc/target_soc fields from EV chargers.
-
-    These fields are no longer used - EV charging is now controlled entirely via
-    penalty_levels. This migration removes them from all ev_chargers[] entries.
-
-    Args:
-        config: Configuration dict
-
-    Returns:
-        Tuple of (migrated_config, changed_flag)
-    """
-    changed = False
-
-    ev_chargers: list[Any] = config.get("ev_chargers", [])
-
-    legacy_fields = ["min_soc_percent", "target_soc_percent"]
-
-    for i, ev_item in enumerate(ev_chargers):
-        if not isinstance(ev_item, dict):
-            continue
-        ev_dict: dict[str, Any] = cast("dict[str, Any]", ev_item)
-
-        for field in legacy_fields:
-            if field in ev_dict:
-                del ev_dict[field]
-                logger.info(f"✂️  REV K25: Removed legacy field '{field}' from ev_chargers[{i}]")
-                changed = True
-
-    return config, changed
-
-
 async def migrate_config(
     config_path: str = "config.yaml",
     default_path: str = "config.default.yaml",
     strict_validation: bool = True,
 ) -> None:
     """
-    Run all registered config migrations.
+    Run config migration at startup.
     Uses ruamel.yaml to preserve comments and structure.
 
     Args:
@@ -1173,7 +479,6 @@ async def migrate_config(
 
         # SAFETY CHECK: Verify config has minimum expected structure
         # This prevents merging an empty/corrupted config with defaults
-        # Use strict_validation parameter to control strictness (lenient for tests)
         if not _validate_config_structure(user_config, strict=strict_validation):
             logger.error(
                 f"❌ Config {config_path} failed structure validation. Aborting migration to prevent data loss."
@@ -1184,40 +489,13 @@ async def migrate_config(
         logger.error(f"❌ Failed to read user config: {e}")
         return
 
-    # 2. Run In-Place Legacy Migrations (Cleanup) on User Config
-    # These prepare the user config to be merged cleanly
-    pre_merge_changes = False
-
-    # List of legacy cleanup steps
-    legacy_steps = [
-        migrate_version_key,  # REV F57: FIRST - Clean up old version key
-        migrate_battery_config,
-        cleanup_obsolete_keys,
-        migrate_solar_arrays,
-        migrate_soc_target_entity,
-        migrate_inverter_profile_keys,
-        migrate_root_inverter_profile,  # REV F68: Move inverter_profile from root to system
-        migrate_inverter_custom_entities,  # REV F69: Move profile keys to custom_entities
-        migrate_arc15_entity_config,  # ARC15: Entity-centric config restructure
-        cleanup_water_heating_duplicates,  # Cleanup: Remove duplicate keys from water_heating
-        migrate_ev_charger_legacy_fields,  # REV K25 Phase 1: Remove legacy EV SoC fields
-        fix_s_index_horizon_days_type,  # REV F66b: Fix string to int type coercion
-        heal_orphaned_array_keys,  # REV F66b: Heal keys at wrong indentation levels
-    ]
-
-    for step in legacy_steps:
-        try:
-            user_config, changed = step(user_config)
-            if changed:
-                pre_merge_changes = True
-        except Exception as e:
-            logger.error(f"❌ Legacy migration step {step.__name__} failed: {e}")
+    # 2. Sweep deprecated keys from user config
+    user_config, pre_merge_changes = remove_deprecated_keys(user_config)
 
     # 3. Load Default Config (The Template)
     def_path_obj = Path(default_path)
     if not def_path_obj.exists():
         logger.warning(f"{default_path} not found. Skipping template merge.")
-        # If we made legacy changes, save them at least.
         if pre_merge_changes:
             _write_config(path, user_config, yaml, strict_validation=strict_validation)
         return
@@ -1238,26 +516,14 @@ async def migrate_config(
         return
 
     # 4. Perform Template Merge
-    # We use default_config as the base and fill it with user_config values
+    # Merge user values into the template structure
     try:
-        # We need a deep copy of default structure to detect changes?
-        # Actually, we can just assume we want to write the new structure
-        # IF it differs from the original user_config structure.
-        # But 'user_config' object structure is messy. 'default_config' is clean.
-        # We ALWAYS want to write the clean structure if we are enforcing strict mode.
-        # BUT we only want to write if actual values changed OR structure changed.
-        # To simplify: We just write it. The IO cost is negligible on startup.
-        # But for safety, let's look at the result.
+        # Capture user config as serialized string to detect structural changes after merge
+        user_str_buf = io.StringIO()
+        yaml.dump(user_config, user_str_buf)  # type: ignore[reportUnknownMemberType]
+        user_str_before = user_str_buf.getvalue()
 
-        # We clone default_config to 'final_config' to be safe?
-        # No, yaml.load() already gave us a fresh object.
         final_config: dict[str, Any] = default_config
-
-        # Sync Version explicitly
-        if "version" in user_config:
-            # Ensure version in final_config matches default (usually what we want)
-            # OR matches user? Usually migration brings it UP to default version.
-            pass
 
         # CAPTURE CRITICAL VALUES BEFORE MERGE
         critical_before = _extract_critical_values(user_config)
@@ -1265,15 +531,10 @@ async def migrate_config(
 
         template_aware_merge(final_config, user_config)
 
-        # REV F57: Final cleanup - remove any deprecated keys that survived
+        # Final cleanup - remove any deprecated keys that survived the merge
         final_config, cleanup_changed = remove_deprecated_keys(final_config)
         if cleanup_changed:
             logger.info("✅ Final deprecated keys cleanup successful")
-
-        # REV F66b: Heal any orphaned keys at wrong indentation levels
-        final_config, heal_changed = heal_orphaned_array_keys(final_config)
-        if heal_changed:
-            logger.info("✅ Orphaned keys healing successful")
 
         # VALIDATE CRITICAL VALUES AFTER MERGE
         critical_after = _extract_critical_values(final_config)
@@ -1285,34 +546,20 @@ async def migrate_config(
             logger.error(f"Please check {config_path} for corruption or file locks.")
             return
 
-        # 5. Save (Strict Enforcement)
-        # We always save because we want to enforce the default structure/comments.
-        # To avoid unnecessary writes, we could compare dumped strings, but
-        # comment diffs make that hard. Let's just write safely.
-        _write_config(path, final_config, yaml, strict_validation=strict_validation)
+        # 5. Save if anything changed (deprecated keys removed, or structure differs from template)
+        final_str_buf = io.StringIO()
+        yaml.dump(final_config, final_str_buf)  # type: ignore[reportUnknownMemberType]
+        structure_changed = final_str_buf.getvalue() != user_str_before
+
+        if pre_merge_changes or cleanup_changed or structure_changed:
+            _write_config(path, final_config, yaml, strict_validation=strict_validation)
 
     except Exception as e:
         logger.error(f"❌ Template merge failed: {e}", exc_info=True)
 
 
 def create_timestamped_backup(path: Path, max_backups: int = 30) -> Path | None:
-    """Create a timestamped backup of the file and cleanup old ones.
-
-    REV F57: Enhanced backup system for better recovery.
-    REV F66: Fixed backup path to use persistent storage in containers.
-
-    Backup priority:
-    1. /host_backups (bind-mounted from host - persistent)
-    2. BACKUP_DIR env var (custom location)
-    3. ./backups relative to config (ephemeral in container)
-
-    Args:
-        path: Path to the file to backup
-        max_backups: Maximum number of backups to retain
-
-    Returns:
-        Path to the backup file or None if failed
-    """
+    """Create a timestamped backup of the file, pruning old ones. Returns backup path or None."""
     if not path.exists():
         return None
 
@@ -1347,31 +594,18 @@ def create_timestamped_backup(path: Path, max_backups: int = 30) -> Path | None:
 def _write_config(
     path: Path, config: Any, yaml_instance: Any, strict_validation: bool = True
 ) -> None:
-    """Safely write config with backup.
-
-    Args:
-        path: Path to write the config file
-        config: Configuration dict to write
-        yaml_instance: ruamel.yaml YAML instance
-        strict_validation: If True, requires full production config structure.
-                          If False, only validates basic structure (for tests).
-    """
-
-    # SAFETY VALIDATION (REVISED Phase 4)
+    """Validate and atomically write config to disk with timestamped backup."""
     if not validate_config_for_write(config, strict=strict_validation):
         logger.error(f"❌ Aborting write to {path} - validation failed.")
         return
 
     temp_path = path.with_name(path.name + ".tmp")
-    # REV F57: Legacy backup path (still used for atomic restore fallback)
     legacy_backup_path = path.with_name(path.name + ".bak")
     log_prefix = "[CONTAINER]" if Path("/.dockerenv").exists() else "[HOST]"
 
     try:
-        # Create Timestamped Backup (Phase 3)
         if path.exists():
             create_timestamped_backup(path)
-            # Still keep legacy .bak for atomic fallback logic below
             shutil.copy2(path, legacy_backup_path)
 
         logger.info(f"{log_prefix} Writing updated config to {temp_path}")
@@ -1383,28 +617,21 @@ def _write_config(
             temp_path.replace(path)
             logger.info(f"✅ {log_prefix} Successfully updated {path} (Atomic)")
 
-            # REV F66: Post-write validation - verify written file is valid
+            # Post-write validation - verify written file is valid
             _verify_written_config(path, yaml_instance)
 
         except OSError as e:
-            # Fallback for Bind Mounts (same as before)
-            import errno
-
+            # Fallback for bind mounts
             if e.errno in (errno.EBUSY, errno.EXDEV, errno.ETXTBSY):
                 logger.info(f"{log_prefix} Bind mount detected, using direct write.")
-                shutil.copy2(
-                    temp_path, path
-                )  # Python copy is not atomic but works across filesystems
+                shutil.copy2(temp_path, path)
                 logger.info(f"✅ {log_prefix} Successfully updated {path} (Direct Copy)")
-
-                # REV F66: Post-write validation for bind mount
                 _verify_written_config(path, yaml_instance)
             else:
                 raise
 
     except Exception as e:
         logger.error(f"❌ Write failed: {e}")
-        # Restore backup
         if legacy_backup_path.exists():
             logger.warning(f"🔄 Restoring {path} from legacy backup...")
             shutil.copy2(legacy_backup_path, path)
@@ -1415,17 +642,7 @@ def _write_config(
 
 
 def _verify_written_config(path: Path, yaml_instance: Any) -> bool:
-    """Verify the written config file can be read back and is valid.
-
-    REV F66: Post-migration validation to catch write errors or corruption.
-
-    Args:
-        path: Path to the written config file
-        yaml_instance: ruamel.yaml YAML instance
-
-    Returns:
-        True if config is valid, False otherwise
-    """
+    """Read back the written config and verify it is valid. Returns True if valid."""
     try:
         with path.open("r", encoding="utf-8") as f:
             loaded = yaml_instance.load(f)
@@ -1443,7 +660,6 @@ def _verify_written_config(path: Path, yaml_instance: Any) -> bool:
         # Check inverter_profile is in correct location
         system: dict[str, Any] = loaded_dict.get("system", {})
         if "inverter_profile" not in system:
-            # Check if it's misplaced at root level
             if "inverter_profile" in loaded:
                 logger.warning(
                     "⚠️  Post-write: 'inverter_profile' found at root level, "
