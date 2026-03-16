@@ -326,3 +326,4 @@ class ExecutionLog(Base):
     executor_version: Mapped[str | None] = mapped_column(String)
     commanded_unit: Mapped[str] = mapped_column(String, default="A")
     action_results: Mapped[str | None] = mapped_column(Text)
+    ev_charging_kw: Mapped[float | None] = mapped_column(Float)

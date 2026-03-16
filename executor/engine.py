@@ -170,6 +170,9 @@ class ExecutorEngine:
         # Override notification deduplication (Issue 3 fix)
         self._last_override_type: str | None = None
 
+        # Cached system state for get_status() mode_intent computation
+        self._last_system_state: SystemState | None = None
+
         # System profile toggles (Rev O1)
         system_cfg = self._full_config.get("system", {})
         self._has_solar = system_cfg.get("has_solar", True)
@@ -276,13 +279,32 @@ class ExecutorEngine:
             now = datetime.now(tz)
             slot, slot_start = self._load_current_slot(now)
             if slot:
+                # Compute mode_intent using cached system state
+                mode_intent = None
+                try:
+                    if self._last_system_state is not None and self.inverter_profile is not None:
+                        decision = make_decision(
+                            slot,
+                            self._last_system_state,
+                            config=self.config.controller,
+                            inverter_config=self.config.inverter,
+                            water_heater_config=self.config.water_heater,
+                            profile=self.inverter_profile,
+                        )
+                        mode_intent = decision.mode_intent
+                except Exception as e:
+                    logger.debug("Could not compute mode_intent for status: %s", e)
+
                 current_slot_plan = {
                     "slot_start": slot_start,
                     "charge_kw": slot.charge_kw,
                     "export_kw": slot.export_kw,
                     "water_kw": slot.water_kw,
+                    "discharge_kw": slot.discharge_kw,
+                    "ev_charging_kw": slot.ev_charging_kw,
                     "soc_target": slot.soc_target,
                     "soc_projected": slot.soc_projected,
+                    "mode_intent": mode_intent,
                 }
         except Exception as e:
             logger.debug("Could not load current slot plan: %s", e)
@@ -1009,6 +1031,7 @@ class ExecutorEngine:
 
             # 3. Gather system state
             state = await self._gather_system_state()
+            self._last_system_state = state
 
             # Emit live metrics for UI sparklines (Rev E1)
             try:
@@ -1603,6 +1626,7 @@ class ExecutorEngine:
             planned_water_kw=slot.water_kw,
             planned_soc_target=slot.soc_target,
             planned_soc_projected=slot.soc_projected,
+            ev_charging_kw=slot.ev_charging_kw,
             # Commanded values
             commanded_work_mode=decision.mode_intent,
             commanded_grid_charging=1 if decision.mode_intent == "charge" else 0,

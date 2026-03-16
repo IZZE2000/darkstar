@@ -510,6 +510,54 @@ class TestRunOnce:
         # Assert the result is in the actions
         assert any(a.get("type") == "water_temp" for a in result["actions"])
 
+    async def test_ev_charging_kw_logged_in_execution_record(self, engine, temp_schedule):
+        """ev_charging_kw from slot plan is included in the execution record (task 6.2)."""
+        tz = pytz.timezone("Europe/Stockholm")
+        now = datetime.now(tz)
+        slot_start = now - timedelta(minutes=5)
+
+        # Write a schedule with ev_charging_kw
+        end = slot_start + timedelta(minutes=15)
+        slot = {
+            "start_time": slot_start.isoformat(),
+            "end_time": end.isoformat(),
+            "end_time_kepler": end.isoformat(),
+            "battery_charge_kw": 0,
+            "battery_discharge_kw": 0,
+            "export_kwh": 0,
+            "water_heating_kw": 0,
+            "soc_target_percent": 50,
+            "projected_soc_percent": 45,
+            "ev_charging_kw": 7.4,
+        }
+        schedule = make_schedule([slot])
+        with Path(temp_schedule).open("w", encoding="utf-8") as f:
+            json.dump(schedule, f)
+
+        result = await engine.run_once()
+
+        assert result is not None
+        records = engine.history.get_recent(limit=1)
+        assert records
+        assert records[0]["ev_charging_kw"] == pytest.approx(7.4)
+
+    async def test_non_ev_slot_logs_zero_ev_charging_kw(self, engine, temp_schedule):
+        """Non-EV slot logs ev_charging_kw = 0.0 in execution record."""
+        tz = pytz.timezone("Europe/Stockholm")
+        now = datetime.now(tz)
+        slot_start = now - timedelta(minutes=5)
+
+        schedule = make_schedule([make_slot(slot_start, charge_kw=3.0, soc_target=80)])
+        with Path(temp_schedule).open("w", encoding="utf-8") as f:
+            json.dump(schedule, f)
+
+        result = await engine.run_once()
+
+        assert result is not None
+        records = engine.history.get_recent(limit=1)
+        assert records
+        assert records[0]["ev_charging_kw"] == pytest.approx(0.0)
+
     async def test_tick_skips_water_temp_when_disabled(self, engine, temp_schedule):
         """_tick skips set_water_temp when water heater is disabled."""
         tz = pytz.timezone("Europe/Stockholm")
@@ -539,3 +587,142 @@ class TestRunOnce:
         engine.dispatcher.set_water_temp.assert_not_called()
         # Assert no water_temp action in results
         assert not any(a.get("type") == "water_temp" for a in result["actions"])
+
+
+class TestGetStatusModeIntent:
+    """Tests for mode_intent in get_status() (tasks 6.1 and 6.3)."""
+
+    @pytest.fixture
+    def engine(self, temp_schedule, temp_db):
+        """Create an engine with temp files."""
+        with patch("executor.engine.load_executor_config") as mock_config:
+            mock_config.return_value = ExecutorConfig(
+                schedule_path=temp_schedule,
+                timezone="Europe/Stockholm",
+            )
+            with patch("executor.engine.load_yaml") as mock_yaml:
+                mock_yaml.return_value = {}
+                with patch.object(ExecutorEngine, "_get_db_path", return_value=temp_db):
+                    engine = ExecutorEngine("config.yaml")
+                    engine.config.schedule_path = temp_schedule
+                    yield engine
+
+    @pytest.mark.parametrize(
+        "charge_kw,export_kw,discharge_kw,soc_target,ev_kw,soc_pct,expected_mode",
+        [
+            (5.0, 0.0, 0.0, 80, 0.0, 50.0, "charge"),
+            (0.0, 3.0, 3.0, 10, 0.0, 80.0, "export"),
+            (0.0, 0.0, 0.0, 10, 0.0, 80.0, "self_consumption"),
+            (0.0, 0.0, 0.0, 80, 0.0, 50.0, "idle"),
+        ],
+    )
+    def test_get_status_returns_mode_intent_for_modes(
+        self,
+        engine,
+        temp_schedule,
+        charge_kw,
+        export_kw,
+        discharge_kw,
+        soc_target,
+        ev_kw,
+        soc_pct,
+        expected_mode,
+    ):
+        """get_status() returns correct mode_intent in current_slot_plan (task 6.1)."""
+        from executor.override import SystemState
+
+        tz = pytz.timezone("Europe/Stockholm")
+        now = datetime.now(tz)
+        slot_start = now - timedelta(minutes=5)
+        end = slot_start + timedelta(minutes=15)
+
+        slot = {
+            "start_time": slot_start.isoformat(),
+            "end_time": end.isoformat(),
+            "end_time_kepler": end.isoformat(),
+            "battery_charge_kw": charge_kw,
+            "battery_discharge_kw": discharge_kw,
+            "export_kwh": export_kw * 0.25,  # kWh for 15-min slot
+            "water_heating_kw": 0.0,
+            "soc_target_percent": soc_target,
+            "projected_soc_percent": soc_target - 5,
+            "ev_charging_kw": ev_kw,
+        }
+        schedule = make_schedule([slot])
+        with Path(temp_schedule).open("w", encoding="utf-8") as f:
+            json.dump(schedule, f)
+
+        # Provide a cached system state with the test SoC
+        engine._last_system_state = SystemState(current_soc_percent=soc_pct)
+
+        status = engine.get_status()
+
+        assert status["current_slot_plan"] is not None
+        assert status["current_slot_plan"]["mode_intent"] == expected_mode
+
+    def test_get_status_mode_intent_null_when_no_cached_state(self, engine, temp_schedule):
+        """get_status() sets mode_intent to null when no system state is cached (task 6.3)."""
+        tz = pytz.timezone("Europe/Stockholm")
+        now = datetime.now(tz)
+        slot_start = now - timedelta(minutes=5)
+        end = slot_start + timedelta(minutes=15)
+
+        slot = {
+            "start_time": slot_start.isoformat(),
+            "end_time": end.isoformat(),
+            "end_time_kepler": end.isoformat(),
+            "battery_charge_kw": 5.0,
+            "battery_discharge_kw": 0.0,
+            "export_kwh": 0.0,
+            "water_heating_kw": 0.0,
+            "soc_target_percent": 80,
+            "projected_soc_percent": 75,
+        }
+        schedule = make_schedule([slot])
+        with Path(temp_schedule).open("w", encoding="utf-8") as f:
+            json.dump(schedule, f)
+
+        # No cached system state
+        engine._last_system_state = None
+
+        status = engine.get_status()
+
+        assert status["current_slot_plan"] is not None
+        assert status["current_slot_plan"]["mode_intent"] is None
+        # Other fields should still be populated
+        assert status["current_slot_plan"]["charge_kw"] == pytest.approx(5.0)
+
+    def test_get_status_mode_intent_null_when_no_profile(self, engine, temp_schedule):
+        """get_status() sets mode_intent to null when profile is not loaded (task 6.3)."""
+        from executor.override import SystemState
+
+        tz = pytz.timezone("Europe/Stockholm")
+        now = datetime.now(tz)
+        slot_start = now - timedelta(minutes=5)
+        end = slot_start + timedelta(minutes=15)
+
+        slot = {
+            "start_time": slot_start.isoformat(),
+            "end_time": end.isoformat(),
+            "end_time_kepler": end.isoformat(),
+            "battery_charge_kw": 5.0,
+            "battery_discharge_kw": 0.0,
+            "export_kwh": 0.0,
+            "water_heating_kw": 0.0,
+            "soc_target_percent": 80,
+            "projected_soc_percent": 75,
+        }
+        schedule = make_schedule([slot])
+        with Path(temp_schedule).open("w", encoding="utf-8") as f:
+            json.dump(schedule, f)
+
+        # Profile is None (not loaded)
+        engine._last_system_state = SystemState(current_soc_percent=50.0)
+        engine.inverter_profile = None
+
+        status = engine.get_status()
+
+        assert status["current_slot_plan"] is not None
+        assert status["current_slot_plan"]["mode_intent"] is None
+        # Other fields should still be populated
+        assert status["current_slot_plan"]["charge_kw"] == pytest.approx(5.0)

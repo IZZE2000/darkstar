@@ -52,8 +52,11 @@ type ExecutorStatus = {
         charge_kw: number
         export_kw: number
         water_kw: number
+        discharge_kw: number
+        ev_charging_kw: number
         soc_target: number
         soc_projected: number
+        mode_intent?: string | null
     }
     last_action?: string
     override_active: boolean
@@ -95,6 +98,7 @@ type ExecutionRecord = {
     planned_water_kw?: number
     planned_soc_target?: number
     planned_soc_projected?: number
+    ev_charging_kw?: number
     // Commanded values (what we actually set)
     commanded_work_mode?: string
     commanded_grid_charging?: number
@@ -129,6 +133,15 @@ interface ActionResult {
     verification_success?: boolean
     skipped: boolean
     error_details?: string | null
+}
+
+// Mode badge mapping for commanded_work_mode / mode_intent
+type ModeBadge = { emoji: string; label: string; className: string }
+const MODE_BADGES: Record<string, ModeBadge> = {
+    charge: { emoji: '⚡', label: 'Charge', className: 'text-good bg-good/20' },
+    self_consumption: { emoji: '🔄', label: 'Self-consumption', className: 'text-blue-400 bg-blue-400/20' },
+    idle: { emoji: '⏸️', label: 'Idle', className: 'text-muted bg-surface2/50' },
+    export: { emoji: '↗️', label: 'Export', className: 'text-warn bg-warn/20' },
 }
 
 // API helpers - using relative paths for HA Ingress compatibility
@@ -1057,6 +1070,12 @@ export default function Executor() {
                                 </div>
                                 {status.current_slot_plan && (
                                     <div className="mt-2 grid grid-cols-4 gap-2 text-[10px]">
+                                        {/* Primary mode badge from mode_intent */}
+                                        {status.current_slot_plan.mode_intent && MODE_BADGES[status.current_slot_plan.mode_intent] && (
+                                            <div className={`flex items-center gap-1 col-span-4 ${MODE_BADGES[status.current_slot_plan.mode_intent].className} px-1.5 py-0.5 rounded w-fit`}>
+                                                <span>{MODE_BADGES[status.current_slot_plan.mode_intent].emoji} {MODE_BADGES[status.current_slot_plan.mode_intent].label}</span>
+                                            </div>
+                                        )}
                                         {status.current_slot_plan.charge_kw > 0 && (
                                             <div className="flex items-center gap-1 text-good">
                                                 <BatteryCharging className="h-3 w-3" />
@@ -1070,9 +1089,13 @@ export default function Executor() {
                                             </div>
                                         )}
                                         {status.current_slot_plan.water_kw > 0 && (
-                                            <div className="flex items-center gap-1 text-water">
-                                                <Droplets className="h-3 w-3" />
-                                                <span>{status.current_slot_plan.water_kw.toFixed(1)}kW</span>
+                                            <div className="flex items-center gap-1 text-water bg-water/20 px-1.5 py-0.5 rounded w-fit">
+                                                <span>💧 Heating</span>
+                                            </div>
+                                        )}
+                                        {(status.current_slot_plan.ev_charging_kw ?? 0) > 0 && (
+                                            <div className="flex items-center gap-1 text-purple-400 bg-purple-400/20 px-1.5 py-0.5 rounded w-fit">
+                                                <span>🔌 EV</span>
                                             </div>
                                         )}
                                         {status.current_slot_plan.soc_target > 0 && (
@@ -1080,11 +1103,6 @@ export default function Executor() {
                                                 <span>SoC→{status.current_slot_plan.soc_target}%</span>
                                             </div>
                                         )}
-                                        {!status.current_slot_plan.charge_kw &&
-                                            !status.current_slot_plan.export_kw &&
-                                            !status.current_slot_plan.water_kw && (
-                                                <div className="text-muted/60 col-span-4">Idle / Self-consumption</div>
-                                            )}
                                     </div>
                                 )}
                             </div>
@@ -1118,32 +1136,23 @@ export default function Executor() {
                                             <span className="text-[11px] text-text font-mono">
                                                 {formatDateTime(record.executed_at)}
                                             </span>
-                                            {/* Quick summary badges */}
-                                            {record.commanded_charge_current_a &&
-                                                record.commanded_charge_current_a > 0 && (
-                                                    <span className="text-[9px] text-good bg-good/20 px-1.5 py-0.5 rounded">
-                                                        ⚡ Charge
-                                                    </span>
-                                                )}
-                                            {record.commanded_work_mode === 'Export First' && (
-                                                <span className="text-[9px] text-warn bg-warn/20 px-1.5 py-0.5 rounded">
-                                                    ↗ Export
+                                            {/* Primary mode badge from commanded_work_mode */}
+                                            {record.commanded_work_mode && MODE_BADGES[record.commanded_work_mode] && (
+                                                <span className={`text-[9px] px-1.5 py-0.5 rounded ${MODE_BADGES[record.commanded_work_mode].className}`}>
+                                                    {MODE_BADGES[record.commanded_work_mode].emoji} {MODE_BADGES[record.commanded_work_mode].label}
                                                 </span>
                                             )}
-                                            {record.commanded_water_temp && record.commanded_water_temp > 50 && (
-                                                <span className="text-[9px] text-warn bg-warn/20 px-1.5 py-0.5 rounded">
-                                                    🔥 Heat
+                                            {/* Context badges */}
+                                            {(record.planned_water_kw ?? 0) > 0 && (
+                                                <span className="text-[9px] text-water bg-water/20 px-1.5 py-0.5 rounded">
+                                                    💧 Heating
                                                 </span>
                                             )}
-                                            {/* Idle badge if no active actions */}
-                                            {(!record.commanded_charge_current_a ||
-                                                record.commanded_charge_current_a === 0) &&
-                                                record.commanded_work_mode !== 'Export First' &&
-                                                (!record.commanded_water_temp || record.commanded_water_temp <= 50) && (
-                                                    <span className="text-[9px] text-muted/60 bg-surface2/50 px-1.5 py-0.5 rounded">
-                                                        — Idle
-                                                    </span>
-                                                )}
+                                            {(record.ev_charging_kw ?? 0) > 0 && (
+                                                <span className="text-[9px] text-purple-400 bg-purple-400/20 px-1.5 py-0.5 rounded">
+                                                    🔌 EV
+                                                </span>
+                                            )}
                                         </div>
                                         <div className="flex items-center gap-2">
                                             {record.override_active ? (
