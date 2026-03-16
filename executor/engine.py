@@ -191,6 +191,10 @@ class ExecutorEngine:
         # REV F76 Phase 5: Fail-safe error tracking (Issue 1 fix)
         self._ev_power_fetch_failed = False
 
+        # EV charge failure detection
+        self._ev_zero_power_ticks: int = 0
+        self._ev_failure_notified: bool = False
+
         # Recent errors tracking (Phase 3)
         self.recent_errors: collections.deque[dict[str, Any]] = collections.deque(maxlen=10)
 
@@ -1220,6 +1224,11 @@ class ExecutorEngine:
             # Source isolation: Block discharge for both scheduled AND actual charging
             ev_should_charge_block: bool = scheduled_ev_charging or actual_ev_charging
 
+            # Preserve original slot before EV source isolation may overwrite discharge_kw
+            original_slot = slot
+            ev_isolation_reason: str | None = None
+            ev_charge_failed = False
+
             # Source Isolation: Block battery discharge when EV charging
             if ev_should_charge_block and self._has_battery:
                 # Rev EVFIX: Updated logging to distinguish switch control vs source isolation
@@ -1253,6 +1262,31 @@ class ExecutorEngine:
                     soc_target=slot.soc_target,
                     soc_projected=slot.soc_projected,
                 )
+
+                # EV charge failure detection: track ticks with zero actual power
+                if (
+                    scheduled_ev_charging
+                    and not actual_ev_charging
+                    and not self._ev_power_fetch_failed
+                ):
+                    self._ev_zero_power_ticks += 1
+                elif actual_ev_charging:
+                    self._ev_zero_power_ticks = 0
+
+                if self._ev_zero_power_ticks >= 5 and not self._ev_failure_notified:
+                    error_msg = (
+                        f"EV charge failure: {ev_charging_kw:.1f}kW scheduled, "
+                        f"{actual_ev_power_kw:.2f}kW actual for {self._ev_zero_power_ticks} consecutive ticks"
+                    )
+                    logger.warning(error_msg)
+                    if self.dispatcher:
+                        await self.dispatcher.notify_error(error_msg)
+                    self._ev_failure_notified = True
+                    ev_charge_failed = True
+
+                # Set isolation reason for execution record
+                actual_for_reason = actual_ev_power_kw if not self._ev_power_fetch_failed else 0.0
+                ev_isolation_reason = f"EV source isolation: {ev_charging_kw:.1f}kW scheduled, {actual_for_reason:.2f}kW actual"
             else:
                 # REV F76 Phase 5 (Issue 4): Smart state-based logging
                 if self._ev_detected_last_tick and not self._ev_power_fetch_failed:
@@ -1262,6 +1296,10 @@ class ExecutorEngine:
                         "EV charging ended - Source isolation: Resuming normal battery operation"
                     )
                 self._ev_detected_last_tick = False
+
+                # Reset EV failure detection when EV slot ends
+                self._ev_zero_power_ticks = 0
+                self._ev_failure_notified = False
 
             decision = make_decision(
                 slot,
@@ -1336,14 +1374,18 @@ class ExecutorEngine:
             duration_ms = int((time.time() - start_time) * 1000)
             record = self._create_execution_record(
                 now_iso=now_iso,
-                slot=slot,
+                slot=original_slot,
                 slot_start=slot_start,
                 state=state,
                 decision=decision,
                 override=override,
                 action_results=action_results,
-                success=(all(r.success for r in action_results) if action_results else True),
+                success=(
+                    not ev_charge_failed
+                    and (all(r.success for r in action_results) if action_results else True)
+                ),
                 duration_ms=duration_ms,
+                ev_isolation_reason=ev_isolation_reason,
             )
             self.history.log_execution(record)
 
@@ -1614,6 +1656,7 @@ class ExecutorEngine:
         action_results: list[ActionResult],
         success: bool,
         duration_ms: int,
+        ev_isolation_reason: str | None = None,
     ) -> ExecutionRecord:
         """Create an execution record for logging."""
         return ExecutionRecord(
@@ -1644,7 +1687,7 @@ class ExecutorEngine:
             # Override
             override_active=1 if override.override_needed else 0,
             override_type=(override.override_type.value if override.override_needed else None),
-            override_reason=override.reason if override.override_needed else None,
+            override_reason=override.reason if override.override_needed else ev_isolation_reason,
             # Results (NEW: full detail for each controlled entity)
             action_results=[
                 {
