@@ -41,7 +41,6 @@ COPY ml/*.py ./ml/
 # Models are generated at runtime (Clean Slate strategy)
 RUN mkdir -p ml/models
 COPY ml/models/defaults/ ./ml/models/defaults/
-COPY inputs.py ./
 
 # Copy frontend source and build (AFTER copying backend to avoid overwriting static assets)
 COPY frontend/ ./frontend/
