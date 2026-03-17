@@ -3,7 +3,7 @@
 
 name: "[DEV] Darkstar Energy Manager"
 description: "DEVELOPMENT VERSION - Tracking dev branch (amd64 only). AI-powered home battery optimization."
-version: "dev-20260317.0652"
+version: "dev-20260317.0954"
 slug: "darkstar-dev"
 url: "https://github.com/ergetie/darkstar"
 
