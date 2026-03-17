@@ -239,6 +239,9 @@ class KeplerSolver:
                 prob += (
                     ev_energy[t] <= grid_import[t] + s.pv_kwh + 1e-6
                 )  # Small epsilon for numerical stability
+                # Block discharge when EV is charging (match executor source isolation)
+                M_discharge = config.max_discharge_power_kw * h
+                prob += discharge[t] <= (1 - ev_charge[t]) * M_discharge
 
             # Phase 4 Pivot: Re-introduced water_start binary for guidance
             if water_enabled and needs_water_start:

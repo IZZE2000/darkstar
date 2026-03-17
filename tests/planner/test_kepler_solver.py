@@ -244,6 +244,136 @@ def test_kepler_ev_no_battery_drain():
     assert total_discharge == pytest.approx(0.0, abs=0.01)
 
 
+def test_kepler_ev_blocks_discharge():
+    """Verify solver cannot plan discharge and EV charging in the same slot.
+
+    Scenario: Battery is full, house has load, grid is cheap (good for EV charging),
+    and there's a high export price (making discharge attractive). The solver must
+    NOT discharge and charge EV in the same slot.
+    """
+    start = datetime(2025, 1, 1, 12, 0)
+    slots = []
+    for i in range(4):
+        slots.append(
+            KeplerInputSlot(
+                start_time=start + timedelta(minutes=15 * i),
+                end_time=start + timedelta(minutes=15 * (i + 1)),
+                load_kwh=0.5,  # Some house load
+                pv_kwh=0.0,  # No solar
+                import_price_sek_kwh=0.5,  # Cheap grid (good for EV)
+                export_price_sek_kwh=3.0,  # High export price (tempting discharge)
+            )
+        )
+
+    input_data = KeplerInput(slots=slots, initial_soc_kwh=10.0)
+
+    config = KeplerConfig(
+        capacity_kwh=10.0,
+        max_charge_power_kw=5.0,
+        max_discharge_power_kw=5.0,
+        charge_efficiency=1.0,
+        discharge_efficiency=1.0,
+        min_soc_percent=0.0,
+        max_soc_percent=100.0,
+        target_soc_kwh=0.0,  # No target - free to discharge
+        wear_cost_sek_per_kwh=0.01,
+        enable_export=True,
+        max_export_power_kw=5.0,
+        # EV Settings: small battery so incentive bucket fills quickly (~1 slot),
+        # leaving remaining slots free to discharge for export (3 SEK/kWh)
+        ev_charging_enabled=True,
+        ev_plugged_in=True,
+        ev_max_power_kw=2.0,
+        ev_battery_capacity_kwh=1.0,  # Small: 50% bucket = 0.5 kWh, fills in ~1 slot
+        ev_current_soc_percent=0.0,
+        ev_incentive_buckets=[
+            IncentiveBucket(threshold_soc=50.0, value_sek=5.0),  # 5 SEK/kWh for first 0.5 kWh
+        ],
+    )
+
+    solver = KeplerSolver()
+    result = solver.solve(input_data, config)
+
+    assert result.is_optimal
+
+    for s in result.slots:
+        if s.ev_charge_kw > 0.1:
+            # In any slot where EV is charging, discharge MUST be zero
+            assert s.discharge_kwh == pytest.approx(0.0, abs=0.01), (
+                f"Discharge must be 0 when EV is charging! "
+                f"Got discharge={s.discharge_kwh}, ev_charge={s.ev_charge_kw}"
+            )
+
+    # Verify constraint is non-binding when EV is not charging.
+    # Once the 0.5 kWh incentive bucket is full, remaining slots have no EV reward;
+    # export at 3 SEK/kWh beats wear cost (0.01 SEK/kWh), so the solver WILL discharge.
+    non_ev_slots = [s for s in result.slots if s.ev_charge_kw <= 0.1]
+    assert len(non_ev_slots) > 0, "Expected some slots without EV charging after bucket fills"
+    total_non_ev_discharge = sum(s.discharge_kwh for s in non_ev_slots)
+    assert total_non_ev_discharge > 0.0, (
+        "Solver should discharge for export in non-EV slots when export price (3 SEK/kWh) "
+        f"exceeds wear cost — got total discharge in non-EV slots={total_non_ev_discharge}"
+    )
+
+
+def test_kepler_ev_load_pressure_mutual_exclusion():
+    """Verify mutual exclusion is symmetric: discharge slots must also have zero EV charging.
+
+    Scenario: Battery is partially charged, house load is high (driving discharge to serve
+    load), grid import is expensive, and EV is plugged in with a small incentive. The solver
+    must never discharge and charge EV in the same slot, from either direction.
+    """
+    start = datetime(2025, 1, 1, 12, 0)
+    slots = []
+    for i in range(4):
+        slots.append(
+            KeplerInputSlot(
+                start_time=start + timedelta(minutes=15 * i),
+                end_time=start + timedelta(minutes=15 * (i + 1)),
+                load_kwh=0.8,  # High house load driving discharge
+                pv_kwh=0.0,
+                import_price_sek_kwh=2.0,  # Expensive grid (discharge saves money)
+                export_price_sek_kwh=1.5,  # Profitable export too
+            )
+        )
+
+    input_data = KeplerInput(slots=slots, initial_soc_kwh=5.0)
+
+    config = KeplerConfig(
+        capacity_kwh=10.0,
+        max_charge_power_kw=5.0,
+        max_discharge_power_kw=5.0,
+        charge_efficiency=1.0,
+        discharge_efficiency=1.0,
+        min_soc_percent=0.0,
+        max_soc_percent=100.0,
+        target_soc_kwh=0.0,
+        wear_cost_sek_per_kwh=0.01,
+        enable_export=True,
+        max_export_power_kw=5.0,
+        ev_charging_enabled=True,
+        ev_plugged_in=True,
+        ev_max_power_kw=5.0,
+        ev_battery_capacity_kwh=100.0,
+        ev_current_soc_percent=0.0,
+        ev_incentive_buckets=[
+            IncentiveBucket(threshold_soc=20.0, value_sek=0.5),  # Small incentive
+        ],
+    )
+
+    solver = KeplerSolver()
+    result = solver.solve(input_data, config)
+
+    assert result.is_optimal
+
+    for s in result.slots:
+        # Full mutual exclusion: both directions
+        assert not (s.ev_charge_kw > 0.1 and s.discharge_kwh > 0.01), (
+            f"Discharge and EV charging must never co-occur in the same slot! "
+            f"Got discharge={s.discharge_kwh:.3f} kWh, ev_charge={s.ev_charge_kw:.3f} kW"
+        )
+
+
 def test_export_threshold_k5():
     """Verify export threshold logic prevents uneconomic exports (REV K5)."""
     from planner.solver.types import KeplerConfig, KeplerInput, KeplerInputSlot
