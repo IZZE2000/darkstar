@@ -12,7 +12,7 @@ from typing import Any
 
 import pulp  # type: ignore[import,no-redef]
 
-from .types import KeplerConfig, KeplerInput, KeplerResult, KeplerResultSlot
+from .types import EVChargerInput, KeplerConfig, KeplerInput, KeplerResult, KeplerResultSlot
 
 logger = logging.getLogger("darkstar.kepler")
 
@@ -83,42 +83,50 @@ class KeplerSolver:
             water_start = None
             needs_water_start = False
 
-        # EV Charging as deferrable load (Rev K25)
-        # modulation and incentive buckets (REV // F51)
-        ev_enabled: bool = config.ev_charging_enabled and config.ev_plugged_in
-        ev_charge: dict[int, Any]
-        ev_energy: dict[int, Any]
-        ev_bucket_charged: dict[int, Any]
-        num_buckets: int
-        buckets: list[Any]
-        if ev_enabled:
-            # Log deadline constraint status
-            if config.ev_deadline:
+        # EV Charging as deferrable load (per-device, multi-charger support)
+        # Only create variables for plugged-in chargers
+        plugged_chargers: list[EVChargerInput] = [c for c in config.ev_chargers if c.plugged_in]
+        ev_any_enabled: bool = len(plugged_chargers) > 0
+
+        # Per-device indexed variables: ev_charge[device_id][t], ev_energy[device_id][t]
+        # dict[charger_id -> dict[t -> lp_var]]
+        ev_charge: dict[str, dict[int, Any]] = {}
+        ev_energy: dict[str, dict[int, Any]] = {}
+        # Per-device incentive bucket variables: ev_bucket_charged[device_id][bucket_idx]
+        ev_bucket_charged: dict[str, dict[int, Any]] = {}
+
+        for charger in plugged_chargers:
+            d = charger.id
+            safe_d = d.replace("-", "_").replace(".", "_")
+            if charger.deadline:
                 logger.info(
-                    "REV K25: EV deadline constraint active - deadline at %s",
-                    config.ev_deadline.strftime("%Y-%m-%d %H:%M"),
+                    "EV %s: deadline constraint active at %s",
+                    d,
+                    charger.deadline.strftime("%Y-%m-%d %H:%M"),
                 )
             else:
-                logger.info("REV K25: EV charging enabled, no deadline constraint")
+                logger.info("EV %s: no deadline constraint", d)
 
-            # EV charge binary variable (ON/OFF) - Rev F78
-            ev_charge = pulp.LpVariable.dicts("ev_charge", range(T), cat="Binary")  # type: ignore[reportUnknownMemberType]
-
-            # EV energy tracking variable (kWh charged in each slot) - Continuous modulation!
-            ev_energy = pulp.LpVariable.dicts("ev_energy_kwh", range(T), lowBound=0.0)  # type: ignore[reportUnknownMemberType]
-
-            # Incentive Buckets: Piecewise linear objective terms
-            buckets = config.ev_incentive_buckets or []
+            ev_charge[d] = pulp.LpVariable.dicts(  # type: ignore[reportUnknownMemberType]
+                f"ev_charge_{safe_d}", range(T), cat="Binary"
+            )
+            ev_energy[d] = pulp.LpVariable.dicts(  # type: ignore[reportUnknownMemberType]
+                f"ev_energy_{safe_d}_kwh", range(T), lowBound=0.0
+            )
+            buckets = charger.incentive_buckets or []
             num_buckets = len(buckets)
-            ev_bucket_charged = pulp.LpVariable.dicts(  # type: ignore[reportUnknownMemberType]
-                "ev_bucket_charged", range(num_buckets), lowBound=0.0
+            ev_bucket_charged[d] = pulp.LpVariable.dicts(  # type: ignore[reportUnknownMemberType]
+                f"ev_bucket_{safe_d}", range(num_buckets), lowBound=0.0
+            )
+
+        # any_ev_charging[t]: auxiliary binary - 1 if ANY charger is active in slot t
+        any_ev_charging: dict[int, Any]
+        if ev_any_enabled:
+            any_ev_charging = pulp.LpVariable.dicts(  # type: ignore[reportUnknownMemberType]
+                "any_ev_charging", range(T), cat="Binary"
             )
         else:
-            ev_charge = dict.fromkeys(range(T), 0)
-            ev_energy = dict.fromkeys(range(T), 0.0)
-            ev_bucket_charged = {}
-            num_buckets = 0
-            buckets = []
+            any_ev_charging = dict.fromkeys(range(T), 0)
 
         # SoC state variables (T+1 states for T slots)
 
@@ -149,10 +157,16 @@ class KeplerSolver:
             "block_overshoot", range(T), lowBound=0.0
         )
 
-        # Rev // F51: Setup EV Incentive Buckets
-        if ev_enabled and num_buckets > 0:
-            ev_capacity: float = config.ev_battery_capacity_kwh
-            ev_current_kwh: float = ev_capacity * (config.ev_current_soc_percent / 100.0)
+        # Per-device incentive bucket setup
+        for charger in plugged_chargers:
+            d = charger.id
+            buckets = charger.incentive_buckets or []
+            num_buckets = len(buckets)
+            if num_buckets == 0:
+                continue
+
+            ev_capacity: float = charger.battery_capacity_kwh
+            ev_current_kwh: float = ev_capacity * (charger.current_soc_percent / 100.0)
 
             prev_threshold_soc: float = 0.0
             accum_energy_cap: float = 0.0
@@ -161,21 +175,19 @@ class KeplerSolver:
                 bucket_soc_range: float = b.threshold_soc - prev_threshold_soc
                 bucket_capacity_kwh: float = max(0.0, ev_capacity * (bucket_soc_range / 100.0))
 
-                # How much of this bucket is ALREADY full?
                 already_full: float = max(
                     0.0, min(bucket_capacity_kwh, ev_current_kwh - accum_energy_cap)
                 )
                 remaining_cap: float = max(0.0, bucket_capacity_kwh - already_full)
 
-                # Constrain bucket charging
-                prob += ev_bucket_charged[i] <= remaining_cap
+                prob += ev_bucket_charged[d][i] <= remaining_cap
 
                 prev_threshold_soc = b.threshold_soc
                 accum_energy_cap += bucket_capacity_kwh
 
-            # Total energy charged must equal sum of buckets
-            prob += pulp.lpSum(ev_energy[t] for t in range(T)) == pulp.lpSum(
-                ev_bucket_charged[i] for i in range(num_buckets)
+            # Total energy for this device must equal sum of its buckets
+            prob += pulp.lpSum(ev_energy[d][t] for t in range(T)) == pulp.lpSum(
+                ev_bucket_charged[d][i] for i in range(num_buckets)
             )
 
         # Slack variables for soft constraints (Phase 2)
@@ -208,40 +220,44 @@ class KeplerSolver:
                 water_heat[t] * config.water_heating_power_kw * h if water_enabled else 0
             )
 
-            # EV charging load for this slot (kWh)
-            if ev_enabled:
-                # Rev F78: Require strict binary switching (ON/OFF at max power)
-                prob += ev_energy[t] == ev_charge[t] * config.ev_max_power_kw * h
+            # Per-device EV constraints
+            for charger in plugged_chargers:
+                d = charger.id
+                # Energy coupling: binary ON/OFF at max power
+                prob += ev_energy[d][t] == ev_charge[d][t] * charger.max_power_kw * h
 
-                # REV K25 Phase 4: Enforce deadline constraint
-                # If slot end time is after deadline, no EV charging allowed
-                if config.ev_deadline is not None and s.end_time > config.ev_deadline:
-                    prob += ev_energy[t] == 0.0
-            else:
-                ev_energy[t] = 0.0
+                # Deadline constraint: zero charging after deadline
+                if charger.deadline is not None and s.end_time > charger.deadline:
+                    prob += ev_energy[d][t] == 0.0
+
+                # Grid-only constraint: EV cannot charge from battery discharge
+                prob += ev_energy[d][t] <= grid_import[t] + s.pv_kwh + 1e-6
+
+            # any_ev_charging[t] linking constraints
+            if ev_any_enabled:
+                for charger in plugged_chargers:
+                    d = charger.id
+                    prob += any_ev_charging[t] >= ev_charge[d][t]
+                prob += any_ev_charging[t] <= pulp.lpSum(ev_charge[d][t] for d in ev_charge)
+                # Discharge blocking: block when any charger active
+                M_discharge = config.max_discharge_power_kw * h
+                prob += discharge[t] <= (1 - any_ev_charging[t]) * M_discharge
+
+            # Total EV energy in this slot (sum across all plugged-in chargers)
+            total_ev_energy_t: Any = (
+                pulp.lpSum(ev_energy[d][t] for d in ev_energy) if ev_any_enabled else 0.0
+            )
 
             # Energy Balance Constraint (water and EV loads added to demand side)
             prob += (
                 s.load_kwh
                 + water_load_kwh
-                + ev_energy[t]
+                + total_ev_energy_t
                 + charge[t]
                 + grid_export[t]
                 + curtailment[t]
                 == s.pv_kwh + discharge[t] + grid_import[t] + load_shedding[t]
             )
-
-            # Rev K25: Grid-only constraint - EV charging cannot use battery discharge
-            # EV energy must be less than or equal to grid import (plus some margin for numerical stability)
-            if ev_enabled:
-                # EV can only charge from grid or solar (not from battery discharge)
-                # This ensures energy doesn't leave the house battery to the car
-                prob += (
-                    ev_energy[t] <= grid_import[t] + s.pv_kwh + 1e-6
-                )  # Small epsilon for numerical stability
-                # Block discharge when EV is charging (match executor source isolation)
-                M_discharge = config.max_discharge_power_kw * h
-                prob += discharge[t] <= (1 - ev_charge[t]) * M_discharge
 
             # Phase 4 Pivot: Re-introduced water_start binary for guidance
             if water_enabled and needs_water_start:
@@ -314,8 +330,7 @@ class KeplerSolver:
             # credit on charge. The terminal_value and wear_cost are sufficient
             # for arbitrage decisions.
 
-            # Rev // F51: EV charging gain from incentive buckets is handled in objective aggregate
-            slot_ev_cost: float = 0.0
+            slot_ev_cost: float = 0.0  # EV incentive handled in aggregate objective below
 
             total_cost.append(
                 slot_import_cost
@@ -473,18 +488,14 @@ class KeplerSolver:
                 if water_enabled
                 else 0.0
             )
-            # Rev // F51: SUBTRACT incentive bucket value from objective
-            # Since we MINIMIZE cost, an incentive is a negative cost.
+            # Per-device incentive bucket values: subtract from objective (negative cost = gain)
             - (
-                pulp.lpSum(ev_bucket_charged[i] * buckets[i].value_sek for i in range(num_buckets))
-                if ev_enabled and num_buckets > 0
-                else 0.0
-            )
-            # REV K25 Phase 5: Urgent deadline - maximize charging with large negative penalty
-            # When deadline < 1 hour away, we strongly incentivize charging regardless of price
-            - (
-                pulp.lpSum(ev_energy[t] for t in range(T)) * 100.0
-                if ev_enabled and config.ev_deadline_urgent
+                pulp.lpSum(
+                    ev_bucket_charged[charger.id][i] * charger.incentive_buckets[i].value_sek
+                    for charger in plugged_chargers
+                    for i in range(len(charger.incentive_buckets or []))
+                )
+                if ev_any_enabled
                 else 0.0
             )
         )
@@ -543,12 +554,16 @@ class KeplerSolver:
                 else:
                     w_kw: float = 0.0
 
-                # EV charging power (kW) from continuous energy - Rev // F51
-                if ev_enabled:
-                    ev_energy_val: float | None = pulp.value(ev_energy[t])  # type: ignore[assignment]
-                    ev_kw: float = ev_energy_val / h if ev_energy_val is not None and h > 0 else 0.0
-                else:
-                    ev_kw: float = 0.0
+                # Per-device EV charging results
+                ev_charger_results: dict[str, float] = {}
+                total_ev_kw: float = 0.0
+                for charger in plugged_chargers:
+                    d = charger.id
+                    ev_val: float | None = pulp.value(ev_energy[d][t])  # type: ignore[assignment]
+                    device_kw: float = ev_val / h if ev_val is not None and h > 0 else 0.0
+                    ev_charger_results[d] = device_kw
+                    total_ev_kw += device_kw
+                ev_kw = total_ev_kw
 
                 wear: float = (
                     (c_val + d_val) * config.wear_cost_sek_per_kwh * 0.5
@@ -576,6 +591,7 @@ class KeplerSolver:
                         export_price_sek_kwh=s.export_price_sek_kwh,
                         water_heat_kw=w_kw,
                         ev_charge_kw=ev_kw,
+                        ev_charger_results=ev_charger_results,
                         is_optimal=True,
                     )
                 )

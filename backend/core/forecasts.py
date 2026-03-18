@@ -483,6 +483,7 @@ async def _get_forecast_data_async(
 async def get_all_input_data(
     config_path: str = "config.yaml",
     ev_plugged_in_override: bool | None = None,
+    ev_plug_override_charger_id: str | None = None,
 ) -> dict[str, Any]:
     """
     Orchestrate all input data fetching.
@@ -490,6 +491,7 @@ async def get_all_input_data(
     Args:
         config_path: Path to config.yaml
         ev_plugged_in_override: If provided, passed to get_initial_state to avoid REST race
+        ev_plug_override_charger_id: Charger ID to apply the plug state override to (Task 7.3)
     """
     # Load config
     with Path(config_path).open() as f:
@@ -540,7 +542,9 @@ async def get_all_input_data(
     forecast_result = await get_forecast_data(price_data, config)
     forecast_data = forecast_result.get("slots", [])
     initial_state = await ha_client.get_initial_state(
-        config_path, ev_plugged_in_override=ev_plugged_in_override
+        config_path,
+        ev_plugged_in_override=ev_plugged_in_override,
+        ev_plug_override_charger_id=ev_plug_override_charger_id,
     )
 
     return {

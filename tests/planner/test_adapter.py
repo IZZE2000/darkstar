@@ -9,9 +9,9 @@ import pandas as pd
 import pytz
 
 from planner.solver.adapter import (
-    _aggregate_ev_chargers,
     _aggregate_water_heaters,
     _get_config_version,
+    build_ev_charger_inputs,
     config_to_kepler_config,
     planner_to_kepler_input,
 )
@@ -140,65 +140,26 @@ class TestWaterHeaterAggregation:
         assert result["min_spacing_hours"] == 4.0
 
 
-class TestEVChargerAggregation:
-    """Test aggregation of multiple EV chargers."""
+class TestBuildEvChargerInputs:
+    """Test build_ev_charger_inputs per-device config builder (task 2.6)."""
 
-    def test_empty_array_returns_disabled_config(self):
-        """Empty ev_chargers array should return zero-power config."""
-        result = _aggregate_ev_chargers([])
-        assert result["max_power_kw"] == 0.0
-        assert result["battery_capacity_kwh"] == 0.0
-        assert result["penalty_levels"] == []
+    def test_empty_array_returns_empty_list(self):
+        """Empty ev_chargers config returns empty list."""
+        result = build_ev_charger_inputs([])
+        assert result == []
 
-    def test_single_ev_charger_preserved(self):
-        """Single EV charger should be returned as-is."""
-        chargers = [
-            {
-                "id": "tesla",
-                "enabled": True,
-                "max_power_kw": 11.0,
-                "battery_capacity_kwh": 82.0,
-                "penalty_levels": [
-                    {"max_soc": 50.0, "penalty_sek": 0.5},
-                    {"max_soc": 80.0, "penalty_sek": 0.2},
-                ],
-            }
-        ]
-        result = _aggregate_ev_chargers(chargers)
-        assert result["max_power_kw"] == 11.0
-        assert result["battery_capacity_kwh"] == 82.0
-        assert len(result["penalty_levels"]) == 2
-
-    def test_multiple_ev_chargers_sums_power(self):
-        """Multiple EV chargers should have max power summed."""
-        chargers = [
-            {"id": "tesla", "enabled": True, "max_power_kw": 11.0, "battery_capacity_kwh": 82.0},
-            {"id": "fiat", "enabled": True, "max_power_kw": 7.4, "battery_capacity_kwh": 42.0},
-        ]
-        result = _aggregate_ev_chargers(chargers)
-        assert result["max_power_kw"] == 18.4
-
-    def test_multiple_ev_uses_largest_battery(self):
-        """Multiple EVs should use largest battery capacity (conservative)."""
-        chargers = [
-            {"id": "tesla", "enabled": True, "max_power_kw": 11.0, "battery_capacity_kwh": 82.0},
-            {"id": "fiat", "enabled": True, "max_power_kw": 7.4, "battery_capacity_kwh": 42.0},
-        ]
-        result = _aggregate_ev_chargers(chargers)
-        assert result["battery_capacity_kwh"] == 82.0  # Largest
-
-    def test_disabled_ev_chargers_excluded(self):
-        """Disabled EV chargers should not be included."""
+    def test_disabled_chargers_excluded(self):
+        """Disabled chargers are filtered out."""
         chargers = [
             {"id": "tesla", "enabled": True, "max_power_kw": 11.0, "battery_capacity_kwh": 82.0},
             {"id": "fiat", "enabled": False, "max_power_kw": 7.4, "battery_capacity_kwh": 42.0},
         ]
-        result = _aggregate_ev_chargers(chargers)
-        assert result["max_power_kw"] == 11.0
-        assert result["battery_capacity_kwh"] == 82.0
+        result = build_ev_charger_inputs(chargers)
+        assert len(result) == 1
+        assert result[0].id == "tesla"
 
-    def test_merges_penalty_buckets_by_threshold(self):
-        """Multiple EVs should merge penalty buckets, taking max penalty at each threshold."""
+    def test_per_device_configs_built_correctly(self):
+        """Per-device configs use correct fields from config."""
         chargers = [
             {
                 "id": "tesla",
@@ -206,36 +167,68 @@ class TestEVChargerAggregation:
                 "max_power_kw": 11.0,
                 "battery_capacity_kwh": 82.0,
                 "penalty_levels": [
-                    {"max_soc": 50.0, "penalty_sek": 0.5},
-                    {"max_soc": 80.0, "penalty_sek": 0.2},
+                    {"max_soc": 80.0, "penalty_sek": 0.5},
                 ],
-            },
-            {
-                "id": "fiat",
-                "enabled": True,
-                "max_power_kw": 7.4,
-                "battery_capacity_kwh": 42.0,
-                "penalty_levels": [
-                    {"max_soc": 50.0, "penalty_sek": 0.3},  # Lower penalty at 50%
-                    {"max_soc": 90.0, "penalty_sek": 0.1},  # New threshold
-                ],
-            },
+            }
         ]
-        result = _aggregate_ev_chargers(chargers)
+        result = build_ev_charger_inputs(chargers)
+        assert len(result) == 1
+        ev = result[0]
+        assert ev.id == "tesla"
+        assert ev.max_power_kw == 11.0
+        assert ev.battery_capacity_kwh == 82.0
+        assert len(ev.incentive_buckets) == 1
+        assert ev.incentive_buckets[0].threshold_soc == 80.0
 
-        # Should have 3 unique thresholds: 50, 80, 90
-        assert len(result["penalty_levels"]) == 3
+    def test_unplugged_charger_included_in_config(self):
+        """Unplugged chargers are included but flagged as not plugged in."""
+        chargers = [
+            {"id": "main", "enabled": True, "max_power_kw": 7.4, "battery_capacity_kwh": 40.0}
+        ]
+        # No HA state provided → defaults: not plugged in
+        result = build_ev_charger_inputs(chargers, ev_charger_states=None)
+        assert len(result) == 1
+        assert result[0].plugged_in is False
 
-        # At 50%, should use max penalty (0.5 from Tesla)
-        soc_50 = next(p for p in result["penalty_levels"] if p["max_soc"] == 50.0)
-        assert soc_50["penalty_sek"] == 0.5
+    def test_ha_state_applied_per_device(self):
+        """HA state is applied to the correct charger by ID."""
+        chargers = [
+            {
+                "id": "charger_a",
+                "enabled": True,
+                "max_power_kw": 11.0,
+                "battery_capacity_kwh": 82.0,
+            },
+            {"id": "charger_b", "enabled": True, "max_power_kw": 7.4, "battery_capacity_kwh": 40.0},
+        ]
+        states = [
+            {"id": "charger_a", "soc_percent": 75.0, "plugged_in": True},
+            {"id": "charger_b", "soc_percent": 20.0, "plugged_in": False},
+        ]
+        result = build_ev_charger_inputs(chargers, ev_charger_states=states)
+        a = next(r for r in result if r.id == "charger_a")
+        b = next(r for r in result if r.id == "charger_b")
+        assert a.current_soc_percent == 75.0
+        assert a.plugged_in is True
+        assert b.current_soc_percent == 20.0
+        assert b.plugged_in is False
+
+    def test_charger_without_id_is_skipped(self):
+        """Chargers without id field are skipped."""
+        chargers = [
+            {"enabled": True, "max_power_kw": 7.4},  # No id
+            {"id": "charger_b", "enabled": True, "max_power_kw": 7.4},
+        ]
+        result = build_ev_charger_inputs(chargers)
+        assert len(result) == 1
+        assert result[0].id == "charger_b"
 
 
 class TestKeplerConfigWithARC15:
     """Test full config_to_kepler_config with ARC15 structure."""
 
     def test_uses_legacy_format_when_no_new_arrays(self):
-        """Should use legacy water_heating and ev_charger when new arrays absent."""
+        """With no ev_chargers array, ev_chargers list in KeplerConfig is empty."""
         config = {
             "config_version": 1,
             "system": {"has_ev_charger": True},
@@ -255,12 +248,11 @@ class TestKeplerConfigWithARC15:
 
         assert kepler_cfg.water_heating_power_kw == 3.0
         assert kepler_cfg.water_heating_min_kwh == 6.0
-        assert kepler_cfg.ev_max_power_kw == 11.0
-        assert kepler_cfg.ev_battery_capacity_kwh == 82.0
-        assert kepler_cfg.ev_charging_enabled is True
+        # Legacy format does not populate per-device ev_chargers
+        assert kepler_cfg.ev_chargers == []
 
     def test_uses_new_format_when_config_version_2(self):
-        """Should aggregate from new water_heaters/ev_chargers arrays when version 2."""
+        """Should build per-device EVChargerInput list from water_heaters/ev_chargers arrays."""
         config = {
             "config_version": 2,
             "system": {"has_ev_charger": True},
@@ -299,10 +291,11 @@ class TestKeplerConfigWithARC15:
         assert kepler_cfg.water_heating_power_kw == 5.0
         assert kepler_cfg.water_heating_min_kwh == 10.0
 
-        # EV charger should use value from array
-        assert kepler_cfg.ev_max_power_kw == 11.0
-        assert kepler_cfg.ev_battery_capacity_kwh == 82.0
-        assert kepler_cfg.ev_charging_enabled is True
+        # EV charger should produce one EVChargerInput
+        assert len(kepler_cfg.ev_chargers) == 1
+        assert kepler_cfg.ev_chargers[0].id == "tesla"
+        assert kepler_cfg.ev_chargers[0].max_power_kw == 11.0
+        assert kepler_cfg.ev_chargers[0].battery_capacity_kwh == 82.0
 
     def test_disables_water_heating_when_all_disabled(self):
         """Should disable water heating when all heaters are disabled."""
@@ -322,10 +315,10 @@ class TestKeplerConfigWithARC15:
         assert kepler_cfg.water_heating_min_kwh == 0.0
 
     def test_disables_ev_when_all_disabled(self):
-        """Should disable EV charging when all chargers are disabled."""
+        """Should produce empty ev_chargers list when all chargers are disabled."""
         config = {
             "config_version": 2,
-            "system": {"has_ev_charger": True},  # Legacy flag should be ignored
+            "system": {"has_ev_charger": True},
             "battery": {"capacity_kwh": 13.5, "max_charge_a": 100, "max_discharge_a": 100},
             "water_heaters": [],
             "ev_chargers": [
@@ -340,8 +333,7 @@ class TestKeplerConfigWithARC15:
 
         kepler_cfg = config_to_kepler_config(config)
 
-        assert kepler_cfg.ev_charging_enabled is False
-        assert kepler_cfg.ev_max_power_kw == 0.0
+        assert kepler_cfg.ev_chargers == []
 
     def test_backward_compatibility_with_legacy_config(self):
         """Should work with old config format without new arrays."""
@@ -365,10 +357,10 @@ class TestKeplerConfigWithARC15:
 
         kepler_cfg = config_to_kepler_config(config)
 
-        # Should use legacy values
+        # Should use legacy water heating values
         assert kepler_cfg.water_heating_power_kw == 3.0
-        assert kepler_cfg.ev_max_power_kw == 11.0
-        assert kepler_cfg.ev_charging_enabled is True
+        # Legacy ev_charger section does not populate ev_chargers (needs config_version>=2)
+        assert kepler_cfg.ev_chargers == []
 
 
 class TestKeplerInputConversion:

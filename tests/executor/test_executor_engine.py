@@ -19,12 +19,14 @@ from backend.learning.models import Base
 from executor.actions import HAClient
 from executor.config import (
     ControllerConfig,
+    EVChargerDeviceConfig,
     ExecutorConfig,
     InverterConfig,
     NotificationConfig,
     WaterHeaterConfig,
 )
-from executor.engine import ExecutorEngine, ExecutorStatus
+from executor.engine import EVChargerState, ExecutorEngine, ExecutorStatus
+from executor.override import SlotPlan
 
 
 @pytest.fixture
@@ -726,3 +728,295 @@ class TestGetStatusModeIntent:
         assert status["current_slot_plan"]["mode_intent"] is None
         # Other fields should still be populated
         assert status["current_slot_plan"]["charge_kw"] == pytest.approx(5.0)
+
+
+class TestParseSlotPlanPerDevice:
+    """Task 6.10: _parse_slot_plan correctly extracts per-device EV plans."""
+
+    @pytest.fixture
+    def engine(self, temp_schedule, temp_db):
+        with patch("executor.engine.load_executor_config") as mock_config:
+            mock_config.return_value = ExecutorConfig(
+                schedule_path=temp_schedule,
+                timezone="Europe/Stockholm",
+            )
+            with patch("executor.engine.load_yaml") as mock_yaml:
+                mock_yaml.return_value = {}
+                with patch.object(ExecutorEngine, "_get_db_path", return_value=temp_db):
+                    yield ExecutorEngine("config.yaml")
+
+    def test_parses_per_device_ev_plans(self, engine):
+        """ev_chargers dict in slot data is parsed into ev_charger_plans."""
+        slot_data = {
+            "soc_target_percent": 50,
+            "ev_chargers": {"ev1": 7.4, "ev2": 11.0},
+        }
+        slot = engine._parse_slot_plan(slot_data)
+
+        assert slot.ev_charger_plans == {"ev1": 7.4, "ev2": 11.0}
+
+    def test_empty_ev_chargers_dict(self, engine):
+        """Empty dict produces empty ev_charger_plans."""
+        slot_data = {
+            "soc_target_percent": 50,
+            "ev_chargers": {},
+        }
+        slot = engine._parse_slot_plan(slot_data)
+
+        assert slot.ev_charger_plans == {}
+
+    def test_missing_ev_chargers_field(self, engine):
+        """Missing ev_chargers field produces empty ev_charger_plans."""
+        slot_data = {"soc_target_percent": 50}
+        slot = engine._parse_slot_plan(slot_data)
+
+        assert slot.ev_charger_plans == {}
+
+    def test_old_format_ev_charging_kw_still_parsed(self, engine):
+        """Backward compat: old ev_charging_kw scalar is still parsed as aggregate."""
+        slot_data = {
+            "soc_target_percent": 50,
+            "ev_charging_kw": 7.4,
+        }
+        slot = engine._parse_slot_plan(slot_data)
+
+        assert slot.ev_charging_kw == pytest.approx(7.4)
+        # No chargers configured in this fixture, so no per-device plans
+        assert slot.ev_charger_plans == {}
+
+    def test_old_format_fallback_maps_to_first_charger(self, temp_schedule, temp_db):
+        """Old-format schedule maps aggregate ev_charging_kw to first configured charger."""
+        with patch("executor.engine.load_executor_config") as mock_config:
+            mock_config.return_value = ExecutorConfig(
+                schedule_path=temp_schedule,
+                timezone="Europe/Stockholm",
+                ev_chargers=[EVChargerDeviceConfig(id="ev1", switch_entity="switch.ev1")],
+            )
+            with patch("executor.engine.load_yaml") as mock_yaml:
+                mock_yaml.return_value = {}
+                with patch.object(ExecutorEngine, "_get_db_path", return_value=temp_db):
+                    eng = ExecutorEngine("config.yaml")
+
+        slot_data = {"soc_target_percent": 50, "ev_charging_kw": 7.4}
+        slot = eng._parse_slot_plan(slot_data)
+
+        assert slot.ev_charging_kw == pytest.approx(7.4)
+        assert slot.ev_charger_plans == {"ev1": pytest.approx(7.4)}
+
+
+class TestControlEvChargerPerDevice:
+    """Task 6.10: _control_ev_charger loops over configured chargers independently."""
+
+    @pytest.fixture
+    def engine(self, temp_schedule, temp_db):
+        with patch("executor.engine.load_executor_config") as mock_config:
+            mock_config.return_value = ExecutorConfig(
+                schedule_path=temp_schedule,
+                timezone="Europe/Stockholm",
+                ev_chargers=[
+                    EVChargerDeviceConfig(id="ev1", switch_entity="switch.ev1"),
+                    EVChargerDeviceConfig(id="ev2", switch_entity="switch.ev2"),
+                ],
+            )
+            with patch("executor.engine.load_yaml") as mock_yaml:
+                mock_yaml.return_value = {}
+                with patch.object(ExecutorEngine, "_get_db_path", return_value=temp_db):
+                    eng = ExecutorEngine("config.yaml")
+                    eng._has_ev_charger = True
+                    yield eng
+
+    @pytest.mark.asyncio
+    async def test_per_device_state_initialized_independently(self, engine):
+        """Each charger gets its own EVChargerState entry after control loop."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        engine.ha_client = AsyncMock()
+        engine.ha_client.get_state_value = AsyncMock(return_value="off")
+
+        mock_result = MagicMock(
+            success=True,
+            skipped=False,
+            duration_ms=5,
+            action_type="switch",
+            message="ok",
+            entity_id="switch.ev1",
+            previous_value=None,
+            new_value="off",
+            verified_value="off",
+            verification_success=True,
+            error_details=None,
+        )
+        engine.dispatcher = AsyncMock()
+        engine.dispatcher.set_ev_charger_switch = AsyncMock(return_value=mock_result)
+
+        slot = SlotPlan(
+            charge_kw=0.0,
+            discharge_kw=0.0,
+            export_kw=0.0,
+            load_kw=0.0,
+            water_kw=0.0,
+            ev_charging_kw=0.0,
+            soc_target=50,
+            soc_projected=50,
+            ev_charger_plans={},
+        )
+
+        tz = pytz.timezone("Europe/Stockholm")
+        now = datetime.now(tz)
+        await engine._control_ev_charger(slot, now)
+
+        # Both chargers should have state entries after control loop runs
+        assert "ev1" in engine._ev_charger_states
+        assert "ev2" in engine._ev_charger_states
+        assert isinstance(engine._ev_charger_states["ev1"], EVChargerState)
+        assert isinstance(engine._ev_charger_states["ev2"], EVChargerState)
+
+    @pytest.mark.asyncio
+    async def test_charger_without_switch_entity_skipped(self, temp_schedule, temp_db):
+        """Charger with no switch_entity is skipped (no HA call)."""
+        from unittest.mock import AsyncMock
+
+        with patch("executor.engine.load_executor_config") as mock_config:
+            mock_config.return_value = ExecutorConfig(
+                schedule_path=temp_schedule,
+                timezone="Europe/Stockholm",
+                ev_chargers=[
+                    EVChargerDeviceConfig(id="ev_no_switch", switch_entity=None),
+                ],
+            )
+            with patch("executor.engine.load_yaml") as mock_yaml:
+                mock_yaml.return_value = {}
+                with patch.object(ExecutorEngine, "_get_db_path", return_value=temp_db):
+                    eng = ExecutorEngine("config.yaml")
+                    eng._has_ev_charger = True
+
+        eng.ha_client = AsyncMock()
+        eng.dispatcher = AsyncMock()
+
+        slot = SlotPlan(
+            charge_kw=0.0,
+            discharge_kw=0.0,
+            export_kw=0.0,
+            load_kw=0.0,
+            water_kw=0.0,
+            ev_charging_kw=0.0,
+            soc_target=50,
+            soc_projected=50,
+            ev_charger_plans={"ev_no_switch": 7.4},
+        )
+
+        tz = pytz.timezone("Europe/Stockholm")
+        now = datetime.now(tz)
+        await eng._control_ev_charger(slot, now)
+
+        # No switch calls should have been made
+        eng.dispatcher.set_ev_charger_switch.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_safety_timeout_stops_charger(self, engine):
+        """Charger running without plan for >30 min triggers safety stop."""
+        from datetime import timedelta
+        from unittest.mock import AsyncMock, MagicMock
+
+        engine.ha_client = AsyncMock()
+        engine.ha_client.get_state_value = AsyncMock(return_value="on")
+
+        mock_result = MagicMock(
+            success=True,
+            skipped=False,
+            duration_ms=5,
+            action_type="switch",
+            message="ok",
+            entity_id="switch.ev1",
+            previous_value="on",
+            new_value="off",
+            verified_value="off",
+            verification_success=True,
+            error_details=None,
+        )
+        engine.dispatcher = AsyncMock()
+        engine.dispatcher.set_ev_charger_switch = AsyncMock(return_value=mock_result)
+
+        tz = pytz.timezone("Europe/Stockholm")
+        now = datetime.now(tz)
+
+        # Simulate charger has been running for 45 minutes without a plan
+        engine._ev_charger_states["ev1"] = EVChargerState(
+            charging_active=True,
+            charging_started_at=now - timedelta(minutes=45),
+            charging_slot_end=now - timedelta(minutes=30),
+        )
+
+        # No plan for ev1 (plan = 0.0)
+        slot = SlotPlan(
+            charge_kw=0.0,
+            discharge_kw=0.0,
+            export_kw=0.0,
+            load_kw=0.0,
+            water_kw=0.0,
+            ev_charging_kw=0.0,
+            soc_target=50,
+            soc_projected=50,
+            ev_charger_plans={"ev1": 0.0},
+        )
+
+        await engine._control_ev_charger(slot, now)
+
+        # The charger should have been turned off due to safety timeout
+        calls = engine.dispatcher.set_ev_charger_switch.call_args_list
+        assert any(
+            ("switch.ev1" in str(c) and "False" in str(c))
+            or (c.args and c.args[0] == "switch.ev1" and c.kwargs.get("turn_on") is False)
+            for c in calls
+        ), "Expected safety-timeout stop call for switch.ev1"
+
+
+class TestGetStatusEvChargerPlans:
+    """Task 6.10: get_status() includes per-device EV plan."""
+
+    @pytest.fixture
+    def engine(self, temp_schedule, temp_db):
+        with patch("executor.engine.load_executor_config") as mock_config:
+            mock_config.return_value = ExecutorConfig(
+                schedule_path=temp_schedule,
+                timezone="Europe/Stockholm",
+            )
+            with patch("executor.engine.load_yaml") as mock_yaml:
+                mock_yaml.return_value = {}
+                with patch.object(ExecutorEngine, "_get_db_path", return_value=temp_db):
+                    yield ExecutorEngine("config.yaml")
+
+    def test_get_status_includes_ev_charger_plans(self, engine, temp_schedule):
+        """get_status() returns ev_charger_plans in current_slot_plan."""
+        from executor.override import SystemState
+
+        tz = pytz.timezone("Europe/Stockholm")
+        now = datetime.now(tz)
+        slot_start = now - timedelta(minutes=5)
+        end = slot_start + timedelta(minutes=15)
+
+        slot = {
+            "start_time": slot_start.isoformat(),
+            "end_time": end.isoformat(),
+            "end_time_kepler": end.isoformat(),
+            "battery_charge_kw": 0.0,
+            "battery_discharge_kw": 0.0,
+            "export_kwh": 0.0,
+            "water_heating_kw": 0.0,
+            "soc_target_percent": 50,
+            "projected_soc_percent": 45,
+            "ev_charging_kw": 7.4,
+            "ev_chargers": {"main_ev": 7.4},
+        }
+        schedule = make_schedule([slot])
+        with Path(temp_schedule).open("w", encoding="utf-8") as f:
+            json.dump(schedule, f)
+
+        engine._last_system_state = SystemState(current_soc_percent=50.0)
+        engine.inverter_profile = None
+
+        status = engine.get_status()
+
+        assert status["current_slot_plan"] is not None
+        assert "ev_charger_plans" in status["current_slot_plan"]
+        assert status["current_slot_plan"]["ev_charger_plans"] == {"main_ev": 7.4}

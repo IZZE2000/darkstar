@@ -128,6 +128,10 @@ ev_chargers:
     plug_sensor: ""                  # EV plug status sensor - Required for smart charging
     type: binary                     # Load type: binary (ON/OFF) only. Variable power control not yet implemented
     nominal_power_kw: 11.0           # Nominal power for load calculations
+    departure_time: ""               # Daily departure time "HH:MM" (24-hour). Car must be ready by this time.
+    switch_entity: ""                # HA entity to enable/disable smart charging (e.g. switch.ev_charger)
+    replan_on_plugin: true           # Re-run planner immediately when this EV plugs in
+    replan_on_unplug: false          # Re-run planner immediately when this EV unplugs
 
   # Example: Second EV (disabled by default)
   # - id: ev_charger_2
@@ -138,12 +142,10 @@ ev_chargers:
   #   sensor: sensor.fiat_power
   #   type: variable
   #   nominal_power_kw: 7.4
-
-# EV Departure Time (REV K25)
-# Universal departure time that applies to all EVs. The system will optimize
-# charging to complete by this time each day. Format: "HH:MM" (24-hour)
-# Example: "07:00" means car must be ready by 7:00 AM daily
-ev_departure_time: "07:00"
+  #   departure_time: ""
+  #   switch_entity: ""
+  #   replan_on_plugin: true
+  #   replan_on_unplug: false
 
 # S-Index Configuration (Risk & Safety Strategy)
 s_index:
@@ -321,20 +323,6 @@ executor:
     temp_normal: 60    # Scheduled heating target (used by planner)
     temp_boost: 70     # Manual boost button (Dashboard/Executor)
     temp_max: 85       # PV dump target + safety limit (never exceeded)
-
-  # EV Charger Control
-  # The executor controls EV charging by setting charge current or enabling/disabling.
-  # NOTE: Penalty levels for optimization are configured per-EV in the ev_chargers[] array
-  # (accessible via UI: Settings > Parameters > EV Chargers). The settings below are for
-  # executor control and re-planning triggers only.
-  ev_charger:
-    switch_entity: ""        # HA entity to enable/disable smart charging (e.g. switch.ev_charger)
-    control_entity: ""       # HA entity for charge current (A) or power (W)
-    control_mode: "current"  # "current" (A), "power" (W), or "switch" (on/off)
-    max_current_a: 32.0      # Max charge current when control_mode=current
-    enabled_entity: ""       # HA entity to enable/disable smart charging (read-only state)
-    replan_on_plugin: true   # Re-run planner immediately when EV plugs in
-    replan_on_unplug: false  # Re-run planner immediately when EV unplugs
 
   # Notifications (via Home Assistant notify service)
   notifications:

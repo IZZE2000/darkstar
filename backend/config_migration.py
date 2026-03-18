@@ -73,6 +73,7 @@ MigrationStep = Callable[[dict[str, Any]], tuple[dict[str, Any], bool]]
 DEPRECATED_KEYS = {
     "deferrable_loads",  # Replaced by water_heaters[] and ev_chargers[]
     "ev_charger",  # Replaced by ev_chargers[] array (plural)
+    "ev_departure_time",  # Moved into ev_chargers[].departure_time
     "solar_array",  # Replaced by solar_arrays[] array (plural)
     "version",  # Replaced by config_version
     "schedule_future_only",  # Removed
@@ -80,6 +81,11 @@ DEPRECATED_KEYS = {
 
 # Nested deprecated keys (path.to.key format)
 DEPRECATED_NESTED_KEYS = {
+    "executor.ev_charger": [
+        "switch_entity",  # Moved into ev_chargers[].switch_entity
+        "replan_on_plugin",  # Moved into ev_chargers[].replan_on_plugin
+        "replan_on_unplug",  # Moved into ev_chargers[].replan_on_unplug
+    ],
     "executor.inverter": [
         # Old _entity suffix keys replaced by standardized names
         "work_mode_entity",
@@ -215,6 +221,84 @@ def _migrate_water_heater_fields(config: dict[str, Any]) -> tuple[dict[str, Any]
     if "target_entity" in water_heater_config:
         del water_heater_config["target_entity"]
         logger.info("✂️  Removed deprecated key: 'executor.water_heater.target_entity'")
+        changed = True
+
+    return config, changed
+
+
+def _migrate_ev_charger_fields(config: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+    """Migrate global EV charger settings into the first enabled ev_chargers[] entry.
+
+    Copies:
+      - ev_departure_time (root) -> ev_chargers[0].departure_time (if absent/empty)
+      - executor.ev_charger.switch_entity -> ev_chargers[0].switch_entity (if absent/empty)
+      - executor.ev_charger.replan_on_plugin -> ev_chargers[0].replan_on_plugin (if absent)
+      - executor.ev_charger.replan_on_unplug -> ev_chargers[0].replan_on_unplug (if absent)
+
+    Returns:
+        Tuple of (modified_config, changed_flag)
+    """
+    changed = False
+
+    ev_chargers = config.get("ev_chargers", [])
+    if not ev_chargers or not isinstance(ev_chargers, list):
+        return config, changed
+
+    # Find first enabled charger
+    first_enabled: dict[str, Any] | None = None
+    for item in cast("list[Any]", ev_chargers):
+        if not isinstance(item, dict):
+            continue
+        ev = cast("dict[str, Any]", item)
+        if ev.get("enabled", True):
+            first_enabled = ev
+            break
+
+    if first_enabled is None:
+        return config, changed
+
+    # Migrate ev_departure_time -> departure_time
+    old_departure = config.get("ev_departure_time", "")
+    if old_departure and not first_enabled.get("departure_time"):
+        first_enabled["departure_time"] = old_departure
+        logger.info(
+            f"🔄 Migrated ev_departure_time -> ev_chargers[0].departure_time: {old_departure}"
+        )
+        changed = True
+
+    # Migrate executor.ev_charger settings
+    executor_raw: Any = config.get("executor", {})
+    if not isinstance(executor_raw, dict):
+        return config, changed
+    executor = cast("dict[str, Any]", executor_raw)
+    ev_charger_exec_raw: Any = executor.get("ev_charger", {})
+    if not isinstance(ev_charger_exec_raw, dict):
+        return config, changed
+    ev_charger_exec = cast("dict[str, Any]", ev_charger_exec_raw)
+
+    # switch_entity
+    old_switch: Any = ev_charger_exec.get("switch_entity", "")
+    if old_switch and not first_enabled.get("switch_entity"):
+        first_enabled["switch_entity"] = old_switch
+        logger.info(
+            f"🔄 Migrated executor.ev_charger.switch_entity -> ev_chargers[0].switch_entity: {old_switch}"
+        )
+        changed = True
+
+    # replan_on_plugin (only migrate if key is absent in first_enabled)
+    if "replan_on_plugin" not in first_enabled and "replan_on_plugin" in ev_charger_exec:
+        first_enabled["replan_on_plugin"] = bool(ev_charger_exec["replan_on_plugin"])
+        logger.info(
+            f"🔄 Migrated executor.ev_charger.replan_on_plugin -> ev_chargers[0].replan_on_plugin: {first_enabled['replan_on_plugin']}"
+        )
+        changed = True
+
+    # replan_on_unplug (only migrate if key is absent in first_enabled)
+    if "replan_on_unplug" not in first_enabled and "replan_on_unplug" in ev_charger_exec:
+        first_enabled["replan_on_unplug"] = bool(ev_charger_exec["replan_on_unplug"])
+        logger.info(
+            f"🔄 Migrated executor.ev_charger.replan_on_unplug -> ev_chargers[0].replan_on_unplug: {first_enabled['replan_on_unplug']}"
+        )
         changed = True
 
     return config, changed
@@ -585,6 +669,11 @@ async def migrate_config(
     # 2.6 Remove energy_sensor from ev_chargers[] and water_heaters[]
     user_config, energy_sensor_changes = _remove_energy_sensor_fields(user_config)
     if energy_sensor_changes:
+        pre_merge_changes = True
+
+    # 2.7 Migrate global EV charger fields into per-device ev_chargers[] entries
+    user_config, ev_migration_changes = _migrate_ev_charger_fields(user_config)
+    if ev_migration_changes:
         pre_merge_changes = True
 
     # 3. Load Default Config (The Template)

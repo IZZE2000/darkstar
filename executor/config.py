@@ -76,13 +76,26 @@ DEFAULT_PENALTY_LEVELS = {
 
 @dataclass
 class EVChargerConfig:
-    """EV charger control configuration."""
+    """EV charger control configuration (legacy single-charger)."""
 
     switch_entity: str | None = None
     max_power_kw: float = 7.4
     battery_capacity_kwh: float | None = None
     replan_on_plugin: bool = True
     replan_on_unplug: bool = False
+
+
+@dataclass
+class EVChargerDeviceConfig:
+    """Per-device EV charger configuration."""
+
+    id: str = ""
+    switch_entity: str | None = None
+    max_power_kw: float = 7.4
+    battery_capacity_kwh: float | None = None
+    replan_on_plugin: bool = True
+    replan_on_unplug: bool = False
+    departure_time: str | None = None
 
 
 @dataclass
@@ -136,7 +149,8 @@ class ExecutorConfig:
 
     inverter: InverterConfig = field(default_factory=InverterConfig)
     water_heater: WaterHeaterConfig = field(default_factory=WaterHeaterConfig)
-    ev_charger: EVChargerConfig = field(default_factory=EVChargerConfig)
+    ev_charger: EVChargerConfig = field(default_factory=EVChargerConfig)  # legacy compat
+    ev_chargers: list[EVChargerDeviceConfig] = field(default_factory=lambda: [])
     notifications: NotificationConfig = field(default_factory=NotificationConfig)
     controller: ControllerConfig = field(default_factory=ControllerConfig)
 
@@ -313,6 +327,29 @@ def load_executor_config(config_path: str = "config.yaml") -> ExecutorConfig:
         replan_on_unplug=bool(ev_data.get("replan_on_unplug", EVChargerConfig.replan_on_unplug)),
     )
 
+    # Per-device EV charger config (multi-device support)
+    ev_chargers_array = data.get("ev_chargers", [])
+    ev_chargers_list: list[EVChargerDeviceConfig] = []
+    for idx, charger in enumerate(cast("list[dict[str, Any]]", ev_chargers_array)):
+        if not charger.get("enabled", True):
+            continue
+        charger_id = str(charger.get("id", f"ev_charger_{idx}"))
+        ev_chargers_list.append(
+            EVChargerDeviceConfig(
+                id=charger_id,
+                switch_entity=_str_or_none(charger.get("switch_entity")),
+                max_power_kw=float(charger.get("max_power_kw", EVChargerDeviceConfig.max_power_kw)),
+                battery_capacity_kwh=charger.get("battery_capacity_kwh"),
+                replan_on_plugin=bool(
+                    charger.get("replan_on_plugin", EVChargerDeviceConfig.replan_on_plugin)
+                ),
+                replan_on_unplug=bool(
+                    charger.get("replan_on_unplug", EVChargerDeviceConfig.replan_on_unplug)
+                ),
+                departure_time=_str_or_none(charger.get("departure_time")),
+            )
+        )
+
     notif_data: dict[str, Any] = (
         executor_data.get("notifications", {})
         if isinstance(executor_data.get("notifications"), dict)
@@ -422,6 +459,7 @@ def load_executor_config(config_path: str = "config.yaml") -> ExecutorConfig:
         inverter=inverter,
         water_heater=water_heater,
         ev_charger=ev_charger,
+        ev_chargers=ev_chargers_list,
         notifications=notifications,
         controller=controller,
         history_retention_days=int(executor_data.get("history_retention_days", 30)),

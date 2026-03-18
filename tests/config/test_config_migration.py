@@ -400,6 +400,126 @@ class TestRemoveEnergySensorFields:
 
         config = {"system": {"has_battery": True}}
 
-        result, changed = _remove_energy_sensor_fields(config)
+        _, changed = _remove_energy_sensor_fields(config)
+
+        assert changed is False
+
+
+class TestMigrateEvChargerFields:
+    """Tests for _migrate_ev_charger_fields: moves global EV settings into ev_chargers[0]."""
+
+    def _base_config(self, extra_charger_fields=None):
+        charger = {"id": "main", "enabled": True, "name": "My EV"}
+        if extra_charger_fields:
+            charger.update(extra_charger_fields)
+        return {
+            "ev_chargers": [charger],
+        }
+
+    def test_departure_time_migrated_to_first_enabled_charger(self):
+        from backend.config_migration import _migrate_ev_charger_fields
+
+        config = self._base_config()
+        config["ev_departure_time"] = "07:30"
+
+        result, changed = _migrate_ev_charger_fields(config)
+
+        assert changed is True
+        assert result["ev_chargers"][0]["departure_time"] == "07:30"
+
+    def test_switch_entity_migrated_from_executor_ev_charger(self):
+        from backend.config_migration import _migrate_ev_charger_fields
+
+        config = self._base_config()
+        config["executor"] = {"ev_charger": {"switch_entity": "switch.tesla"}}
+
+        result, changed = _migrate_ev_charger_fields(config)
+
+        assert changed is True
+        assert result["ev_chargers"][0]["switch_entity"] == "switch.tesla"
+
+    def test_replan_on_plugin_migrated(self):
+        from backend.config_migration import _migrate_ev_charger_fields
+
+        config = self._base_config()
+        config["executor"] = {"ev_charger": {"replan_on_plugin": True}}
+
+        result, changed = _migrate_ev_charger_fields(config)
+
+        assert changed is True
+        assert result["ev_chargers"][0]["replan_on_plugin"] is True
+
+    def test_replan_on_unplug_migrated(self):
+        from backend.config_migration import _migrate_ev_charger_fields
+
+        config = self._base_config()
+        config["executor"] = {"ev_charger": {"replan_on_unplug": True}}
+
+        result, changed = _migrate_ev_charger_fields(config)
+
+        assert changed is True
+        assert result["ev_chargers"][0]["replan_on_unplug"] is True
+
+    def test_idempotent_departure_time_not_overwritten(self):
+        from backend.config_migration import _migrate_ev_charger_fields
+
+        config = self._base_config(extra_charger_fields={"departure_time": "08:00"})
+        config["ev_departure_time"] = "07:30"
+
+        result, _ = _migrate_ev_charger_fields(config)
+
+        # departure_time already present — should NOT be overwritten
+        assert result["ev_chargers"][0]["departure_time"] == "08:00"
+
+    def test_idempotent_switch_entity_not_overwritten(self):
+        from backend.config_migration import _migrate_ev_charger_fields
+
+        config = self._base_config(extra_charger_fields={"switch_entity": "switch.existing"})
+        config["executor"] = {"ev_charger": {"switch_entity": "switch.old"}}
+
+        result, _ = _migrate_ev_charger_fields(config)
+
+        assert result["ev_chargers"][0]["switch_entity"] == "switch.existing"
+
+    def test_no_op_when_already_migrated(self):
+        from backend.config_migration import _migrate_ev_charger_fields
+
+        config = self._base_config(
+            extra_charger_fields={
+                "departure_time": "07:00",
+                "switch_entity": "switch.ev",
+                "replan_on_plugin": True,
+                "replan_on_unplug": False,
+            }
+        )
+        # No old-style fields present either
+        _, changed = _migrate_ev_charger_fields(config)
+
+        assert changed is False
+
+    def test_no_enabled_charger_returns_unchanged(self):
+        from backend.config_migration import _migrate_ev_charger_fields
+
+        config = {
+            "ev_chargers": [{"id": "main", "enabled": False, "name": "My EV"}],
+            "ev_departure_time": "07:00",
+            "executor": {"ev_charger": {"switch_entity": "switch.ev"}},
+        }
+
+        result, changed = _migrate_ev_charger_fields(config)
+
+        assert changed is False
+        # The disabled charger should not have departure_time added
+        assert "departure_time" not in result["ev_chargers"][0]
+
+    def test_empty_ev_chargers_returns_unchanged(self):
+        from backend.config_migration import _migrate_ev_charger_fields
+
+        config = {
+            "ev_chargers": [],
+            "ev_departure_time": "07:00",
+        }
+
+        _, changed = _migrate_ev_charger_fields(config)
 
         assert changed is False

@@ -4,6 +4,7 @@ import pytest
 
 from planner.solver.kepler import KeplerSolver
 from planner.solver.types import (
+    EVChargerInput,
     IncentiveBucket,
     KeplerConfig,
     KeplerInput,
@@ -149,16 +150,21 @@ def test_kepler_ev_solar_charging():
         max_export_power_kw=0.0,  # Force solar into battery/EV
         enable_export=False,
         # EV Settings (REV F51: Use incentive buckets)
-        ev_charging_enabled=True,
-        ev_plugged_in=True,
-        ev_max_power_kw=10.0,  # 2.5kWh per slot
-        ev_battery_capacity_kwh=100.0,
-        ev_current_soc_percent=50.0,
-        # REV F51: Incentive buckets (threshold -> value in SEK/kWh)
-        # Need 10kWh total to reach 60% SoC (from 50%)
-        ev_incentive_buckets=[
-            IncentiveBucket(threshold_soc=50.0, value_sek=1.0),  # 0-50%
-            IncentiveBucket(threshold_soc=60.0, value_sek=5.0),  # 50-60%
+        ev_chargers=[
+            EVChargerInput(
+                id="test_ev",
+                max_power_kw=10.0,  # 2.5kWh per slot
+                battery_capacity_kwh=100.0,
+                current_soc_percent=50.0,
+                plugged_in=True,
+                deadline=None,
+                # REV F51: Incentive buckets (threshold -> value in SEK/kWh)
+                # Need 10kWh total to reach 60% SoC (from 50%)
+                incentive_buckets=[
+                    IncentiveBucket(threshold_soc=50.0, value_sek=1.0),  # 0-50%
+                    IncentiveBucket(threshold_soc=60.0, value_sek=5.0),  # 50-60%
+                ],
+            )
         ],
     )
 
@@ -211,15 +217,22 @@ def test_kepler_ev_no_battery_drain():
         max_soc_percent=100.0,
         target_soc_kwh=10.0,  # Want to keep battery full!
         # EV Settings (REV F51: Use penalty bucket to discourage charging when grid is expensive)
-        ev_charging_enabled=True,
-        ev_plugged_in=True,
-        ev_max_power_kw=10.0,
-        ev_battery_capacity_kwh=100.0,
-        ev_current_soc_percent=10.0,
-        # REV F51: Negative penalty (NOT positive incentive) discourages EV charging
-        # The penalty is SUBTRACTED from objective, so negative = higher cost = discourage
-        ev_incentive_buckets=[
-            IncentiveBucket(threshold_soc=80.0, value_sek=-10.0),  # Penalty discourages charging
+        ev_chargers=[
+            EVChargerInput(
+                id="test_ev",
+                max_power_kw=10.0,
+                battery_capacity_kwh=100.0,
+                current_soc_percent=10.0,
+                plugged_in=True,
+                deadline=None,
+                # REV F51: Negative penalty (NOT positive incentive) discourages EV charging
+                # The penalty is SUBTRACTED from objective, so negative = higher cost = discourage
+                incentive_buckets=[
+                    IncentiveBucket(
+                        threshold_soc=80.0, value_sek=-10.0
+                    ),  # Penalty discourages charging
+                ],
+            )
         ],
         wear_cost_sek_per_kwh=0.01,
     )
@@ -281,13 +294,20 @@ def test_kepler_ev_blocks_discharge():
         max_export_power_kw=5.0,
         # EV Settings: small battery so incentive bucket fills quickly (~1 slot),
         # leaving remaining slots free to discharge for export (3 SEK/kWh)
-        ev_charging_enabled=True,
-        ev_plugged_in=True,
-        ev_max_power_kw=2.0,
-        ev_battery_capacity_kwh=1.0,  # Small: 50% bucket = 0.5 kWh, fills in ~1 slot
-        ev_current_soc_percent=0.0,
-        ev_incentive_buckets=[
-            IncentiveBucket(threshold_soc=50.0, value_sek=5.0),  # 5 SEK/kWh for first 0.5 kWh
+        ev_chargers=[
+            EVChargerInput(
+                id="test_ev",
+                max_power_kw=2.0,
+                battery_capacity_kwh=1.0,  # Small: 50% bucket = 0.5 kWh, fills in ~1 slot
+                current_soc_percent=0.0,
+                plugged_in=True,
+                deadline=None,
+                incentive_buckets=[
+                    IncentiveBucket(
+                        threshold_soc=50.0, value_sek=5.0
+                    ),  # 5 SEK/kWh for first 0.5 kWh
+                ],
+            )
         ],
     )
 
@@ -351,13 +371,18 @@ def test_kepler_ev_load_pressure_mutual_exclusion():
         wear_cost_sek_per_kwh=0.01,
         enable_export=True,
         max_export_power_kw=5.0,
-        ev_charging_enabled=True,
-        ev_plugged_in=True,
-        ev_max_power_kw=5.0,
-        ev_battery_capacity_kwh=100.0,
-        ev_current_soc_percent=0.0,
-        ev_incentive_buckets=[
-            IncentiveBucket(threshold_soc=20.0, value_sek=0.5),  # Small incentive
+        ev_chargers=[
+            EVChargerInput(
+                id="test_ev",
+                max_power_kw=5.0,
+                battery_capacity_kwh=100.0,
+                current_soc_percent=0.0,
+                plugged_in=True,
+                deadline=None,
+                incentive_buckets=[
+                    IncentiveBucket(threshold_soc=20.0, value_sek=0.5),  # Small incentive
+                ],
+            )
         ],
     )
 

@@ -451,20 +451,25 @@ async def record_observation_from_current_state(
 
     # Calculate EV charging energy using power history API
     ev_charging_kwh = 0.0
+    ev_charger_energy: dict[str, float] = {}  # Task 8.1: per-device recording
     for ev_charger in ev_chargers:
         if ev_charger.get("enabled", True):
             sensor = ev_charger.get("sensor")
+            charger_id = str(ev_charger.get("id", ""))
             if sensor:
                 energy = await get_energy_from_power_history(str(sensor), slot_start, slot_end)
                 if energy is not None:
                     ev_charging_kwh += energy
-                    logger.debug(f"EV {ev_charger.get('id')}: history energy={energy:.3f} kWh")
+                    if charger_id:
+                        ev_charger_energy[charger_id] = energy
+                    logger.debug(f"EV {charger_id}: history energy={energy:.3f} kWh")
                 else:
                     charger_power = power_results.get(f"ev_{sensor}") or 0.0
-                    ev_charging_kwh += charger_power * 0.25
-                    logger.debug(
-                        f"EV {ev_charger.get('id')}: snapshot fallback={charger_power * 0.25:.3f} kWh"
-                    )
+                    device_kwh = charger_power * 0.25
+                    ev_charging_kwh += device_kwh
+                    if charger_id:
+                        ev_charger_energy[charger_id] = device_kwh
+                    logger.debug(f"EV {charger_id}: snapshot fallback={device_kwh:.3f} kWh")
 
     # Calculate water heater energy using power history API
     water_kwh = 0.0
@@ -553,7 +558,8 @@ async def record_observation_from_current_state(
         "import_kwh": import_kwh,
         "export_kwh": export_kwh,
         "water_kwh": water_kwh,
-        "ev_charging_kwh": ev_charging_kwh,
+        "ev_charging_kwh": ev_charging_kwh,  # Task 8.2: aggregate preserved for backward compat
+        "ev_charger_energy": ev_charger_energy if ev_charger_energy else None,
         "batt_charge_kwh": batt_charge_kwh,
         "batt_discharge_kwh": batt_discharge_kwh,
         "soc_end_percent": soc_percent,

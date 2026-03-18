@@ -36,6 +36,10 @@ export interface EVChargerEntity {
     type: 'binary' | 'variable' | 'constant'
     nominal_power_kw: number
     penalty_levels?: Array<{ max_soc: number; penalty_sek: number }>
+    departure_time?: string
+    switch_entity?: string
+    replan_on_plugin?: boolean
+    replan_on_unplug?: boolean
 }
 
 type EntityType = 'water_heater' | 'ev_charger'
@@ -79,6 +83,10 @@ const createDefaultEVCharger = (index: number): EVChargerEntity => ({
         { max_soc: 80, penalty_sek: 0.2 },
         { max_soc: 100, penalty_sek: 0.0 },
     ],
+    departure_time: '',
+    switch_entity: '',
+    replan_on_plugin: true,
+    replan_on_unplug: false,
 })
 
 export const EntityArrayEditor: React.FC<EntityArrayEditorProps> = ({
@@ -181,9 +189,8 @@ export const EntityArrayEditor: React.FC<EntityArrayEditorProps> = ({
                 {entities.map((entity, index) => (
                     <div
                         key={entity.id || index}
-                        className={`overflow-visible border rounded-xl bg-surface-elevated mb-2 transition-all duration-200 ${
-                            entity.enabled ? 'border-line/40' : 'border-line/20 opacity-75'
-                        }`}
+                        className={`overflow-visible border rounded-xl bg-surface-elevated mb-2 transition-all duration-200 ${entity.enabled ? 'border-line/40' : 'border-line/20 opacity-75'
+                            }`}
                     >
                         <button
                             type="button"
@@ -192,11 +199,10 @@ export const EntityArrayEditor: React.FC<EntityArrayEditorProps> = ({
                         >
                             <div className="flex items-center gap-3">
                                 <div
-                                    className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${
-                                        entity.enabled
-                                            ? 'bg-accent/10 border border-accent/20 text-accent'
-                                            : 'bg-surface2 border border-line/30 text-muted'
-                                    }`}
+                                    className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${entity.enabled
+                                        ? 'bg-accent/10 border border-accent/20 text-accent'
+                                        : 'bg-surface2 border border-line/30 text-muted'
+                                        }`}
                                 >
                                     {index + 1}
                                 </div>
@@ -348,10 +354,6 @@ export const EntityArrayEditor: React.FC<EntityArrayEditorProps> = ({
                                                 placeholder="Select Home Assistant power sensor..."
                                                 disabled={disabled}
                                             />
-                                            <p className="text-[10px] text-muted mt-1">
-                                                Real-time power reading for this device. Used for live monitoring and
-                                                dashboard display.
-                                            </p>
                                         </div>
 
                                         {/* Target Entity (Water Heater only - ARC15) */}
@@ -429,6 +431,77 @@ export const EntityArrayEditor: React.FC<EntityArrayEditorProps> = ({
                                             </div>
                                         )}
 
+                                        {/* Switch Entity (EV only) */}
+                                        {!isWaterHeater && (
+                                            <div className="sm:col-span-2">
+                                                <label className="text-[10px] uppercase font-bold text-muted mb-1.5 block">
+                                                    Switch Entity (HA Entity)
+                                                </label>
+                                                <EntitySelect
+                                                    entities={haEntities}
+                                                    value={(entity as EVChargerEntity).switch_entity || ''}
+                                                    onChange={(val) =>
+                                                        updateEntity(index, {
+                                                            switch_entity: val,
+                                                        } as Partial<EVChargerEntity>)
+                                                    }
+                                                    loading={haLoading}
+                                                    placeholder="Select Home Assistant switch entity..."
+                                                    disabled={disabled}
+                                                />
+                                                <p className="text-[10px] text-muted mt-1">
+                                                    Switch to enable/disable charging (e.g. switch.ev_charger)
+                                                </p>
+                                            </div>
+                                        )}
+
+                                        {/* Departure Time (EV only) */}
+                                        {!isWaterHeater && (
+                                            <div>
+                                                <label className="text-[10px] uppercase font-bold text-muted mb-1.5 block">
+                                                    Departure Time
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    value={(entity as EVChargerEntity).departure_time || ''}
+                                                    onChange={(e) =>
+                                                        updateEntity(index, {
+                                                            departure_time: e.target.value,
+                                                        } as Partial<EVChargerEntity>)
+                                                    }
+                                                    disabled={disabled}
+                                                    placeholder="07:00"
+                                                    className="w-full rounded-lg border border-line/50 bg-surface2 px-3 py-2 text-sm text-text focus:border-accent focus:outline-none disabled:opacity-50"
+                                                />
+                                                <p className="text-[10px] text-muted mt-1">
+                                                    Daily departure time (HH:MM). Charging completes before this time.
+                                                </p>
+                                            </div>
+                                        )}
+
+                                        {/* Replan on Plugin (EV only) */}
+                                        {!isWaterHeater && (
+                                            <div>
+                                                <label className="text-[10px] uppercase font-bold text-muted mb-1.5 block">
+                                                    Re-plan on Plugin
+                                                </label>
+                                                <div className="flex items-center gap-2 mt-2">
+                                                    <Switch
+                                                        checked={(entity as EVChargerEntity).replan_on_plugin ?? true}
+                                                        onCheckedChange={(checked) =>
+                                                            updateEntity(index, {
+                                                                replan_on_plugin: checked,
+                                                            } as Partial<EVChargerEntity>)
+                                                        }
+                                                        disabled={disabled}
+                                                    />
+                                                    <span className="text-xs text-text">
+                                                        Re-run planner immediately when plugged in
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        )}
+
                                         {/* Type Selection */}
                                         <div>
                                             <label className="text-[10px] uppercase font-bold text-muted mb-1.5 block">
@@ -469,21 +542,46 @@ export const EntityArrayEditor: React.FC<EntityArrayEditorProps> = ({
                                             )}
                                         </div>
 
+                                        {/* Replan on Unplug (EV only) */}
+                                        {!isWaterHeater && (
+                                            <div>
+                                                <label className="text-[10px] uppercase font-bold text-muted mb-1.5 block">
+                                                    Re-plan on Unplug
+                                                </label>
+                                                <div className="flex items-center gap-2 mt-2">
+                                                    <Switch
+                                                        checked={(entity as EVChargerEntity).replan_on_unplug ?? false}
+                                                        onCheckedChange={(checked) =>
+                                                            updateEntity(index, {
+                                                                replan_on_unplug: checked,
+                                                            } as Partial<EVChargerEntity>)
+                                                        }
+                                                        disabled={disabled}
+                                                    />
+                                                    <span className="text-xs text-text">
+                                                        Re-run planner immediately when unplugged
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        )}
+
                                         {/* Nominal Power */}
-                                        <div>
-                                            <label className="text-[10px] uppercase font-bold text-muted mb-1.5 block">
-                                                Nominal Power (kW)
-                                            </label>
-                                            <NumberInput
-                                                value={entity.nominal_power_kw}
-                                                onChange={(val) =>
-                                                    updateEntity(index, { nominal_power_kw: Number(val) })
-                                                }
-                                                disabled={disabled}
-                                                step={0.1}
-                                                min={0}
-                                            />
-                                        </div>
+                                        {isWaterHeater && (
+                                            <div>
+                                                <label className="text-[10px] uppercase font-bold text-muted mb-1.5 block">
+                                                    Nominal Power (kW)
+                                                </label>
+                                                <NumberInput
+                                                    value={entity.nominal_power_kw}
+                                                    onChange={(val) =>
+                                                        updateEntity(index, { nominal_power_kw: Number(val) })
+                                                    }
+                                                    disabled={disabled}
+                                                    step={0.1}
+                                                    min={0}
+                                                />
+                                            </div>
+                                        )}
 
                                         {/* Water Heater Specific Fields */}
                                         {isWaterHeater && (
@@ -546,11 +644,11 @@ export const EntityArrayEditor: React.FC<EntityArrayEditorProps> = ({
                                                                             max_soc:
                                                                                 currentLevels.length > 0
                                                                                     ? Math.min(
-                                                                                          100,
-                                                                                          currentLevels[
-                                                                                              currentLevels.length - 1
-                                                                                          ].max_soc + 10,
-                                                                                      )
+                                                                                        100,
+                                                                                        currentLevels[
+                                                                                            currentLevels.length - 1
+                                                                                        ].max_soc + 10,
+                                                                                    )
                                                                                     : 50,
                                                                             penalty_sek: 0.5,
                                                                         }
@@ -581,7 +679,7 @@ export const EntityArrayEditor: React.FC<EntityArrayEditorProps> = ({
                                                         </p>
 
                                                         {((entity as EVChargerEntity).penalty_levels || []).length ===
-                                                        0 ? (
+                                                            0 ? (
                                                             <div className="text-center py-4 text-[10px] text-muted">
                                                                 No penalty levels configured. Using defaults.
                                                             </div>

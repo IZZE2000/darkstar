@@ -1,32 +1,6 @@
-## Purpose
-
-The Executor is responsible for executing scheduled energy management decisions by controlling Home Assistant entities (inverters, water heaters, EV chargers). It bridges the planner's decisions with physical device control.
-
-## Requirements
-
-### Requirement: Executor handles Home Assistant service failures gracefully
-The executor SHALL NOT crash when Home Assistant service calls fail or time out. Any errors encountered when communicating with Home Assistant MUST be logged and wrapped in `HACallError` so the executor tick can continue safely and the result log remains intact.
-
-#### Scenario: Home Assistant API times out during a service call
-- **WHEN** any `call_service` HTTP request takes longer than the configured timeout
-- **THEN** the timeout is caught and wrapped as `HACallError`
-- **AND THEN** the retry-with-backoff mechanism attempts up to 3 times before giving up
-- **AND THEN** if all retries are exhausted, `HACallError` is raised to the caller
-
-#### Scenario: Home Assistant API times out during water heater control
-- **WHEN** the `set_water_temp` service call fails after all retries
-- **THEN** the water heater action is recorded as a failed `ActionResult` in the tick result log
-- **AND THEN** the rest of the executor tick continues normally (profile actions are still executed)
-- **AND THEN** no previously collected action results are lost
-
-### Requirement: call_service uses retry-with-backoff
-`HAClient.call_service` SHALL use the same `_retry_with_backoff` mechanism as `get_state`, with 3 attempts and a 1-second base delay, treating `TimeoutError` and `aiohttp.ClientError` as retryable.
-
-### Requirement: Timeout handling is tested
-A unit test SHALL exist verifying that a `TimeoutError` raised by the HTTP session during `call_service` results in an `HACallError` being raised by the client.
+## MODIFIED Requirements
 
 ### Requirement: Status API current_slot_plan includes mode_intent
-
 The `get_status()` method SHALL include a `mode_intent` field in the `current_slot_plan` object. This field SHALL be computed by running the Controller's `decide()` method with the current slot plan and current system state. The `current_slot_plan` object SHALL also include `ev_charging_kw` (aggregate across all chargers), `ev_charger_plans` (per-device dict), and `discharge_kw` from the slot plan.
 
 If the controller cannot produce a decision (e.g., system state unavailable, profile not loaded), `mode_intent` SHALL be `null`.
@@ -47,11 +21,9 @@ If the controller cannot produce a decision (e.g., system state unavailable, pro
 - **AND THEN** all other `current_slot_plan` fields are still populated from the schedule
 
 ### Requirement: Execution records include ev_charging_kw
-
 The execution record logged by the executor SHALL include the aggregate `ev_charging_kw` value from the ORIGINAL slot plan (before any source isolation override) as well as a `ev_charger_plans` dict with per-device planned kW, so that downstream consumers can identify which chargers were scheduled.
 
 #### Scenario: Per-device EV plans in execution record
-
 - **WHEN** the executor processes a slot with charger A at 11 kW and charger B at 7.4 kW
 - **THEN** the execution record includes `ev_charging_kw = 18.4` and `ev_charger_plans = {"ev_charger_1": 11.0, "ev_charger_2": 7.4}`
 
@@ -60,19 +32,18 @@ The execution record logged by the executor SHALL include the aggregate `ev_char
 - **THEN** the execution record includes `ev_charging_kw = 0.0` and `ev_charger_plans = {}`
 
 ### Requirement: Execution records log original planned values before EV override
-
 The execution record's planned fields (`planned_charge_kw`, `planned_discharge_kw`, `planned_export_kw`, `planned_water_kw`) SHALL reflect the ORIGINAL slot plan from `schedule.json`, not the modified slot after source isolation or other runtime overrides.
 
 #### Scenario: Source isolation does not affect logged planned discharge
-
 - **WHEN** the schedule has `battery_discharge_kw = 1.4` for a slot
 - **AND** EV source isolation overwrites `discharge_kw` to 0.0 for the controller
 - **THEN** the execution record includes `planned_discharge_kw = 1.4`
 
 #### Scenario: Non-EV slots are unaffected
-
 - **WHEN** no source isolation is active
 - **THEN** the execution record's planned fields match the slot plan exactly (no change in behavior)
+
+## ADDED Requirements
 
 ### Requirement: Per-device EV charger config loading
 The executor config loader SHALL read per-device EV settings from `ev_chargers[]` entries, building a list of `EVChargerDeviceConfig` objects with `id`, `name`, `switch_entity`, `max_power_kw`, `battery_capacity_kwh`, `replan_on_plugin`, and `replan_on_unplug`. Only enabled chargers SHALL be loaded.
@@ -99,18 +70,3 @@ The executor SHALL parse the `ev_chargers` dict from each schedule slot to build
 #### Scenario: Old format schedule fallback
 - **WHEN** a schedule slot contains only `ev_charging_kw: 11.0` with no `ev_chargers` key
 - **THEN** `SlotPlan.ev_charger_plans` SHALL map the full amount to the first configured charger
-
-### Requirement: Execution records carry isolation reason when source isolation is active
-
-When EV source isolation activates during a tick, the executor SHALL populate the `override_reason` field of the execution record with a descriptive string including scheduled and actual EV power. This applies only when no real override (e.g., quick action, force charge) is already active.
-
-#### Scenario: Source isolation populates override_reason
-
-- **WHEN** EV source isolation is active (`ev_should_charge_block = True`)
-- **AND** no real override is active (`override.override_needed = False`)
-- **THEN** the execution record's `override_reason` contains a string like `"EV source isolation: 10.0kW scheduled, 0.0kW actual"`
-
-#### Scenario: Real override takes precedence over isolation reason
-
-- **WHEN** both a real override and EV source isolation are active
-- **THEN** the execution record's `override_reason` reflects the real override, not the isolation

@@ -138,6 +138,11 @@ def dataframe_to_json_response(
         record["priority"] = priority
         record["is_historical"] = record.get("is_historical", False)
 
+        # Normalize ev_chargers: ensure it's always a dict, not NaN for non-solver rows
+        ev_chargers_val = record.get("ev_chargers")
+        if not isinstance(ev_chargers_val, dict):
+            record["ev_chargers"] = {}
+
         # Rev K22: Calculate planned cash flow cost (Grid Bill only)
         import_kwh = float(record.get("kepler_import_kwh") or record.get("import_kwh") or 0.0)
         export_kwh_actual = float(

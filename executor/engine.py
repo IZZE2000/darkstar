@@ -52,6 +52,15 @@ EXECUTOR_VERSION = "1.0.0"
 
 
 @dataclass
+class EVChargerState:
+    """Per-device EV charger runtime state."""
+
+    charging_active: bool = False
+    charging_started_at: datetime | None = None
+    charging_slot_end: datetime | None = None
+
+
+@dataclass
 class ExecutorStatus:
     """Current runtime state of the executor."""
 
@@ -180,10 +189,8 @@ class ExecutorEngine:
         self._has_water_heater = system_cfg.get("has_water_heater", True)
         self._has_ev_charger = system_cfg.get("has_ev_charger", False)
 
-        # EV charging state tracking (REV K25 Phase 5)
-        self._ev_charging_active = False
-        self._ev_charging_started_at: datetime | None = None
-        self._ev_charging_slot_end: datetime | None = None
+        # Per-device EV charging state tracking
+        self._ev_charger_states: dict[str, EVChargerState] = {}
 
         # REV F76 Phase 5: Smart logging state tracking (Issue 4 fix)
         self._ev_detected_last_tick = False
@@ -306,6 +313,7 @@ class ExecutorEngine:
                     "water_kw": slot.water_kw,
                     "discharge_kw": slot.discharge_kw,
                     "ev_charging_kw": slot.ev_charging_kw,
+                    "ev_charger_plans": slot.ev_charger_plans,
                     "soc_target": slot.soc_target,
                     "soc_projected": slot.soc_projected,
                     "mode_intent": mode_intent,
@@ -1224,8 +1232,6 @@ class ExecutorEngine:
 
             # Rev EVFIX: Separate switch control from source isolation
             actual_ev_charging: bool = actual_ev_power_kw > 0.1
-            # Switch control: ONLY scheduled charging can turn on the switch
-            ev_should_charge_switch: bool = scheduled_ev_charging
             # Source isolation: Block discharge for both scheduled AND actual charging
             ev_should_charge_block: bool = scheduled_ev_charging or actual_ev_charging
 
@@ -1318,9 +1324,9 @@ class ExecutorEngine:
 
             self.status.last_action = decision.reason
 
-            # Control EV Charger Switch
-            if self._has_ev_charger and self.config.ev_charger.switch_entity:
-                await self._control_ev_charger(ev_should_charge_switch, ev_charging_kw, now)
+            # Control EV Charger Switch (per-device)
+            if self._has_ev_charger and self.config.ev_chargers:
+                await self._control_ev_charger(original_slot, now)
 
             # 6. Execute actions
             action_results: list[ActionResult] = []
@@ -1532,6 +1538,19 @@ class ExecutorEngine:
             slot_data.get("projected_soc_percent", slot_data.get("soc_projected", 50)) or 50
         )
 
+        # Parse per-device EV charger plans (new multi-device format)
+        raw_ev_chargers = slot_data.get("ev_chargers")
+        ev_charger_plans: dict[str, float] = {}
+        if isinstance(raw_ev_chargers, dict):
+            typed_chargers = cast("dict[str, Any]", raw_ev_chargers)
+            ev_charger_plans = {
+                str(k): float(cast("float | str", v)) for k, v in typed_chargers.items()
+            }
+        elif not raw_ev_chargers and ev_charging_kw > 0 and self.config.ev_chargers:
+            # Backward compat: old-format schedule only has aggregate ev_charging_kw;
+            # map it to the first configured charger so per-device control still works.
+            ev_charger_plans = {self.config.ev_chargers[0].id: ev_charging_kw}
+
         return SlotPlan(
             charge_kw=charge_kw,
             discharge_kw=discharge_kw,
@@ -1541,6 +1560,7 @@ class ExecutorEngine:
             ev_charging_kw=ev_charging_kw,
             soc_target=soc_target,
             soc_projected=soc_projected,
+            ev_charger_plans=ev_charger_plans,
         )
 
     async def _gather_system_state(self) -> SystemState:
@@ -1675,6 +1695,7 @@ class ExecutorEngine:
             planned_soc_target=slot.soc_target,
             planned_soc_projected=slot.soc_projected,
             ev_charging_kw=slot.ev_charging_kw,
+            ev_charger_plans=slot.ev_charger_plans if slot.ev_charger_plans else None,
             # Commanded values
             commanded_work_mode=decision.mode_intent,
             commanded_grid_charging=1 if decision.mode_intent == "charge" else 0,
@@ -1809,120 +1830,117 @@ class ExecutorEngine:
         except Exception as e:
             logger.debug("Battery cost update skipped: %s", e)
 
-    async def _control_ev_charger(
-        self, should_charge: bool, charging_kw: float, now: datetime
-    ) -> None:
+    async def _control_ev_charger(self, slot: "SlotPlan | None", now: datetime) -> None:
         """
-        Control the EV charger switch and track charging state.
+        Control all configured EV charger switches per-device.
 
-        Args:
-            should_charge: Whether the schedule says EV should be charging
-            charging_kw: Planned charging power in kW
-            now: Current datetime
+        Each charger gets independent switch control and safety timeout based
+        on its per-device plan from slot.ev_charger_plans.
         """
         if not self.dispatcher or not self.ha_client:
             return
 
-        switch_entity = self.config.ev_charger.switch_entity
-        if not switch_entity:
-            return
+        for charger_cfg in self.config.ev_chargers:
+            switch_entity = charger_cfg.switch_entity
+            if not switch_entity:
+                continue
 
-        try:
-            # Check current state
-            current_state = await self.ha_client.get_state_value(switch_entity)
-            is_currently_on = current_state == "on" if current_state else False
+            charger_id = charger_cfg.id
+            charger_plan_kw = slot.ev_charger_plans.get(charger_id, 0.0) if slot else 0.0
+            should_charge = charger_plan_kw > 0.1
 
-            # Safety timeout: Check if we should stop due to expired plan
-            if is_currently_on and not should_charge and self._ev_charging_started_at:
-                elapsed = (now - self._ev_charging_started_at).total_seconds() / 60
-                max_duration = 30  # 30 minute safety timeout
-                if elapsed > max_duration:
-                    logger.warning(
-                        "EV charging safety timeout: Auto-stopping after %d minutes",
-                        int(elapsed),
-                    )
-                    should_charge = False  # Force stop
+            # Get or create per-device state
+            if charger_id not in self._ev_charger_states:
+                self._ev_charger_states[charger_id] = EVChargerState()
+            dev_state = self._ev_charger_states[charger_id]
 
-            # Determine action
-            if should_charge and not is_currently_on:
-                # Start charging via dispatcher (respects shadow mode)
-                result = await self.dispatcher.set_ev_charger_switch(
-                    switch_entity, turn_on=True, charging_kw=charging_kw
-                )
+            try:
+                current_state = await self.ha_client.get_state_value(switch_entity)
+                is_currently_on = current_state == "on" if current_state else False
 
-                if result.success:
-                    self._ev_charging_active = True
-                    self._ev_charging_started_at = now
-                    self._ev_charging_slot_end = now + timedelta(minutes=15)
-
-                    # Log charging event
-                    self.history.log_execution(
-                        ExecutionRecord(
-                            executed_at=now.isoformat(),
-                            slot_start=now.isoformat(),
-                            commanded_work_mode="ev_charge_start",
-                            before_soc_percent=0,  # Not applicable
-                            success=1 if not result.skipped else 0,
-                            source="ev_charger",
-                            duration_ms=result.duration_ms,
-                            action_results=[
-                                {
-                                    "type": result.action_type,
-                                    "success": result.success,
-                                    "message": result.message,
-                                    "entity_id": result.entity_id,
-                                    "previous_value": result.previous_value,
-                                    "new_value": result.new_value,
-                                    "verified_value": result.verified_value,
-                                    "verification_success": result.verification_success,
-                                    "skipped": result.skipped,
-                                    "error_details": result.error_details,
-                                }
-                            ],
+                # Safety timeout: stop if plan expired
+                if is_currently_on and not should_charge and dev_state.charging_started_at:
+                    elapsed = (now - dev_state.charging_started_at).total_seconds() / 60
+                    if elapsed > 30:
+                        logger.warning(
+                            "EV charger %s safety timeout: Auto-stopping after %d minutes",
+                            charger_id,
+                            int(elapsed),
                         )
+                        should_charge = False
+
+                if should_charge and not is_currently_on:
+                    result = await self.dispatcher.set_ev_charger_switch(
+                        switch_entity, turn_on=True, charging_kw=charger_plan_kw
                     )
-
-            elif not should_charge and is_currently_on:
-                # Stop charging via dispatcher (respects shadow mode)
-                result = await self.dispatcher.set_ev_charger_switch(
-                    switch_entity, turn_on=False, charging_kw=0.0
-                )
-
-                if result.success:
-                    self._ev_charging_active = False
-                    self._ev_charging_started_at = None
-                    self._ev_charging_slot_end = None
-
-                    # Log charging event
-                    self.history.log_execution(
-                        ExecutionRecord(
-                            executed_at=now.isoformat(),
-                            slot_start=now.isoformat(),
-                            commanded_work_mode="ev_charge_stop",
-                            before_soc_percent=0,
-                            success=1 if not result.skipped else 0,
-                            source="ev_charger",
-                            duration_ms=result.duration_ms,
-                            action_results=[
-                                {
-                                    "type": result.action_type,
-                                    "success": result.success,
-                                    "message": result.message,
-                                    "entity_id": result.entity_id,
-                                    "previous_value": result.previous_value,
-                                    "new_value": result.new_value,
-                                    "verified_value": result.verified_value,
-                                    "verification_success": result.verification_success,
-                                    "skipped": result.skipped,
-                                    "error_details": result.error_details,
-                                }
-                            ],
+                    if result.success:
+                        dev_state.charging_active = True
+                        dev_state.charging_started_at = now
+                        dev_state.charging_slot_end = now + timedelta(minutes=15)
+                        self.history.log_execution(
+                            ExecutionRecord(
+                                executed_at=now.isoformat(),
+                                slot_start=now.isoformat(),
+                                commanded_work_mode="ev_charge_start",
+                                before_soc_percent=0,
+                                success=1 if not result.skipped else 0,
+                                source="ev_charger",
+                                duration_ms=result.duration_ms,
+                                action_results=[
+                                    {
+                                        "type": result.action_type,
+                                        "success": result.success,
+                                        "message": result.message,
+                                        "entity_id": result.entity_id,
+                                        "charger_id": charger_id,
+                                        "previous_value": result.previous_value,
+                                        "new_value": result.new_value,
+                                        "verified_value": result.verified_value,
+                                        "verification_success": result.verification_success,
+                                        "skipped": result.skipped,
+                                        "error_details": result.error_details,
+                                    }
+                                ],
+                            )
                         )
+
+                elif not should_charge and is_currently_on:
+                    result = await self.dispatcher.set_ev_charger_switch(
+                        switch_entity, turn_on=False, charging_kw=0.0
                     )
+                    if result.success:
+                        dev_state.charging_active = False
+                        dev_state.charging_started_at = None
+                        dev_state.charging_slot_end = None
+                        self.history.log_execution(
+                            ExecutionRecord(
+                                executed_at=now.isoformat(),
+                                slot_start=now.isoformat(),
+                                commanded_work_mode="ev_charge_stop",
+                                before_soc_percent=0,
+                                success=1 if not result.skipped else 0,
+                                source="ev_charger",
+                                duration_ms=result.duration_ms,
+                                action_results=[
+                                    {
+                                        "type": result.action_type,
+                                        "success": result.success,
+                                        "message": result.message,
+                                        "entity_id": result.entity_id,
+                                        "charger_id": charger_id,
+                                        "previous_value": result.previous_value,
+                                        "new_value": result.new_value,
+                                        "verified_value": result.verified_value,
+                                        "verification_success": result.verification_success,
+                                        "skipped": result.skipped,
+                                        "error_details": result.error_details,
+                                    }
+                                ],
+                            )
+                        )
 
-            elif should_charge and is_currently_on:
-                # Continue charging - update tracking
-                self._ev_charging_slot_end = now + timedelta(minutes=15)
+                elif should_charge and is_currently_on:
+                    dev_state.charging_slot_end = now + timedelta(minutes=15)
 
-        except Exception as e:
-            logger.error("Failed to control EV charger: %s", e)
+            except Exception as e:
+                logger.error("Failed to control EV charger %s: %s", charger_id, e)

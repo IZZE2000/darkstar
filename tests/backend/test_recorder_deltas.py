@@ -1740,3 +1740,239 @@ class TestLoadIsolationFromDeferrableLoads:
                             f"Load isolation not applied (history_value={history_value}): "
                             f"load_kwh={record['load_kwh']}"
                         )
+
+
+class TestPerDeviceEVRecording:
+    """Task 8.3: Per-device EV charging energy recorded alongside aggregate."""
+
+    @pytest.fixture
+    def base_config(self):
+        return {
+            "system": {
+                "has_ev_charger": True,
+                "has_battery": True,
+                "has_solar": False,
+                "grid_meter_type": "net",
+            },
+            "input_sensors": {
+                "battery_soc": "sensor.battery_soc",
+                "load_power": "sensor.load_power",
+                "grid_power": "sensor.grid_power",
+                "battery_power": "sensor.battery_power",
+            },
+            "battery": {"capacity_kwh": 10.0},
+            "ev_chargers": [],
+            "water_heaters": [],
+        }
+
+    def _make_common_patches(self, now):
+        """Return common mocks reused across tests."""
+
+        async def mock_sensor_kw(entity):
+            return {
+                "sensor.load_power": 3.0,
+                "sensor.grid_power": 2.0,
+                "sensor.battery_power": 0.0,
+                "sensor.ev_a_power": 3.2,
+                "sensor.ev_b_power": 1.8,
+            }.get(entity, 0.0)
+
+        async def mock_float(entity):
+            if entity == "sensor.battery_soc":
+                return 50.0
+            return None
+
+        async def mock_entity_state(entity):
+            return None
+
+        async def mock_history(entity_id, start, end):
+            return {"sensor.ev_a_power": 0.8, "sensor.ev_b_power": 0.45}.get(entity_id)
+
+        return mock_sensor_kw, mock_float, mock_entity_state, mock_history
+
+    @pytest.mark.asyncio
+    async def test_per_device_kwh_recorded_for_two_chargers(self, base_config):
+        """Two chargers produce individual ev_charger_energy entries."""
+        import tempfile
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        import pytz
+
+        from backend.recorder import RecorderStateStore, record_observation_from_current_state
+
+        config = base_config.copy()
+        config["ev_chargers"] = [
+            {"id": "ev_a", "sensor": "sensor.ev_a_power", "enabled": True},
+            {"id": "ev_b", "sensor": "sensor.ev_b_power", "enabled": True},
+        ]
+
+        now = datetime.now(pytz.timezone("Europe/Stockholm"))
+        prev_time = now - timedelta(minutes=15)
+        mock_sensor_kw, mock_float, mock_entity_state, mock_history = self._make_common_patches(now)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_file = Path(tmpdir) / "recorder_state.json"
+            state_store = RecorderStateStore(state_file)
+            state_store.load()
+            state_store._state = {
+                "pv_total": {"value": 0.0, "timestamp": prev_time.isoformat()},
+                "load_total": {"value": 0.0, "timestamp": prev_time.isoformat()},
+            }
+            state_store.save()
+
+            with (
+                patch("backend.recorder.get_ha_sensor_kw_normalized", side_effect=mock_sensor_kw),
+                patch("backend.recorder.get_ha_sensor_float", side_effect=mock_float),
+                patch("backend.recorder.get_ha_entity_state", side_effect=mock_entity_state),
+                patch("backend.recorder.get_current_slot_prices", return_value=None),
+                patch("backend.recorder.get_energy_from_power_history", side_effect=mock_history),
+            ):
+                mock_store = MagicMock()
+                mock_store.get_system_state = AsyncMock(return_value=None)
+                mock_store.set_system_state = AsyncMock()
+                mock_store.store_slot_observations = AsyncMock()
+                mock_store.close = AsyncMock()
+
+                with patch("backend.recorder.LearningStore", return_value=mock_store):
+                    await record_observation_from_current_state(
+                        config=config, state_store=state_store
+                    )
+
+                    df = mock_store.store_slot_observations.call_args[0][0]
+                    record = df.iloc[0].to_dict()
+
+                    # Aggregate is sum of both
+                    assert record["ev_charging_kwh"] == pytest.approx(0.8 + 0.45, abs=0.01)
+
+                    # Per-device dict has individual values
+                    per_device = record["ev_charger_energy"]
+                    assert per_device is not None
+                    assert per_device["ev_a"] == pytest.approx(0.8, abs=0.01)
+                    assert per_device["ev_b"] == pytest.approx(0.45, abs=0.01)
+
+    @pytest.mark.asyncio
+    async def test_per_device_kwh_none_when_no_chargers(self, base_config):
+        """No chargers → ev_charger_energy is None."""
+        import tempfile
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        import pytz
+
+        from backend.recorder import RecorderStateStore, record_observation_from_current_state
+
+        config = base_config.copy()
+        config["ev_chargers"] = []
+
+        now = datetime.now(pytz.timezone("Europe/Stockholm"))
+        prev_time = now - timedelta(minutes=15)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_file = Path(tmpdir) / "recorder_state.json"
+            state_store = RecorderStateStore(state_file)
+            state_store.load()
+            state_store._state = {
+                "pv_total": {"value": 0.0, "timestamp": prev_time.isoformat()},
+                "load_total": {"value": 0.0, "timestamp": prev_time.isoformat()},
+            }
+            state_store.save()
+
+            async def mock_sensor_kw(entity):
+                return {
+                    "sensor.load_power": 2.0,
+                    "sensor.grid_power": 2.0,
+                    "sensor.battery_power": 0.0,
+                }.get(entity, 0.0)
+
+            async def mock_float(entity):
+                return 50.0 if entity == "sensor.battery_soc" else None
+
+            with (
+                patch("backend.recorder.get_ha_sensor_kw_normalized", side_effect=mock_sensor_kw),
+                patch("backend.recorder.get_ha_sensor_float", side_effect=mock_float),
+                patch("backend.recorder.get_ha_entity_state", side_effect=lambda e: None),
+                patch("backend.recorder.get_current_slot_prices", return_value=None),
+                patch("backend.recorder.get_energy_from_power_history", return_value=None),
+            ):
+                mock_store = MagicMock()
+                mock_store.get_system_state = AsyncMock(return_value=None)
+                mock_store.set_system_state = AsyncMock()
+                mock_store.store_slot_observations = AsyncMock()
+                mock_store.close = AsyncMock()
+
+                with patch("backend.recorder.LearningStore", return_value=mock_store):
+                    await record_observation_from_current_state(
+                        config=config, state_store=state_store
+                    )
+
+                    df = mock_store.store_slot_observations.call_args[0][0]
+                    record = df.iloc[0].to_dict()
+
+                    assert record["ev_charging_kwh"] == pytest.approx(0.0, abs=0.01)
+                    assert record["ev_charger_energy"] is None
+
+    @pytest.mark.asyncio
+    async def test_aggregate_backward_compat_preserved(self, base_config):
+        """ev_charging_kwh aggregate is still present for backward compatibility."""
+        import tempfile
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        import pytz
+
+        from backend.recorder import RecorderStateStore, record_observation_from_current_state
+
+        config = base_config.copy()
+        config["ev_chargers"] = [{"id": "ev1", "sensor": "sensor.ev_power", "enabled": True}]
+
+        now = datetime.now(pytz.timezone("Europe/Stockholm"))
+        prev_time = now - timedelta(minutes=15)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_file = Path(tmpdir) / "recorder_state.json"
+            state_store = RecorderStateStore(state_file)
+            state_store.load()
+            state_store._state = {
+                "pv_total": {"value": 0.0, "timestamp": prev_time.isoformat()},
+                "load_total": {"value": 0.0, "timestamp": prev_time.isoformat()},
+            }
+            state_store.save()
+
+            async def mock_sensor_kw(entity):
+                return {
+                    "sensor.load_power": 4.0,
+                    "sensor.grid_power": 4.0,
+                    "sensor.battery_power": 0.0,
+                    "sensor.ev_power": 4.0,
+                }.get(entity, 0.0)
+
+            async def mock_float(entity):
+                return 50.0 if entity == "sensor.battery_soc" else None
+
+            async def mock_history(entity_id, start, end):
+                return 1.0 if entity_id == "sensor.ev_power" else None
+
+            with (
+                patch("backend.recorder.get_ha_sensor_kw_normalized", side_effect=mock_sensor_kw),
+                patch("backend.recorder.get_ha_sensor_float", side_effect=mock_float),
+                patch("backend.recorder.get_ha_entity_state", side_effect=lambda e: None),
+                patch("backend.recorder.get_current_slot_prices", return_value=None),
+                patch("backend.recorder.get_energy_from_power_history", side_effect=mock_history),
+            ):
+                mock_store = MagicMock()
+                mock_store.get_system_state = AsyncMock(return_value=None)
+                mock_store.set_system_state = AsyncMock()
+                mock_store.store_slot_observations = AsyncMock()
+                mock_store.close = AsyncMock()
+
+                with patch("backend.recorder.LearningStore", return_value=mock_store):
+                    await record_observation_from_current_state(
+                        config=config, state_store=state_store
+                    )
+
+                    df = mock_store.store_slot_observations.call_args[0][0]
+                    record = df.iloc[0].to_dict()
+
+                    # Aggregate still present
+                    assert "ev_charging_kwh" in record
+                    assert record["ev_charging_kwh"] == pytest.approx(1.0, abs=0.01)
+                    # Per-device also present
+                    assert record["ev_charger_energy"]["ev1"] == pytest.approx(1.0, abs=0.01)

@@ -5,7 +5,7 @@ Type definitions for the Kepler MILP solver input/output.
 Migrated from backend/kepler/types.py for the new planner package.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 
 
@@ -15,6 +15,19 @@ class IncentiveBucket:
 
     threshold_soc: float
     value_sek: float
+
+
+@dataclass
+class EVChargerInput:
+    """Per-device EV charger input for the Kepler MILP solver."""
+
+    id: str
+    max_power_kw: float
+    battery_capacity_kwh: float
+    current_soc_percent: float
+    plugged_in: bool
+    deadline: datetime | None
+    incentive_buckets: list[IncentiveBucket] = field(default_factory=lambda: [])
 
 
 @dataclass
@@ -67,18 +80,10 @@ class KeplerConfig:
     # Rev E4: Export Toggle
     enable_export: bool = True  # If False, enforce 0 export
 
-    # EV Charging as deferrable load (Rev K25)
-    ev_charging_enabled: bool = False  # Master switch for EV optimization
-    ev_max_power_kw: float = 0.0  # Max EV charging power (kW)
-    ev_battery_capacity_kwh: float = 0.0  # EV battery capacity
-    ev_current_soc_percent: float = 0.0  # Current EV SoC
-    ev_plugged_in: bool = False  # Whether car is currently plugged in
-    # Incentive buckets for piecewise linear objective (Rev // F51)
-    ev_incentive_buckets: list[IncentiveBucket] | None = None
-    # REV K25 Phase 3: Departure time constraint
-    ev_deadline: datetime | None = None  # Deadline for EV charging (None = no deadline)
-    # REV K25 Phase 5: Deadline urgency flag
-    ev_deadline_urgent: bool = False  # True if deadline < 1 hour away (maximize charging)
+    # EV Charging as deferrable load (per-device, multi-charger support)
+    ev_chargers: list[EVChargerInput] = field(
+        default_factory=lambda: []
+    )  # Per-device EV charger inputs
 
     def __post_init__(self):
         """Validate configuration after initialization."""
@@ -137,7 +142,10 @@ class KeplerResultSlot:
     import_price_sek_kwh: float = 0.0
     export_price_sek_kwh: float = 0.0
     water_heat_kw: float = 0.0  # Rev K17: Water heating power in this slot
-    ev_charge_kw: float = 0.0  # Rev K25: EV charging power in this slot
+    ev_charge_kw: float = 0.0  # Aggregate EV charging power in this slot (backward compat)
+    ev_charger_results: dict[str, float] = field(
+        default_factory=lambda: {}
+    )  # Per-device: charger_id -> kW
     is_optimal: bool = True
 
 

@@ -400,6 +400,30 @@ class HealthChecker:
                 )
             )
 
+        # Task 10.3: Detect deprecated executor.ev_charger section (switch_entity, replan_*)
+        # These fields have moved to per-device ev_chargers[].switch_entity etc.
+        deprecated_executor_ev_fields = [
+            k
+            for k in ("switch_entity", "replan_on_plugin", "replan_on_unplug")
+            if ev_cfg.get(k) not in (None, "", False)
+        ]
+        if deprecated_executor_ev_fields:
+            issues.append(
+                HealthIssue(
+                    category="config",
+                    severity="warning",
+                    message=(
+                        f"Deprecated setting(s) in executor.ev_charger: "
+                        f"{', '.join(deprecated_executor_ev_fields)}"
+                    ),
+                    guidance=(
+                        "These fields have moved to per-device settings in ev_chargers[]. "
+                        "Run config migration (Settings > Advanced > Migrate Config) or manually "
+                        "move them to each charger's switch_entity / replan_on_plugin / replan_on_unplug field."
+                    ),
+                )
+            )
+
         return issues
 
     async def check_ha_connection(self) -> list[HealthIssue]:

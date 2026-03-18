@@ -73,7 +73,11 @@ class PlannerService:
             "is_running": self._lock.locked(),
         }
 
-    async def run_once(self, ev_plugged_in_override: bool | None = None) -> PlannerResult:
+    async def run_once(
+        self,
+        ev_plugged_in_override: bool | None = None,
+        ev_charger_id_override: str | None = None,
+    ) -> PlannerResult:
         """
         Run the planner asynchronously.
         Handles cache invalidation and WebSocket notification automatically.
@@ -82,6 +86,7 @@ class PlannerService:
 
         Args:
             ev_plugged_in_override: If True, passes plugged-in state to avoid REST race
+            ev_charger_id_override: Charger ID to apply the plug state override to (Task 7.3)
         """
         # Prevent concurrent runs
         if self._lock.locked():
@@ -105,6 +110,7 @@ class PlannerService:
                 exit_code = await run_planner_main(
                     progress_callback=self._emit_progress,
                     ev_plugged_in_override=ev_plugged_in_override,
+                    ev_charger_id_override=ev_charger_id_override,
                 )
 
                 if exit_code == 0:

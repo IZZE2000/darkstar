@@ -199,6 +199,7 @@ class PlannerPipeline:
         save_to_file: bool = True,
         record_training_episode: bool = False,
         now_override: datetime | None = None,
+        ev_plug_override_charger_id: str | None = None,
     ) -> pd.DataFrame:
         """
         Generate an optimal battery schedule.
@@ -485,58 +486,64 @@ class PlannerPipeline:
         # Rev K18: Pass water heated today to reduce remaining min requirement
         kepler_config.water_heated_today_kwh = ha_water_today
 
-        # Rev K25: Pass EV state from Home Assistant sensors
+        # Per-device EV state: build EVChargerInput list for Kepler
         has_ev_charger = system_cfg.get("has_ev_charger", False)
         if has_ev_charger:
-            ev_soc = float(initial_state.get("ev_soc_percent", 0.0))
-            ev_plugged = bool(initial_state.get("ev_plugged_in", False))
-            kepler_config.ev_current_soc_percent = ev_soc
-            kepler_config.ev_plugged_in = ev_plugged
+            ev_charger_states_raw: list[dict[str, Any]] = initial_state.get("ev_charger_states", [])
+            ev_chargers_cfg: list[dict[str, Any]] = active_config.get("ev_chargers", [])
+            timezone_name = active_config.get("timezone", "Europe/Stockholm")
 
-            # REV K25 Phase 3: Calculate departure deadline
-            departure_time = active_config.get("ev_departure_time", "")
-            if departure_time and ev_plugged:
-                ev_deadline = calculate_ev_deadline(
-                    departure_time,
-                    now_slot.to_pydatetime(),
-                    active_config.get("timezone", "Europe/Stockholm"),
+            # Calculate per-device deadlines and attach to state dicts
+            ev_charger_states_with_deadline: list[dict[str, Any]] = []
+            for ev_cfg_item in ev_chargers_cfg:
+                if not ev_cfg_item.get("enabled", True):
+                    continue
+                charger_id = ev_cfg_item.get("id", "")
+                default_state: dict[str, Any] = {}
+                # Find matching HA state
+                ha_state = next(
+                    (s for s in ev_charger_states_raw if s.get("id") == charger_id),
+                    default_state,
                 )
-                kepler_config.ev_deadline = ev_deadline
-
-                # REV K25 Phase 5: Check if deadline is urgent (< 1 hour away)
-                if ev_deadline:
-                    hours_to_deadline = (
-                        ev_deadline - now_slot.to_pydatetime()
-                    ).total_seconds() / 3600
-                    if hours_to_deadline < 1.0:
-                        kepler_config.ev_deadline_urgent = True
-                        logger.warning(
-                            "REV K25: EV deadline approaching (%.1f hours) - maximizing charging power",
-                            hours_to_deadline,
+                departure_time = ev_cfg_item.get("departure_time", "")
+                deadline = None
+                if departure_time and ha_state.get("plugged_in", False):
+                    deadline = calculate_ev_deadline(
+                        departure_time,
+                        now_slot.to_pydatetime(),
+                        timezone_name,
+                    )
+                    if deadline:
+                        logger.info(
+                            "EV %s: SoC=%.1f%%, Plugged=%s, Departure=%s, Deadline=%s",
+                            charger_id,
+                            ha_state.get("soc_percent", 0.0),
+                            ha_state.get("plugged_in", False),
+                            departure_time,
+                            deadline.strftime("%Y-%m-%d %H:%M"),
                         )
                     else:
-                        kepler_config.ev_deadline_urgent = False
-
-                    logger.info(
-                        "EV Charger: SoC=%.1f%%, Plugged=%s, Departure=%s, Deadline=%s, Urgent=%s",
-                        ev_soc,
-                        ev_plugged,
-                        departure_time,
-                        ev_deadline.strftime("%Y-%m-%d %H:%M"),
-                        kepler_config.ev_deadline_urgent,
-                    )
-                else:
-                    logger.info(
-                        "EV Charger: SoC=%.1f%%, Plugged=%s",
-                        ev_soc,
-                        ev_plugged,
-                    )
-            else:
-                logger.info(
-                    "EV Charger: SoC=%.1f%%, Plugged=%s",
-                    ev_soc,
-                    ev_plugged,
+                        logger.info(
+                            "EV %s: SoC=%.1f%%, Plugged=%s",
+                            charger_id,
+                            ha_state.get("soc_percent", 0.0),
+                            ha_state.get("plugged_in", False),
+                        )
+                ev_charger_states_with_deadline.append(
+                    {
+                        "id": charger_id,
+                        "soc_percent": ha_state.get("soc_percent", 0.0),
+                        "plugged_in": ha_state.get("plugged_in", False),
+                        "deadline": deadline,
+                    }
                 )
+
+            # Rebuild kepler_config with per-device EV charger inputs
+            from planner.solver.adapter import build_ev_charger_inputs
+
+            kepler_config.ev_chargers = build_ev_charger_inputs(
+                ev_chargers_cfg, ev_charger_states_with_deadline
+            )
 
             # Rev K19: Vacation Mode Anti-Legionella
         vacation_cfg = water_cfg.get("vacation_mode", {})
@@ -748,6 +755,7 @@ async def generate_schedule(
     config: dict[str, Any] | None = None,
     mode: str = "full",
     save_to_file: bool = True,
+    ev_plug_override_charger_id: str | None = None,
 ) -> pd.DataFrame:
     """
     Convenience function to generate a schedule.
@@ -769,4 +777,9 @@ async def generate_schedule(
 
     config_dict: dict[str, Any] = config or {}
     pipeline = PlannerPipeline(config_dict)
-    return await pipeline.generate_schedule(input_data, mode=mode, save_to_file=save_to_file)
+    return await pipeline.generate_schedule(
+        input_data,
+        mode=mode,
+        save_to_file=save_to_file,
+        ev_plug_override_charger_id=ev_plug_override_charger_id,
+    )

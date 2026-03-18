@@ -80,6 +80,14 @@ This document contains ideas, improvements, and tasks that are not yet scheduled
 
 ---
 
+#### [Learning] Per-Device Load Forecasting
+
+**Goal:** Train per-device load models (EV, water heater) instead of aggregated forecasts. Enables the planner to predict per-device consumption patterns (e.g., Tesla charges faster than Leaf, upstairs heater runs more at night).
+
+**Notes:** Currently `ev_charging_kwh` and `water_kwh` in `slot_observations` are aggregated across all devices. Per-device energy recording (added in multi-device-ev-chargers change) provides the data foundation. Requires extending Aurora/Reflex models to accept device ID as a feature, and per-device forecast output in the pipeline. Not blocking for multi-device scheduling — the planner uses real-time sensor state, not forecasts, for per-device decisions.
+
+---
+
 ### 💡 Future Ideas (Brainstorming)
 
 #### [UI] Advisor Overhaul

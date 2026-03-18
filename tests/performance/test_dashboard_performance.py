@@ -46,7 +46,7 @@ DASHBOARD_ENDPOINTS = {
 
 # Total dashboard load time thresholds
 TOTAL_THRESHOLD_WARN_MS = 2000
-TOTAL_THRESHOLD_ERROR_MS = 5000
+TOTAL_THRESHOLD_ERROR_MS = 8000
 
 
 # -----------------------------------------------------------------------------

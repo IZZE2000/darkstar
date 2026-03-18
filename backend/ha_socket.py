@@ -137,8 +137,11 @@ class HAWebSocketClient:
                 for idx, ev in enumerate(ev_chargers):
                     if ev.get("enabled", True):
                         ev_name = ev.get("name", f"EV {idx + 1}")
+                        ev_id = ev.get("id", f"ev_charger_{idx}")
                         active_idx = len(self.ev_charger_configs)
-                        self.ev_charger_configs.append({"index": active_idx, "name": ev_name})
+                        self.ev_charger_configs.append(
+                            {"index": active_idx, "name": ev_name, "id": ev_id}
+                        )
                         # Only map sensors that aren't already used for the same type
                         # This allows same sensor for different types (e.g., one sensor for both power and soc)
                         # but prevents duplicate mappings within the same type
@@ -376,10 +379,22 @@ class HAWebSocketClient:
                 # Build aggregate for backward compat
                 any_plugged = any(ev.get("plugged_in", False) for ev in ev_chargers)
 
-                # Trigger immediate re-plan when car plugs in
+                # Trigger immediate re-plan on plug-in or unplug (Task 7.2/7.3: pass charger ID)
+                charger_id = (
+                    self.ev_charger_configs[ev_idx].get("id", f"ev_charger_{ev_idx}")
+                    if ev_idx < len(self.ev_charger_configs)
+                    else f"ev_charger_{ev_idx}"
+                )
                 if is_plugged:
-                    logger.info(f"EV{ev_idx} plugged in - triggering immediate re-plan")
-                    self._trigger_ev_replan()
+                    logger.info(
+                        f"EV{ev_idx} ({charger_id}) plugged in - triggering immediate re-plan"
+                    )
+                    self._trigger_ev_replan(charger_id=charger_id, plugged_in=True)
+                else:
+                    logger.info(
+                        f"EV{ev_idx} ({charger_id}) unplugged - triggering immediate re-plan"
+                    )
+                    self._trigger_ev_replan(charger_id=charger_id, plugged_in=False)
 
                 # Emit entity change event
                 from backend.events import emit_ha_entity_change
@@ -693,36 +708,64 @@ class HAWebSocketClient:
         self._load_config()
         self.monitored_entities = self._get_monitored_entities()
 
-    def _trigger_ev_replan(self):
-        """Trigger immediate re-planning for EV state changes (Rev K25 + EVFIX)."""
+    def _trigger_ev_replan(self, charger_id: str | None = None, plugged_in: bool = True):
+        """Trigger immediate re-planning for EV state changes (Rev K25 + EVFIX + Task 7.2/7.3).
+
+        Args:
+            charger_id: ID of the charger that triggered the replan. When provided,
+                checks that specific charger's replan_on_plugin/replan_on_unplug setting.
+                Falls back to checking the first enabled charger if not provided.
+            plugged_in: True if the EV just plugged in, False if it unplugged.
+        """
         try:
-            # Check if replan_on_plugin is enabled in config (Rev EVFIX: use ev_chargers[])
+            # Check if replan_on_plugin/replan_on_unplug is enabled in config (Rev EVFIX: use ev_chargers[])
             cfg = load_yaml("config.yaml")
             ev_chargers = cfg.get("ev_chargers", [])
 
-            # Find first enabled EV charger
-            first_enabled_ev = None
-            for ev in ev_chargers:
-                if ev.get("enabled", True):
-                    first_enabled_ev = ev
-                    break
+            # Task 7.2: Find the specific charger that triggered the replan (or first enabled)
+            triggering_ev = None
+            if charger_id:
+                for ev in ev_chargers:
+                    if ev.get("enabled", True) and ev.get("id") == charger_id:
+                        triggering_ev = ev
+                        break
+            if triggering_ev is None:
+                # Fallback: first enabled charger
+                for ev in ev_chargers:
+                    if ev.get("enabled", True):
+                        triggering_ev = ev
+                        break
 
-            if not first_enabled_ev:
+            if not triggering_ev:
                 logger.debug("No enabled EV charger found, skipping replan")
                 return
 
-            if not first_enabled_ev.get("replan_on_plugin", True):
-                logger.debug(
-                    "EV replan on plugin disabled for charger: %s",
-                    first_enabled_ev.get("name", "unknown"),
-                )
-                return
+            if plugged_in:
+                if not triggering_ev.get("replan_on_plugin", True):
+                    logger.debug(
+                        "EV replan on plugin disabled for charger: %s",
+                        triggering_ev.get("name", "unknown"),
+                    )
+                    return
+            else:
+                if not triggering_ev.get("replan_on_unplug", False):
+                    logger.debug(
+                        "EV replan on unplug disabled for charger: %s",
+                        triggering_ev.get("name", "unknown"),
+                    )
+                    return
 
             # Import here to avoid circular imports
             from backend.services.scheduler_service import scheduler_service
 
-            # Trigger immediate re-planning with plug state override
-            logger.info("Triggering immediate EV re-plan via scheduler_service (plugged_in=True)")
+            # Task 7.3: Pass charger_id through so get_initial_state can override that
+            # specific charger's plug state
+            effective_charger_id = charger_id or triggering_ev.get("id")
+            logger.info(
+                "Triggering immediate EV re-plan for charger %s via scheduler_service (plugged_in=%s)",
+                effective_charger_id,
+                plugged_in,
+            )
 
             # Rev EVFIX: Use run_coroutine_threadsafe for cross-thread dispatch
             if self.main_loop is None:
@@ -730,7 +773,11 @@ class HAWebSocketClient:
                 return
 
             future = asyncio.run_coroutine_threadsafe(
-                scheduler_service.trigger_now(ev_plugged_in_override=True), self.main_loop
+                scheduler_service.trigger_now(
+                    ev_plugged_in_override=plugged_in,
+                    ev_charger_id_override=effective_charger_id,
+                ),
+                self.main_loop,
             )
 
             # Add done callback to log any exceptions

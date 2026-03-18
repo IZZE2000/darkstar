@@ -1032,46 +1032,6 @@ export const evSections: SettingsSection[] = [
             },
         ],
     },
-    {
-        title: 'Departure Time',
-        description: 'Set your daily departure time. The system will optimize charging to complete by this time.',
-        fields: [
-            {
-                key: 'ev_departure_time',
-                label: 'Departure Time',
-                path: ['ev_departure_time'],
-                type: 'text',
-                helper: 'Time you need the car ready by (24-hour format, e.g., "07:00"). Charging will be scheduled to complete before this time.',
-            },
-        ],
-    },
-    {
-        title: 'Control',
-        description: 'EV charging control settings.',
-        fields: [
-            {
-                key: 'executor.ev_charger.switch_entity',
-                label: 'EV Charger Switch',
-                path: ['executor', 'ev_charger', 'switch_entity'],
-                type: 'entity',
-                helper: 'Switch entity to enable/disable EV charging. Darkstar will turn this on when scheduled to charge.',
-            },
-            {
-                key: 'executor.ev_charger.replan_on_plugin',
-                label: 'Re-plan on Plugin',
-                path: ['executor', 'ev_charger', 'replan_on_plugin'],
-                type: 'boolean',
-                helper: 'Immediately re-run the planner when an EV is plugged in. Useful for opportunistic charging on arrival.',
-            },
-            {
-                key: 'executor.ev_charger.replan_on_unplug',
-                label: 'Re-plan on Unplug',
-                path: ['executor', 'ev_charger', 'replan_on_unplug'],
-                type: 'boolean',
-                helper: 'Immediately re-run the planner when an EV is unplugged. Frees up capacity for other loads.',
-            },
-        ],
-    },
 ]
 
 export const waterSections: SettingsSection[] = [

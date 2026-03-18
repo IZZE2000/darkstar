@@ -236,13 +236,18 @@ async def get_ha_bool(entity_id: str) -> bool:
 async def get_initial_state(
     config_path: str = "config.yaml",
     ev_plugged_in_override: bool | None = None,
+    ev_plug_override_charger_id: str | None = None,
 ) -> dict[str, Any]:
     """
     Get the initial battery state (Asynchronous).
 
     Args:
         config_path: Path to config.yaml
-        ev_plugged_in_override: If provided, use this value instead of fetching from HA
+        ev_plugged_in_override: If provided, use this value for the specific charger
+            identified by ev_plug_override_charger_id (or all chargers if None).
+        ev_plug_override_charger_id: Charger ID to apply the plug state override to.
+            If None and ev_plugged_in_override is set, applies to the first enabled charger
+            (legacy behaviour). With per-device replans, this should always be set.
     """
     with Path(config_path).open() as f:
         config = yaml.safe_load(f)
@@ -275,71 +280,98 @@ async def get_initial_state(
     battery_soc_percent = max(0.0, min(100.0, battery_soc_percent))
     battery_kwh = capacity_kwh * battery_soc_percent / 100.0
 
-    # Water heater energy today
     system_config = config.get("system", {})
     water_heated_today_kwh = 0.0
 
-    # Rev K25: EV state (SoC and plug status)
+    # Per-device EV state fetching
     has_ev_charger = system_config.get("has_ev_charger", False)
-    ev_soc_percent = 0.0
-    ev_plugged_in = False
+    ev_chargers_cfg = config.get("ev_chargers", [])
+    enabled_ev_chargers = [ev for ev in ev_chargers_cfg if ev.get("enabled", True)]
 
-    ev_soc_entity: str | None = None
-    ev_plug_entity: str | None = None
+    # Build per-device EV state list
+    ev_charger_states: list[dict[str, Any]] = []
 
-    if has_ev_charger:
-        # Rev F63: EV sensors are now only in ev_chargers[] array
-        ev_chargers = config.get("ev_chargers", [])
-        for ev in ev_chargers:
-            if ev.get("enabled", True):
-                if ev.get("soc_sensor"):
-                    ev_soc_entity = ev["soc_sensor"]
-                if ev.get("plug_sensor"):
-                    ev_plug_entity = ev["plug_sensor"]
-                break  # Only use first enabled EV charger
+    if has_ev_charger and enabled_ev_chargers:
+        # Build batch reads for all enabled chargers
+        per_device_reads: list[tuple[str, Any]] = []
+        for ev in enabled_ev_chargers:
+            charger_id = ev.get("id", "")
+            soc_sensor = ev.get("soc_sensor", "")
+            plug_sensor = ev.get("plug_sensor", "")
 
-        if not ev_soc_entity:
-            logger.warning("has_ev_charger is true but ev_soc sensor is not configured")
+            if soc_sensor:
+                key = f"ev_soc_{charger_id}"
+                per_device_reads.append((key, lambda e=soc_sensor: get_ha_sensor_float(e)))
 
-    # Batch: EV SoC and (optionally) EV plug reads in parallel
-    optional_reads: list[tuple[str, Any]] = []
-    if ev_soc_entity:
-        optional_reads.append(("ev_soc", lambda e=ev_soc_entity: get_ha_sensor_float(e)))
-    # Only fetch EV plug from HA if no override is provided
-    if ev_plug_entity and ev_plugged_in_override is None:
-        optional_reads.append(("ev_plug", lambda e=ev_plug_entity: get_ha_bool(e)))
+            # Only fetch plug from HA if no override applies to this charger
+            is_override_charger = ev_plug_override_charger_id == charger_id or (
+                ev_plug_override_charger_id is None and ev is enabled_ev_chargers[0]
+            )
+            if plug_sensor and not (ev_plugged_in_override is not None and is_override_charger):
+                key = f"ev_plug_{charger_id}"
+                per_device_reads.append((key, lambda e=plug_sensor: get_ha_bool(e)))
 
-    optional_results: dict[str, Any] = {}
-    if optional_reads:
-        optional_results = await gather_sensor_reads(optional_reads, context="initial_state")
+        per_device_results: dict[str, Any] = {}
+        if per_device_reads:
+            per_device_results = await gather_sensor_reads(
+                per_device_reads, context="ev_initial_state"
+            )
 
-    water_heated_today_kwh = 0.0
+        for ev in enabled_ev_chargers:
+            charger_id = ev.get("id", "")
+            soc_sensor = ev.get("soc_sensor", "")
+            plug_sensor = ev.get("plug_sensor", "")
 
-    ha_ev_soc = optional_results.get("ev_soc")
-    if ev_soc_entity:
-        if ha_ev_soc is not None:
-            ev_soc_percent = ha_ev_soc
-        else:
-            logger.warning("EV SoC sensor %s returned no data, defaulting to 0%%", ev_soc_entity)
+            # SoC
+            soc_percent = 0.0
+            if soc_sensor:
+                ha_soc_val = per_device_results.get(f"ev_soc_{charger_id}")
+                if ha_soc_val is not None:
+                    soc_percent = float(ha_soc_val)
+                else:
+                    logger.warning(
+                        "EV %s SoC sensor %s returned no data, defaulting to 0%%",
+                        charger_id,
+                        soc_sensor,
+                    )
 
-    # Rev EVFIX: Use override if provided (avoids WebSocket-vs-REST race)
-    if ev_plugged_in_override is not None:
-        ev_plugged_in = ev_plugged_in_override
-        logger.debug(
-            "Using ev_plugged_in_override=%s (skipping HA REST fetch)", ev_plugged_in_override
-        )
-    elif ev_plug_entity:
-        ev_plugged_in = bool(optional_results.get("ev_plug"))
-    elif has_ev_charger:
-        logger.warning("has_ev_charger is true but ev_plug sensor is not configured")
+            # Plug state
+            is_override_charger = ev_plug_override_charger_id == charger_id or (
+                ev_plug_override_charger_id is None and ev is enabled_ev_chargers[0]
+            )
+            if ev_plugged_in_override is not None and is_override_charger:
+                plugged_in = ev_plugged_in_override
+                logger.debug(
+                    "EV %s: using plug state override=%s", charger_id, ev_plugged_in_override
+                )
+            elif plug_sensor:
+                plugged_in = bool(per_device_results.get(f"ev_plug_{charger_id}", False))
+            else:
+                # No plug sensor → assume plugged in (let enabled flag be the control)
+                plugged_in = True
+
+            ev_charger_states.append(
+                {
+                    "id": charger_id,
+                    "soc_percent": soc_percent,
+                    "plugged_in": plugged_in,
+                }
+            )
+
+    # Build aggregate values for backward compatibility
+    ev_soc_percent = ev_charger_states[0]["soc_percent"] if ev_charger_states else 0.0
+    ev_plugged_in = ev_charger_states[0]["plugged_in"] if ev_charger_states else False
 
     return {
         "battery_soc_percent": battery_soc_percent,
         "battery_kwh": battery_kwh,
         "battery_cost_sek_per_kwh": battery_cost_sek_per_kwh,
         "water_heated_today_kwh": water_heated_today_kwh,
+        # Legacy scalar fields (backward compat)
         "ev_soc_percent": ev_soc_percent,
         "ev_plugged_in": ev_plugged_in,
+        # Per-device EV state list
+        "ev_charger_states": ev_charger_states,
     }
 
 

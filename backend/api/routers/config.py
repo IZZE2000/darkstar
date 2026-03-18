@@ -523,6 +523,30 @@ def _validate_config_for_save(
                         }
                     )
 
+                # Validate per-device departure_time format
+                dev_departure = ev.get("departure_time", "")
+                if dev_departure and not re.match(
+                    r"^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$", dev_departure
+                ):
+                    issues.append(
+                        {
+                            "severity": "error",
+                            "message": f"EV charger '{ev.get('id', i + 1)}' has invalid departure_time format: '{dev_departure}'",
+                            "guidance": "departure_time must be in 24-hour HH:MM format (e.g., '07:00' or '23:30').",
+                        }
+                    )
+
+                # Validate per-device switch_entity format
+                switch_entity = ev.get("switch_entity", "")
+                if switch_entity and not switch_entity.startswith("switch."):
+                    issues.append(
+                        {
+                            "severity": "warning",
+                            "message": f"EV charger '{ev.get('id', i + 1)}' switch_entity may be invalid: {switch_entity}",
+                            "guidance": "switch_entity should be a Home Assistant switch entity ID (e.g., 'switch.ev_charger').",
+                        }
+                    )
+
             # Check if at least one EV charger is enabled
             if not any(ev.get("enabled", True) for ev in ev_chargers):
                 issues.append(

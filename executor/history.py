@@ -37,6 +37,7 @@ class ExecutionRecord:
     planned_soc_target: int | None = None
     planned_soc_projected: int | None = None
     ev_charging_kw: float | None = None
+    ev_charger_plans: dict[str, float] | None = None
 
     # What we actually commanded (after override logic)
     commanded_work_mode: str | None = None

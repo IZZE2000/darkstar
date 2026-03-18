@@ -10,7 +10,14 @@ from typing import Any
 
 import pandas as pd
 
-from .types import IncentiveBucket, KeplerConfig, KeplerInput, KeplerInputSlot, KeplerResult
+from .types import (
+    EVChargerInput,
+    IncentiveBucket,
+    KeplerConfig,
+    KeplerInput,
+    KeplerInputSlot,
+    KeplerResult,
+)
 
 
 def _get_config_version(config: dict[str, Any]) -> int:
@@ -79,58 +86,69 @@ def _aggregate_water_heaters(
         }
 
 
-def _aggregate_ev_chargers(ev_chargers: list[dict[str, Any]]) -> dict[str, Any]:
+def build_ev_charger_inputs(
+    ev_chargers_config: list[dict[str, Any]],
+    ev_charger_states: list[dict[str, Any]] | None = None,
+) -> list[EVChargerInput]:
     """
-    Aggregate multiple EV chargers into single KeplerConfig parameters.
-    ARC15: Sum max power, use largest battery capacity, merge incentive buckets.
+    Build per-device EVChargerInput list from ev_chargers[] config + HA state.
+
+    Args:
+        ev_chargers_config: List of ev_charger config dicts from config.yaml
+        ev_charger_states: Optional list of per-device HA state dicts.
+            Each dict should have: id, soc_percent, plugged_in, deadline (optional)
+            If None or empty, HA state defaults are used (0% SoC, not plugged in).
+
+    Returns:
+        List of EVChargerInput objects for enabled chargers.
+        Chargers not plugged in are still included (solver skips them internally).
     """
-    enabled_ev: list[dict[str, Any]] = [ev for ev in ev_chargers if ev.get("enabled", True)]
+    enabled_ev: list[dict[str, Any]] = [ev for ev in ev_chargers_config if ev.get("enabled", True)]
 
-    if not enabled_ev:
-        return {
-            "max_power_kw": 0.0,
-            "battery_capacity_kwh": 0.0,
-            "penalty_levels": [],
-        }
+    # Build state lookup by charger ID
+    state_by_id: dict[str, dict[str, Any]] = {}
+    if ev_charger_states:
+        for s in ev_charger_states:
+            charger_id = s.get("id", "")
+            if charger_id:
+                state_by_id[charger_id] = s
 
-    # Sum max charging power
-    total_max_power = sum(float(ev.get("max_power_kw", 0.0)) for ev in enabled_ev)
-
-    # Use largest battery capacity (conservative approach)
-    max_battery_capacity = max(float(ev.get("battery_capacity_kwh", 0.0)) for ev in enabled_ev)
-
-    # Merge incentive buckets from all EVs (take the most conservative penalties)
-    all_buckets: list[dict[str, Any]] = []
+    result: list[EVChargerInput] = []
     for ev in enabled_ev:
-        levels: list[dict[str, Any]] = ev.get("penalty_levels", [])
-        if levels:
-            all_buckets.extend(levels)
+        charger_id: str = ev.get("id", "")
+        if not charger_id:
+            continue
 
-    # If multiple EVs have penalty levels, merge by taking max penalty at each threshold
-    merged_buckets: list[dict[str, Any]] = []
-    if all_buckets:
-        # Group by threshold SoC and take highest penalty
-        threshold_map: dict[float, float] = {}
-        for bucket in all_buckets:
-            if "max_soc" in bucket:
-                threshold = float(bucket["max_soc"])
-                penalty = float(bucket.get("penalty_sek", 0.0))
-                threshold_map[threshold] = max(threshold_map.get(threshold, 0.0), penalty)
+        state = state_by_id.get(charger_id, {})
 
-        # Sort by threshold and create merged buckets
-        for threshold in sorted(threshold_map.keys()):
-            merged_buckets.append(
-                {
-                    "max_soc": threshold,
-                    "penalty_sek": threshold_map[threshold],
-                }
+        soc_percent = float(state.get("soc_percent", 0.0))
+        plugged_in = bool(state.get("plugged_in", False))
+        deadline = state.get("deadline")  # datetime | None
+
+        # Build incentive buckets from penalty_levels config
+        penalty_levels: list[dict[str, Any]] = ev.get("penalty_levels", [])
+        buckets: list[IncentiveBucket] = [
+            IncentiveBucket(
+                threshold_soc=float(p.get("max_soc", 100.0)),
+                value_sek=float(p.get("penalty_sek", 0.0)),
             )
+            for p in penalty_levels
+            if "max_soc" in p or "penalty_sek" in p
+        ]
 
-    return {
-        "max_power_kw": total_max_power,
-        "battery_capacity_kwh": max_battery_capacity,
-        "penalty_levels": merged_buckets,
-    }
+        result.append(
+            EVChargerInput(
+                id=charger_id,
+                max_power_kw=float(ev.get("max_power_kw", 0.0)),
+                battery_capacity_kwh=float(ev.get("battery_capacity_kwh", 0.0)),
+                current_soc_percent=soc_percent,
+                plugged_in=plugged_in,
+                deadline=deadline,
+                incentive_buckets=buckets,
+            )
+        )
+
+    return result
 
 
 def planner_to_kepler_input(df: pd.DataFrame, initial_soc_kwh: float) -> KeplerInput:
@@ -283,6 +301,7 @@ def config_to_kepler_config(
     overrides: dict[str, Any] | None = None,
     slots: list[Any] | None = None,
     force_water_on_slots: list[int] | None = None,
+    ev_charger_states: list[dict[str, Any]] | None = None,
 ) -> KeplerConfig:
     """
     Convert the main config dictionary to KeplerConfig.
@@ -325,15 +344,11 @@ def config_to_kepler_config(
         # Fallback to legacy format
         wh_cfg = legacy_wh
 
-    # ARC15: Load EV charging settings
+    # ARC15: Load EV charging settings (per-device)
     if config_version >= 2 and ev_chargers:
-        # Use new entity-centric structure (aggregate multiple chargers)
-        ev_cfg = _aggregate_ev_chargers(ev_chargers)
-        ev_enabled = any(ev.get("enabled", True) for ev in ev_chargers)
+        ev_inputs = build_ev_charger_inputs(ev_chargers, ev_charger_states)
     else:
-        # Fallback to legacy format
-        ev_cfg = planner_config.get("ev_charger", {})
-        ev_enabled = system.get("has_ev_charger", False)
+        ev_inputs = []
 
     capacity = float(battery.get("capacity_kwh", 13.5))
     charge_eff = float(battery.get("charge_efficiency", 0.95))
@@ -441,24 +456,8 @@ def config_to_kepler_config(
         defer_up_to_hours=float(wh_cfg.get("defer_up_to_hours", 0.0)),
         # Rev E4: Export Toggle
         enable_export=bool(planner_config.get("export", {}).get("enable_export", True)),
-        # Rev // F51: Piecewise Incentive Buckets
-        ev_charging_enabled=ev_enabled,
-        ev_max_power_kw=float(ev_cfg.get("max_power_kw", 0.0)),
-        ev_battery_capacity_kwh=float(ev_cfg.get("battery_capacity_kwh", 0.0)),
-        ev_current_soc_percent=0.0,  # Set by pipeline from HA sensor
-        ev_plugged_in=False,  # Set by pipeline from HA sensor
-        ev_deadline=None,  # Set by pipeline from HA sensor
-        ev_deadline_urgent=False,  # Set by pipeline from HA sensor
-        ev_incentive_buckets=[
-            IncentiveBucket(
-                threshold_soc=float(p.get("max_soc", 100.0)),
-                value_sek=float(p.get("penalty_sek", 0.0)),
-            )
-            for p in ev_cfg.get("penalty_levels", [])
-            if "max_soc" in p or "penalty_sek" in p
-        ]
-        if ev_cfg.get("penalty_levels")
-        else None,
+        # Per-device EV charger inputs (multi-device support)
+        ev_chargers=ev_inputs,
     )
 
     return kepler_cfg
@@ -522,7 +521,8 @@ def kepler_result_to_dataframe(
                 "water_from_grid_kwh": 0.0,
                 "water_from_pv_kwh": 0.0,
                 "water_from_battery_kwh": 0.0,
-                "ev_charging_kw": s.ev_charge_kw,  # From Kepler MILP (Rev K25)
+                "ev_charging_kw": s.ev_charge_kw,  # Aggregate EV charging power (backward compat)
+                "ev_chargers": s.ev_charger_results,  # Per-device: charger_id -> kW
                 "projected_battery_cost": 0.0,
             }
         )
