@@ -315,7 +315,6 @@ class TestGatherSensorReadsBatchExecution:
             "water_heaters": [
                 {
                     "enabled": True,
-                    "energy_sensor": "sensor.water",
                 }
             ],
             "input_sensors": {
@@ -326,7 +325,6 @@ class TestGatherSensorReadsBatchExecution:
         # Return values keyed by entity ID: battery SoC succeeds, others return None
         sensor_values = {
             "sensor.batt_soc": 75.0,
-            "sensor.water": None,
             "sensor.ev_soc": None,
         }
 

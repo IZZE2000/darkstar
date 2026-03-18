@@ -219,8 +219,8 @@ async def test_health_status_timeout_returns_critical_issue():
     assert "15" in issue.message
 
 
-def test_health_warns_missing_energy_sensor_ev():
-    """Health check emits WARNING when enabled EV charger has no energy_sensor."""
+def test_health_no_energy_sensor_warnings():
+    """No energy-sensor warnings are emitted — energy is now measured via History API."""
     from backend.health import HealthChecker
 
     checker = HealthChecker.__new__(HealthChecker)
@@ -230,7 +230,14 @@ def test_health_warns_missing_energy_sensor_ev():
                 "id": "ev1",
                 "name": "My EV",
                 "sensor": "sensor.ev_power",
-                "energy_sensor": "",
+                "enabled": True,
+            }
+        ],
+        "water_heaters": [
+            {
+                "id": "wh1",
+                "name": "Main Tank",
+                "sensor": "sensor.water_power",
                 "enabled": True,
             }
         ],
@@ -239,59 +246,5 @@ def test_health_warns_missing_energy_sensor_ev():
 
     issues = checker._validate_config_structure()
 
-    # Find warning about missing energy sensor
-    energy_sensor_issues = [i for i in issues if "energy sensor" in i.message.lower()]
-    assert len(energy_sensor_issues) >= 1
-    issue = energy_sensor_issues[0]
-    assert issue.severity == "warning"
-    assert "My EV" in issue.message
-
-
-def test_health_no_warning_energy_sensor_configured():
-    """No energy-sensor warning when energy_sensor is configured."""
-    from backend.health import HealthChecker
-
-    checker = HealthChecker.__new__(HealthChecker)
-    checker._config = {
-        "ev_chargers": [
-            {
-                "id": "ev1",
-                "name": "My EV",
-                "sensor": "sensor.ev_power",
-                "energy_sensor": "sensor.ev_energy",
-                "enabled": True,
-            }
-        ],
-    }
-    checker._secrets = {}
-
-    issues = checker._validate_config_structure()
-
-    # Should be no energy sensor warnings
-    energy_sensor_issues = [i for i in issues if "energy sensor" in i.message.lower()]
-    assert len(energy_sensor_issues) == 0
-
-
-def test_health_no_warning_disabled_device_missing_energy_sensor():
-    """Disabled devices don't trigger energy-sensor warning."""
-    from backend.health import HealthChecker
-
-    checker = HealthChecker.__new__(HealthChecker)
-    checker._config = {
-        "ev_chargers": [
-            {
-                "id": "ev1",
-                "name": "My EV",
-                "sensor": "sensor.ev_power",
-                "energy_sensor": "",
-                "enabled": False,
-            }
-        ],
-    }
-    checker._secrets = {}
-
-    issues = checker._validate_config_structure()
-
-    # Should be no energy sensor warnings for disabled devices
     energy_sensor_issues = [i for i in issues if "energy sensor" in i.message.lower()]
     assert len(energy_sensor_issues) == 0

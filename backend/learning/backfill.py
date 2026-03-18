@@ -148,15 +148,6 @@ class BackfillEngine:
                     if entity_id:
                         raw_map[entity_id] = canonical
 
-                # ARC15: Add water heater energy sensors from water_heaters[] array
-                water_heaters = self.config.get("water_heaters", [])
-                for idx, wh in enumerate(water_heaters):
-                    if wh.get("enabled", True) and wh.get("energy_sensor"):
-                        entity_id = wh["energy_sensor"]
-                        # Use indexed canonical name for multiple heaters
-                        canonical = f"water_{idx}" if len(water_heaters) > 1 else "water"
-                        raw_map[entity_id] = canonical
-
             if not raw_map:
                 logger.warning(
                     "No sensors identified for backfill (sensor_map and input_sensors empty)."

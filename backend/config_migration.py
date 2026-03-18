@@ -192,17 +192,7 @@ def _migrate_water_heater_fields(config: dict[str, Any]) -> tuple[dict[str, Any]
         )
         changed = True
 
-    # 2. Migrate water_heater_consumption -> energy_sensor
-    old_consumption = input_sensors.get("water_heater_consumption", "")
-    current_energy_sensor = first_heater.get("energy_sensor", "")
-    if old_consumption and not current_energy_sensor:
-        first_heater["energy_sensor"] = old_consumption
-        logger.info(
-            f"🔄 Migrated input_sensors.water_heater_consumption -> water_heaters[0].energy_sensor: {old_consumption}"
-        )
-        changed = True
-
-    # 3. Migrate executor.water_heater.target_entity -> target_entity
+    # 2. Migrate executor.water_heater.target_entity -> target_entity
     old_target = water_heater_config.get("target_entity", "")
     current_target = first_heater.get("target_entity", "")
     if old_target and not current_target:
@@ -227,6 +217,24 @@ def _migrate_water_heater_fields(config: dict[str, Any]) -> tuple[dict[str, Any]
         logger.info("✂️  Removed deprecated key: 'executor.water_heater.target_entity'")
         changed = True
 
+    return config, changed
+
+
+def _remove_energy_sensor_fields(config: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+    """Remove deprecated energy_sensor field from ev_chargers[] and water_heaters[] items.
+
+    This field is no longer used — energy is now measured via the HA History API.
+
+    Returns:
+        Tuple of (modified_config, changed_flag)
+    """
+    changed = False
+    for array_key in ("ev_chargers", "water_heaters"):
+        for item in config.get(array_key, []):
+            if isinstance(item, dict) and "energy_sensor" in item:
+                del item["energy_sensor"]
+                logger.info(f"✂️  Removed deprecated key: '{array_key}[].energy_sensor'")
+                changed = True
     return config, changed
 
 
@@ -572,6 +580,11 @@ async def migrate_config(
     # 2.5 Migrate water heater fields (must run after remove_deprecated_keys, before template merge)
     user_config, migration_changes = _migrate_water_heater_fields(user_config)
     if migration_changes:
+        pre_merge_changes = True
+
+    # 2.6 Remove energy_sensor from ev_chargers[] and water_heaters[]
+    user_config, energy_sensor_changes = _remove_energy_sensor_fields(user_config)
+    if energy_sensor_changes:
         pre_merge_changes = True
 
     # 3. Load Default Config (The Template)

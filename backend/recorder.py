@@ -13,6 +13,7 @@ import yaml
 from backend.core.ha_client import (
     _normalize_energy_to_kwh,  # pyright: ignore[reportPrivateUsage]
     gather_sensor_reads,
+    get_energy_from_power_history,
     get_ha_entity_state,
     get_ha_sensor_float,
     get_ha_sensor_kw_normalized,
@@ -301,7 +302,6 @@ async def record_observation_from_current_state(
 
     # Collect water heater sensor reads (ARC15: read from water_heaters[] array)
     water_heater_sensors: list[str] = []
-    water_heater_energy_sensors: list[tuple[str, str]] = []
     for water_heater in config.get("water_heaters", []):
         if water_heater.get("enabled", True):
             sensor = water_heater.get("sensor")
@@ -310,10 +310,6 @@ async def record_observation_from_current_state(
                 power_reads.append(
                     (f"wh_{sensor}", lambda s=str(sensor): get_ha_sensor_kw_normalized(s))
                 )
-            # Collect energy sensor for cumulative delta calculation
-            es = water_heater.get("energy_sensor", "")
-            if es:
-                water_heater_energy_sensors.append((str(water_heater["id"]), str(es)))
     if meter_type == "dual":
         power_reads.append(("grid_import_power", lambda: get_kw("grid_import_power")))
         power_reads.append(("grid_export_power", lambda: get_kw("grid_export_power")))
@@ -322,7 +318,6 @@ async def record_observation_from_current_state(
 
     # Collect EV charger sensor reads into the batch
     ev_charger_sensors: list[str] = []
-    ev_charger_energy_sensors: list[tuple[str, str]] = []
     ev_chargers = config.get("ev_chargers", [])
     for ev_charger in ev_chargers:
         if ev_charger.get("enabled", True):
@@ -332,18 +327,12 @@ async def record_observation_from_current_state(
                 power_reads.append(
                     (f"ev_{sensor}", lambda s=str(sensor): get_ha_sensor_kw_normalized(s))
                 )
-            # Collect energy sensor for cumulative delta calculation
-            es = ev_charger.get("energy_sensor", "")
-            if es:
-                ev_charger_energy_sensors.append((str(ev_charger["id"]), str(es)))
 
     power_results = await gather_sensor_reads(power_reads, context="recorder_observation")
 
     pv_kw: float = power_results.get("pv_power") or 0.0
     total_load_kw: float = power_results.get("load_power") or 0.0
     battery_kw: float = power_results.get("battery_power") or 0.0
-    # Aggregate water heater power from array sensors (ARC15)
-    water_kw = sum(power_results.get(f"wh_{s}") or 0.0 for s in water_heater_sensors)
 
     # Disaggregate loads if disaggregator is provided (REV // ML2)
     controllable_kw = 0.0
@@ -367,9 +356,6 @@ async def record_observation_from_current_state(
         grid_net_kw = power_results.get("grid_power") or 0.0
         import_kw = max(0.0, grid_net_kw)
         export_kw = max(0.0, -grid_net_kw)
-
-    # Collect EV charging power from batch results
-    ev_charging_kw = sum(power_results.get(f"ev_{s}") or 0.0 for s in ev_charger_sensors)
 
     # Apply inversion flags if configured (REV F55)
     input_sensors = config.get("input_sensors", {})
@@ -463,79 +449,44 @@ async def record_observation_from_current_state(
             import_kwh = import_kw * 0.25
             export_kwh = export_kw * 0.25
 
-    # Calculate EV charging energy using cumulative energy sensors when available
+    # Calculate EV charging energy using power history API
     ev_charging_kwh = 0.0
-    if ev_charger_energy_sensors:
-        for charger_id, entity_id in ev_charger_energy_sensors:
-            cumulative, sensor_ts = await get_cumulative_kwh_for_entity(entity_id)
-            if cumulative is not None:
-                delta, is_valid = state_store.get_delta(
-                    f"ev_energy_{charger_id}", cumulative, now, sensor_timestamp=sensor_ts
-                )
-                if delta is not None and is_valid:
-                    ev_charging_kwh += delta
-                    logger.debug(f"EV {charger_id}: cumulative delta={delta:.3f} kWh")
+    for ev_charger in ev_chargers:
+        if ev_charger.get("enabled", True):
+            sensor = ev_charger.get("sensor")
+            if sensor:
+                energy = await get_energy_from_power_history(str(sensor), slot_start, slot_end)
+                if energy is not None:
+                    ev_charging_kwh += energy
+                    logger.debug(f"EV {ev_charger.get('id')}: history energy={energy:.3f} kWh")
                 else:
-                    # Fall back to power snapshot for this charger
-                    charger_power = 0.0
-                    for ev_charger in ev_chargers:
-                        if ev_charger.get("id") == charger_id and ev_charger.get("enabled", True):
-                            sensor = ev_charger.get("sensor")
-                            if sensor:
-                                charger_power = power_results.get(f"ev_{sensor}") or 0.0
-                                break
-                    charger_energy = charger_power * 0.25
-                    ev_charging_kwh += charger_energy
+                    charger_power = power_results.get(f"ev_{sensor}") or 0.0
+                    ev_charging_kwh += charger_power * 0.25
                     logger.debug(
-                        f"EV {charger_id}: fallback power snapshot={charger_energy:.3f} kWh"
+                        f"EV {ev_charger.get('id')}: snapshot fallback={charger_power * 0.25:.3f} kWh"
                     )
-            else:
-                # Fall back to power snapshot for this charger
-                charger_power = 0.0
-                for ev_charger in ev_chargers:
-                    if ev_charger.get("id") == charger_id and ev_charger.get("enabled", True):
-                        sensor = ev_charger.get("sensor")
-                        if sensor:
-                            charger_power = power_results.get(f"ev_{sensor}") or 0.0
-                            break
-                charger_energy = charger_power * 0.25
-                ev_charging_kwh += charger_energy
-                logger.debug(f"EV {charger_id}: fallback power snapshot={charger_energy:.3f} kWh")
-    else:
-        # No energy sensors configured, use power snapshot
-        ev_charging_kwh = ev_charging_kw * 0.25
 
-    # Calculate water heating energy using cumulative energy sensors when available
+    # Calculate water heater energy using power history API
     water_kwh = 0.0
-    if water_heater_energy_sensors:
-        for heater_id, entity_id in water_heater_energy_sensors:
-            cumulative, sensor_ts = await get_cumulative_kwh_for_entity(entity_id)
-            if cumulative is not None:
-                delta, is_valid = state_store.get_delta(
-                    f"water_energy_{heater_id}", cumulative, now, sensor_timestamp=sensor_ts
-                )
-                if delta is not None and is_valid:
-                    water_kwh += delta
-                    logger.debug(f"Water {heater_id}: cumulative delta={delta:.3f} kWh")
+    for water_heater in config.get("water_heaters", []):
+        if water_heater.get("enabled", True):
+            sensor = water_heater.get("sensor")
+            if sensor:
+                energy = await get_energy_from_power_history(str(sensor), slot_start, slot_end)
+                if energy is not None:
+                    water_kwh += energy
+                    logger.debug(f"Water {water_heater.get('id')}: history energy={energy:.3f} kWh")
                 else:
-                    # Fall back to power snapshot for this heater
-                    heater_energy = water_kw * 0.25
-                    water_kwh += heater_energy
+                    heater_power = power_results.get(f"wh_{sensor}") or 0.0
+                    water_kwh += heater_power * 0.25
                     logger.debug(
-                        f"Water {heater_id}: fallback power snapshot={heater_energy:.3f} kWh"
+                        f"Water {water_heater.get('id')}: snapshot fallback={heater_power * 0.25:.3f} kWh"
                     )
-            else:
-                # Fall back to power snapshot for this heater
-                heater_energy = water_kw * 0.25
-                water_kwh += heater_energy
-                logger.debug(f"Water {heater_id}: fallback power snapshot={heater_energy:.3f} kWh")
-    else:
-        # No energy sensors configured, use power snapshot
-        water_kwh = water_kw * 0.25
 
-    # Isolate base load from deferrable loads when cumulative sensor was used
-    # Power snapshot path already uses disaggregator's base_load_kw
-    if used_cumulative_load:
+    # Isolate base load: subtract known deferrable loads from total load.
+    # Apply when load represents total consumption (cumulative sensor, or power snapshot without
+    # disaggregator). Skip when disaggregator already provided base-load-only power_kw.
+    if (used_cumulative_load or not disaggregator) and (ev_charging_kwh > 0 or water_kwh > 0):
         base_load_kwh = load_kwh - ev_charging_kwh - water_kwh
         if base_load_kwh < 0:
             logger.warning(

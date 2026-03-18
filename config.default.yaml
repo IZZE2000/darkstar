@@ -96,7 +96,6 @@ water_heaters:
     max_hours_between_heating: 8     # Max comfort gap between heating cycles
     water_min_spacing_hours: 4       # Minimum gap between heating starts
     sensor: sensor.vvb_power         # Home Assistant entity for power reading
-    energy_sensor: ''                # Cumulative energy counter (recommended for accurate load isolation)
     target_entity: ''                # Thermostat entity for controlling this heater
     type: binary                     # Load type: binary (on/off) or modulating
     nominal_power_kw: 3.0            # Nominal power for load calculations
@@ -110,7 +109,6 @@ water_heaters:
   #   max_hours_between_heating: 12
   #   water_min_spacing_hours: 4
   #   sensor: sensor.wh2_power
-  #   energy_sensor: ''
   #   target_entity: ''
   #   type: binary
   #   nominal_power_kw: 3.0
@@ -126,7 +124,6 @@ ev_chargers:
     max_power_kw: 11.0               # Maximum charging power (kW)
     battery_capacity_kwh: 82.0       # Battery capacity for SoC calculations (kWh)
     sensor: sensor.tesla_power       # Home Assistant entity for power reading
-    energy_sensor: ''                # Cumulative energy counter (recommended for accurate load isolation)
     soc_sensor: ""                   # EV battery state of charge (%) - Required for smart charging
     plug_sensor: ""                  # EV plug status sensor - Required for smart charging
     type: binary                     # Load type: binary (ON/OFF) only. Variable power control not yet implemented

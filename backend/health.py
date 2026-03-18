@@ -400,34 +400,6 @@ class HealthChecker:
                 )
             )
 
-        # Check for missing energy sensors on enabled EV chargers
-        for ev_charger in self._config.get("ev_chargers", []):
-            if ev_charger.get("enabled", True):
-                energy_sensor = ev_charger.get("energy_sensor", "")
-                if not energy_sensor:
-                    issues.append(
-                        HealthIssue(
-                            category="config",
-                            severity="warning",
-                            message=f"EV charger '{ev_charger.get('name', ev_charger.get('id'))}' has no energy sensor configured. Load isolation accuracy is reduced.",
-                            guidance="Configure 'energy_sensor' for this charger in Settings > EV to enable accurate EV energy isolation from house load.",
-                        )
-                    )
-
-        # Check for missing energy sensors on enabled water heaters
-        for water_heater in self._config.get("water_heaters", []):
-            if water_heater.get("enabled", True):
-                energy_sensor = water_heater.get("energy_sensor", "")
-                if not energy_sensor:
-                    issues.append(
-                        HealthIssue(
-                            category="config",
-                            severity="warning",
-                            message=f"Water heater '{water_heater.get('name', water_heater.get('id'))}' has no energy sensor configured. Load isolation accuracy is reduced.",
-                            guidance="Configure 'energy_sensor' for this heater in Settings > Water to enable accurate water heating energy isolation from house load.",
-                        )
-                    )
-
         return issues
 
     async def check_ha_connection(self) -> list[HealthIssue]:

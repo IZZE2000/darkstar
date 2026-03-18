@@ -237,7 +237,6 @@ class TestWaterHeaterMigration:
         assert changed is True
         # Values should be migrated
         assert result["water_heaters"][0]["sensor"] == "sensor.boiler_power"
-        assert result["water_heaters"][0]["energy_sensor"] == "sensor.boiler_energy"
         assert result["water_heaters"][0]["target_entity"] == "climate.boiler"
         # Old keys should be removed
         assert "water_power" not in result["input_sensors"]
@@ -314,3 +313,93 @@ class TestWaterHeaterMigration:
         # Should not crash, no changes made to array
         assert changed is False
         assert result["water_heaters"] == []
+
+
+class TestRemoveEnergySensorFields:
+    """Tests for _remove_energy_sensor_fields migration step."""
+
+    def test_removes_energy_sensor_from_ev_chargers(self):
+        """energy_sensor is removed from all ev_chargers[] items."""
+        from backend.config_migration import _remove_energy_sensor_fields
+
+        config = {
+            "ev_chargers": [
+                {"id": "ev1", "sensor": "sensor.ev_power", "energy_sensor": "sensor.ev_energy"},
+                {"id": "ev2", "sensor": "sensor.ev2_power", "energy_sensor": "sensor.ev2_energy"},
+            ],
+        }
+
+        result, changed = _remove_energy_sensor_fields(config)
+
+        assert changed is True
+        assert "energy_sensor" not in result["ev_chargers"][0]
+        assert "energy_sensor" not in result["ev_chargers"][1]
+        assert result["ev_chargers"][0]["sensor"] == "sensor.ev_power"
+
+    def test_removes_energy_sensor_from_water_heaters(self):
+        """energy_sensor is removed from all water_heaters[] items."""
+        from backend.config_migration import _remove_energy_sensor_fields
+
+        config = {
+            "water_heaters": [
+                {"id": "wh1", "sensor": "sensor.wh_power", "energy_sensor": "sensor.wh_energy"},
+            ],
+        }
+
+        result, changed = _remove_energy_sensor_fields(config)
+
+        assert changed is True
+        assert "energy_sensor" not in result["water_heaters"][0]
+        assert result["water_heaters"][0]["sensor"] == "sensor.wh_power"
+
+    def test_other_fields_untouched(self):
+        """Other fields on the item are preserved."""
+        from backend.config_migration import _remove_energy_sensor_fields
+
+        config = {
+            "ev_chargers": [
+                {
+                    "id": "ev1",
+                    "name": "My EV",
+                    "enabled": True,
+                    "sensor": "sensor.ev",
+                    "energy_sensor": "sensor.ev_energy",
+                    "soc_sensor": "sensor.ev_soc",
+                },
+            ],
+        }
+
+        result, changed = _remove_energy_sensor_fields(config)
+
+        assert changed is True
+        item = result["ev_chargers"][0]
+        assert item["id"] == "ev1"
+        assert item["name"] == "My EV"
+        assert item["enabled"] is True
+        assert item["sensor"] == "sensor.ev"
+        assert item["soc_sensor"] == "sensor.ev_soc"
+        assert "energy_sensor" not in item
+
+    def test_idempotent_no_error_if_field_absent(self):
+        """No error if energy_sensor already absent; changed=False."""
+        from backend.config_migration import _remove_energy_sensor_fields
+
+        config = {
+            "ev_chargers": [{"id": "ev1", "sensor": "sensor.ev"}],
+            "water_heaters": [{"id": "wh1", "sensor": "sensor.wh"}],
+        }
+
+        result, changed = _remove_energy_sensor_fields(config)
+
+        assert changed is False
+        assert result["ev_chargers"][0] == {"id": "ev1", "sensor": "sensor.ev"}
+
+    def test_no_arrays_no_error(self):
+        """Config without ev_chargers or water_heaters doesn't crash."""
+        from backend.config_migration import _remove_energy_sensor_fields
+
+        config = {"system": {"has_battery": True}}
+
+        result, changed = _remove_energy_sensor_fields(config)
+
+        assert changed is False

@@ -18,7 +18,6 @@ export interface WaterHeaterEntity {
     max_hours_between_heating: number
     water_min_spacing_hours: number
     sensor: string
-    energy_sensor: string
     target_entity: string
     type: 'binary' | 'modulating'
     nominal_power_kw: number
@@ -32,7 +31,6 @@ export interface EVChargerEntity {
     max_power_kw: number
     battery_capacity_kwh: number
     sensor: string
-    energy_sensor: string
     soc_sensor: string
     plug_sensor: string
     type: 'binary' | 'variable' | 'constant'
@@ -60,7 +58,6 @@ const createDefaultWaterHeater = (index: number): WaterHeaterEntity => ({
     max_hours_between_heating: 8,
     water_min_spacing_hours: 4,
     sensor: '',
-    energy_sensor: '',
     target_entity: '',
     type: 'binary',
     nominal_power_kw: 3.0,
@@ -73,7 +70,6 @@ const createDefaultEVCharger = (index: number): EVChargerEntity => ({
     max_power_kw: 11.0,
     battery_capacity_kwh: 82.0,
     sensor: '',
-    energy_sensor: '',
     soc_sensor: '',
     plug_sensor: '',
     type: 'variable',
@@ -355,26 +351,6 @@ export const EntityArrayEditor: React.FC<EntityArrayEditorProps> = ({
                                             <p className="text-[10px] text-muted mt-1">
                                                 Real-time power reading for this device. Used for live monitoring and
                                                 dashboard display.
-                                            </p>
-                                        </div>
-
-                                        {/* Energy Sensor */}
-                                        <div className="sm:col-span-2">
-                                            <label className="text-[10px] uppercase font-bold text-muted mb-1.5 block">
-                                                Energy sensor
-                                            </label>
-                                            <EntitySelect
-                                                entities={haEntities}
-                                                value={entity.energy_sensor}
-                                                onChange={(val) => updateEntity(index, { energy_sensor: val })}
-                                                loading={haLoading}
-                                                placeholder="Select Home Assistant energy sensor..."
-                                                disabled={disabled}
-                                            />
-                                            <p className="text-[10px] text-muted mt-1">
-                                                Cumulative energy counter for this device. Used for accurate load
-                                                isolation — how much energy the device consumed each slot. Recommended
-                                                for clean training data.
                                             </p>
                                         </div>
 

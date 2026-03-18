@@ -148,6 +148,76 @@ def _normalize_energy_to_kwh(value: float, unit: str | None) -> float:
         return value
 
 
+async def get_energy_from_power_history(
+    entity_id: str,
+    start: datetime,
+    end: datetime,
+) -> float | None:
+    """Fetch power sensor history and compute energy via average power x time.
+
+    Returns energy in kWh, or None if history unavailable.
+    """
+    ha_config = secrets.load_home_assistant_config()
+    url = ha_config.get("url")
+    token = ha_config.get("token")
+
+    if not url or not token or not entity_id:
+        return None
+
+    api_url = f"{url.rstrip('/')}/api/history/period/{start.isoformat()}"
+    params = {
+        "filter_entity_id": entity_id,
+        "end_time": end.isoformat(),
+        "significant_changes_only": False,
+        "minimal_response": False,
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=12.0) as client:
+            response = await client.get(api_url, headers=make_ha_headers(token), params=params)
+            response.raise_for_status()
+            data = response.json()
+
+        if not data or not data[0]:
+            return None
+
+        states = data[0]
+        kw_values: list[float] = []
+        unit: str | None = None
+
+        for state in states:
+            state_val = state.get("state", "")
+            if state_val in ("unknown", "unavailable", "", None):
+                continue
+
+            try:
+                value = float(state_val)
+            except (TypeError, ValueError):
+                continue
+
+            if unit is None:
+                attributes = state.get("attributes", {})
+                unit = str(attributes.get("unit_of_measurement", "")).upper()
+
+            if unit == "W":
+                kw_values.append(value / 1000.0)
+            elif unit == "MW":
+                kw_values.append(value * 1000.0)
+            else:
+                kw_values.append(value)  # Assume kW
+
+        if not kw_values:
+            return None
+
+        mean_kw = sum(kw_values) / len(kw_values)
+        duration_hours = (end - start).total_seconds() / 3600.0
+        return mean_kw * duration_hours
+
+    except Exception as exc:
+        logger.warning("get_energy_from_power_history(%s): %s", entity_id, exc)
+        return None
+
+
 async def get_ha_bool(entity_id: str) -> bool:
     """Return True if entity is 'on', 'true', 'armed', etc."""
     state = await get_ha_entity_state(entity_id)
@@ -207,7 +277,6 @@ async def get_initial_state(
 
     # Water heater energy today
     system_config = config.get("system", {})
-    has_water_heater = system_config.get("has_water_heater", False)
     water_heated_today_kwh = 0.0
 
     # Rev K25: EV state (SoC and plug status)
@@ -217,7 +286,6 @@ async def get_initial_state(
 
     ev_soc_entity: str | None = None
     ev_plug_entity: str | None = None
-    water_entity: str | None = None
 
     if has_ev_charger:
         # Rev F63: EV sensors are now only in ev_chargers[] array
@@ -233,18 +301,8 @@ async def get_initial_state(
         if not ev_soc_entity:
             logger.warning("has_ev_charger is true but ev_soc sensor is not configured")
 
-    # ARC15: Read water heater energy sensors from water_heaters[] array, sum across enabled
-    water_entities: list[str] = []
-    if has_water_heater:
-        water_heaters = config.get("water_heaters", [])
-        for wh in water_heaters:
-            if wh.get("enabled", True) and wh.get("energy_sensor"):
-                water_entities.append(str(wh["energy_sensor"]))
-
-    # Batch: water heater, EV SoC, and (optionally) EV plug reads in parallel
+    # Batch: EV SoC and (optionally) EV plug reads in parallel
     optional_reads: list[tuple[str, Any]] = []
-    for idx, water_entity in enumerate(water_entities):
-        optional_reads.append((f"water_{idx}", lambda e=water_entity: get_ha_sensor_float(e)))
     if ev_soc_entity:
         optional_reads.append(("ev_soc", lambda e=ev_soc_entity: get_ha_sensor_float(e)))
     # Only fetch EV plug from HA if no override is provided
@@ -255,13 +313,7 @@ async def get_initial_state(
     if optional_reads:
         optional_results = await gather_sensor_reads(optional_reads, context="initial_state")
 
-    # Aggregate water heater energy across all enabled heaters
-    total_water_kwh = 0.0
-    for idx in range(len(water_entities)):
-        ha_water = optional_results.get(f"water_{idx}")
-        if ha_water is not None:
-            total_water_kwh += ha_water
-    water_heated_today_kwh = total_water_kwh
+    water_heated_today_kwh = 0.0
 
     ha_ev_soc = optional_results.get("ev_soc")
     if ev_soc_entity:
