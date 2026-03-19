@@ -520,18 +520,16 @@ class TestPerDevicePlugSensorMapping:
                 # charger_a has replan_on_plugin=True → should trigger
                 client._trigger_ev_replan(charger_id="charger_a")
                 mock_threadsafe.assert_called_once()
+                # Close the coroutine before resetting to avoid RuntimeWarning
+                if mock_threadsafe.call_args_list:
+                    coro = mock_threadsafe.call_args_list[0].args[0]
+                    if hasattr(coro, "close"):
+                        coro.close()
                 mock_threadsafe.reset_mock()
 
                 # charger_b has replan_on_plugin=False → should NOT trigger
                 client._trigger_ev_replan(charger_id="charger_b")
                 mock_threadsafe.assert_not_called()
-
-        # Close coroutines to avoid warnings
-        for call in mock_threadsafe.call_args_list:
-            if call.args:
-                coro = call.args[0]
-                if hasattr(coro, "close"):
-                    coro.close()
 
     @pytest.mark.asyncio
     async def test_trigger_ev_replan_passes_charger_id_to_trigger_now(self):

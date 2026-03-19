@@ -3,7 +3,7 @@ import pytest
 from datetime import datetime, timedelta
 
 from planner.solver.kepler import KeplerConfig, KeplerInput, KeplerSolver
-from planner.solver.types import KeplerInputSlot
+from planner.solver.types import KeplerInputSlot, WaterHeaterInput
 
 
 def create_mock_slots(count=24, start_hour=12):
@@ -25,7 +25,25 @@ def create_mock_slots(count=24, start_hour=12):
     return slots
 
 
-def get_base_config():
+def make_heater(
+    heater_id: str = "wh1",
+    power_kw: float = 2.0,
+    min_kwh_per_day: float = 0.0,
+    min_spacing_hours: float = 4.0,
+) -> WaterHeaterInput:
+    """Create a WaterHeaterInput for tests."""
+    return WaterHeaterInput(
+        id=heater_id,
+        power_kw=power_kw,
+        min_kwh_per_day=min_kwh_per_day,
+        max_hours_between_heating=0.0,
+        min_spacing_hours=min_spacing_hours,
+    )
+
+
+def get_base_config(heater: WaterHeaterInput | None = None) -> KeplerConfig:
+    if heater is None:
+        heater = make_heater()
     return KeplerConfig(
         capacity_kwh=10.0,
         min_soc_percent=0,
@@ -35,13 +53,9 @@ def get_base_config():
         charge_efficiency=1.0,
         discharge_efficiency=1.0,
         wear_cost_sek_per_kwh=0.0,
-        # Water enabled
-        water_heating_power_kw=2.0,
-        water_heating_min_kwh=0.0,  # Test spacing purely
+        water_heaters=[heater],
         water_heating_max_gap_hours=0.0,
-        # Default spacing
-        water_min_spacing_hours=4.0,
-        water_spacing_penalty_sek=0.0,  # Deprecated/Unused
+        water_spacing_penalty_sek=0.0,  # Unused
         water_reliability_penalty_sek=100.0,  # Force heating
     )
 
@@ -60,8 +74,7 @@ def test_strict_spacing_enforced():
 
     # Config: Spacing 4 hours (8 slots)
     # T=0 to T=4 is only 2 hours. Should be BLOCKED.
-    config = get_base_config()
-    config.water_heating_min_kwh = 1.0  # Need at least 1 slot worth (2kW * 0.5h = 1kwh)
+    config = get_base_config(make_heater(min_kwh_per_day=1.0, min_spacing_hours=4.0))
 
     result = solver.solve(input_data, config)
     assert result.is_optimal
@@ -103,9 +116,7 @@ def test_spacing_disabled():
     slots[1].import_price_sek_kwh = 0.01
     slots[2].import_price_sek_kwh = 1.0  # Expensive
 
-    config = get_base_config()
-    config.water_min_spacing_hours = 0.0  # DISABLED
-    config.water_heating_min_kwh = 2.0  # Needs 2 slots (2kW * 0.5h * 2 = 2kWh)
+    config = get_base_config(make_heater(min_kwh_per_day=2.0, min_spacing_hours=0.0))
     config.water_block_start_penalty_sek = 0.0
 
     result = solver.solve(input_data, config)

@@ -105,7 +105,6 @@ export type ConfigResponse = {
         water_min_spacing_hours: number
         sensor: string
         type: 'binary' | 'modulating'
-        nominal_power_kw: number
     }[]
     ev_chargers?: {
         id: string

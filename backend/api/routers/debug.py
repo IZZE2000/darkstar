@@ -377,7 +377,9 @@ async def executor_debug_status() -> dict[str, Any]:
         "entities": {
             "work_mode": cfg.inverter.work_mode,
             "grid_charging_enable": cfg.inverter.grid_charging_enable,
-            "water_target_entity": cfg.water_heater.target_entity,
+            "water_target_entity": cfg.water_heater_devices[0].target_entity
+            if cfg.water_heater_devices
+            else None,
         },
         "runtime": {
             "thread_alive": thread_alive,

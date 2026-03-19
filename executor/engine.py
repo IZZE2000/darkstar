@@ -300,6 +300,7 @@ class ExecutorEngine:
                             config=self.config.controller,
                             inverter_config=self.config.inverter,
                             water_heater_config=self.config.water_heater,
+                            water_heater_devices=self.config.water_heater_devices,
                             profile=self.inverter_profile,
                         )
                         mode_intent = decision.mode_intent
@@ -314,6 +315,7 @@ class ExecutorEngine:
                     "discharge_kw": slot.discharge_kw,
                     "ev_charging_kw": slot.ev_charging_kw,
                     "ev_charger_plans": slot.ev_charger_plans,
+                    "water_heater_plans": slot.water_heater_plans,
                     "soc_target": slot.soc_target,
                     "soc_projected": slot.soc_projected,
                     "mode_intent": mode_intent,
@@ -1319,6 +1321,7 @@ class ExecutorEngine:
                 self.config.controller,
                 self.config.inverter,
                 self.config.water_heater,
+                self.config.water_heater_devices,
                 self.inverter_profile,
             )
 
@@ -1333,10 +1336,22 @@ class ExecutorEngine:
             if self.dispatcher:
                 # REV UI11 Phase 7: Execute async actions
                 try:
-                    # Control Water Heater Temperature
-                    if self._has_water_heater and self.config.water_heater.target_entity:
-                        water_result = await self.dispatcher.set_water_temp(decision.water_temp)
-                        action_results.append(water_result)
+                    # Control Water Heater Temperature (per-device)
+                    if self._has_water_heater:
+                        if decision.water_temps and self.config.water_heater_devices:
+                            # New multi-device format: control each heater independently
+                            for device in self.config.water_heater_devices:
+                                temp = decision.water_temps.get(
+                                    device.id, self.config.water_heater.temp_off
+                                )
+                                water_result = await self.dispatcher.set_water_temp(
+                                    temp, device.target_entity
+                                )
+                                action_results.append(water_result)
+                        elif getattr(self.config.water_heater, "target_entity", None):
+                            # Legacy fallback: old-format schedule or single heater
+                            water_result = await self.dispatcher.set_water_temp(decision.water_temp)
+                            action_results.append(water_result)
 
                     # Fix Issue 0: Await expected coroutine properly
                     profile_results = await self.dispatcher.execute(decision)
@@ -1551,6 +1566,16 @@ class ExecutorEngine:
             # map it to the first configured charger so per-device control still works.
             ev_charger_plans = {self.config.ev_chargers[0].id: ev_charging_kw}
 
+        # Parse per-device water heater plans (new multi-device format)
+        raw_water_heaters = slot_data.get("water_heaters")
+        water_heater_plans: dict[str, float] = {}
+        if isinstance(raw_water_heaters, dict):
+            for k, v in raw_water_heaters.items():  # type: ignore[union-attr]
+                if isinstance(v, dict):
+                    water_heater_plans[str(k)] = float(v.get("heating_kw", 0.0))  # type: ignore[arg-type]
+                else:
+                    water_heater_plans[str(k)] = float(v)  # type: ignore[arg-type]
+
         return SlotPlan(
             charge_kw=charge_kw,
             discharge_kw=discharge_kw,
@@ -1561,6 +1586,7 @@ class ExecutorEngine:
             soc_target=soc_target,
             soc_projected=soc_projected,
             ev_charger_plans=ev_charger_plans,
+            water_heater_plans=water_heater_plans,
         )
 
     async def _gather_system_state(self) -> SystemState:
@@ -1615,9 +1641,14 @@ class ExecutorEngine:
             reads.append(("grid_charging", lambda e=grid_charging_entity: ha.get_state_value(e)))
 
         water_entity: str | None = None
-        if self.config.has_water_heater and self.config.water_heater.target_entity:
-            water_entity = self.config.water_heater.target_entity
-            reads.append(("water_temp", lambda e=water_entity: ha.get_state_value(e)))
+        if self.config.has_water_heater:
+            # Use first configured per-device target entity (or legacy global entity if present)
+            if self.config.water_heater_devices:
+                water_entity = self.config.water_heater_devices[0].target_entity
+            elif hasattr(self.config.water_heater, "target_entity"):
+                water_entity = self.config.water_heater.target_entity  # type: ignore[union-attr]
+            if water_entity:
+                reads.append(("water_temp", lambda e=water_entity: ha.get_state_value(e)))  # type: ignore[misc]
 
         if self.config.manual_override_entity:
             override_entity = self.config.manual_override_entity
@@ -1696,6 +1727,7 @@ class ExecutorEngine:
             planned_soc_projected=slot.soc_projected,
             ev_charging_kw=slot.ev_charging_kw,
             ev_charger_plans=slot.ev_charger_plans if slot.ev_charger_plans else None,
+            water_heater_plans=slot.water_heater_plans if slot.water_heater_plans else None,
             # Commanded values
             commanded_work_mode=decision.mode_intent,
             commanded_grid_charging=1 if decision.mode_intent == "charge" else 0,

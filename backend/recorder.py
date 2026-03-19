@@ -473,20 +473,25 @@ async def record_observation_from_current_state(
 
     # Calculate water heater energy using power history API
     water_kwh = 0.0
+    water_heater_energy: dict[str, float] = {}  # Task 8.1: per-device recording
     for water_heater in config.get("water_heaters", []):
         if water_heater.get("enabled", True):
             sensor = water_heater.get("sensor")
+            heater_id = str(water_heater.get("id", ""))
             if sensor:
                 energy = await get_energy_from_power_history(str(sensor), slot_start, slot_end)
                 if energy is not None:
                     water_kwh += energy
-                    logger.debug(f"Water {water_heater.get('id')}: history energy={energy:.3f} kWh")
+                    if heater_id:
+                        water_heater_energy[heater_id] = energy
+                    logger.debug(f"Water {heater_id}: history energy={energy:.3f} kWh")
                 else:
                     heater_power = power_results.get(f"wh_{sensor}") or 0.0
-                    water_kwh += heater_power * 0.25
-                    logger.debug(
-                        f"Water {water_heater.get('id')}: snapshot fallback={heater_power * 0.25:.3f} kWh"
-                    )
+                    device_kwh = heater_power * 0.25
+                    water_kwh += device_kwh
+                    if heater_id:
+                        water_heater_energy[heater_id] = device_kwh
+                    logger.debug(f"Water {heater_id}: snapshot fallback={device_kwh:.3f} kWh")
 
     # Isolate base load: subtract known deferrable loads from total load.
     # Apply when load represents total consumption (cumulative sensor, or power snapshot without
@@ -557,8 +562,9 @@ async def record_observation_from_current_state(
         "load_kwh": load_kwh,
         "import_kwh": import_kwh,
         "export_kwh": export_kwh,
-        "water_kwh": water_kwh,
-        "ev_charging_kwh": ev_charging_kwh,  # Task 8.2: aggregate preserved for backward compat
+        "water_kwh": water_kwh,  # Task 8.3: aggregate preserved for backward compat
+        "water_heater_energy": water_heater_energy if water_heater_energy else None,  # Task 8.2
+        "ev_charging_kwh": ev_charging_kwh,
         "ev_charger_energy": ev_charger_energy if ev_charger_energy else None,
         "batt_charge_kwh": batt_charge_kwh,
         "batt_discharge_kwh": batt_discharge_kwh,

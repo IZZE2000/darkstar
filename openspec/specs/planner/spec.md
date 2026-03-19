@@ -189,3 +189,41 @@ When a replan is triggered by a specific charger's plug-in event, the known plug
 - **WHEN** charger A's plug sensor fires a plug-in event
 - **THEN** `get_initial_state()` SHALL use `plugged_in=True` for charger A
 - **AND** charger B's plug state SHALL be fetched from HA REST API
+
+### Requirement: Adapter builds per-device water heater configs
+The planner adapter SHALL replace `_aggregate_water_heaters()` with a per-device config builder that creates a `WaterHeaterInput` for each enabled water heater from the `water_heaters[]` config array. The adapter SHALL NOT aggregate power, daily minimums, or timing settings across heaters.
+
+#### Scenario: Two enabled heaters produce two WaterHeaterInput objects
+- **WHEN** `water_heaters[]` contains two entries with `enabled: true`
+- **THEN** the adapter SHALL create two `WaterHeaterInput` objects
+- **AND** each SHALL have its own `power_kw`, `min_kwh_per_day`, `max_hours_between_heating`, and `min_spacing_hours`
+
+#### Scenario: Global settings passed alongside per-device list
+- **WHEN** the adapter builds KeplerConfig
+- **THEN** global water settings (comfort penalties, block penalties, reliability penalty, deferral hours, max block hours) SHALL remain as scalar fields on KeplerConfig
+- **AND** per-device settings SHALL be in the `water_heaters` list
+
+#### Scenario: No enabled heaters produces empty list
+- **WHEN** no water heaters have `enabled: true`
+- **THEN** `KeplerConfig.water_heaters` SHALL be an empty list
+- **AND** water heating SHALL be disabled in the solver
+
+### Requirement: Pipeline builds per-device mid-block locking
+The pipeline SHALL detect mid-block heating state per water heater independently. For each heater currently in an active heating block (detected via power sensor), the pipeline SHALL set `force_on_slots` on that heater's `WaterHeaterInput`.
+
+#### Scenario: One heater mid-block, another idle
+- **WHEN** heater A's power sensor shows active heating and heater B's power sensor shows idle
+- **THEN** heater A's `WaterHeaterInput.force_on_slots` SHALL contain the remaining block slot indices
+- **AND** heater B's `WaterHeaterInput.force_on_slots` SHALL be None or empty
+
+#### Scenario: No heaters mid-block
+- **WHEN** no heater power sensors show active heating
+- **THEN** all heaters' `force_on_slots` SHALL be None or empty
+
+### Requirement: Pipeline tracks per-device today's heated energy
+The pipeline SHALL calculate `heated_today_kwh` per water heater from recorder data or sensor state. Each heater's `WaterHeaterInput.heated_today_kwh` SHALL reflect only that heater's contribution.
+
+#### Scenario: Two heaters with different today progress
+- **WHEN** heater A has heated 4.0 kWh today and heater B has heated 2.0 kWh today
+- **THEN** heater A's `heated_today_kwh` SHALL be 4.0
+- **AND** heater B's `heated_today_kwh` SHALL be 2.0

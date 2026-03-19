@@ -12,7 +12,14 @@ from typing import Any
 
 import pulp  # type: ignore[import,no-redef]
 
-from .types import EVChargerInput, KeplerConfig, KeplerInput, KeplerResult, KeplerResultSlot
+from .types import (
+    EVChargerInput,
+    KeplerConfig,
+    KeplerInput,
+    KeplerResult,
+    KeplerResultSlot,
+    WaterHeaterInput,
+)
 
 logger = logging.getLogger("darkstar.kepler")
 
@@ -62,26 +69,28 @@ class KeplerSolver:
             "load_shedding_kwh", range(T), lowBound=0.0
         )
 
-        # Water heating as deferrable load (Rev K17)
-        water_enabled: bool = config.water_heating_power_kw > 0
-        water_heat: dict[int, Any]
-        water_start: dict[int, Any] | None
-        needs_water_start: bool
+        # Water heating as deferrable load (per-device)
+        water_heaters: list[WaterHeaterInput] = config.water_heaters
+        water_enabled: bool = len(water_heaters) > 0
+
+        # Per-device indexed variables: water_heat[device_id][t], water_start[device_id][t]
+        water_heat: dict[str, dict[int, Any]] = {}
+        water_start: dict[str, dict[int, Any]] = {}
         if water_enabled:
-            water_heat = pulp.LpVariable.dicts("water_heat", range(T), cat="Binary")  # type: ignore[reportUnknownMemberType]
-            # Optimization (Rev K16): Only create water_start if needed for constraints
-            # This saves ~T binary variables when spacing/start_penalty are disabled
-            needs_water_start = (
-                config.water_min_spacing_hours > 0 or config.water_block_start_penalty_sek > 0
-            )
-            if needs_water_start:
-                water_start = pulp.LpVariable.dicts("water_start", range(T), cat="Binary")  # type: ignore[reportUnknownMemberType]
-            else:
-                water_start = None
-        else:
-            water_heat = dict.fromkeys(range(T), 0)
-            water_start = None
-            needs_water_start = False
+            for heater in water_heaters:
+                d = heater.id
+                safe_d = d.replace("-", "_").replace(".", "_")
+                water_heat[d] = pulp.LpVariable.dicts(  # type: ignore[reportUnknownMemberType]
+                    f"water_heat_{safe_d}", range(T), cat="Binary"
+                )
+                # Only create start variables if spacing or block start penalty needed
+                needs_start = (
+                    heater.min_spacing_hours > 0 or config.water_block_start_penalty_sek > 0
+                )
+                if needs_start:
+                    water_start[d] = pulp.LpVariable.dicts(  # type: ignore[reportUnknownMemberType]
+                        f"water_start_{safe_d}", range(T), cat="Binary"
+                    )
 
         # EV Charging as deferrable load (per-device, multi-charger support)
         # Only create variables for plugged-in chargers
@@ -152,10 +161,15 @@ class KeplerSolver:
         ramp_down: dict[int, Any] = pulp.LpVariable.dicts("ramp_down_kwh", range(T), lowBound=0.0)  # type: ignore[reportUnknownMemberType]
 
         # Discomfort variable removed.
-        # "Block Overshoot" variable (soft penalty for massive blocks)
-        block_overshoot: dict[int, Any] = pulp.LpVariable.dicts(  # type: ignore[reportUnknownMemberType]
-            "block_overshoot", range(T), lowBound=0.0
-        )
+        # Per-device "Block Overshoot" variables (soft penalty for massive blocks)
+        block_overshoot: dict[str, dict[int, Any]] = {}
+        if water_enabled:
+            for heater in water_heaters:
+                d = heater.id
+                safe_d = d.replace("-", "_").replace(".", "_")
+                block_overshoot[d] = pulp.LpVariable.dicts(  # type: ignore[reportUnknownMemberType]
+                    f"block_overshoot_{safe_d}", range(T), lowBound=0.0
+                )
 
         # Per-device incentive bucket setup
         for charger in plugged_chargers:
@@ -190,11 +204,15 @@ class KeplerSolver:
                 ev_bucket_charged[d][i] for i in range(num_buckets)
             )
 
-        # Slack variables for soft constraints (Phase 2)
-        # We index min_kwh_violation by day index (max 365 days, sufficient size)
-        water_min_kwh_violation: dict[int, Any] = pulp.LpVariable.dicts(  # type: ignore[reportUnknownMemberType]
-            "water_min_kwh_violation", range(100), lowBound=0.0
-        )
+        # Per-device slack variables for daily minimum soft constraints
+        water_min_kwh_violation: dict[str, dict[int, Any]] = {}
+        if water_enabled:
+            for heater in water_heaters:
+                d = heater.id
+                safe_d = d.replace("-", "_").replace(".", "_")
+                water_min_kwh_violation[d] = pulp.LpVariable.dicts(  # type: ignore[reportUnknownMemberType]
+                    f"water_min_kwh_violation_{safe_d}", range(100), lowBound=0.0
+                )
 
         # Initial SoC Constraint
         initial_soc: float = max(0.0, min(config.capacity_kwh, input_data.initial_soc_kwh))
@@ -215,9 +233,13 @@ class KeplerSolver:
             s: Any = slots[t]
             h: float = slot_hours[t]
 
-            # Water heating load for this slot (kWh)
+            # Water heating load for this slot (kWh) — sum across all per-device heaters
             water_load_kwh: Any = (
-                water_heat[t] * config.water_heating_power_kw * h if water_enabled else 0
+                pulp.lpSum(
+                    water_heat[heater.id][t] * heater.power_kw * h for heater in water_heaters
+                )
+                if water_enabled
+                else 0
             )
 
             # Per-device EV constraints
@@ -259,19 +281,24 @@ class KeplerSolver:
                 == s.pv_kwh + discharge[t] + grid_import[t] + load_shedding[t]
             )
 
-            # Phase 4 Pivot: Re-introduced water_start binary for guidance
-            if water_enabled and needs_water_start:
-                assert water_start is not None
-                if t == 0:
-                    prob += water_start[t] == water_heat[t]
-                else:
-                    prob += water_start[t] >= water_heat[t] - water_heat[t - 1]
+            # Per-device block start detection (task 2.7)
+            if water_enabled:
+                for heater in water_heaters:
+                    d = heater.id
+                    if d in water_start:
+                        if t == 0:
+                            prob += water_start[d][t] == water_heat[d][t]
+                        else:
+                            prob += water_start[d][t] >= water_heat[d][t] - water_heat[d][t - 1]
 
-            # Rev WH2: Force specific slots ON (Mid-block locking)
-            if water_enabled and config.force_water_on_slots:
-                for t_idx in config.force_water_on_slots:
-                    if 0 <= t_idx < T:
-                        prob += water_heat[t_idx] == 1
+            # Per-device mid-block locking (task 2.8)
+            if water_enabled:
+                for heater in water_heaters:
+                    d = heater.id
+                    if heater.force_on_slots:
+                        for t_idx in heater.force_on_slots:
+                            if 0 <= t_idx < T:
+                                prob += water_heat[d][t_idx] == 1
 
             # Battery Dynamics Constraint
             prob += soc[t + 1] == soc[t] + charge[t] * config.charge_efficiency - discharge[t] / (
@@ -374,88 +401,66 @@ class KeplerSolver:
         # Rev // F51: Removed legacy EV target SoC constraint.
         # Replaced by Incentive Buckets in the objective function.
 
-        # Water Heating Constraints (Rev K17/K18/K21)
+        # Water Heating Constraints — per-device (tasks 2.4-2.6)
         gap_violation_penalty: float = 0.0
-        # spacing_violation_penalty removed in PERF1
         sorted_days: list[Any] = []  # Initialize to avoid unbound error
         if water_enabled:
             avg_slot_hours: float = sum(slot_hours) / len(slot_hours) if slot_hours else 0.25
-            water_kwh_per_slot: float = config.water_heating_power_kw * avg_slot_hours
 
-            # Constraint 1: Per-day min_kwh requirements
-            # Group slots by date to apply daily minimum constraints
-            # Rev WH2: Smart Deferral - extend buckets into next morning
+            # Build day → slot indices map (shared across all devices, global deferral)
             slots_by_day: defaultdict[Any, list[int]] = defaultdict(list)
             defer_hours: float = config.defer_up_to_hours
-
             for t in range(T):
                 dt: Any = slots[t].start_time
                 bucket_date: Any = dt.date()
                 if defer_hours > 0 and dt.hour < defer_hours:
                     bucket_date = bucket_date - timedelta(days=1)
-
                 slots_by_day[bucket_date].append(t)
+            sorted_days = sorted(slots_by_day.keys())
 
-            # Sort days to identify "today" (first day in horizon)
-            sorted_days: list[Any] = sorted(slots_by_day.keys())
+            for heater in water_heaters:
+                d = heater.id
+                # Per-device kWh per slot (power differs between heaters)
+                kwh_per_slot: float = heater.power_kw * avg_slot_hours
 
-            for i, day in enumerate(sorted_days):
-                day_slot_indices: list[int] = slots_by_day[day]
-                if i == 0:
-                    # First day: reduce by what's already heated today
-                    day_min_kwh: float = max(
-                        0.0,
-                        config.water_heating_min_kwh - config.water_heated_today_kwh,
-                    )
-                else:
-                    # Future days: full daily requirement
-                    day_min_kwh = config.water_heating_min_kwh
+                # Constraint 1: Per-device, per-day daily minimum (task 2.4)
+                for i, day in enumerate(sorted_days):
+                    day_slot_indices: list[int] = slots_by_day[day]
+                    if i == 0:
+                        # First day: deduct per-device heated-today progress
+                        day_min_kwh: float = max(
+                            0.0, heater.min_kwh_per_day - heater.heated_today_kwh
+                        )
+                    else:
+                        day_min_kwh = heater.min_kwh_per_day
 
-                if day_min_kwh > 0:
-                    # Rev K16 Phase 2: Soft Constraint
-                    # sum(...) >= day_min_kwh - violation
-                    prob += (  # type: ignore[operator]
-                        pulp.lpSum(water_heat[t] for t in day_slot_indices) * water_kwh_per_slot
-                        >= day_min_kwh - water_min_kwh_violation[i]
-                    )
+                    if day_min_kwh > 0:
+                        prob += (  # type: ignore[operator]
+                            pulp.lpSum(water_heat[d][t] for t in day_slot_indices) * kwh_per_slot
+                            >= day_min_kwh - water_min_kwh_violation[d][i]
+                        )
 
-            # Constraint 2: Soft Block Breaker (Rev K16 Phase 1 Pivot)
-            # Replaces linear discomfort.
-            # Goal: Penalize blocks longer than comfort-level-dependent hours.
-            # Logic: In any window of size (MaxBlock + 1), we should have at most MaxBlock heated slots.
-            # If we have MaxBlock + 1, we are overshooting.
-            if config.water_block_penalty_sek > 0:
-                max_block_hours: float = (
-                    config.max_block_hours
-                )  # Rev K24: Dynamic per comfort level
-                max_block_slots: int = int(max_block_hours / avg_slot_hours)
-                # Window size = max_block_slots + 1 (e.g., 9 slots if max is 8)
-                window_size: int = max_block_slots + 1
+                # Constraint 2: Per-device soft block breaker (task 2.5)
+                if config.water_block_penalty_sek > 0:
+                    max_block_slots: int = max(1, int(config.max_block_hours / avg_slot_hours))
+                    window_size: int = max_block_slots + 1
+                    for t in range(T - window_size + 1):
+                        prob += (  # type: ignore[operator]
+                            pulp.lpSum(water_heat[d][j] for j in range(t, t + window_size))
+                            <= max_block_slots + block_overshoot[d][t]
+                        )
 
-                for t in range(T - window_size + 1):
-                    # sum(water_heat[t : t+window]) <= max_block_slots + overshoot[t]
-                    prob += (  # type: ignore[operator]
-                        pulp.lpSum(water_heat[j] for j in range(t, t + window_size))
-                        <= max_block_slots + block_overshoot[t]
-                    )
-
-            # Constraint 3: Hard Spacing Constraint (Option 4: Restore Hard Pruning)
-            if config.water_min_spacing_hours > 0:
-                spacing_slots: int = max(1, int(config.water_min_spacing_hours / avg_slot_hours))
-                M: int = spacing_slots
-                for t in range(T):
-                    # Check preceding slots in spacing window
-                    # Option 4: HARD Constraint (No slack variable)
-                    # sum(...) + start*M <= M
-                    start_idx: int = max(0, t - spacing_slots)
-                    prob += (  # type: ignore[operator]
-                        pulp.lpSum(water_heat[j] for j in range(start_idx, t)) + water_start[t] * M  # type: ignore[operator]
-                        <= M
-                    )
-
-            # Constraint 4: Max Block Length (Prevent "Single Huge Block")
-            # REMOVED in Rev K16 Phase 1: Replaced by linear discomfort cost which naturally
-            # breaks up blocks if penalty is low enough.
+                # Constraint 3: Per-device hard spacing constraint (task 2.6)
+                if heater.min_spacing_hours > 0 and d in water_start:
+                    spacing_slots: int = max(1, int(heater.min_spacing_hours / avg_slot_hours))
+                    M: int = spacing_slots
+                    for t in range(T):
+                        start_idx: int = max(0, t - spacing_slots)
+                        prob += (  # type: ignore[operator]
+                            pulp.lpSum(water_heat[d][j] for j in range(start_idx, t))
+                            + water_start[d][t] * M  # type: ignore[operator]
+                            <= M
+                        )
 
         # Terminal SoC Target (BIDIRECTIONAL soft constraint)
         # - min_soc violation: HARD penalty (1000 SEK/kWh)
@@ -468,22 +473,33 @@ class KeplerSolver:
             + MIN_SOC_PENALTY * pulp.lpSum(soc_violation)
             + gap_violation_penalty  # Deprecated in K16 (0.0)
             + gap_violation_penalty  # Deprecated in K16 (0.0)
+            # Per-device block overshoot penalty (task 2.9)
             + (
-                pulp.lpSum(block_overshoot[t] for t in range(T)) * config.water_block_penalty_sek
+                pulp.lpSum(block_overshoot[d][t] for d in block_overshoot for t in range(T))
+                * config.water_block_penalty_sek
                 if water_enabled
                 else 0.0
-            )  # Rev K16: Soft Block Penalty
+            )
+            # Per-device block start penalty (task 2.9)
             + (
-                pulp.lpSum(water_start[t] for t in range(T)) * config.water_block_start_penalty_sek  # type: ignore[index,reportUnknownVariableType]
-                if water_enabled and needs_water_start and config.water_block_start_penalty_sek > 0
+                pulp.lpSum(water_start[d][t] for d in water_start for t in range(T))
+                * config.water_block_start_penalty_sek
+                if water_enabled and water_start and config.water_block_start_penalty_sek > 0
                 else 0.0
-            )  # Rev WH2: Block start penalty
-            # Rev K16 Phase 5: Symmetry Breaker
-            # Add tiny cost (increasing with t) to break ties in flat price scenarios
-            + (pulp.lpSum(water_heat[t] * (t * 1e-5) for t in range(T)) if water_enabled else 0.0)
-            # Rev K16 Phase 2: Reliability Penalties
+            )
+            # Per-device symmetry breaker (task 2.9)
             + (
-                pulp.lpSum(water_min_kwh_violation[i] for i in range(len(sorted_days)))
+                pulp.lpSum(water_heat[d][t] * (t * 1e-5) for d in water_heat for t in range(T))
+                if water_enabled
+                else 0.0
+            )
+            # Per-device reliability penalties (task 2.9)
+            + (
+                pulp.lpSum(
+                    water_min_kwh_violation[d][i]
+                    for d in water_min_kwh_violation
+                    for i in range(len(sorted_days))
+                )
                 * config.water_reliability_penalty_sek
                 if water_enabled
                 else 0.0
@@ -547,12 +563,19 @@ class KeplerSolver:
                 e_val: float | None = pulp.value(grid_export[t])  # type: ignore[assignment]
                 soc_val: float | None = pulp.value(soc[t + 1])  # type: ignore[assignment]
 
-                # Water heating power (kW) from binary decision
+                # Per-device water heating results (task 2.10)
+                water_heater_results: dict[str, float] = {}
+                total_water_kw: float = 0.0
                 if water_enabled:
-                    w_val: float | None = pulp.value(water_heat[t])  # type: ignore[assignment]
-                    w_kw: float = config.water_heating_power_kw if w_val and w_val > 0.5 else 0.0
-                else:
-                    w_kw: float = 0.0
+                    for heater in water_heaters:
+                        d_wh = heater.id
+                        w_val: float | None = pulp.value(water_heat[d_wh][t])  # type: ignore[assignment]
+                        device_kw: float = (
+                            heater.power_kw if w_val is not None and w_val > 0.5 else 0.0
+                        )
+                        water_heater_results[d_wh] = device_kw
+                        total_water_kw += device_kw
+                w_kw: float = total_water_kw  # aggregate (backward compat)
 
                 # Per-device EV charging results
                 ev_charger_results: dict[str, float] = {}
@@ -590,6 +613,7 @@ class KeplerSolver:
                         import_price_sek_kwh=s.import_price_sek_kwh,
                         export_price_sek_kwh=s.export_price_sek_kwh,
                         water_heat_kw=w_kw,
+                        water_heater_results=water_heater_results,
                         ev_charge_kw=ev_kw,
                         ev_charger_results=ev_charger_results,
                         is_optimal=True,

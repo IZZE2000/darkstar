@@ -1020,3 +1020,286 @@ class TestGetStatusEvChargerPlans:
         assert status["current_slot_plan"] is not None
         assert "ev_charger_plans" in status["current_slot_plan"]
         assert status["current_slot_plan"]["ev_charger_plans"] == {"main_ev": 7.4}
+
+
+class TestParseSlotPlanWaterHeaters:
+    """Task 7.6: _parse_slot_plan correctly extracts per-device water heater plans."""
+
+    @pytest.fixture
+    def engine(self, temp_schedule, temp_db):
+        with patch("executor.engine.load_executor_config") as mock_config:
+            mock_config.return_value = ExecutorConfig(
+                schedule_path=temp_schedule,
+                timezone="Europe/Stockholm",
+            )
+            with patch("executor.engine.load_yaml") as mock_yaml:
+                mock_yaml.return_value = {}
+                with patch.object(ExecutorEngine, "_get_db_path", return_value=temp_db):
+                    yield ExecutorEngine("config.yaml")
+
+    def test_parses_new_format_water_heaters_dict(self, engine):
+        """water_heaters dict with heating_kw values is parsed into water_heater_plans."""
+        slot_data = {
+            "soc_target_percent": 50,
+            "water_heating_kw": 6.0,
+            "water_heaters": {
+                "wh1": {"heating_kw": 3.0},
+                "wh2": {"heating_kw": 3.0},
+            },
+        }
+        slot = engine._parse_slot_plan(slot_data)
+
+        assert slot.water_heater_plans == {"wh1": pytest.approx(3.0), "wh2": pytest.approx(3.0)}
+        assert slot.water_kw == pytest.approx(6.0)
+
+    def test_parses_flat_kw_values_in_water_heaters(self, engine):
+        """water_heaters dict with flat float values (not nested) is also parsed."""
+        slot_data = {
+            "soc_target_percent": 50,
+            "water_heaters": {"wh1": 3.0},
+        }
+        slot = engine._parse_slot_plan(slot_data)
+
+        assert slot.water_heater_plans == {"wh1": pytest.approx(3.0)}
+
+    def test_missing_water_heaters_gives_empty_plans(self, engine):
+        """Old-format slot with no water_heaters key gives empty water_heater_plans."""
+        slot_data = {
+            "soc_target_percent": 50,
+            "water_heating_kw": 3.0,
+        }
+        slot = engine._parse_slot_plan(slot_data)
+
+        assert slot.water_heater_plans == {}
+        assert slot.water_kw == pytest.approx(3.0)
+
+    def test_empty_water_heaters_dict(self, engine):
+        """Empty water_heaters dict gives empty water_heater_plans."""
+        slot_data = {
+            "soc_target_percent": 50,
+            "water_heaters": {},
+        }
+        slot = engine._parse_slot_plan(slot_data)
+
+        assert slot.water_heater_plans == {}
+
+
+@pytest.mark.asyncio
+class TestControlWaterHeatersPerDevice:
+    """Task 7.6: per-device water heater temperature control in _tick()."""
+
+    @pytest.fixture
+    def engine(self, temp_schedule, temp_db):
+        from executor.actions import ActionDispatcher
+        from executor.config import WaterHeaterDeviceConfig, WaterHeaterGlobalConfig
+
+        with patch("executor.engine.load_executor_config") as mock_config:
+            config = ExecutorConfig(
+                enabled=True,
+                schedule_path=temp_schedule,
+                timezone="Europe/Stockholm",
+                automation_toggle_entity="input_boolean.automation",
+                inverter=InverterConfig(),
+                controller=ControllerConfig(),
+                notifications=NotificationConfig(),
+                water_heater=WaterHeaterGlobalConfig(temp_normal=60, temp_off=40),
+                water_heater_devices=[
+                    WaterHeaterDeviceConfig(
+                        id="wh1",
+                        name="Boiler 1",
+                        target_entity="input_number.wh1_target",
+                        power_kw=3.0,
+                    ),
+                    WaterHeaterDeviceConfig(
+                        id="wh2",
+                        name="Boiler 2",
+                        target_entity="input_number.wh2_target",
+                        power_kw=3.0,
+                    ),
+                ],
+            )
+            mock_config.return_value = config
+            with patch("executor.engine.load_yaml") as mock_yaml:
+                mock_yaml.return_value = {"input_sensors": {}}
+                with patch.object(ExecutorEngine, "_get_db_path", return_value=temp_db):
+                    eng = ExecutorEngine("config.yaml")
+
+                    mock_ha = MagicMock(spec=HAClient)
+
+                    def side_effect_get_state(entity_id):
+                        if "input_boolean" in entity_id or "automation" in entity_id:
+                            return "on"
+                        if "soc" in entity_id:
+                            return "50"
+                        if "temp" in entity_id or "target" in entity_id:
+                            return "55"
+                        return "0.0"
+
+                    mock_ha.get_state_value.side_effect = side_effect_get_state
+                    mock_ha.set_select_option.return_value = True
+                    mock_ha.set_switch.return_value = True
+                    mock_ha.set_number.return_value = True
+                    mock_ha.set_input_number.return_value = True
+                    eng.ha_client = mock_ha
+                    eng.dispatcher = ActionDispatcher(mock_ha, config, shadow_mode=False)
+                    eng._has_water_heater = True
+                    yield eng
+
+    @pytest.mark.asyncio
+    async def test_each_heater_gets_independent_ha_call(self, engine, temp_schedule):
+        """Each configured water heater device gets its own set_water_temp call."""
+        from unittest.mock import AsyncMock, call
+
+        from executor.actions import ActionResult
+
+        tz = pytz.timezone("Europe/Stockholm")
+        now = datetime.now(tz)
+        slot_start = now - timedelta(minutes=5)
+        end = slot_start + timedelta(minutes=15)
+
+        slot = {
+            "start_time": slot_start.isoformat(),
+            "end_time": end.isoformat(),
+            "end_time_kepler": end.isoformat(),
+            "battery_charge_kw": 0.0,
+            "battery_discharge_kw": 0.0,
+            "export_kwh": 0.0,
+            "water_heating_kw": 6.0,
+            "soc_target_percent": 50,
+            "projected_soc_percent": 45,
+            "water_heaters": {
+                "wh1": {"heating_kw": 3.0},
+                "wh2": {"heating_kw": 3.0},
+            },
+        }
+        with Path(temp_schedule).open("w", encoding="utf-8") as f:
+            json.dump(make_schedule([slot]), f)
+
+        mock_result = ActionResult(action_type="water_temp", success=True)
+        engine.dispatcher.set_water_temp = AsyncMock(return_value=mock_result)
+
+        await engine.run_once()
+
+        # Two separate calls — one per device
+        assert engine.dispatcher.set_water_temp.call_count == 2
+        calls = engine.dispatcher.set_water_temp.call_args_list
+        # Both heaters should be set to normal (heating planned)
+        assert call(60, "input_number.wh1_target") in calls
+        assert call(60, "input_number.wh2_target") in calls
+
+    @pytest.mark.asyncio
+    async def test_heater_off_when_not_planned(self, engine, temp_schedule):
+        """Heater with no planned kW gets temp_off temperature."""
+        from unittest.mock import AsyncMock, call
+
+        from executor.actions import ActionResult
+
+        tz = pytz.timezone("Europe/Stockholm")
+        now = datetime.now(tz)
+        slot_start = now - timedelta(minutes=5)
+        end = slot_start + timedelta(minutes=15)
+
+        slot = {
+            "start_time": slot_start.isoformat(),
+            "end_time": end.isoformat(),
+            "end_time_kepler": end.isoformat(),
+            "battery_charge_kw": 0.0,
+            "battery_discharge_kw": 0.0,
+            "export_kwh": 0.0,
+            "water_heating_kw": 3.0,
+            "soc_target_percent": 50,
+            "projected_soc_percent": 45,
+            "water_heaters": {
+                "wh1": {"heating_kw": 3.0},
+                "wh2": {"heating_kw": 0.0},
+            },
+        }
+        with Path(temp_schedule).open("w", encoding="utf-8") as f:
+            json.dump(make_schedule([slot]), f)
+
+        mock_result = ActionResult(action_type="water_temp", success=True)
+        engine.dispatcher.set_water_temp = AsyncMock(return_value=mock_result)
+
+        await engine.run_once()
+
+        calls = engine.dispatcher.set_water_temp.call_args_list
+        assert call(60, "input_number.wh1_target") in calls
+        assert call(40, "input_number.wh2_target") in calls
+
+    @pytest.mark.asyncio
+    async def test_old_format_schedule_sets_all_devices_to_off(self, engine, temp_schedule):
+        """Old-format schedule (no water_heaters dict) turns all devices to temp_off.
+
+        When the schedule has no per-device breakdown, water_heater_plans is empty,
+        so controller sets all devices to temp_off and still makes per-device HA calls.
+        """
+        from unittest.mock import AsyncMock, call
+
+        from executor.actions import ActionResult
+
+        tz = pytz.timezone("Europe/Stockholm")
+        now = datetime.now(tz)
+        slot_start = now - timedelta(minutes=5)
+        end = slot_start + timedelta(minutes=15)
+
+        slot = {
+            "start_time": slot_start.isoformat(),
+            "end_time": end.isoformat(),
+            "end_time_kepler": end.isoformat(),
+            "battery_charge_kw": 0.0,
+            "battery_discharge_kw": 0.0,
+            "export_kwh": 0.0,
+            "water_heating_kw": 3.0,
+            "soc_target_percent": 50,
+            "projected_soc_percent": 45,
+            # No "water_heaters" dict — old format
+        }
+        with Path(temp_schedule).open("w", encoding="utf-8") as f:
+            json.dump(make_schedule([slot]), f)
+
+        mock_result = ActionResult(action_type="water_temp", success=True)
+        engine.dispatcher.set_water_temp = AsyncMock(return_value=mock_result)
+
+        await engine.run_once()
+
+        # Both devices controlled, set to temp_off (no per-device plan available)
+        assert engine.dispatcher.set_water_temp.call_count == 2
+        calls = engine.dispatcher.set_water_temp.call_args_list
+        assert call(40, "input_number.wh1_target") in calls
+        assert call(40, "input_number.wh2_target") in calls
+
+    async def test_get_status_includes_water_heater_plans(self, engine, temp_schedule):
+        """get_status() returns water_heater_plans in current_slot_plan."""
+        from executor.override import SystemState
+
+        tz = pytz.timezone("Europe/Stockholm")
+        now = datetime.now(tz)
+        slot_start = now - timedelta(minutes=5)
+        end = slot_start + timedelta(minutes=15)
+
+        slot = {
+            "start_time": slot_start.isoformat(),
+            "end_time": end.isoformat(),
+            "end_time_kepler": end.isoformat(),
+            "battery_charge_kw": 0.0,
+            "battery_discharge_kw": 0.0,
+            "export_kwh": 0.0,
+            "water_heating_kw": 6.0,
+            "soc_target_percent": 50,
+            "projected_soc_percent": 45,
+            "water_heaters": {"wh1": {"heating_kw": 3.0}, "wh2": {"heating_kw": 3.0}},
+        }
+        with Path(temp_schedule).open("w", encoding="utf-8") as f:
+            json.dump(make_schedule([slot]), f)
+
+        engine._last_system_state = SystemState(current_soc_percent=50.0)
+        engine.inverter_profile = None
+
+        status = engine.get_status()
+
+        assert status["current_slot_plan"] is not None
+        assert "water_heater_plans" in status["current_slot_plan"]
+        assert status["current_slot_plan"]["water_heater_plans"] == {
+            "wh1": pytest.approx(3.0),
+            "wh2": pytest.approx(3.0),
+        }

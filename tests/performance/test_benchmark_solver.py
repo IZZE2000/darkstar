@@ -5,7 +5,7 @@ from pathlib import Path
 
 sys.path.append(str(Path.cwd()))
 from planner.solver.kepler import KeplerSolver
-from planner.solver.types import KeplerConfig, KeplerInput, KeplerInputSlot
+from planner.solver.types import KeplerConfig, KeplerInput, KeplerInputSlot, WaterHeaterInput
 
 # Reduce logging noise from other modules
 logging.getLogger("pulp").setLevel(logging.WARNING)
@@ -60,9 +60,16 @@ def test_benchmark_solver_48h():
         min_soc_percent=10.0,
         max_soc_percent=90.0,
         wear_cost_sek_per_kwh=0.05,
-        # Enable water heating to stress tests
-        water_heating_power_kw=3.0,
-        water_heating_min_kwh=5.0,  # Daily target
+        # Enable water heating to stress tests (per-device config)
+        water_heaters=[
+            WaterHeaterInput(
+                id="wh1",
+                power_kw=3.0,
+                min_kwh_per_day=5.0,
+                max_hours_between_heating=12.0,
+                min_spacing_hours=4.0,
+            )
+        ],
         water_heating_max_gap_hours=12.0,
         water_comfort_penalty_sek=10.0,
     )

@@ -56,14 +56,27 @@ class InverterConfig:
 
 
 @dataclass
-class WaterHeaterConfig:
-    """Water heater control configuration."""
+class WaterHeaterGlobalConfig:
+    """Global water heater temperature configuration (house-level preferences)."""
 
-    target_entity: str | None = None
     temp_normal: int = 60
     temp_off: int = 40
     temp_boost: int = 70
     temp_max: int = 85
+
+
+# Backward compatibility alias
+WaterHeaterConfig = WaterHeaterGlobalConfig
+
+
+@dataclass
+class WaterHeaterDeviceConfig:
+    """Per-device water heater control configuration."""
+
+    id: str = ""
+    name: str = ""
+    target_entity: str | None = None
+    power_kw: float = 3.0
 
 
 DEFAULT_PENALTY_LEVELS = {
@@ -148,7 +161,8 @@ class ExecutorConfig:
     manual_override_entity: str | None = None
 
     inverter: InverterConfig = field(default_factory=InverterConfig)
-    water_heater: WaterHeaterConfig = field(default_factory=WaterHeaterConfig)
+    water_heater: WaterHeaterGlobalConfig = field(default_factory=WaterHeaterGlobalConfig)
+    water_heater_devices: list[WaterHeaterDeviceConfig] = field(default_factory=lambda: [])
     ev_charger: EVChargerConfig = field(default_factory=EVChargerConfig)  # legacy compat
     ev_chargers: list[EVChargerDeviceConfig] = field(default_factory=lambda: [])
     notifications: NotificationConfig = field(default_factory=NotificationConfig)
@@ -297,21 +311,32 @@ def load_executor_config(config_path: str = "config.yaml") -> ExecutorConfig:
         else {}
     )
 
-    # Read target_entity from first enabled water_heaters[] item (ARC15 migration)
-    water_heaters_array = data.get("water_heaters", [])
-    target_entity = None
-    for heater in cast("list[dict[str, Any]]", water_heaters_array):
-        if heater.get("enabled", True) and heater.get("target_entity"):
-            target_entity = _str_or_none(heater.get("target_entity"))
-            break
-
-    water_heater = WaterHeaterConfig(
-        target_entity=target_entity,
-        temp_normal=int(water_data.get("temp_normal", WaterHeaterConfig.temp_normal)),
-        temp_off=int(water_data.get("temp_off", WaterHeaterConfig.temp_off)),
-        temp_boost=int(water_data.get("temp_boost", WaterHeaterConfig.temp_boost)),
-        temp_max=int(water_data.get("temp_max", WaterHeaterConfig.temp_max)),
+    # Global water heater temperature config (house-level preferences, from executor.water_heater)
+    water_heater = WaterHeaterGlobalConfig(
+        temp_normal=int(water_data.get("temp_normal", WaterHeaterGlobalConfig.temp_normal)),
+        temp_off=int(water_data.get("temp_off", WaterHeaterGlobalConfig.temp_off)),
+        temp_boost=int(water_data.get("temp_boost", WaterHeaterGlobalConfig.temp_boost)),
+        temp_max=int(water_data.get("temp_max", WaterHeaterGlobalConfig.temp_max)),
     )
+
+    # Per-device water heater configs (from water_heaters[] array)
+    water_heaters_array = data.get("water_heaters", [])
+    water_heater_devices_list: list[WaterHeaterDeviceConfig] = []
+    for idx, heater in enumerate(cast("list[dict[str, Any]]", water_heaters_array)):
+        if not heater.get("enabled", True):
+            continue
+        target_ent = _str_or_none(heater.get("target_entity"))
+        if not target_ent:
+            continue  # Only include heaters with a target_entity
+        heater_id = str(heater.get("id", f"water_heater_{idx}"))
+        water_heater_devices_list.append(
+            WaterHeaterDeviceConfig(
+                id=heater_id,
+                name=str(heater.get("name", heater_id)),
+                target_entity=target_ent,
+                power_kw=float(heater.get("power_kw", WaterHeaterDeviceConfig.power_kw)),
+            )
+        )
 
     # EV Charger config (REV K25 Phase 5)
     ev_data: dict[str, Any] = (
@@ -458,6 +483,7 @@ def load_executor_config(config_path: str = "config.yaml") -> ExecutorConfig:
         manual_override_entity=_str_or_none(executor_data.get("manual_override_entity")),
         inverter=inverter,
         water_heater=water_heater,
+        water_heater_devices=water_heater_devices_list,
         ev_charger=ev_charger,
         ev_chargers=ev_chargers_list,
         notifications=notifications,

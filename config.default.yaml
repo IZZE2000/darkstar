@@ -98,7 +98,6 @@ water_heaters:
     sensor: sensor.vvb_power         # Home Assistant entity for power reading
     target_entity: ''                # Thermostat entity for controlling this heater
     type: binary                     # Load type: binary (on/off) or modulating
-    nominal_power_kw: 3.0            # Nominal power for load calculations
 
   # Example: Second water heater (disabled by default)
   # - id: upstairs_tank
@@ -111,7 +110,6 @@ water_heaters:
   #   sensor: sensor.wh2_power
   #   target_entity: ''
   #   type: binary
-  #   nominal_power_kw: 3.0
 
 # EV Chargers (Array for multiple electric vehicles)
 # ARC15: Replaces deferrable_loads entry for EV charging

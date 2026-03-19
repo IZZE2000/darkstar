@@ -7,7 +7,12 @@ based on slot plan and override state.
 
 import pytest
 
-from executor.config import ControllerConfig, InverterConfig
+from executor.config import (
+    ControllerConfig,
+    InverterConfig,
+    WaterHeaterDeviceConfig,
+    WaterHeaterGlobalConfig,
+)
 from executor.controller import Controller, ControllerDecision, make_decision
 from executor.override import OverrideResult, OverrideType, SlotPlan, SystemState
 
@@ -557,3 +562,97 @@ class TestMakeDecisionConvenience:
 
         assert decision.source == "override"
         assert decision.mode_intent == "charge"
+
+
+class TestSlotPlanWaterHeaterPlans:
+    """Task 6.5: SlotPlan parses per-device water data."""
+
+    def test_slot_plan_default_empty_water_heater_plans(self):
+        """SlotPlan defaults water_heater_plans to empty dict."""
+        slot = SlotPlan()
+        assert slot.water_heater_plans == {}
+
+    def test_slot_plan_accepts_water_heater_plans(self):
+        """SlotPlan stores water_heater_plans dict."""
+        slot = SlotPlan(water_heater_plans={"wh1": 3.0, "wh2": 0.0})
+        assert slot.water_heater_plans["wh1"] == 3.0
+        assert slot.water_heater_plans["wh2"] == 0.0
+
+
+class TestControllerPerDeviceWaterTemps:
+    """Task 6.5: controller produces per-device water temps."""
+
+    def _make_devices(self):
+        return [
+            WaterHeaterDeviceConfig(id="wh1", target_entity="climate.wh1", power_kw=3.0),
+            WaterHeaterDeviceConfig(id="wh2", target_entity="climate.wh2", power_kw=2.0),
+        ]
+
+    def _make_global_config(self):
+        return WaterHeaterGlobalConfig(temp_normal=60, temp_off=35)
+
+    def test_active_heater_gets_temp_normal(self):
+        """Heater with planned kW > 0 gets temp_normal."""
+        slot = SlotPlan(water_heater_plans={"wh1": 3.0, "wh2": 0.0})
+        state = SystemState()
+
+        decision = make_decision(
+            slot,
+            state,
+            water_heater_config=self._make_global_config(),
+            water_heater_devices=self._make_devices(),
+        )
+
+        assert decision.water_temps["wh1"] == 60
+        assert decision.water_temps["wh2"] == 35
+
+    def test_all_heaters_off_when_not_planned(self):
+        """All heaters get temp_off when not planned."""
+        slot = SlotPlan(water_heater_plans={"wh1": 0.0, "wh2": 0.0})
+        state = SystemState()
+
+        decision = make_decision(
+            slot,
+            state,
+            water_heater_config=self._make_global_config(),
+            water_heater_devices=self._make_devices(),
+        )
+
+        assert decision.water_temps == {"wh1": 35, "wh2": 35}
+
+    def test_old_format_fallback_empty_water_heater_plans(self):
+        """Old schedule format with empty water_heater_plans: all devices get temp_off."""
+        slot = SlotPlan(water_kw=3.0, water_heater_plans={})
+        state = SystemState()
+
+        decision = make_decision(
+            slot,
+            state,
+            water_heater_config=self._make_global_config(),
+            water_heater_devices=self._make_devices(),
+        )
+
+        # All devices default to temp_off since no per-device plans
+        assert decision.water_temps == {"wh1": 35, "wh2": 35}
+
+    def test_no_devices_produces_empty_water_temps(self):
+        """When no water_heater_devices, water_temps is empty."""
+        slot = SlotPlan(water_heater_plans={"wh1": 3.0})
+        state = SystemState()
+
+        decision = make_decision(slot, state)
+
+        assert decision.water_temps == {}
+
+    def test_scalar_water_temp_still_populated(self):
+        """Scalar water_temp is still set for backward compat."""
+        slot = SlotPlan(water_kw=3.0)
+        state = SystemState()
+
+        decision = make_decision(
+            slot,
+            state,
+            water_heater_config=self._make_global_config(),
+        )
+
+        assert decision.water_temp == 60

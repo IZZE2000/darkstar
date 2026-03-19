@@ -383,16 +383,24 @@ class TestSetWaterTemp:
             InverterConfig,
             NotificationConfig,
             WaterHeaterConfig,
+            WaterHeaterDeviceConfig,
         )
 
         return ExecutorConfig(
             inverter=InverterConfig(),
             controller=ControllerConfig(),
             water_heater=WaterHeaterConfig(
-                target_entity="input_number.water_heater_target",
                 temp_normal=50,
                 temp_off=40,
             ),
+            water_heater_devices=[
+                WaterHeaterDeviceConfig(
+                    id="main",
+                    name="Main Heater",
+                    target_entity="input_number.water_heater_target",
+                    power_kw=3.0,
+                )
+            ],
             notifications=NotificationConfig(),
         )
 
@@ -413,7 +421,7 @@ class TestSetWaterTemp:
             shadow_mode=False,
         )
 
-        result = await dispatcher.set_water_temp(50)
+        result = await dispatcher.set_water_temp(50, "input_number.water_heater_target")
 
         # Assert skipped because already at target
         assert result.success is True
@@ -443,7 +451,7 @@ class TestSetWaterTemp:
             shadow_mode=True,  # Enable shadow mode
         )
 
-        result = await dispatcher.set_water_temp(50)
+        result = await dispatcher.set_water_temp(50, "input_number.water_heater_target")
 
         # Assert skipped due to shadow mode
         assert result.success is True
@@ -464,9 +472,6 @@ class TestSetWaterTemp:
 
         from executor.actions import ActionDispatcher
 
-        # Set target_entity to None (not configured)
-        base_config.water_heater.target_entity = None
-
         ha_client = MagicMock()
 
         dispatcher = ActionDispatcher(
@@ -475,7 +480,8 @@ class TestSetWaterTemp:
             shadow_mode=False,
         )
 
-        result = await dispatcher.set_water_temp(50)
+        # Pass None explicitly (or call without entity) to test not-configured path
+        result = await dispatcher.set_water_temp(50, None)
 
         # Assert skipped due to entity not configured
         assert result.success is True
@@ -505,7 +511,7 @@ class TestSetWaterTemp:
             shadow_mode=False,
         )
 
-        result = await dispatcher.set_water_temp(50)
+        result = await dispatcher.set_water_temp(50, "input_number.water_heater_target")
 
         # Assert successful execution
         assert result.success is True

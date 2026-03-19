@@ -138,6 +138,17 @@ def dataframe_to_json_response(
         record["priority"] = priority
         record["is_historical"] = record.get("is_historical", False)
 
+        # Normalize water_heaters: ensure it's always a dict, not NaN
+        water_heaters_val = record.get("water_heaters")
+        if not isinstance(water_heaters_val, dict):
+            record["water_heaters"] = {}
+        else:
+            # Wrap raw kW values as {heating_kw: float} dicts for schedule output
+            record["water_heaters"] = {
+                k: ({"heating_kw": float(v)} if not isinstance(v, dict) else v)  # type: ignore[arg-type,misc]
+                for k, v in water_heaters_val.items()  # type: ignore[union-attr]
+            }
+
         # Normalize ev_chargers: ensure it's always a dict, not NaN for non-solver rows
         ev_chargers_val = record.get("ev_chargers")
         if not isinstance(ev_chargers_val, dict):

@@ -1,8 +1,4 @@
-## Purpose
-
-The executor SHALL control water heater temperature during scheduled operation, ensuring proper integration with the execution history and respecting system configuration and shadow mode settings.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Executor sets water heater temperature during scheduled operation
 

@@ -84,5 +84,5 @@ def test_load_executor_config_normalization(tmp_path):
     assert config.inverter.grid_charging_enable is None
     assert config.inverter.max_charge_current is None
     assert config.inverter.max_discharge_current is None
-    assert config.water_heater.target_entity is None
+    assert config.water_heater.temp_normal == 60
     assert config.automation_toggle_entity == "input_boolean.automation"

@@ -16,7 +16,12 @@ import logging
 from dataclasses import dataclass
 
 # from typing import Any, Dict, Optional, Tuple
-from .config import ControllerConfig, InverterConfig, WaterHeaterConfig
+from .config import (
+    ControllerConfig,
+    InverterConfig,
+    WaterHeaterDeviceConfig,
+    WaterHeaterGlobalConfig,
+)
 from .override import OverrideResult, SlotPlan, SystemState
 from .profiles import InverterProfile
 
@@ -44,7 +49,13 @@ class ControllerDecision:
     soc_target: int = 10
 
     # Water heater
-    water_temp: int = 40
+    water_temp: int = 40  # Aggregate/fallback scalar (backward compat)
+    water_temps: dict[str, int] = None  # type: ignore[assignment]  # Per-device: heater_id → temp
+
+    def __post_init__(self) -> None:
+        if self.water_temps is None:  # type: ignore[comparison-overlap]
+            self.water_temps = {}
+
     export_power_w: float = 0.0  # Planned grid export power in Watts
     export_with_load_w: float = 0.0  # Export power + house load (for Fronius export mode)
 
@@ -71,12 +82,14 @@ class Controller:
         self,
         config: ControllerConfig,
         inverter_config: InverterConfig,
-        water_heater_config: WaterHeaterConfig | None = None,
+        water_heater_config: WaterHeaterGlobalConfig | None = None,
+        water_heater_devices: list[WaterHeaterDeviceConfig] | None = None,
         profile: InverterProfile | None = None,
     ):
         self.config = config
         self.inverter_config = inverter_config
-        self.water_heater_config = water_heater_config or WaterHeaterConfig()
+        self.water_heater_config = water_heater_config or WaterHeaterGlobalConfig()
+        self.water_heater_devices = water_heater_devices or []
         self.profile = profile
 
     def decide(
@@ -224,8 +237,9 @@ class Controller:
         # SoC target from plan
         soc_target = slot.soc_target
 
-        # Water heater from plan
+        # Water heater from plan (scalar + per-device)
         water_temp = self._determine_water_temp(slot)
+        water_temps = self._determine_water_temps(slot)
 
         # User's configured max limits (for templates)
         unit = (
@@ -246,6 +260,7 @@ class Controller:
             export_with_load_w=export_with_load_w,
             soc_target=soc_target,
             water_temp=water_temp,
+            water_temps=water_temps,
             max_charge=max_charge,
             max_discharge=max_discharge,
             write_charge_current=write_charge,
@@ -324,13 +339,24 @@ class Controller:
             return self.config.max_discharge_a, True
 
     def _determine_water_temp(self, slot: SlotPlan) -> int:
-        """Determine water heater target temperature from slot plan."""
+        """Determine aggregate water heater target temperature from slot plan (backward compat)."""
         if slot.water_kw > 0:
-            # Water heating is active - use configured normal temp
             return self.water_heater_config.temp_normal
-        else:
-            # No water heating - use configured off temp
-            return self.water_heater_config.temp_off
+        return self.water_heater_config.temp_off
+
+    def _determine_water_temps(self, slot: SlotPlan) -> dict[str, int]:
+        """Determine per-device water heater temperatures from slot plan (task 6.4)."""
+        if not self.water_heater_devices:
+            return {}
+        temps: dict[str, int] = {}
+        for device in self.water_heater_devices:
+            planned_kw = slot.water_heater_plans.get(device.id, 0.0)
+            temps[device.id] = (
+                self.water_heater_config.temp_normal
+                if planned_kw > 0
+                else self.water_heater_config.temp_off
+            )
+        return temps
 
     def _generate_reason(self, slot: SlotPlan, mode_intent: str) -> str:
         """Generate a human-readable reason for the decision."""
@@ -358,19 +384,12 @@ def make_decision(
     override: OverrideResult | None = None,
     config: ControllerConfig | None = None,
     inverter_config: InverterConfig | None = None,
-    water_heater_config: WaterHeaterConfig | None = None,
+    water_heater_config: WaterHeaterGlobalConfig | None = None,
+    water_heater_devices: list[WaterHeaterDeviceConfig] | None = None,
     profile: InverterProfile | None = None,
 ) -> ControllerDecision:
     """
     Convenience function to make a controller decision.
-
-    Args:
-        slot: Current slot plan
-        state: Current system state
-        override: Override result if any
-        config: Controller configuration
-        inverter_config: Inverter configuration
-        water_heater_config: Water heater temperature configuration
 
     Returns:
         ControllerDecision with all action parameters
@@ -379,6 +398,7 @@ def make_decision(
         config or ControllerConfig(),
         inverter_config or InverterConfig(),
         water_heater_config,
+        water_heater_devices,
         profile,
     )
     return controller.decide(slot, state, override)

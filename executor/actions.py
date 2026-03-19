@@ -757,10 +757,21 @@ class ActionDispatcher:
             duration_ms=duration_ms,
         )
 
-    async def set_water_temp(self, target: int) -> ActionResult:
-        """Set water heater target temperature."""
+    async def set_water_temp(self, target: int, target_entity: str | None = None) -> ActionResult:
+        """Set water heater target temperature.
+
+        Args:
+            target: Target temperature in °C
+            target_entity: HA entity to control. If None, falls back to
+                           config.water_heater.target_entity (legacy single-heater path).
+        """
         start = time.time()
-        entity = self.config.water_heater.target_entity
+        # Use passed entity; fall back to legacy single-entity config for backward compat
+        entity = (
+            target_entity
+            if target_entity is not None
+            else getattr(self.config.water_heater, "target_entity", None)
+        )
 
         if not _is_entity_configured(entity):
             logger.debug("Skipping water_temp action: entity not configured")

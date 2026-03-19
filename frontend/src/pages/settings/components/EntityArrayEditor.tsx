@@ -20,7 +20,6 @@ export interface WaterHeaterEntity {
     sensor: string
     target_entity: string
     type: 'binary' | 'modulating'
-    nominal_power_kw: number
 }
 
 // EV Charger Entity Type
@@ -64,7 +63,6 @@ const createDefaultWaterHeater = (index: number): WaterHeaterEntity => ({
     sensor: '',
     target_entity: '',
     type: 'binary',
-    nominal_power_kw: 3.0,
 })
 
 const createDefaultEVCharger = (index: number): EVChargerEntity => ({
@@ -189,8 +187,9 @@ export const EntityArrayEditor: React.FC<EntityArrayEditorProps> = ({
                 {entities.map((entity, index) => (
                     <div
                         key={entity.id || index}
-                        className={`overflow-visible border rounded-xl bg-surface-elevated mb-2 transition-all duration-200 ${entity.enabled ? 'border-line/40' : 'border-line/20 opacity-75'
-                            }`}
+                        className={`overflow-visible border rounded-xl bg-surface-elevated mb-2 transition-all duration-200 ${
+                            entity.enabled ? 'border-line/40' : 'border-line/20 opacity-75'
+                        }`}
                     >
                         <button
                             type="button"
@@ -199,10 +198,11 @@ export const EntityArrayEditor: React.FC<EntityArrayEditorProps> = ({
                         >
                             <div className="flex items-center gap-3">
                                 <div
-                                    className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${entity.enabled
-                                        ? 'bg-accent/10 border border-accent/20 text-accent'
-                                        : 'bg-surface2 border border-line/30 text-muted'
-                                        }`}
+                                    className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${
+                                        entity.enabled
+                                            ? 'bg-accent/10 border border-accent/20 text-accent'
+                                            : 'bg-surface2 border border-line/30 text-muted'
+                                    }`}
                                 >
                                     {index + 1}
                                 </div>
@@ -565,24 +565,6 @@ export const EntityArrayEditor: React.FC<EntityArrayEditorProps> = ({
                                             </div>
                                         )}
 
-                                        {/* Nominal Power */}
-                                        {isWaterHeater && (
-                                            <div>
-                                                <label className="text-[10px] uppercase font-bold text-muted mb-1.5 block">
-                                                    Nominal Power (kW)
-                                                </label>
-                                                <NumberInput
-                                                    value={entity.nominal_power_kw}
-                                                    onChange={(val) =>
-                                                        updateEntity(index, { nominal_power_kw: Number(val) })
-                                                    }
-                                                    disabled={disabled}
-                                                    step={0.1}
-                                                    min={0}
-                                                />
-                                            </div>
-                                        )}
-
                                         {/* Water Heater Specific Fields */}
                                         {isWaterHeater && (
                                             <>
@@ -644,11 +626,11 @@ export const EntityArrayEditor: React.FC<EntityArrayEditorProps> = ({
                                                                             max_soc:
                                                                                 currentLevels.length > 0
                                                                                     ? Math.min(
-                                                                                        100,
-                                                                                        currentLevels[
-                                                                                            currentLevels.length - 1
-                                                                                        ].max_soc + 10,
-                                                                                    )
+                                                                                          100,
+                                                                                          currentLevels[
+                                                                                              currentLevels.length - 1
+                                                                                          ].max_soc + 10,
+                                                                                      )
                                                                                     : 50,
                                                                             penalty_sek: 0.5,
                                                                         }
@@ -679,7 +661,7 @@ export const EntityArrayEditor: React.FC<EntityArrayEditorProps> = ({
                                                         </p>
 
                                                         {((entity as EVChargerEntity).penalty_levels || []).length ===
-                                                            0 ? (
+                                                        0 ? (
                                                             <div className="text-center py-4 text-[10px] text-muted">
                                                                 No penalty levels configured. Using defaults.
                                                             </div>

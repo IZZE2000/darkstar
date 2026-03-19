@@ -99,6 +99,7 @@ class SlotPlan:
     soc_target: int = 50
     soc_projected: int = 50
     ev_charger_plans: dict[str, float] = field(default_factory=lambda: {})
+    water_heater_plans: dict[str, float] = field(default_factory=lambda: {})
 
 
 class OverrideEvaluator:

@@ -129,7 +129,6 @@ class TestWaterHeaterValidation:
                     "min_kwh_per_day": 6.0,
                     "sensor": "sensor.vvb_power",
                     "type": "binary",
-                    "nominal_power_kw": 3.0,
                 }
             ],
         }
