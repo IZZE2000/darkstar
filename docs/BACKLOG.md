@@ -33,12 +33,6 @@ This document contains ideas, improvements, and tasks that are not yet scheduled
 
 <!-- Add new bugs/requests here. AI should wipe the item after processing into a OpenSpec change. -->
 
-### [SENSORS] Investigate Cumulative vs API history
-
-**Goal:** The cumulative energy sensors are updating with quite long intervals. Should we use the API history instead? Would it provide more granular data? Or should we change the recorder interval?
-
-**Notes:**
-
 ### [DRAFT] Inverter Clipping Support
 
 **Goal:** Correctly model DC vs AC inverter limits in the Kepler solver to prevent over-optimistic planning on high-PV systems.
@@ -76,7 +70,7 @@ This document contains ideas, improvements, and tasks that are not yet scheduled
 
 **Goal:** Wire `system.inverter.max_power_kw` to the planner/executor or remove if superseded.
 
-**Notes:** Config key is defined but never used in code. Related to "Inverter Clipping Support" backlog item. Either implement the feature or remove the config key to avoid confusion.
+**Notes:** Config key is defined but never used in code. Related to "Inverter Clipping Support" backlog item. Either implement the feature or remove the config key to avoid confusion. What is it used for?
 
 ---
 
