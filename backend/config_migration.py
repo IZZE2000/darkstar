@@ -658,8 +658,15 @@ async def migrate_config(
         logger.error(f"❌ Failed to read user config: {e}")
         return
 
-    # 2. Sweep deprecated keys from user config
-    user_config, pre_merge_changes = remove_deprecated_keys(user_config)
+    # 2. Migrate fields that read deprecated keys BEFORE removing them
+    # 2.1 Migrate global EV charger fields into per-device ev_chargers[] entries
+    user_config, ev_migration_changes = _migrate_ev_charger_fields(user_config)
+    pre_merge_changes = ev_migration_changes
+
+    # 2.2 Sweep deprecated keys from user config
+    user_config, deprecated_changes = remove_deprecated_keys(user_config)
+    if deprecated_changes:
+        pre_merge_changes = True
 
     # 2.5 Migrate water heater fields (must run after remove_deprecated_keys, before template merge)
     user_config, migration_changes = _migrate_water_heater_fields(user_config)
@@ -669,11 +676,6 @@ async def migrate_config(
     # 2.6 Remove energy_sensor from ev_chargers[] and water_heaters[]
     user_config, energy_sensor_changes = _remove_energy_sensor_fields(user_config)
     if energy_sensor_changes:
-        pre_merge_changes = True
-
-    # 2.7 Migrate global EV charger fields into per-device ev_chargers[] entries
-    user_config, ev_migration_changes = _migrate_ev_charger_fields(user_config)
-    if ev_migration_changes:
         pre_merge_changes = True
 
     # 3. Load Default Config (The Template)

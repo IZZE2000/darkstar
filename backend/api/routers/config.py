@@ -524,7 +524,7 @@ def _validate_config_for_save(
                     )
 
                 # Validate per-device departure_time format
-                dev_departure = ev.get("departure_time", "")
+                dev_departure = str(ev.get("departure_time", "") or "")
                 if dev_departure and not re.match(
                     r"^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$", dev_departure
                 ):
