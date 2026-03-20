@@ -1,4 +1,4 @@
-## [v2.6.1-beta] [Unreleased!] - DB-First Energy Display & Recency-Weighted Training - 2026-03-09
+## [v2.6.1-beta] - DB-First Energy Display & Recency-Weighted Training - 2026-03-20
 
 > [!IMPORTANT]
 > **BREAKING CHANGE: Today Sensors Removed**
@@ -28,6 +28,12 @@
     - EV Charging (only when `has_ev_charger: true`)
 - **Deprecated Endpoint**: `GET /api/ha/water_today` is now deprecated. Use `/api/services/energy/today` which includes `water_heating_kwh`.
 - **Recency-Weighted ML Training**: Aurora models now prioritize recent data using exponential decay weighting (30-day half-life). Models adapt faster to changing patterns without manual retraining schedules.
+- **Multi-Device Support**: Added full support for configuring, planning, and controlling multiple Water Heaters and EV Chargers independently.
+- **HA History API Integration**: Replaced cumulative energy sensors reliance with direct Home Assistant History API queries for more robust energy recording.
+- **Battery Protection**: Planner now strictly blocks house battery discharge while EV is charging to prevent cycle degradation.
+- **Parallel Sensor Reads**: Substantially improved performance by reading HA sensors concurrently via `asyncio.gather`.
+- **Temporal Safety Floor**: Replaced aggregate deficit counting with temporal deficit tracking in the planner for safer constraint adherence.
+- **Executor Reliability**: Implemented comprehensive timeout handling and exponential retry-with-backoff for critical Home Assistant API communications.
 
 **🔧 Improvements**
 
@@ -38,7 +44,13 @@
 
 **🐛 Bug Fixes**
 
-- Fixed EV replan failing silently on plug-in: now triggers schedule recalculation correctly and prevents unscheduled charging
+- Fixed EV replan failing silently on plug-in: now triggers schedule recalculation correctly and prevents unscheduled charging.
+- Improved executor robustness: fixed EV charge silent failures, ensuring execution record integrity.
+- Fixed PV forecast physics model accuracy causing prediction errors during certain conditions.
+- Fixed EV charger state caching: properly clears state when `has_ev_charger` is toggled off.
+- Fixed a logging crash in the planner and improved error notifications for easier troubleshooting.
+- Fixed configuration migration ordering and tightened type safety for EV departure times.
+- Fixed water heater temperature control in the execution tick loop.
 
 ---
 
