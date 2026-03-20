@@ -538,12 +538,15 @@ def _validate_config_for_save(
 
                 # Validate per-device switch_entity format
                 switch_entity = ev.get("switch_entity", "")
-                if switch_entity and not switch_entity.startswith("switch."):
+                if switch_entity and not (
+                    switch_entity.startswith("switch.")
+                    or switch_entity.startswith("input_boolean.")
+                ):
                     issues.append(
                         {
                             "severity": "warning",
                             "message": f"EV charger '{ev.get('id', i + 1)}' switch_entity may be invalid: {switch_entity}",
-                            "guidance": "switch_entity should be a Home Assistant switch entity ID (e.g., 'switch.ev_charger').",
+                            "guidance": "switch_entity should be a Home Assistant switch entity ID (e.g., 'switch.ev_charger' or 'input_boolean.ev_charger').",
                         }
                     )
 
