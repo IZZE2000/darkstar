@@ -1303,3 +1303,203 @@ class TestControlWaterHeatersPerDevice:
             "wh1": pytest.approx(3.0),
             "wh2": pytest.approx(3.0),
         }
+
+
+class TestConfigCaching:
+    """Tests for config mtime-based caching (executor-performance-fixes)."""
+
+    def test_config_reload_skipped_when_mtime_unchanged(self, tmp_path):
+        """Task 1.5: Config reload is skipped when file mtime is unchanged."""
+        config_path = tmp_path / "config.yaml"
+        secrets_path = tmp_path / "secrets.yaml"
+
+        # Create a minimal config
+        config_content = """
+system:
+  timezone: "Europe/Stockholm"
+  has_solar: true
+  has_battery: true
+  has_water_heater: true
+  has_ev_charger: false
+executor:
+  enabled: true
+  shadow_mode: false
+  interval_seconds: 60
+  timezone: "Europe/Stockholm"
+  controller:
+    mode: "auto"
+  inverter:
+    control_unit: "percent"
+"""
+        config_path.write_text(config_content)
+        secrets_path.write_text("home_assistant:\n  url: http://test\n  token: test_token\n")
+
+        engine = ExecutorEngine(str(config_path), str(secrets_path))
+
+        # Before first reload, mtime should be None
+        assert engine._config_mtime is None
+
+        # First call should load config (mtime is None initially)
+        engine.reload_config()
+
+        # After reload, mtime should be set
+        assert engine._config_mtime is not None
+
+        # Second call should skip reload (mtime unchanged)
+        with patch("executor.engine.load_executor_config") as mock_load:
+            engine.reload_config()
+            mock_load.assert_not_called()
+
+    def test_config_reloaded_when_mtime_changes(self, tmp_path):
+        """Task 1.6: Config is re-parsed when file mtime changes."""
+        import time
+
+        config_path = tmp_path / "config.yaml"
+        secrets_path = tmp_path / "secrets.yaml"
+
+        # Create initial config
+        config_content = """
+system:
+  timezone: "Europe/Stockholm"
+  has_solar: true
+  has_battery: true
+  has_water_heater: true
+  has_ev_charger: false
+executor:
+  enabled: true
+  shadow_mode: false
+  interval_seconds: 60
+  timezone: "Europe/Stockholm"
+  controller:
+    mode: "auto"
+  inverter:
+    control_unit: "percent"
+"""
+        config_path.write_text(config_content)
+        secrets_path.write_text("home_assistant:\n  url: http://test\n  token: test_token\n")
+
+        engine = ExecutorEngine(str(config_path), str(secrets_path))
+
+        # First call loads config
+        engine.reload_config()
+        initial_mtime = engine._config_mtime
+        assert initial_mtime is not None
+
+        # Wait a moment and update the file
+        time.sleep(0.1)
+        config_path.write_text(config_content + "\n# modified")
+
+        # Second call should reload (mtime changed)
+        with patch("executor.engine.load_executor_config") as mock_load:
+            mock_config = MagicMock()
+            mock_config.enabled = True
+            mock_config.shadow_mode = False
+            mock_load.return_value = mock_config
+
+            engine.reload_config()
+            mock_load.assert_called_once()
+            assert engine._config_mtime != initial_mtime
+
+
+class TestNordpoolPriceFetch:
+    """Tests for Nordpool price fetch fix (executor-performance-fixes)."""
+
+    @pytest.fixture
+    def engine_with_battery(self, tmp_path):
+        """Create engine with battery enabled."""
+        config_path = tmp_path / "config.yaml"
+        secrets_path = tmp_path / "secrets.yaml"
+
+        config_content = """
+system:
+  timezone: "Europe/Stockholm"
+  has_solar: true
+  has_battery: true
+  has_water_heater: true
+battery:
+  capacity_kwh: 27.0
+executor:
+  enabled: true
+  shadow_mode: false
+  interval_seconds: 300
+  timezone: "Europe/Stockholm"
+  has_battery: true
+  controller:
+    mode: "auto"
+    system_voltage_v: 48.0
+    charge_efficiency: 0.92
+  inverter:
+    control_unit: "percent"
+"""
+        config_path.write_text(config_content)
+        secrets_path.write_text("home_assistant:\n  url: http://test\n  token: test_token\n")
+
+        engine = ExecutorEngine(str(config_path), str(secrets_path))
+        engine.config.has_battery = True
+        return engine
+
+    @pytest.mark.asyncio
+    async def test_nordpool_price_fetched_via_await(self, engine_with_battery):
+        """Task 2.3: Nordpool price is fetched successfully via await in executor tick."""
+        from datetime import datetime
+        from unittest.mock import AsyncMock
+
+        import pytz
+
+        from executor.controller import ControllerDecision
+        from executor.override import SystemState
+
+        tz = pytz.timezone("Europe/Stockholm")
+        now = datetime.now(tz)
+
+        mock_prices = [
+            {
+                "start_time": now.replace(minute=0, second=0, microsecond=0),
+                "import_price_sek_kwh": 1.25,
+            }
+        ]
+
+        state = SystemState(current_soc_percent=50.0)
+        decision = ControllerDecision(
+            mode_intent="charge",
+            charge_value=10,
+            discharge_value=0,
+            soc_target=80,
+            water_temp=50,
+        )
+
+        with patch("backend.core.prices.get_nordpool_data", new_callable=AsyncMock) as mock_fetch:
+            mock_fetch.return_value = mock_prices
+
+            await engine_with_battery._update_battery_cost(state, decision, None)
+
+            mock_fetch.assert_called_once_with("config.yaml")
+
+    @pytest.mark.asyncio
+    async def test_nordpool_fallback_on_exception(self, engine_with_battery):
+        """Task 2.4: Executor falls back to 0.5 SEK/kWh when Nordpool fetch raises an exception."""
+        from unittest.mock import AsyncMock
+
+        from backend.battery_cost import BatteryCostTracker
+        from executor.controller import ControllerDecision
+        from executor.override import SystemState
+
+        state = SystemState(current_soc_percent=50.0)
+        decision = ControllerDecision(
+            mode_intent="charge",
+            charge_value=10,
+            discharge_value=0,
+            soc_target=80,
+            water_temp=50,
+        )
+
+        with patch("backend.core.prices.get_nordpool_data", new_callable=AsyncMock) as mock_fetch:
+            mock_fetch.side_effect = Exception("Network error")
+
+            with patch.object(BatteryCostTracker, "update_cost") as mock_update:
+                await engine_with_battery._update_battery_cost(state, decision, None)
+
+                # Check that update_cost was called with fallback price 0.5
+                mock_update.assert_called_once()
+                call_args = mock_update.call_args
+                assert call_args.kwargs["import_price_sek"] == 0.5

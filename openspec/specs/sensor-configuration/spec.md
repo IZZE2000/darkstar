@@ -136,3 +136,12 @@ Every settings tab SHALL include an always-visible save button at the bottom of 
 - **WHEN** a user clicks the save button on any settings tab
 - **THEN** the button text SHALL change to "Saving..." while the save is in progress
 - **AND** the button SHALL be disabled during the save operation
+
+### Requirement: Default config does not include placeholder sensor entities
+The default configuration template (`config.default.yaml`) SHALL NOT include placeholder sensor entity names for optional subsystems. The `water_heaters[].sensor` field SHALL default to an empty string (`''`) rather than a specific entity name like `sensor.vvb_power`.
+
+#### Scenario: New installation has no phantom water heater sensor
+- **WHEN** a new user installs Darkstar
+- **AND** the default config is generated from `config.default.yaml`
+- **THEN** the `water_heaters[0].sensor` field is `''` (empty string)
+- **AND** no HTTP requests are made for non-existent water heater entities

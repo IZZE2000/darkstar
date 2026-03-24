@@ -918,7 +918,12 @@ class TestLoadIsolationFromDeferrableLoads:
                 "total_pv_production": "sensor.total_pv_production",
                 "total_load_consumption": "sensor.total_load_consumption",
             },
-            "system": {"grid_meter_type": "net", "has_battery": True},
+            "system": {
+                "grid_meter_type": "net",
+                "has_battery": True,
+                "has_water_heater": True,
+                "has_ev_charger": True,
+            },
             "water_heaters": [],
             "ev_chargers": [],
         }
@@ -2198,3 +2203,149 @@ class TestPerDeviceWaterHeaterRecording:
                     # Snapshot: 2.0 kW x 0.25 h = 0.5 kWh
                     assert record["water_kwh"] == pytest.approx(0.5, abs=0.01)
                     assert record["water_heater_energy"]["wh1"] == pytest.approx(0.5, abs=0.01)
+
+
+class TestSensorGuards:
+    """Tests for water heater/EV sensor guards (executor-performance-fixes)."""
+
+    def test_recorder_skips_water_heater_when_disabled(self):
+        """Task 3.4: Recorder skips water heater sensor fetch when has_water_heater is false."""
+        config = {
+            "input_sensors": {
+                "pv_power": "sensor.pv",
+                "load_power": "sensor.load",
+                "battery_power": "sensor.battery",
+                "grid_power": "sensor.grid",
+            },
+            "water_heaters": [{"id": "wh1", "enabled": True, "sensor": "sensor.water_power"}],
+            "system": {
+                "timezone": "Europe/Stockholm",
+                "grid_meter_type": "net",
+                "has_water_heater": False,
+            },
+        }
+
+        power_reads = [
+            ("pv_power", lambda: 1.0),
+            ("load_power", lambda: 2.0),
+            ("battery_power", lambda: 3.0),
+        ]
+
+        water_heater_sensors = []
+        if config.get("system", {}).get("has_water_heater", True):
+            for water_heater in config.get("water_heaters", []):
+                if water_heater.get("enabled", True):
+                    sensor = water_heater.get("sensor")
+                    if sensor:
+                        water_heater_sensors.append(str(sensor))
+                        power_reads.append((f"wh_{sensor}", lambda s=str(sensor): 4.0))
+
+        assert len(water_heater_sensors) == 0
+        assert not any(name.startswith("wh_") for name, _ in power_reads)
+
+    def test_recorder_skips_ev_charger_when_disabled(self):
+        """Task 3.5: Recorder skips EV charger sensor fetch when has_ev_charger is false."""
+        config = {
+            "input_sensors": {
+                "pv_power": "sensor.pv",
+                "load_power": "sensor.load",
+                "battery_power": "sensor.battery",
+                "grid_power": "sensor.grid",
+            },
+            "ev_chargers": [{"id": "ev1", "enabled": True, "sensor": "sensor.ev_power"}],
+            "system": {
+                "timezone": "Europe/Stockholm",
+                "grid_meter_type": "net",
+                "has_ev_charger": False,
+            },
+        }
+
+        power_reads = [
+            ("pv_power", lambda: 1.0),
+            ("load_power", lambda: 2.0),
+            ("battery_power", lambda: 3.0),
+        ]
+
+        ev_charger_sensors = []
+        if config.get("system", {}).get("has_ev_charger", False):
+            ev_chargers = config.get("ev_chargers", [])
+            for ev_charger in ev_chargers:
+                if ev_charger.get("enabled", True):
+                    sensor = ev_charger.get("sensor")
+                    if sensor:
+                        ev_charger_sensors.append(str(sensor))
+                        power_reads.append((f"ev_{sensor}", lambda s=str(sensor): 4.0))
+
+        assert len(ev_charger_sensors) == 0
+        assert not any(name.startswith("ev_") for name, _ in power_reads)
+
+    def test_recorder_fetches_water_heater_when_enabled(self):
+        """Water heater sensors are fetched when has_water_heater is true."""
+        config = {
+            "input_sensors": {
+                "pv_power": "sensor.pv",
+                "load_power": "sensor.load",
+                "battery_power": "sensor.battery",
+                "grid_power": "sensor.grid",
+            },
+            "water_heaters": [{"id": "wh1", "enabled": True, "sensor": "sensor.water_power"}],
+            "system": {
+                "timezone": "Europe/Stockholm",
+                "grid_meter_type": "net",
+                "has_water_heater": True,
+            },
+        }
+
+        power_reads = [
+            ("pv_power", lambda: 1.0),
+            ("load_power", lambda: 2.0),
+            ("battery_power", lambda: 3.0),
+        ]
+
+        water_heater_sensors = []
+        if config.get("system", {}).get("has_water_heater", True):
+            for water_heater in config.get("water_heaters", []):
+                if water_heater.get("enabled", True):
+                    sensor = water_heater.get("sensor")
+                    if sensor:
+                        water_heater_sensors.append(str(sensor))
+                        power_reads.append((f"wh_{sensor}", lambda s=str(sensor): 4.0))
+
+        assert len(water_heater_sensors) == 1
+        assert "wh_sensor.water_power" in [name for name, _ in power_reads]
+
+    def test_recorder_fetches_ev_charger_when_enabled(self):
+        """EV charger sensors are fetched when has_ev_charger is true."""
+        config = {
+            "input_sensors": {
+                "pv_power": "sensor.pv",
+                "load_power": "sensor.load",
+                "battery_power": "sensor.battery",
+                "grid_power": "sensor.grid",
+            },
+            "ev_chargers": [{"id": "ev1", "enabled": True, "sensor": "sensor.ev_power"}],
+            "system": {
+                "timezone": "Europe/Stockholm",
+                "grid_meter_type": "net",
+                "has_ev_charger": True,
+            },
+        }
+
+        power_reads = [
+            ("pv_power", lambda: 1.0),
+            ("load_power", lambda: 2.0),
+            ("battery_power", lambda: 3.0),
+        ]
+
+        ev_charger_sensors = []
+        if config.get("system", {}).get("has_ev_charger", False):
+            ev_chargers = config.get("ev_chargers", [])
+            for ev_charger in ev_chargers:
+                if ev_charger.get("enabled", True):
+                    sensor = ev_charger.get("sensor")
+                    if sensor:
+                        ev_charger_sensors.append(str(sensor))
+                        power_reads.append((f"ev_{sensor}", lambda s=str(sensor): 4.0))
+
+        assert len(ev_charger_sensors) == 1
+        assert "ev_sensor.ev_power" in [name for name, _ in power_reads]

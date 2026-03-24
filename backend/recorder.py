@@ -302,14 +302,15 @@ async def record_observation_from_current_state(
 
     # Collect water heater sensor reads (ARC15: read from water_heaters[] array)
     water_heater_sensors: list[str] = []
-    for water_heater in config.get("water_heaters", []):
-        if water_heater.get("enabled", True):
-            sensor = water_heater.get("sensor")
-            if sensor:
-                water_heater_sensors.append(str(sensor))
-                power_reads.append(
-                    (f"wh_{sensor}", lambda s=str(sensor): get_ha_sensor_kw_normalized(s))
-                )
+    if config.get("system", {}).get("has_water_heater", True):
+        for water_heater in config.get("water_heaters", []):
+            if water_heater.get("enabled", True):
+                sensor = water_heater.get("sensor")
+                if sensor:
+                    water_heater_sensors.append(str(sensor))
+                    power_reads.append(
+                        (f"wh_{sensor}", lambda s=str(sensor): get_ha_sensor_kw_normalized(s))
+                    )
     if meter_type == "dual":
         power_reads.append(("grid_import_power", lambda: get_kw("grid_import_power")))
         power_reads.append(("grid_export_power", lambda: get_kw("grid_export_power")))
@@ -318,15 +319,16 @@ async def record_observation_from_current_state(
 
     # Collect EV charger sensor reads into the batch
     ev_charger_sensors: list[str] = []
-    ev_chargers = config.get("ev_chargers", [])
-    for ev_charger in ev_chargers:
-        if ev_charger.get("enabled", True):
-            sensor = ev_charger.get("sensor")
-            if sensor:
-                ev_charger_sensors.append(str(sensor))
-                power_reads.append(
-                    (f"ev_{sensor}", lambda s=str(sensor): get_ha_sensor_kw_normalized(s))
-                )
+    if config.get("system", {}).get("has_ev_charger", False):
+        ev_chargers = config.get("ev_chargers", [])
+        for ev_charger in ev_chargers:
+            if ev_charger.get("enabled", True):
+                sensor = ev_charger.get("sensor")
+                if sensor:
+                    ev_charger_sensors.append(str(sensor))
+                    power_reads.append(
+                        (f"ev_{sensor}", lambda s=str(sensor): get_ha_sensor_kw_normalized(s))
+                    )
 
     power_results = await gather_sensor_reads(power_reads, context="recorder_observation")
 
@@ -452,24 +454,26 @@ async def record_observation_from_current_state(
     # Calculate EV charging energy using power history API
     ev_charging_kwh = 0.0
     ev_charger_energy: dict[str, float] = {}  # Task 8.1: per-device recording
-    for ev_charger in ev_chargers:
-        if ev_charger.get("enabled", True):
-            sensor = ev_charger.get("sensor")
-            charger_id = str(ev_charger.get("id", ""))
-            if sensor:
-                energy = await get_energy_from_power_history(str(sensor), slot_start, slot_end)
-                if energy is not None:
-                    ev_charging_kwh += energy
-                    if charger_id:
-                        ev_charger_energy[charger_id] = energy
-                    logger.debug(f"EV {charger_id}: history energy={energy:.3f} kWh")
-                else:
-                    charger_power = power_results.get(f"ev_{sensor}") or 0.0
-                    device_kwh = charger_power * 0.25
-                    ev_charging_kwh += device_kwh
-                    if charger_id:
-                        ev_charger_energy[charger_id] = device_kwh
-                    logger.debug(f"EV {charger_id}: snapshot fallback={device_kwh:.3f} kWh")
+    if config.get("system", {}).get("has_ev_charger", False):
+        ev_chargers = config.get("ev_chargers", [])
+        for ev_charger in ev_chargers:
+            if ev_charger.get("enabled", True):
+                sensor = ev_charger.get("sensor")
+                charger_id = str(ev_charger.get("id", ""))
+                if sensor:
+                    energy = await get_energy_from_power_history(str(sensor), slot_start, slot_end)
+                    if energy is not None:
+                        ev_charging_kwh += energy
+                        if charger_id:
+                            ev_charger_energy[charger_id] = energy
+                        logger.debug(f"EV {charger_id}: history energy={energy:.3f} kWh")
+                    else:
+                        charger_power = power_results.get(f"ev_{sensor}") or 0.0
+                        device_kwh = charger_power * 0.25
+                        ev_charging_kwh += device_kwh
+                        if charger_id:
+                            ev_charger_energy[charger_id] = device_kwh
+                        logger.debug(f"EV {charger_id}: snapshot fallback={device_kwh:.3f} kWh")
 
     # Calculate water heater energy using power history API
     water_kwh = 0.0

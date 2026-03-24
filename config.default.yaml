@@ -94,7 +94,7 @@ water_heaters:
     min_kwh_per_day: 6.0             # Minimum daily energy requirement (kWh)
     max_hours_between_heating: 8     # Max comfort gap between heating cycles
     water_min_spacing_hours: 4       # Minimum gap between heating starts
-    sensor: sensor.vvb_power         # Home Assistant entity for power reading
+    sensor: ''                       # Home Assistant entity for power reading
     target_entity: ''                # Thermostat entity for controlling this heater
     type: binary                     # Load type: binary (on/off) or modulating
 
@@ -115,12 +115,12 @@ water_heaters:
 # Note: penalty_levels are configured per-EV in the UI (Settings > Parameters)
 # They define willingness to pay for charging at different battery levels
 ev_chargers:
-  - id: ev_charger_1                # Unique identifier (slug format)
-    name: "Generic EV"            # Display name in UI
+  - id: ev_charger_1                 # Unique identifier (slug format)
+    name: "EV-01"                    # Display name in UI
     enabled: false                   # Master toggle for this EV (set true to enable)
     max_power_kw: 11.0               # Maximum charging power (kW)
     battery_capacity_kwh: 82.0       # Battery capacity for SoC calculations (kWh)
-    sensor: sensor.tesla_power       # Home Assistant entity for power reading
+    sensor: ""                       # Home Assistant entity for power reading
     soc_sensor: ""                   # EV battery state of charge (%) - Required for smart charging
     plug_sensor: ""                  # EV plug status sensor - Required for smart charging
     type: binary                     # Load type: binary (ON/OFF) only. Variable power control not yet implemented

@@ -211,6 +211,10 @@ class ExecutorEngine:
         # Async background tasks reference (RUF006 fix)
         self._background_tasks: set[asyncio.Task[Any]] = set()
 
+        # Config and profile mtime caching
+        self._config_mtime: float | None = None
+        self._profile_mtime: float | None = None
+
     def _get_db_path(self) -> str:
         """Get the path to the learning database."""
         # Use the same database as the learning engine
@@ -245,36 +249,63 @@ class ExecutorEngine:
         return True
 
     def reload_config(self) -> None:
-        """Reload configuration from config.yaml."""
+        """Reload configuration from config.yaml with mtime-based caching."""
+        current_config_mtime = Path(self.config_path).stat().st_mtime
+        if self._config_mtime is not None and current_config_mtime == self._config_mtime:
+            return
+
         with self._lock:
             self.config = load_executor_config(self.config_path)
             self._full_config = load_yaml(self.config_path)
+            self._config_mtime = current_config_mtime
             self.status.enabled = self.config.enabled
             self.status.shadow_mode = self.config.shadow_mode
             if self.dispatcher:
                 self.dispatcher.shadow_mode = self.config.shadow_mode
 
+            system_cfg = self._full_config.get("system", {})
+            self._has_water_heater = system_cfg.get("has_water_heater", True)
+            self._has_ev_charger = system_cfg.get("has_ev_charger", False)
+
             # Reload inverter profile if changed (REV FIX: Profile switch now takes effect immediately)
             from .profiles import get_profile_from_config
 
             try:
-                new_profile = get_profile_from_config(self._full_config)
-                if (
-                    new_profile.metadata.name != self.inverter_profile.metadata.name
-                    if self.inverter_profile
-                    else True
-                ):
-                    self.inverter_profile = new_profile
-                    self.status.profile_name = new_profile.metadata.name
-                    self.status.profile_error = None
-                    if self.dispatcher:
-                        self.dispatcher.profile = new_profile
-                    logger.info(
-                        "Inverter profile reloaded: %s v%s (%s)",
-                        new_profile.metadata.name,
-                        new_profile.metadata.version,
-                        ", ".join(new_profile.metadata.supported_brands),
-                    )
+                profile_name = self._full_config.get("system", {}).get(
+                    "inverter_profile", "generic"
+                )
+                profile_path = Path("profiles") / f"{profile_name}.yaml"
+
+                # Check profile mtime
+                should_reload_profile = True
+                if profile_path.exists():
+                    current_profile_mtime = profile_path.stat().st_mtime
+                    if (
+                        self._profile_mtime is not None
+                        and current_profile_mtime == self._profile_mtime
+                    ):
+                        should_reload_profile = False
+                    else:
+                        self._profile_mtime = current_profile_mtime
+
+                if should_reload_profile:
+                    new_profile = get_profile_from_config(self._full_config)
+                    if (
+                        new_profile.metadata.name != self.inverter_profile.metadata.name
+                        if self.inverter_profile
+                        else True
+                    ):
+                        self.inverter_profile = new_profile
+                        self.status.profile_name = new_profile.metadata.name
+                        self.status.profile_error = None
+                        if self.dispatcher:
+                            self.dispatcher.profile = new_profile
+                        logger.info(
+                            "Inverter profile reloaded: %s v%s (%s)",
+                            new_profile.metadata.name,
+                            new_profile.metadata.version,
+                            ", ".join(new_profile.metadata.supported_brands),
+                        )
             except Exception as e:
                 logger.error("Failed to reload inverter profile during config reload: %s", e)
                 self.status.profile_error = str(e)
@@ -392,17 +423,18 @@ class ExecutorEngine:
                         metrics["battery_kw"] = float(val) / 1000.0  # W to kW
 
             # Water Heater Power (ARC15: read from water_heaters[] array, sum across enabled)
-            water_heaters_array = self._full_config.get("water_heaters", [])
-            total_water_kw = 0.0
-            for heater in cast("list[dict[str, Any]]", water_heaters_array):
-                sensor_entity = heater.get("sensor")
-                if heater.get("enabled", True) and sensor_entity:
-                    val = await self.ha_client.get_state_value(sensor_entity)
-                    if val and val not in ("unknown", "unavailable"):
-                        with contextlib.suppress(ValueError):
-                            total_water_kw += float(val) / 1000.0  # W to kW
-            if total_water_kw > 0:
-                metrics["water_kw"] = total_water_kw
+            if self._has_water_heater:
+                water_heaters_array = self._full_config.get("water_heaters", [])
+                total_water_kw = 0.0
+                for heater in cast("list[dict[str, Any]]", water_heaters_array):
+                    sensor_entity = heater.get("sensor")
+                    if heater.get("enabled", True) and sensor_entity:
+                        val = await self.ha_client.get_state_value(sensor_entity)
+                        if val and val not in ("unknown", "unavailable"):
+                            with contextlib.suppress(ValueError):
+                                total_water_kw += float(val) / 1000.0  # W to kW
+                if total_water_kw > 0:
+                    metrics["water_kw"] = total_water_kw
 
         return metrics
 
@@ -1431,7 +1463,7 @@ class ExecutorEngine:
                 )
 
             # Rev F1: Update battery cost based on charging activity
-            self._update_battery_cost(state, decision, slot)
+            await self._update_battery_cost(state, decision, slot)
 
             self.status.last_run_status = "success"
             logger.info("Executor tick completed in %dms", duration_ms)
@@ -1769,7 +1801,7 @@ class ExecutorEngine:
             executor_version=EXECUTOR_VERSION,
         )
 
-    def _update_battery_cost(
+    async def _update_battery_cost(
         self,
         state: SystemState,
         decision: ControllerDecision,
@@ -1822,20 +1854,7 @@ class ExecutorEngine:
             try:
                 from backend.core.prices import get_nordpool_data
 
-                # Rev Fix: Safe async execution
-                # Check for existing event loop to avoid RuntimeError
-                try:
-                    loop = asyncio.get_running_loop()
-                except RuntimeError:
-                    loop = None
-
-                if loop and loop.is_running():
-                    logger.warning(
-                        "Event loop already running in Executor thread - skipping Nordpool fetch to avoid deadlock"
-                    )
-                    prices = []
-                else:
-                    prices = asyncio.run(get_nordpool_data("config.yaml"))
+                prices = await get_nordpool_data("config.yaml")
 
                 if prices:
                     # Get current slot's price
