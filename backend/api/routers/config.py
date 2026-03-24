@@ -353,6 +353,31 @@ def _validate_config_for_save(
                 }
             )
 
+    # Inverter: WARNING if AC power not configured
+    inverter_cfg = system_cfg.get("inverter", {})
+    if (
+        system_cfg.get("has_battery", True) or system_cfg.get("has_solar", True)
+    ) and not inverter_cfg.get("max_ac_power_kw"):
+        issues.append(
+            {
+                "severity": "warning",
+                "message": "Inverter AC power limit not configured",
+                "guidance": "Set system.inverter.max_ac_power_kw to your inverter's maximum AC output power. "
+                "Without this, the planner may schedule more export than your inverter can deliver.",
+            }
+        )
+
+    # Inverter: WARNING if DC input not configured (only relevant with solar)
+    if system_cfg.get("has_solar", True) and not inverter_cfg.get("max_dc_input_kw"):
+        issues.append(
+            {
+                "severity": "warning",
+                "message": "Inverter DC input limit not configured",
+                "guidance": "Set system.inverter.max_dc_input_kw to your inverter's maximum DC input from PV strings. "
+                "Without this, PV forecasts above your inverter's capacity won't be clipped.",
+            }
+        )
+
     # Water heater: WARNING (feature disabled, system still works)
     # ARC15: Also validate new water_heaters[] array format
     if system_cfg.get("has_water_heater", True):

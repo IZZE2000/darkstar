@@ -24,9 +24,8 @@ system:
   grid:
     max_power_kw: 8                    # HARD limit: max grid import (cannot be exceeded)
   inverter:
-    # NOTE: Currently not implemented. Planned for future inverter clipping feature.
-    # See docs/BACKLOG.md "Inverter Clipping Support" for details.
-    max_power_kw: 8.0                 # Maximum inverter AC power output
+    max_ac_power_kw: 10.0              # Maximum inverter AC power output (PV + battery discharge)
+    max_dc_input_kw: 12.0              # Maximum DC power from PV strings (clips PV forecast)
   location:
     latitude: 55.123                # Decimal degrees, positive north (for PV forecasting)
     longitude: 13.123               # Decimal degrees, positive east (for PV forecasting)
@@ -303,7 +302,6 @@ executor:
 
   # Controller Parameters (electrical conversion constants)
   controller:
-    inverter_ac_limit_kw: 8.8          # Max AC power output of inverter
     min_charge_a: 10.0                 # Minimum meaningful charge current (A)
     round_step_a: 5.0                  # Round current commands to nearest X amps
     write_threshold_a: 5.0             # Only write if change exceeds X amps

@@ -103,6 +103,10 @@ DEPRECATED_NESTED_KEYS = {
         # Replaced by solar_arrays[] array (plural)
         "solar_array",
     ],
+    "system.inverter": [
+        # Migrated to max_ac_power_kw
+        "max_power_kw",
+    ],
     "water_heating": [
         # These keys should be in water_heaters[] array items, not flat under water_heating
         "power_kw",
@@ -298,6 +302,42 @@ def _migrate_ev_charger_fields(config: dict[str, Any]) -> tuple[dict[str, Any], 
         first_enabled["replan_on_unplug"] = bool(ev_charger_exec["replan_on_unplug"])
         logger.info(
             f"🔄 Migrated executor.ev_charger.replan_on_unplug -> ev_chargers[0].replan_on_unplug: {first_enabled['replan_on_unplug']}"
+        )
+        changed = True
+
+    return config, changed
+
+
+def _migrate_inverter_keys(config: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+    """Migrate legacy system.inverter.max_power_kw to system.inverter.max_ac_power_kw.
+
+    Reads system.inverter.max_power_kw (old key).
+    If it exists AND system.inverter.max_ac_power_kw does NOT exist:
+      - Set system.inverter.max_ac_power_kw to the old value
+
+    Does NOT touch max_dc_input_kw (no old equivalent to migrate).
+
+    Returns:
+        Tuple of (modified_config, changed_flag)
+    """
+    changed = False
+    system_raw: Any = config.get("system", {})
+    if not isinstance(system_raw, dict):
+        return config, changed
+    system = cast("dict[str, Any]", system_raw)
+
+    inverter_raw: Any = system.get("inverter", {})
+    if not isinstance(inverter_raw, dict):
+        return config, changed
+    inverter = cast("dict[str, Any]", inverter_raw)
+
+    old_max_power = inverter.get("max_power_kw")
+    new_max_ac_power = inverter.get("max_ac_power_kw")
+
+    if old_max_power is not None and new_max_ac_power is None:
+        inverter["max_ac_power_kw"] = old_max_power
+        logger.info(
+            f"🔄 Migrated system.inverter.max_power_kw -> system.inverter.max_ac_power_kw: {old_max_power}"
         )
         changed = True
 
@@ -662,6 +702,11 @@ async def migrate_config(
     # 2.1 Migrate global EV charger fields into per-device ev_chargers[] entries
     user_config, ev_migration_changes = _migrate_ev_charger_fields(user_config)
     pre_merge_changes = ev_migration_changes
+
+    # 2.1b Migrate inverter config keys (must run before remove_deprecated_keys)
+    user_config, inverter_migration_changes = _migrate_inverter_keys(user_config)
+    if inverter_migration_changes:
+        pre_merge_changes = True
 
     # 2.2 Sweep deprecated keys from user config
     user_config, deprecated_changes = remove_deprecated_keys(user_config)

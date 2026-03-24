@@ -5,6 +5,7 @@ Convert between Planner DataFrame format and Kepler solver types.
 Migrated from backend/kepler/adapter.py during Rev K13 modularization.
 """
 
+import logging
 from datetime import datetime  # noqa: TC003
 from typing import Any
 
@@ -19,6 +20,8 @@ from .types import (
     KeplerResult,
     WaterHeaterInput,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _get_config_version(config: dict[str, Any]) -> int:
@@ -162,10 +165,19 @@ def build_ev_charger_inputs(
     return result
 
 
-def planner_to_kepler_input(df: pd.DataFrame, initial_soc_kwh: float) -> KeplerInput:
+def planner_to_kepler_input(
+    df: pd.DataFrame,
+    initial_soc_kwh: float,
+    max_dc_input_kw: float | None = None,
+) -> KeplerInput:
     """
     Convert Planner DataFrame to KeplerInput.
     Expects DataFrame index to be timestamps (start_time).
+
+    Args:
+        df: DataFrame with forecast data
+        initial_soc_kwh: Initial battery state of charge in kWh
+        max_dc_input_kw: Maximum DC power from PV strings (clips PV forecast)
     """
     slots: list[KeplerInputSlot] = []
 
@@ -188,6 +200,18 @@ def planner_to_kepler_input(df: pd.DataFrame, initial_soc_kwh: float) -> KeplerI
         # Prefer adjusted forecasts if available (already represents Base Load)
         load = float(row.get("adjusted_load_kwh", row.get("load_forecast_kwh", 0.0)))
         pv = float(row.get("adjusted_pv_kwh", row.get("pv_forecast_kwh", 0.0)))
+
+        # PV DC clipping: limit PV to max DC input capacity
+        if max_dc_input_kw is not None:
+            slot_hours = (end_time - start_time).total_seconds() / 3600.0
+            max_pv_kwh = max_dc_input_kw * slot_hours
+            if pv > max_pv_kwh:
+                original_pv = pv
+                pv = max_pv_kwh
+                logger.debug(
+                    f"PV clipped from {original_pv:.3f} to {pv:.3f} kWh at {start_time} "
+                    f"(max_dc={max_dc_input_kw}kW)"
+                )
 
         slots.append(
             KeplerInputSlot(
@@ -418,6 +442,11 @@ def config_to_kepler_config(
         max_import_power_kw=(
             float(system.get("grid", {}).get("max_power_kw"))
             if system.get("grid", {}).get("max_power_kw")
+            else None
+        ),
+        max_inverter_ac_kw=(
+            float(system.get("inverter", {}).get("max_ac_power_kw"))
+            if system.get("inverter", {}).get("max_ac_power_kw")
             else None
         ),
         ramping_cost_sek_per_kw=float(

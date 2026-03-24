@@ -394,6 +394,55 @@ class TestKeplerConfigWithARC15:
         # Legacy ev_charger section does not populate ev_chargers (needs config_version>=2)
         assert kepler_cfg.ev_chargers == []
 
+    def test_max_inverter_ac_kw_mapping_from_config(self):
+        """Should map system.inverter.max_ac_power_kw to KeplerConfig.max_inverter_ac_kw."""
+        config = {
+            "config_version": 2,
+            "system": {
+                "inverter": {
+                    "max_ac_power_kw": 10.0,
+                    "max_dc_input_kw": 12.0,
+                }
+            },
+            "battery": {
+                "capacity_kwh": 10.0,
+                "min_soc_percent": 10.0,
+                "max_soc_percent": 100.0,
+                "max_charge_a": 100.0,
+                "max_discharge_a": 100.0,
+                "nominal_voltage_v": 48.0,
+                "charge_efficiency": 0.95,
+            },
+        }
+
+        kepler_cfg = config_to_kepler_config(config)
+
+        assert kepler_cfg.max_inverter_ac_kw == 10.0, (
+            f"max_inverter_ac_kw should be 10.0, got {kepler_cfg.max_inverter_ac_kw}"
+        )
+
+    def test_max_inverter_ac_kw_none_when_not_configured(self):
+        """Should set max_inverter_ac_kw to None when not configured."""
+        config = {
+            "config_version": 2,
+            "system": {},
+            "battery": {
+                "capacity_kwh": 10.0,
+                "min_soc_percent": 10.0,
+                "max_soc_percent": 100.0,
+                "max_charge_a": 100.0,
+                "max_discharge_a": 100.0,
+                "nominal_voltage_v": 48.0,
+                "charge_efficiency": 0.95,
+            },
+        }
+
+        kepler_cfg = config_to_kepler_config(config)
+
+        assert kepler_cfg.max_inverter_ac_kw is None, (
+            f"max_inverter_ac_kw should be None when not configured, got {kepler_cfg.max_inverter_ac_kw}"
+        )
+
 
 class TestKeplerInputConversion:
     """Test planner_to_kepler_input function."""
@@ -454,3 +503,59 @@ class TestKeplerInputConversion:
 
         assert result.slots[0].load_kwh == 0.8  # adjusted value
         assert result.slots[0].pv_kwh == 0.6  # adjusted value
+
+    def test_pv_dc_clipping_with_max_dc_input_kw(self):
+        """Should clip PV to max DC input capacity."""
+        tz = pytz.UTC
+        # Create a slot with 18kW average PV (4.5 kWh in 15min)
+        df = pd.DataFrame(
+            {
+                "load_forecast_kwh": [1.0],
+                "pv_forecast_kwh": [4.5],  # 18kW average
+                "import_price_sek_kwh": [0.5],
+            },
+            index=pd.date_range("2024-01-01 12:00", periods=1, freq="15min", tz=tz),
+        )
+
+        # With max_dc_input_kw=12.0, max PV should be 3.0 kWh (12kW * 0.25h)
+        result = planner_to_kepler_input(df, initial_soc_kwh=5.0, max_dc_input_kw=12.0)
+
+        assert result.slots[0].pv_kwh == 3.0, (
+            f"PV should be clipped to 3.0 kWh (12kW * 0.25h), got {result.slots[0].pv_kwh}"
+        )
+
+    def test_pv_no_clipping_when_none(self):
+        """Should not clip PV when max_dc_input_kw is None."""
+        tz = pytz.UTC
+        df = pd.DataFrame(
+            {
+                "load_forecast_kwh": [1.0],
+                "pv_forecast_kwh": [4.5],  # 18kW average
+                "import_price_sek_kwh": [0.5],
+            },
+            index=pd.date_range("2024-01-01 12:00", periods=1, freq="15min", tz=tz),
+        )
+
+        result = planner_to_kepler_input(df, initial_soc_kwh=5.0, max_dc_input_kw=None)
+
+        assert result.slots[0].pv_kwh == 4.5, (
+            f"PV should not be clipped, expected 4.5 kWh, got {result.slots[0].pv_kwh}"
+        )
+
+    def test_pv_no_clipping_when_below_limit(self):
+        """Should not clip PV when it's below the limit."""
+        tz = pytz.UTC
+        df = pd.DataFrame(
+            {
+                "load_forecast_kwh": [1.0],
+                "pv_forecast_kwh": [2.0],  # 8kW average, below 12kW limit
+                "import_price_sek_kwh": [0.5],
+            },
+            index=pd.date_range("2024-01-01 12:00", periods=1, freq="15min", tz=tz),
+        )
+
+        result = planner_to_kepler_input(df, initial_soc_kwh=5.0, max_dc_input_kw=12.0)
+
+        assert result.slots[0].pv_kwh == 2.0, (
+            f"PV should not be clipped, expected 2.0 kWh, got {result.slots[0].pv_kwh}"
+        )

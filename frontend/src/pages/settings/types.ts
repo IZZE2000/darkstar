@@ -174,6 +174,20 @@ export const systemSections: SettingsSection[] = [
                 type: 'number',
             },
             {
+                key: 'system.inverter.max_ac_power_kw',
+                label: 'Inverter Max AC Power (kW)',
+                helper: 'Maximum AC power your inverter can produce.',
+                path: ['system', 'inverter', 'max_ac_power_kw'],
+                type: 'number',
+            },
+            {
+                key: 'system.inverter.max_dc_input_kw',
+                label: 'Inverter Max DC Input (kW)',
+                helper: 'Maximum DC power from PV strings.',
+                path: ['system', 'inverter', 'max_dc_input_kw'],
+                type: 'number',
+            },
+            {
                 key: 'export.enable_export',
                 label: 'Enable grid export',
                 path: ['export', 'enable_export'],

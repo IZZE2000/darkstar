@@ -23,8 +23,19 @@ export const BatteryTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode 
             .catch((err) => console.error('Failed to load profiles:', err))
     }, [])
 
-    const { config, form, fieldErrors, loading, saving, statusMessage, handleChange, save, isDirty, haEntities, haLoading } =
-        useSettingsForm(batteryFieldList, profiles)
+    const {
+        config,
+        form,
+        fieldErrors,
+        loading,
+        saving,
+        statusMessage,
+        handleChange,
+        save,
+        isDirty,
+        haEntities,
+        haLoading,
+    } = useSettingsForm(batteryFieldList, profiles)
 
     const blocker = useUnsavedChangesGuard(isDirty)
     const hasHiddenSections = batterySections.some((s) => s.fields.every((f) => f.isAdvanced))

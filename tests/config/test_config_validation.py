@@ -292,3 +292,84 @@ class TestPreWriteValidation:
             "deferrable_loads": [],
         }
         assert validate_config_for_write(config) is False
+
+
+def test_validate_config_inverter_warnings_when_missing():
+    """Should warn when inverter limits are missing and battery/solar are enabled."""
+    config = {
+        "executor": {"enabled": False},
+        "system": {
+            "has_battery": True,
+            "has_solar": True,
+            "inverter": {},  # Missing max_ac_power_kw and max_dc_input_kw
+        },
+        "battery": {"capacity_kwh": 10.0},
+    }
+    issues = _validate_config_for_save(config)
+
+    # Should have warnings for missing inverter config
+    warning_messages = [i["message"] for i in issues if i["severity"] == "warning"]
+    assert any("Inverter AC power limit not configured" in m for m in warning_messages)
+    assert any("Inverter DC input limit not configured" in m for m in warning_messages)
+
+
+def test_validate_config_inverter_no_warning_when_configured():
+    """Should not warn when inverter limits are configured."""
+    config = {
+        "executor": {"enabled": False},
+        "system": {
+            "has_battery": True,
+            "has_solar": True,
+            "inverter": {
+                "max_ac_power_kw": 10.0,
+                "max_dc_input_kw": 12.0,
+            },
+        },
+        "battery": {"capacity_kwh": 10.0},
+    }
+    issues = _validate_config_for_save(config)
+
+    # Should NOT have warnings for inverter config
+    warning_messages = [i["message"] for i in issues if i["severity"] == "warning"]
+    assert not any("Inverter AC power limit not configured" in m for m in warning_messages)
+    assert not any("Inverter DC input limit not configured" in m for m in warning_messages)
+
+
+def test_validate_config_inverter_both_warnings_with_solar():
+    """Should warn about both AC and DC when solar is enabled (regardless of battery)."""
+    config = {
+        "executor": {"enabled": False},
+        "system": {
+            "has_battery": False,
+            "has_solar": True,
+            "inverter": {},  # Missing limits
+        },
+        "battery": {"capacity_kwh": 0},
+    }
+    issues = _validate_config_for_save(config)
+
+    warning_messages = [i["message"] for i in issues if i["severity"] == "warning"]
+    # AC power warning SHOULD appear (has solar - AC limit needed for PV export)
+    assert any("Inverter AC power limit not configured" in m for m in warning_messages)
+    # DC input warning SHOULD appear (has solar)
+    assert any("Inverter DC input limit not configured" in m for m in warning_messages)
+
+
+def test_validate_config_inverter_ac_only_warning_with_battery():
+    """Should only warn about AC power when battery is enabled but solar is not."""
+    config = {
+        "executor": {"enabled": False},
+        "system": {
+            "has_battery": True,
+            "has_solar": False,
+            "inverter": {},  # Missing limits
+        },
+        "battery": {"capacity_kwh": 10.0},
+    }
+    issues = _validate_config_for_save(config)
+
+    warning_messages = [i["message"] for i in issues if i["severity"] == "warning"]
+    # AC power warning SHOULD appear (has battery)
+    assert any("Inverter AC power limit not configured" in m for m in warning_messages)
+    # DC input warning should NOT appear (no solar)
+    assert not any("Inverter DC input limit not configured" in m for m in warning_messages)

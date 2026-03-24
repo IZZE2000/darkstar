@@ -318,6 +318,11 @@ class KeplerSolver:
             if config.max_import_power_kw is not None:
                 prob += grid_import[t] <= config.max_import_power_kw * h
 
+            # Inverter AC output limit (PV + battery discharge combined)
+            if config.max_inverter_ac_kw is not None:
+                inverter_ac_kwh = config.max_inverter_ac_kw * h
+                prob += discharge[t] + s.pv_kwh <= inverter_ac_kwh
+
             # Soft Grid Import Limit
             if config.grid_import_limit_kw is not None:
                 limit_kwh: float = config.grid_import_limit_kw * h

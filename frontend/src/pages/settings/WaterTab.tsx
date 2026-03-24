@@ -13,8 +13,19 @@ import { useUnsavedChangesGuard } from './hooks/useUnsavedChangesGuard'
 
 export const WaterTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }) => {
     const navigate = useNavigate()
-    const { config, form, fieldErrors, loading, saving, statusMessage, handleChange, save, isDirty, haEntities, haLoading } =
-        useSettingsForm(waterFieldList, [])
+    const {
+        config,
+        form,
+        fieldErrors,
+        loading,
+        saving,
+        statusMessage,
+        handleChange,
+        save,
+        isDirty,
+        haEntities,
+        haLoading,
+    } = useSettingsForm(waterFieldList, [])
 
     const blocker = useUnsavedChangesGuard(isDirty)
     const hasHiddenSections = waterSections.some((s) => s.fields.every((f) => f.isAdvanced))

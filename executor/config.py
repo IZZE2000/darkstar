@@ -145,7 +145,6 @@ class ControllerConfig:
     min_charge_w: float = 500.0
     round_step_w: float = 100.0
     write_threshold_w: float = 100.0
-    inverter_ac_limit_kw: float = 8.8
     charge_efficiency: float = 0.92
 
 
@@ -466,9 +465,6 @@ def load_executor_config(config_path: str = "config.yaml") -> ExecutorConfig:
         round_step_w=float(str(ctrl_data.get("round_step_w", ControllerConfig.round_step_w))),
         write_threshold_w=float(
             str(ctrl_data.get("write_threshold_w", ControllerConfig.write_threshold_w))
-        ),
-        inverter_ac_limit_kw=float(
-            str(ctrl_data.get("inverter_ac_limit_kw", ControllerConfig.inverter_ac_limit_kw))
         ),
         charge_efficiency=float(
             str(ctrl_data.get("charge_efficiency", ControllerConfig.charge_efficiency))

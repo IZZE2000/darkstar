@@ -45,6 +45,66 @@ class TestDeprecatedKeyRemoval:
         assert "soc_target_entity" not in result["executor"]["inverter"]
 
 
+class TestInverterKeyMigration:
+    """Test migration of system.inverter.max_power_kw to max_ac_power_kw."""
+
+    def test_migrate_inverter_max_power_kw_to_max_ac_power_kw(self):
+        """Old key should be migrated to new key when new key doesn't exist."""
+        from backend.config_migration import _migrate_inverter_keys
+
+        config = {
+            "system": {
+                "inverter": {
+                    "max_power_kw": 8.8,  # Old key
+                }
+            }
+        }
+
+        result, changed = _migrate_inverter_keys(config)
+
+        assert changed is True
+        assert result["system"]["inverter"]["max_ac_power_kw"] == 8.8
+
+    def test_migrate_inverter_does_not_overwrite_existing(self):
+        """Should NOT overwrite existing max_ac_power_kw when both keys exist."""
+        from backend.config_migration import _migrate_inverter_keys
+
+        config = {
+            "system": {
+                "inverter": {
+                    "max_power_kw": 8.8,  # Old key
+                    "max_ac_power_kw": 10.0,  # New key already exists
+                }
+            }
+        }
+
+        result, changed = _migrate_inverter_keys(config)
+
+        assert changed is False
+        assert result["system"]["inverter"]["max_ac_power_kw"] == 10.0
+
+    def test_migrate_inverter_no_change_when_no_old_key(self):
+        """Should not change anything when old key doesn't exist."""
+        from backend.config_migration import _migrate_inverter_keys
+
+        config = {"system": {"inverter": {}}}
+
+        result, changed = _migrate_inverter_keys(config)
+
+        assert changed is False
+        assert "max_ac_power_kw" not in result["system"]["inverter"]
+
+    def test_migrate_inverter_creates_inverter_section_if_missing(self):
+        """Should handle missing inverter section gracefully."""
+        from backend.config_migration import _migrate_inverter_keys
+
+        config = {"system": {}}
+
+        _result, changed = _migrate_inverter_keys(config)
+
+        assert changed is False
+
+
 class TestBackendSave:
     """Test backend save logic with template merge."""
 

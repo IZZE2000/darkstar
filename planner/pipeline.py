@@ -501,7 +501,12 @@ class PlannerPipeline:
                 }
             )
 
-        kepler_input = planner_to_kepler_input(future_df, initial_soc_kwh)
+        # Get max DC input for PV clipping
+        max_dc_input_kw = system_cfg.get("inverter", {}).get("max_dc_input_kw")
+        if max_dc_input_kw is not None:
+            max_dc_input_kw = float(max_dc_input_kw)
+
+        kepler_input = planner_to_kepler_input(future_df, initial_soc_kwh, max_dc_input_kw)
         kepler_config = config_to_kepler_config(
             active_config,
             overrides,
