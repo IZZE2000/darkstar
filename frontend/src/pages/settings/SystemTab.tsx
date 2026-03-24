@@ -73,7 +73,7 @@ export const SystemTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }
 
             // Replace hardcoded "Required HA Control Entities" with dynamic fields from profile
             if (section.title === 'Required HA Control Entities' && selectedProfile) {
-                const dynamicFields = generateProfileEntityFields(selectedProfile)
+                const dynamicFields = generateProfileEntityFields(selectedProfile, 'system')
                 return {
                     ...section,
                     fields: dynamicFields,

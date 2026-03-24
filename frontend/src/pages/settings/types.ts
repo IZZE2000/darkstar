@@ -1335,10 +1335,11 @@ export const standardInverterKeys = new Set([
     'max_discharge_power',
 ])
 
-export function generateProfileEntityFields(profile: InverterProfile): BaseField[] {
+export function generateProfileEntityFields(profile: InverterProfile, category?: string): BaseField[] {
     const fields: BaseField[] = []
 
     for (const [key, entity] of Object.entries(profile.entities)) {
+        if (category !== undefined && entity.category !== category) continue
         const isStandard = standardInverterKeys.has(key)
         const configPath = isStandard ? `executor.inverter.${key}` : `executor.inverter.custom_entities.${key}`
         const arrayPath = isStandard ? ['executor', 'inverter', key] : ['executor', 'inverter', 'custom_entities', key]
