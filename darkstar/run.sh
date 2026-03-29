@@ -290,8 +290,9 @@ import datetime
 ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 prefix = f"[{ts}]"
 
+app_version = open("/app/VERSION").read().strip() if os.path.exists("/app/VERSION") else "unknown"
 print(f"{prefix} ==========================================")
-print(f"{prefix}   Darkstar Energy Manager v2.6.2-beta")
+print(f"{prefix}   Darkstar Energy Manager {app_version}")
 print(f"{prefix} ==========================================")
 print(f"{prefix}   Timezone:      {config.get('timezone', 'Europe/Stockholm')}")
 print(f"{prefix}   Log Level:     {os.environ.get('LOG_LEVEL', 'info')}")

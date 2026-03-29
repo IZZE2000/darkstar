@@ -47,6 +47,7 @@ COPY bin/ ./bin/
 COPY ml/*.py ./ml/
 RUN mkdir -p ml/models
 COPY ml/models/defaults/ ./ml/models/defaults/
+COPY utils/ ./utils/
 COPY scripts/ ./scripts/
 COPY scripts/docker-entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
