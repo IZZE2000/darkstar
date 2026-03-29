@@ -1,5 +1,5 @@
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -103,9 +103,9 @@ async def test_today_with_history_includes_past(tmp_path):
             # Use Europe/Stockholm timezone to match the function's config
             tz = pytz.timezone("Europe/Stockholm")
             now = datetime.now(tz)
-            today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-            past_start = today_start + timedelta(hours=1)
-            future_start = today_start + timedelta(hours=22)
+            today_start = tz.localize(datetime.combine(now.date(), time(0, 0)))
+            past_start = tz.localize(datetime.combine(now.date(), time(1, 0)))
+            future_start = tz.localize(datetime.combine(now.date(), time(22, 0)))
 
             # Past slot in DB
             await conn.execute(

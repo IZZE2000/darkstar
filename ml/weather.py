@@ -15,6 +15,8 @@ import pytz
 import requests
 import yaml
 
+from utils.time_utils import dst_safe_localize
+
 if TYPE_CHECKING:
     from datetime import datetime
 
@@ -361,7 +363,7 @@ def get_weather_series(
     dt_index = pd.to_datetime(times)
     # Open-Meteo returns local-time strings when timezone is specified in the request.
     # Localize to the requested timezone (not UTC) to avoid shifting by the UTC offset.
-    dt_index = dt_index.tz_localize(tz) if dt_index.tz is None else dt_index.tz_convert(tz)
+    dt_index = dst_safe_localize(dt_index, tz) if dt_index.tz is None else dt_index.tz_convert(tz)
 
     data: dict[str, list[float]] = {}
     if temps and len(temps) == len(times):

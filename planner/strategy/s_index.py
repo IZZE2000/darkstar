@@ -13,6 +13,8 @@ from typing import TYPE_CHECKING, Any
 import pandas as pd
 import pytz
 
+from utils.time_utils import dst_safe_localize
+
 if TYPE_CHECKING:
     from collections.abc import Callable
 
@@ -71,7 +73,7 @@ async def calculate_dynamic_s_index(
     try:
         local_index: pd.DatetimeIndex = df.index.tz_convert(tz)  # type: ignore[assignment]
     except TypeError:
-        local_index = df.index.tz_localize(tz)  # type: ignore[assignment]
+        local_index = dst_safe_localize(df.index, tz)  # type: ignore[assignment]
     local_dates: pd.Series = pd.Series(local_index.date, index=df.index)  # type: ignore[arg-type]
     today = datetime.now(tz).date()
 
@@ -217,7 +219,7 @@ def calculate_probabilistic_s_index(
     try:
         local_index: pd.DatetimeIndex = df.index.tz_convert(tz)  # type: ignore[assignment]
     except TypeError:
-        local_index = df.index.tz_localize(tz)  # type: ignore[assignment]
+        local_index = dst_safe_localize(df.index, tz)  # type: ignore[assignment]
     local_dates: pd.Series = pd.Series(local_index.date, index=df.index)  # type: ignore[arg-type]
 
     total_uncertainty_kwh = 0.0
@@ -371,7 +373,7 @@ async def calculate_target_soc_risk_factor(
     try:
         local_index: pd.DatetimeIndex = df.index.tz_convert(tz)  # type: ignore[assignment]
     except TypeError:
-        local_index = df.index.tz_localize(tz)  # type: ignore[assignment]
+        local_index = dst_safe_localize(df.index, tz)  # type: ignore[assignment]
     local_dates: pd.Series = pd.Series(local_index.date, index=df.index)  # type: ignore[arg-type]
 
     # Calculate PV deficit for D1 and D2 (weighted: D1 more important)

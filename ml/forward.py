@@ -18,6 +18,7 @@ from backend.learning import LearningEngine, get_learning_engine
 from ml.context_features import get_alarm_armed_series, get_vacation_mode_series
 from ml.train import _build_time_features  # type: ignore[reportPrivateUsage]
 from ml.weather import async_get_weather_series, calculate_physics_pv
+from utils.time_utils import dst_safe_date_range
 
 
 def determine_graduation_level(engine: LearningEngine) -> tuple[int, str, float]:
@@ -137,7 +138,7 @@ async def generate_forward_slots(
 
     print(f"🔮 Generating AURORA Forecast: {slot_start} -> {horizon_end} ({horizon_hours}h)")
 
-    slots = pd.date_range(
+    slots = dst_safe_date_range(
         start=slot_start,
         end=horizon_end,
         freq="15min",

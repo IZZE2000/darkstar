@@ -13,6 +13,8 @@ from typing import Any, cast
 import pandas as pd
 import pytz
 
+from utils.time_utils import dst_safe_localize
+
 
 def dataframe_to_json_response(
     df: pd.DataFrame,
@@ -63,7 +65,7 @@ def dataframe_to_json_response(
     # Normalize timestamps
     start_series = pd.to_datetime(df_copy["start_time"], errors="coerce")
     if not start_series.dt.tz:
-        start_series = start_series.dt.tz_localize(tz)
+        start_series = dst_safe_localize(start_series, tz)
     else:
         start_series = start_series.dt.tz_convert(tz)
     df_copy["start_time"] = start_series
@@ -77,7 +79,7 @@ def dataframe_to_json_response(
 
     end_series = pd.to_datetime(df_copy["end_time"], errors="coerce")
     if not end_series.dt.tz:
-        end_series = end_series.dt.tz_localize(tz)
+        end_series = dst_safe_localize(end_series, tz)
     else:
         end_series = end_series.dt.tz_convert(tz)
     df_copy["end_time"] = end_series
