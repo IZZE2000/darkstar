@@ -1,3 +1,22 @@
+## [v2.6.2-beta] - DST Fixes, Performance & Power Limits - 2026-03-29
+
+> [!IMPORTANT]
+> **Daylight Saving Time Crash Fix**
+> This release fixes a critical crash that occurred during DST transitions. The system now handles ambiguous and non-existent times safely.
+
+**🐛 Critical Fixes**
+
+- **DST-Safe Time Handling**: Fixed system crash during Daylight Saving Time transitions. All time calculations now use DST-aware logic to prevent ambiguous/non-existent time errors.
+- **Executor Performance**: Config caching, Nordpool API fix, and sensor read guards to prevent executor freezing.
+- **Settings Save**: Fixed profile entity filtering and added save buttons to all settings tabs.
+- **EV Charger Migration**: Fixed migration order and departure_time type safety issues.
+
+**✨ New Features**
+
+- **Inverter Power Limits**: New constraints for AC output and DC input power limits. The planner now respects both battery C-rate limits and inverter power limits for safer operation.
+
+---
+
 ## [v2.6.1-beta] - DB-First Energy Display & Recency-Weighted Training - 2026-03-20
 
 > [!IMPORTANT]
