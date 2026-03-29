@@ -470,7 +470,7 @@ export const EntityArrayEditor: React.FC<EntityArrayEditorProps> = ({
                                                         } as Partial<EVChargerEntity>)
                                                     }
                                                     disabled={disabled}
-                                                    placeholder="07:00"
+                                                    placeholder="e.g. 07:00"
                                                     className="w-full rounded-lg border border-line/50 bg-surface2 px-3 py-2 text-sm text-text focus:border-accent focus:outline-none disabled:opacity-50"
                                                 />
                                                 <p className="text-[10px] text-muted mt-1">

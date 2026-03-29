@@ -128,3 +128,40 @@ class TestEVDeadlineCalculation:
         assert deadline.hour == 7
         assert deadline.minute == 0
         assert deadline.day == 16  # Tomorrow
+
+    def test_integer_960_equals_16_00(self):
+        """Test: integer 960 (16*60) equals string '16:00' (YAML 1.1 sexagesimal fallback)"""
+        tz = pytz_timezone("Europe/Stockholm")
+        now = tz.localize(datetime(2024, 1, 15, 12, 0, 0))
+
+        deadline_int = calculate_ev_deadline(960, now, "Europe/Stockholm")
+        deadline_str = calculate_ev_deadline("16:00", now, "Europe/Stockholm")
+
+        assert deadline_int is not None
+        assert deadline_str is not None
+        assert deadline_int == deadline_str
+        assert deadline_int.hour == 16
+        assert deadline_int.minute == 0
+
+    def test_integer_1020_equals_17_00(self):
+        """Test: integer 1020 (17*60) equals string '17:00'"""
+        tz = pytz_timezone("Europe/Stockholm")
+        now = tz.localize(datetime(2024, 1, 15, 12, 0, 0))
+
+        deadline_int = calculate_ev_deadline(1020, now, "Europe/Stockholm")
+        deadline_str = calculate_ev_deadline("17:00", now, "Europe/Stockholm")
+
+        assert deadline_int is not None
+        assert deadline_str is not None
+        assert deadline_int == deadline_str
+        assert deadline_int.hour == 17
+        assert deadline_int.minute == 0
+
+    def test_integer_out_of_range_returns_none(self):
+        """Test: integer out of range (9999) returns None"""
+        tz = pytz_timezone("Europe/Stockholm")
+        now = tz.localize(datetime(2024, 1, 15, 12, 0, 0))
+
+        deadline = calculate_ev_deadline(9999, now, "Europe/Stockholm")
+
+        assert deadline is None

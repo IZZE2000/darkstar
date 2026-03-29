@@ -64,6 +64,14 @@ def calculate_ev_deadline(departure_time: str, now: datetime, timezone: str) -> 
     if not departure_time:
         return None
 
+    # Handle integer minutes-since-midnight (defensive fallback for YAML 1.1 sexagesimal misparse)
+    if isinstance(departure_time, int):
+        if 0 <= departure_time <= 1439:
+            departure_time = f"{departure_time // 60:02d}:{departure_time % 60:02d}"
+        else:
+            logger.warning(f"Invalid departure time integer: {departure_time} (must be 0-1439)")
+            return None
+
     try:
         # Parse the departure time
         hour, minute = map(int, departure_time.split(":"))

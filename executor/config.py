@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
 
-import yaml
+from ruamel.yaml import YAML
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +29,29 @@ def _str_or_none(value: Any) -> str | None:
     if value is None or value == "" or str(value).strip() == "":
         return None
     return str(value)
+
+
+def _parse_departure_time(value: Any) -> str | None:
+    """Parse departure time from config value.
+
+    Handles both string "HH:MM" format and integer minutes-since-midnight (0-1439).
+    Defensive conversion for YAML 1.1 sexagesimal misparse (e.g., 16:00 -> 960).
+
+    Args:
+        value: Any value from config (str, int, None, or other)
+
+    Returns:
+        str in "HH:MM" format if valid, None otherwise
+    """
+    if value is None or value == "":
+        return None
+
+    if isinstance(value, int):
+        if 0 <= value <= 1439:
+            return f"{value // 60:02d}:{value % 60:02d}"
+        return None
+
+    return str(value) or None
 
 
 @dataclass
@@ -183,7 +206,8 @@ def load_yaml(path: str) -> dict[str, Any]:
     """Load YAML file with strict typing."""
     try:
         with Path(path).open(encoding="utf-8") as f:
-            raw_data = yaml.safe_load(f)
+            yaml_loader = YAML(typ="safe")
+            raw_data = yaml_loader.load(f)  # pyright: ignore[reportUnknownMemberType]
             return cast("dict[str, Any]", raw_data) if isinstance(raw_data, dict) else {}
     except FileNotFoundError:
         return {}
@@ -200,7 +224,8 @@ def load_executor_config(config_path: str = "config.yaml") -> ExecutorConfig:
     """
     try:
         with Path(config_path).open(encoding="utf-8") as f:
-            raw_data = yaml.safe_load(f)
+            yaml_loader = YAML(typ="safe")
+            raw_data = yaml_loader.load(f)  # pyright: ignore[reportUnknownMemberType]
             data: dict[str, Any] = (
                 cast("dict[str, Any]", raw_data) if isinstance(raw_data, dict) else {}
             )
@@ -370,7 +395,7 @@ def load_executor_config(config_path: str = "config.yaml") -> ExecutorConfig:
                 replan_on_unplug=bool(
                     charger.get("replan_on_unplug", EVChargerDeviceConfig.replan_on_unplug)
                 ),
-                departure_time=_str_or_none(charger.get("departure_time")),
+                departure_time=_parse_departure_time(charger.get("departure_time")),
             )
         )
 
