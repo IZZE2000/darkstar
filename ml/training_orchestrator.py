@@ -12,6 +12,7 @@ from typing import Any
 
 from backend.core.websockets import ws_manager
 from backend.learning import get_learning_engine
+from ml.price_train import train_price_model
 from ml.train import train_models
 
 logger = logging.getLogger(__name__)
@@ -210,6 +211,62 @@ async def train_all_models(
             logger.warning("[ML-TRAIN] Main model training did not produce any models.")
         else:
             logger.info(f"[ML-TRAIN] Main models trained: {len(main_models)} found")
+
+        # 2b. Train Price Forecast Model
+        logger.info("[ML-TRAIN] Training Price Forecast Model...")
+        await ws_manager.emit(
+            "training_progress",
+            {
+                "type": "training_progress",
+                "status": "busy",
+                "stage": "training_price_model",
+                "message": "Training price forecasting model...",
+                "progress": 0.7,
+            },
+        )
+
+        try:
+            # Get price_forecast config from learning engine
+            price_config = engine.config.get("price_forecast", {})
+            min_price_samples = price_config.get("min_training_samples", 500)
+            price_model_name = price_config.get("model_name", "price_model.lgb")
+
+            # Train price model (synchronous, offload to thread)
+            price_success = await asyncio.to_thread(
+                train_price_model,
+                db_path=str(engine.db_path),
+                model_dir=MODELS_DIR,
+                model_name=price_model_name,
+                min_training_samples=min_price_samples,
+                recency_half_life_days=30.0,
+            )
+
+            if price_success:
+                logger.info("[ML-TRAIN] Price model training completed successfully")
+                # Add price model to trained models list
+                price_model_path = MODELS_DIR / price_model_name
+                if price_model_path.exists() and price_model_name not in results["trained_models"]:
+                    results["trained_models"].append(price_model_name)
+
+                # Generate price forecasts after successful training
+                logger.info("[ML-TRAIN] Generating price forecasts...")
+                from ml.price_forecast import generate_price_forecasts
+
+                try:
+                    forecasts = await generate_price_forecasts(
+                        config=engine.config,
+                        db_path=str(engine.db_path),
+                        model_path=price_model_path,
+                    )
+                    logger.info(f"[ML-TRAIN] Generated {len(forecasts)} price forecasts")
+                except Exception as forecast_err:
+                    logger.warning(f"[ML-TRAIN] Failed to generate price forecasts: {forecast_err}")
+            else:
+                logger.info("[ML-TRAIN] Price model training skipped (insufficient data)")
+
+        except Exception as price_err:
+            # Price model failure should not fail the entire training
+            logger.warning(f"[ML-TRAIN] Price model training failed: {price_err}")
 
         # 3. Cleanup old history
         deleted_runs = await store.cleanup_learning_runs(days_back=30)

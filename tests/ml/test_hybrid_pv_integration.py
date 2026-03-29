@@ -51,6 +51,7 @@ class TestHybridPVIntegration(unittest.IsolatedAsyncioTestCase):
         mock_engine = MagicMock(spec=LearningEngine)
         mock_engine.store_forecasts = AsyncMock()
         mock_engine.timezone = pytz.UTC
+        mock_engine.db_path = "data/test.db"
         mock_engine.config = {
             "timezone": "UTC",
             "system": {
@@ -138,6 +139,7 @@ class TestHybridPVIntegration(unittest.IsolatedAsyncioTestCase):
         mock_engine = MagicMock(spec=LearningEngine)
         mock_engine.store_forecasts = AsyncMock()
         mock_engine.timezone = pytz.UTC
+        mock_engine.db_path = "data/test.db"
         mock_engine.config = {
             "timezone": "UTC",
             "system": {

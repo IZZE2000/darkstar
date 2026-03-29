@@ -1,0 +1,70 @@
+{
+  "SE1": {
+    "local": {
+      "lat": 65.5848,
+      "lon": 22.1567,
+      "label": "Luleå (SE1 local)"
+    },
+    "kiruna": {
+      "lat": 67.8558,
+      "lon": 20.2253,
+      "label": "Kiruna (northern influence)"
+    },
+    "haparanda": {
+      "lat": 65.8417,
+      "lon": 24.1277,
+      "label": "Haparanda (Finland border)"
+    }
+  },
+  "SE2": {
+    "local": {
+      "lat": 62.3908,
+      "lon": 17.3069,
+      "label": "Sundsvall (SE2 local)"
+    },
+    "umea": {
+      "lat": 63.8258,
+      "lon": 20.2630,
+      "label": "Umeå (northern influence)"
+    },
+    "gavle": {
+      "lat": 60.6749,
+      "lon": 17.1413,
+      "label": "Gävle (southern influence)"
+    }
+  },
+  "SE3": {
+    "local": {
+      "lat": 59.3293,
+      "lon": 18.0686,
+      "label": "Stockholm (SE3 local)"
+    },
+    "uppsala": {
+      "lat": 59.8586,
+      "lon": 17.6389,
+      "label": "Uppsala (inland influence)"
+    },
+    "norrkoping": {
+      "lat": 58.5877,
+      "lon": 16.1924,
+      "label": "Norrköping (southwest influence)"
+    }
+  },
+  "SE4": {
+    "local": {
+      "lat": 55.6050,
+      "lon": 13.0038,
+      "label": "Malmö (SE4 local)"
+    },
+    "copenhagen": {
+      "lat": 55.6761,
+      "lon": 12.5683,
+      "label": "Copenhagen (Denmark influence)"
+    },
+    "rostock": {
+      "lat": 54.0924,
+      "lon": 12.0991,
+      "label": "Rostock (Germany influence)"
+    }
+  }
+}

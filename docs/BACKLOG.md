@@ -51,10 +51,10 @@ This document contains ideas, improvements, and tasks that are not yet scheduled
 
 ### 💡 Future Ideas (Brainstorming)
 
-#### [UI] Advisor Overhaul
+#### [EV] Multi-Day EV Charging Planning
 
-**Goal:** Redesign and improve the Advisor feature to provide more actionable and reliable energy insights.
+**Goal:** Allow users to plan EV charging across multiple days (e.g., "charge by Friday" from Monday), taking advantage of price differences over several days rather than just the next 24–48h horizon.
 
-**Notes:** Current version is disabled/hidden as it needs a complete overhaul. Should integrate better with Kepler schedules and Aurora forecasts.
+**Notes:** Requires long-term price forecasting since Nordpool only publishes day-ahead prices (~13:00 for the following day). Candidate approach: a LightGBM model trained on weather (temperature, cloud cover), calendar features (weekday, season, holidays), and historical Nordpool prices to forecast 2–5 day price curves. Current `departure_time` field is recurring-daily only. Would need a date picker or "one-shot" mode alongside the recurring mode. Keep out of scope until long-term forecasting model exists.
 
 ---

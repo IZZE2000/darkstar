@@ -1,6 +1,4 @@
 aiosqlite>=0.19.0
-aiosqlite>=0.19.0 # Required for async tests (transitive dependency of SQLAlchemy[aiosqlite])
-aiosqlite>=0.19.0 # Required for tests
 alembic>=1.18.4,<2.0.0
 astral>=3.2
 # Core production dependencies for Darkstar
@@ -13,6 +11,7 @@ open-meteo-solar-forecast
 pandas>=2.0.0
 pulp>=2.9.0
 pydantic>=2.0.0
+python-dateutil>=2.8.0
 python-json-logger>=2.0.7
 python-socketio>=5.11.0
 pytz>=2023.3

@@ -51,6 +51,7 @@ RUN cd frontend && pnpm build
 COPY config.default.yaml ./
 COPY secrets.example.yaml ./
 COPY VERSION ./
+COPY data/regions.json ./data/regions.json
 
 # Copy Alembic migration files for automatic database schema updates
 COPY alembic.ini ./

@@ -220,6 +220,12 @@ pricing:
   grid_transfer_fee_sek: 0.2456        # Grid operator transfer fee per kWh
   energy_tax_sek: 0.439                # Energy tax per kWh
 
+# Price Forecasting (Nordpool spot price prediction)
+price_forecast:
+  enabled: false                       # Master toggle for price forecasting (disabled by default)
+  min_training_samples: 500            # Minimum paired samples before model activates
+  model_name: "price_model.lgb"        # LightGBM model filename
+
 # Forecasting Adjustments (Aurora ML tuning)
 forecasting:
   active_forecast_version: "aurora"

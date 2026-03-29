@@ -73,6 +73,16 @@ The backend SHALL provide Open-Meteo forecast data for all 72 hours (yesterday, 
 - **THEN** the asynchronous fetch operation SHALL time out without blocking the main event loop
 - **AND** the system SHALL gracefully return an empty dataset for that execution cycle
 
+#### Scenario: Extended forecast days parameter
+- **WHEN** a caller requests weather with `forecast_days=16`
+- **THEN** the function SHALL fetch 16 days of forecast data from Open-Meteo
+- **AND** default callers (no explicit forecast_days) SHALL continue receiving 2-day forecasts
+
+#### Scenario: Additional weather parameters
+- **WHEN** a caller requests weather with additional parameters (e.g., `wind_speed_10m`)
+- **THEN** the response SHALL include those parameters alongside existing ones (temperature, cloud cover, radiation)
+- **AND** default callers (no explicit extra parameters) SHALL receive only the original parameter set
+
 ### Requirement: History Series in Horizon Object
 
 The `/aurora/dashboard` API SHALL return historical actuals in `horizon.history_series` with proper structure for the PV and Load tabs.

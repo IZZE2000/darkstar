@@ -36,6 +36,7 @@ from backend.api.routers.analyst import router as analyst_router
 from backend.api.routers.debug import router as debug_router
 from backend.api.routers.executor import get_executor_instance
 from backend.api.routers.forecast import forecast_router
+from backend.api.routers.price_forecast import router as price_forecast_router
 from backend.core.websockets import ws_manager
 
 logger = logging.getLogger("darkstar.main")
@@ -270,6 +271,7 @@ def create_app() -> socketio.ASGIApp:
     app.include_router(forecast_router)
     app.include_router(debug_router)
     app.include_router(analyst_router)
+    app.include_router(price_forecast_router)
 
     # 4. Health Check - Using comprehensive HealthChecker
     @app.get("/api/health")

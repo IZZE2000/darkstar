@@ -1261,6 +1261,13 @@ export const advancedSections: SettingsSection[] = [
                     disabledText: "Enable 'Home battery installed' in System Profile to configure",
                 },
             },
+            {
+                key: 'price_forecast.enabled',
+                label: 'Enable Price Forecasting',
+                helper: 'Use ML-based spot price forecasts for D+1 through D+7. Requires sufficient training data.',
+                path: ['price_forecast', 'enabled'],
+                type: 'boolean',
+            },
         ],
     },
     {

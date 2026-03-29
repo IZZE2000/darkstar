@@ -91,6 +91,7 @@ async def test_train_all_models_flow(mock_get_engine, mock_train_main, setup_tes
 
     mock_engine = MagicMock()
     mock_engine.store = mock_store
+    mock_engine.db_path = "data/test_learning.db"
     mock_get_engine.return_value = mock_engine
 
     # Create a dummy model file so the orchestrator thinks training succeeded
@@ -117,6 +118,7 @@ async def test_train_all_models_low_graduation(mock_get_engine, mock_train_main,
 
     mock_engine = MagicMock()
     mock_engine.store = mock_store
+    mock_engine.db_path = "data/test_learning.db"
     mock_get_engine.return_value = mock_engine
 
     (setup_test_dirs / "load_model.lgb").touch()
@@ -140,6 +142,7 @@ async def test_train_all_models_error_recovery(mock_get_engine, setup_test_dirs,
 
     mock_engine = MagicMock()
     mock_engine.store = mock_store
+    mock_engine.db_path = "data/test_learning.db"
     mock_get_engine.return_value = mock_engine
 
     # 1. Create a "good" state and backup

@@ -35,6 +35,8 @@ def make_mock_learning_engine() -> MagicMock:
     # Set timezone to a real pytz object so routes using engine.timezone
     # (e.g. forecast.py aurora_dashboard) get a valid tzinfo, not a MagicMock.
     mock_engine.timezone = pytz.UTC
+    # Set db_path to prevent MagicMock filenames when code accesses engine.db_path
+    mock_engine.db_path = "data/test_learning.db"
     return mock_engine
 
 

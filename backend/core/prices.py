@@ -90,6 +90,37 @@ async def get_nordpool_data(config_path: str = "config.yaml") -> list[dict[str, 
 
         all_entries = today_values + tomorrow_values
 
+        # If no tomorrow data yet (before ~13:00 CET auction), try forecast fallback
+        if not tomorrow_values and now.hour < 13:
+            try:
+                from ml.price_forecast import get_d1_price_forecast_fallback
+
+                forecast_fallback = await get_d1_price_forecast_fallback(config)
+                if forecast_fallback:
+                    # Convert forecast format to match Nordpool format
+                    for fc in forecast_fallback:
+                        slot_start = fc["slot_start"]
+                        if isinstance(slot_start, str):
+                            slot_start = datetime.fromisoformat(slot_start)
+                        slot_start = (
+                            slot_start.replace(tzinfo=local_tz)
+                            if slot_start.tzinfo is None
+                            else slot_start.astimezone(local_tz)
+                        )
+                        end_time = slot_start + timedelta(hours=1)
+                        all_entries.append(
+                            {
+                                "start": slot_start,
+                                "end": end_time,
+                                "value": fc.get("spot_p50", 0) * 1000,  # Convert SEK/kWh to SEK/MWh
+                            }
+                        )
+                    print(
+                        f"[get_nordpool_data] Using D+1 price forecast fallback ({len(forecast_fallback)} slots)"
+                    )
+            except Exception as exc:
+                print(f"Warning: Failed to get D+1 price forecast fallback: {exc}")
+
         if not all_entries:
             return []
 
