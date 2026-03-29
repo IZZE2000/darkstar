@@ -378,6 +378,11 @@ def get_weather_series(
 
     df = pd.DataFrame(data, index=dt_index).astype("float64")
 
+    # DST spring-forward can create duplicate timestamps (e.g. 2:00 AM shifted to
+    # 3:00 AM which already exists). Drop duplicates before resampling.
+    if df.index.duplicated().any():
+        df = df[~df.index.duplicated(keep="last")]
+
     # REV F67: Resample from hourly to 15-minute resolution via linear interpolation.
     # This ensures all slots (Bug #1) get weather data (radiation/temp/clouds).
     if not df.empty and len(df) > 1:
