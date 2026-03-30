@@ -661,8 +661,7 @@ export function StrategyDomain({
                                     {day.day_label}: avg {day.avg_spot_p50.toFixed(2)} kr/kWh
                                     <br />
                                     min {day.min_hour_p50.toFixed(2)}, max {day.max_hour_p50.toFixed(2)}
-                                    <br />
-                                    ({day.confidence} confidence)
+                                    <br />({day.confidence} confidence)
                                 </div>
                             </div>
                         ))}

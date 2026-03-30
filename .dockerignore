@@ -33,6 +33,7 @@ config.yaml
 secrets.yaml
 schedule.json
 data/
+!data/regions.json
 
 # Build artifacts
 frontend/.vite/
