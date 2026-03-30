@@ -432,6 +432,36 @@ export type LogInfoResponse = {
     last_modified: string
 }
 
+// Price Outlook Types (Tasks 3.1)
+export type PriceLevel = 'cheap' | 'normal' | 'expensive' | 'unknown'
+export type ConfidenceLevel = 'high' | 'medium' | 'low'
+
+export type PriceOutlookDay = {
+    date: string
+    day_label: string
+    days_ahead: number
+    avg_spot_p50: number
+    avg_spot_p10: number | null
+    avg_spot_p90: number | null
+    min_hour_p50: number
+    max_hour_p50: number
+    level: PriceLevel
+    confidence: ConfidenceLevel
+}
+
+export type PriceOutlookResponse = {
+    enabled: boolean
+    days: PriceOutlookDay[]
+    reference_avg: number | null
+    status: string
+}
+
+export type AdviceItem = {
+    category: string
+    message: string
+    priority: 'info' | 'warning' | 'error'
+}
+
 export type SystemHealthResponse = {
     learning: {
         total_runs: number
@@ -669,6 +699,10 @@ export const Api = {
     loadsDebug: () => getJSON<LoadsDebugResponse>('/api/loads/debug'),
     // Profile Management (Rev IP4)
     listProfiles: () => getJSON<import('../pages/settings/types').InverterProfile[]>('/api/profiles'),
+    // Price Forecast (Tasks 3.2)
+    priceForecast: {
+        outlook: () => getJSON<PriceOutlookResponse>('/api/price-forecast/outlook'),
+    },
 }
 
 export const Sel = {

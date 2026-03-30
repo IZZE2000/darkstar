@@ -169,3 +169,44 @@ async def get_price_forecast_status(request: Request) -> dict[str, Any]:
         "model_available": model_exists,
         "model_info": model_info,
     }
+
+
+@router.get("/outlook")
+async def get_price_outlook(request: Request) -> dict[str, Any]:
+    """
+    Get daily price outlook for D+1 through D+7.
+
+    Returns aggregated daily summaries with price levels and confidence,
+    suitable for the Weekly Outlook UI widget.
+
+    Response includes:
+    - enabled: Whether price forecasting is enabled
+    - days: Array of 7 daily summaries with date, avg prices, min/max, level, confidence
+    - reference_avg: 14-day trailing average spot price (or null)
+    - status: "ok" | "disabled" | "no_data"
+    """
+    config = _load_config()
+
+    # Check if price forecasting is enabled
+    if not _is_price_forecast_enabled(config):
+        return {"enabled": False, "days": [], "reference_avg": None, "status": "disabled"}
+
+    # Import outlook helpers
+    # Get the forecast database path
+    from backend.core.forecasts import get_forecast_db_path
+    from backend.core.price_outlook import (
+        build_outlook_response,
+        get_daily_outlook,
+        get_trailing_avg,
+    )
+
+    db_path = get_forecast_db_path()
+
+    # Fetch daily outlook data
+    daily_outlook = get_daily_outlook(db_path)
+
+    # Fetch trailing average reference
+    reference_avg = get_trailing_avg(db_path)
+
+    # Build and return the response with classifications
+    return build_outlook_response(daily_outlook, reference_avg, enabled=True)

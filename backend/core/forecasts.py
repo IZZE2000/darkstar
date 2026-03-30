@@ -15,6 +15,13 @@ from ml.weather import async_get_weather_volatility
 logger = logging.getLogger("darkstar.core.forecasts")
 
 
+def get_forecast_db_path() -> str:
+    """Get the path to the learning/planner database."""
+    from pathlib import Path
+
+    return str(Path("data/planner_learning.db").resolve())
+
+
 async def get_forecast_data(
     price_slots: list[dict[str, Any]], config: dict[str, Any]
 ) -> dict[str, Any]:
