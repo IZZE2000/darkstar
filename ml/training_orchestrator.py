@@ -241,28 +241,30 @@ async def train_all_models(
                 recency_half_life_days=30.0,
             )
 
+            # Determine model path for forecasting
             if price_success:
                 logger.info("[ML-TRAIN] Price model training completed successfully")
                 # Add price model to trained models list
                 price_model_path = MODELS_DIR / price_model_name
                 if price_model_path.exists() and price_model_name not in results["trained_models"]:
                     results["trained_models"].append(price_model_name)
-
-                # Generate price forecasts after successful training
-                logger.info("[ML-TRAIN] Generating price forecasts...")
-                from ml.price_forecast import generate_price_forecasts
-
-                try:
-                    forecasts = await generate_price_forecasts(
-                        config=engine.config,
-                        db_path=str(engine.db_path),
-                        model_path=price_model_path,
-                    )
-                    logger.info(f"[ML-TRAIN] Generated {len(forecasts)} price forecasts")
-                except Exception as forecast_err:
-                    logger.warning(f"[ML-TRAIN] Failed to generate price forecasts: {forecast_err}")
             else:
                 logger.info("[ML-TRAIN] Price model training skipped (insufficient data)")
+                price_model_path = None
+
+            # Generate price forecasts regardless of training success
+            logger.info("[ML-TRAIN] Generating price forecasts...")
+            from ml.price_forecast import generate_price_forecasts
+
+            try:
+                forecasts = await generate_price_forecasts(
+                    config=engine.config,
+                    db_path=str(engine.db_path),
+                    model_path=price_model_path,
+                )
+                logger.info(f"[ML-TRAIN] Generated {len(forecasts)} price forecasts")
+            except Exception as forecast_err:
+                logger.warning(f"[ML-TRAIN] Failed to generate price forecasts: {forecast_err}")
 
         except Exception as price_err:
             # Price model failure should not fail the entire training

@@ -161,3 +161,47 @@ async def test_train_all_models_error_recovery(mock_get_engine, setup_test_dirs,
     assert res["status"] == "error"
     # Should have restored from backup
     assert (setup_test_dirs / "load_model.lgb").read_text() == "good"
+
+
+@pytest.mark.asyncio
+@patch("ml.training_orchestrator.train_models")
+@patch("ml.training_orchestrator.get_learning_engine")
+async def test_generate_price_forecasts_called_when_training_fails(
+    mock_get_engine, mock_train_main, setup_test_dirs
+):
+    """Test that generate_price_forecasts is called even when price model training fails."""
+    from unittest.mock import AsyncMock
+
+    # Setup mocks
+    mock_store = MagicMock()
+    mock_store.log_learning_run = AsyncMock()
+    mock_store.cleanup_learning_runs = AsyncMock(return_value=0)
+
+    mock_engine = MagicMock()
+    mock_engine.store = mock_store
+    mock_engine.db_path = "data/test_learning.db"
+    mock_engine.config = {"price_forecast": {"model_name": "price_model.lgb"}}
+    mock_get_engine.return_value = mock_engine
+
+    # Create main model so main training succeeds
+    (setup_test_dirs / "load_model.lgb").touch()
+
+    # Mock generate_price_forecasts to return empty list
+    with patch(
+        "ml.price_forecast.generate_price_forecasts", new_callable=AsyncMock
+    ) as mock_generate_forecasts:
+        mock_generate_forecasts.return_value = []
+
+        # Mock train_price_model to return False (insufficient data path)
+        with (
+            patch("ml.training_orchestrator.train_price_model", return_value=False),
+            patch.object(training_orchestrator.ws_manager, "emit", new_callable=AsyncMock),
+        ):
+            res = await training_orchestrator.train_all_models()
+
+    assert res["status"] == "success"
+    # Verify generate_price_forecasts was called even though train_price_model returned False
+    mock_generate_forecasts.assert_called_once()
+    # Verify it was called with model_path=None (since training failed)
+    call_args = mock_generate_forecasts.call_args
+    assert call_args.kwargs.get("model_path") is None

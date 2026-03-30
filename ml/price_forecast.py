@@ -99,16 +99,26 @@ async def generate_price_forecasts(
 
     # Load all three quantile models
     models: dict[str, lgb.Booster] = {}
+    has_model = True
     for quantile, path in [("p10", model_p10_path), ("p50", model_path), ("p90", model_p90_path)]:
         if not path.exists():
-            print(f"Price model for {quantile} not found at {path}, skipping forecast generation")
-            return []
+            print(
+                f"Price model for {quantile} not found at {path}, will continue with weather-only rows"
+            )
+            has_model = False
+            break
+    else:
         try:
-            models[quantile] = lgb.Booster(model_file=str(path))
-            print(f"Loaded price model {quantile} from {path}")
+            for quantile_load, path_load in [
+                ("p10", model_p10_path),
+                ("p50", model_path),
+                ("p90", model_p90_path),
+            ]:
+                models[quantile_load] = lgb.Booster(model_file=str(path_load))
+                print(f"Loaded price model {quantile_load} from {path_load}")
         except Exception as exc:
-            print(f"Failed to load price model {quantile}: {exc}")
-            return []
+            print(f"Failed to load price model: {exc}")
+            has_model = False
 
     # Get timezone
     tz_name = config.get("timezone", "Europe/Stockholm")
@@ -174,45 +184,59 @@ async def generate_price_forecasts(
                 print(f"Warning: No features generated for {forecast_date}")
                 continue
 
-            # Run inference
-            feature_cols = [
-                "hour",
-                "day_of_week",
-                "month",
-                "is_weekend",
-                "is_holiday",
-                "days_ahead",
-                "price_lag_1d",
-                "price_lag_7d",
-                "price_lag_24h_avg",
-                "wind_index",
-                "temperature_c",
-                "cloud_cover",
-                "radiation_wm2",
-            ]
+            # Run inference (only if we have models)
+            if has_model:
+                feature_cols = [
+                    "hour",
+                    "day_of_week",
+                    "month",
+                    "is_weekend",
+                    "is_holiday",
+                    "days_ahead",
+                    "price_lag_1d",
+                    "price_lag_7d",
+                    "price_lag_24h_avg",
+                    "wind_index",
+                    "temperature_c",
+                    "cloud_cover",
+                    "radiation_wm2",
+                ]
 
-            X = feature_df[feature_cols]
+                X = feature_df[feature_cols]
 
-            # Predict with all three quantile models
-            pred_p10_raw = models["p10"].predict(X)  # type: ignore[assignment]
-            pred_p50_raw = models["p50"].predict(X)  # type: ignore[assignment]
-            pred_p90_raw = models["p90"].predict(X)  # type: ignore[assignment]
+                # Predict with all three quantile models
+                pred_p10_raw = models["p10"].predict(X)  # type: ignore[assignment]
+                pred_p50_raw = models["p50"].predict(X)  # type: ignore[assignment]
+                pred_p90_raw = models["p90"].predict(X)  # type: ignore[assignment]
 
-            predictions_p10: np.ndarray = np.asarray(pred_p10_raw).flatten()
-            predictions_p50: np.ndarray = np.asarray(pred_p50_raw).flatten()
-            predictions_p90: np.ndarray = np.asarray(pred_p90_raw).flatten()
+                predictions_p10: np.ndarray = np.asarray(pred_p10_raw).flatten()
+                predictions_p50: np.ndarray = np.asarray(pred_p50_raw).flatten()
+                predictions_p90: np.ndarray = np.asarray(pred_p90_raw).flatten()
+            else:
+                predictions_p10 = np.array([])
+                predictions_p50 = np.array([])
+                predictions_p90 = np.array([])
 
             # Create forecast records
             for i, (idx, row) in enumerate(feature_df.iterrows()):
                 slot_start = pd.to_datetime(str(idx))
 
+                if has_model:
+                    spot_p10 = float(predictions_p10[i])
+                    spot_p50 = float(predictions_p50[i])
+                    spot_p90 = float(predictions_p90[i])
+                else:
+                    spot_p10 = None
+                    spot_p50 = None
+                    spot_p90 = None
+
                 forecast_record: dict[str, Any] = {
                     "slot_start": slot_start.isoformat(),
                     "issue_timestamp": issue_timestamp,
                     "days_ahead": days_ahead,
-                    "spot_p10": float(predictions_p10[i]),
-                    "spot_p50": float(predictions_p50[i]),
-                    "spot_p90": float(predictions_p90[i]),
+                    "spot_p10": spot_p10,
+                    "spot_p50": spot_p50,
+                    "spot_p90": spot_p90,
                     "wind_index": row.get("wind_index"),
                     "temperature_c": row.get("temperature_c"),
                     "cloud_cover": row.get("cloud_cover"),
@@ -325,6 +349,8 @@ async def get_d1_price_forecast_fallback(
     Get D+1 price forecast for fallback when real Nordpool prices not yet available.
 
     Returns forecast records for D+1 if available, otherwise None.
+    Filters out weather-only rows (null-prediction rows) to ensure only valid
+    forecasts are returned to the planner.
     """
     try:
         forecasts = await get_price_forecasts_from_db(
@@ -333,11 +359,14 @@ async def get_d1_price_forecast_fallback(
             limit=96,  # 24 hours * 4 slots per hour
         )
 
-        if not forecasts:
+        # Filter out weather-only rows (null-prediction rows)
+        valid_forecasts = [f for f in forecasts if f.get("spot_p50") is not None]
+
+        if not valid_forecasts:
             return None
 
         # Derive consumer prices for each forecast
-        for forecast in forecasts:
+        for forecast in valid_forecasts:
             consumer_prices = derive_consumer_prices(
                 spot_p10=forecast.get("spot_p10", 0),
                 spot_p50=forecast.get("spot_p50", 0),
@@ -346,7 +375,7 @@ async def get_d1_price_forecast_fallback(
             )
             forecast.update(consumer_prices)
 
-        return forecasts
+        return valid_forecasts
 
     except Exception as exc:
         print(f"Error getting D+1 fallback: {exc}")
