@@ -14,7 +14,7 @@ class TestRegionsLoader(unittest.TestCase):
         print("\n--- Testing SE1-SE4 Loading ---")
 
         # Load actual regions.json
-        regions = load_regions_config("data/regions.json")
+        regions = load_regions_config("ml/regions.json")
 
         # Verify all expected price areas exist
         expected_areas = ["SE1", "SE2", "SE3", "SE4"]
@@ -32,7 +32,7 @@ class TestRegionsLoader(unittest.TestCase):
         """Test that coordinate entries have required fields."""
         print("\n--- Testing Coordinate Structure ---")
 
-        regions = load_regions_config("data/regions.json")
+        regions = load_regions_config("ml/regions.json")
 
         for area, coords in regions.items():
             for coord_key, coord_data in coords.items():
@@ -53,7 +53,7 @@ class TestRegionsLoader(unittest.TestCase):
         """Test that each price area has multiple coordinates."""
         print("\n--- Testing Multiple Coordinates Per Area ---")
 
-        regions = load_regions_config("data/regions.json")
+        regions = load_regions_config("ml/regions.json")
 
         for area in ["SE1", "SE2", "SE3", "SE4"]:
             coord_count = len(regions[area])
@@ -72,7 +72,7 @@ class TestRegionsLoader(unittest.TestCase):
         """Test that unknown area returns empty dict."""
         print("\n--- Testing Unknown Area Fallback ---")
 
-        regions = load_regions_config("data/regions.json")
+        regions = load_regions_config("ml/regions.json")
 
         # Known area should exist
         self.assertIn("SE4", regions)

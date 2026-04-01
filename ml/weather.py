@@ -625,7 +625,7 @@ def calculate_physics_for_slots(
     return results
 
 
-def load_regions_config(regions_path: str = "data/regions.json") -> dict[str, Any]:
+def load_regions_config(regions_path: str = "ml/regions.json") -> dict[str, Any]:
     """Load regional weather coordinates configuration."""
     try:
         with Path(regions_path).open(encoding="utf-8") as f:
@@ -644,7 +644,7 @@ def get_regional_weather(
     config: dict[str, Any] | None = None,
     *,
     config_path: str = "config.yaml",
-    regions_path: str = "data/regions.json",
+    regions_path: str = "ml/regions.json",
 ) -> dict[str, pd.DataFrame]:
     """
     Fetch weather data for all coordinates defined for a price area.
