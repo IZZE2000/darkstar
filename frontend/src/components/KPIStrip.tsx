@@ -1,5 +1,5 @@
 import { TrendingDown, TrendingUp, Target, Zap, DollarSign, Activity } from 'lucide-react'
-import type { AuroraPerformanceData } from '../lib/api'
+import type { AuroraPerformanceData, PriceAccuracyResponse } from '../lib/api'
 import Card from './Card'
 
 interface KPIStripProps {
@@ -9,9 +9,10 @@ interface KPIStripProps {
         max_price_spread?: number | null
     }
     perfData?: AuroraPerformanceData | null
+    priceAccuracy?: PriceAccuracyResponse
 }
 
-export default function KPIStrip({ metrics, perfData }: KPIStripProps) {
+export default function KPIStrip({ metrics, perfData, priceAccuracy }: KPIStripProps) {
     // 1. Calculate Cost Drift (7-day)
     let totalPlanned = 0
     let totalRealized = 0
@@ -68,33 +69,61 @@ export default function KPIStrip({ metrics, perfData }: KPIStripProps) {
                 </div>
             </Card>
 
-            {/* Max Price Spread */}
-            <Card className="p-4 flex items-center justify-between relative overflow-hidden">
-                <div className={`absolute inset-0 opacity-[0.03] ${isProfitable ? 'bg-emerald-500' : 'bg-rose-500'}`} />
-                <div className="flex items-center gap-3 relative z-10">
+            {/* Max Price Spread / Price Forecast Error */}
+            {priceAccuracy?.enabled ? (
+                <Card className="p-4 flex items-center justify-between relative overflow-hidden">
+                    <div className="absolute inset-0 bg-amber-500/[0.02]" />
+                    <div className="flex items-center gap-3 relative z-10">
+                        <div className="p-2 rounded-full bg-amber-500/10 text-amber-400">
+                            <DollarSign className="h-5 w-5" />
+                        </div>
+                        <div>
+                            <div className="text-[10px] text-muted uppercase tracking-wider font-medium">
+                                Price Forecast Error
+                            </div>
+                            <div className="text-lg font-semibold text-text">
+                                {priceAccuracy.d1_mae != null ? priceAccuracy.d1_mae.toFixed(2) : 'N/A'}{' '}
+                                <span className="text-xs font-normal text-muted">SEK/kWh</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div className="text-right relative z-10">
+                        <div className="text-[10px] text-muted">MAE (7d)</div>
+                        <Target className="h-4 w-4 text-amber-500/50 ml-auto" />
+                    </div>
+                </Card>
+            ) : (
+                <Card className="p-4 flex items-center justify-between relative overflow-hidden">
                     <div
-                        className={`p-2 rounded-full ${isProfitable ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}
-                    >
-                        <Activity className="h-5 w-5" />
-                    </div>
-                    <div>
-                        <div className="text-[10px] text-muted uppercase tracking-wider font-medium">
-                            Max Price Spread
+                        className={`absolute inset-0 opacity-[0.03] ${isProfitable ? 'bg-emerald-500' : 'bg-rose-500'}`}
+                    />
+                    <div className="flex items-center gap-3 relative z-10">
+                        <div
+                            className={`p-2 rounded-full ${isProfitable ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}
+                        >
+                            <Activity className="h-5 w-5" />
                         </div>
-                        <div className={`text-lg font-semibold ${isProfitable ? 'text-emerald-400' : 'text-rose-400'}`}>
-                            {spreadLabel}
+                        <div>
+                            <div className="text-[10px] text-muted uppercase tracking-wider font-medium">
+                                Max Price Spread
+                            </div>
+                            <div
+                                className={`text-lg font-semibold ${isProfitable ? 'text-emerald-400' : 'text-rose-400'}`}
+                            >
+                                {spreadLabel}
+                            </div>
                         </div>
                     </div>
-                </div>
-                <div className="text-right relative z-10">
-                    <div className="text-[10px] text-muted">Arbitrage</div>
-                    {isProfitable ? (
-                        <TrendingUp className="h-4 w-4 text-emerald-500 ml-auto" />
-                    ) : (
-                        <TrendingDown className="h-4 w-4 text-rose-500 ml-auto" />
-                    )}
-                </div>
-            </Card>
+                    <div className="text-right relative z-10">
+                        <div className="text-[10px] text-muted">Arbitrage</div>
+                        {isProfitable ? (
+                            <TrendingUp className="h-4 w-4 text-emerald-500 ml-auto" />
+                        ) : (
+                            <TrendingDown className="h-4 w-4 text-rose-500 ml-auto" />
+                        )}
+                    </div>
+                </Card>
+            )}
 
             {/* PV Accuracy */}
             <Card className="p-4 flex items-center justify-between relative overflow-hidden">

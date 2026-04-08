@@ -456,6 +456,40 @@ export type PriceOutlookResponse = {
     status: string
 }
 
+export type PriceAccuracyResponse = {
+    enabled: boolean
+    d1_mae: number | null
+    d1_bias: number | null
+    sample_days: number
+    status: string
+}
+
+export type PriceForecastSlot = {
+    slot_start: string
+    days_ahead: number
+    spot_p10: number | null
+    spot_p50: number | null
+    spot_p90: number | null
+    import_p50: number | null
+    export_p50: number | null
+    actual_spot?: number | null
+}
+
+export type PriceForecastStatusResponse = {
+    enabled: boolean
+    config: {
+        min_training_samples: number
+        model_name: string
+    }
+    model_available: boolean
+    model_info: {
+        name: string
+        size_bytes: number
+        last_modified: string
+    } | null
+    training_samples_count: number
+}
+
 export type AdviceItem = {
     category: string
     message: string
@@ -702,6 +736,12 @@ export const Api = {
     // Price Forecast (Tasks 3.2)
     priceForecast: {
         outlook: () => getJSON<PriceOutlookResponse>('/api/price-forecast/outlook'),
+        accuracy: () => getJSON<PriceAccuracyResponse>('/api/price-forecast/accuracy'),
+        forecasts: (includeActuals?: boolean) =>
+            getJSON<{ status: string; message: string; forecasts: PriceForecastSlot[] }>(
+                '/api/price-forecast' + (includeActuals ? '?include_actuals=true' : ''),
+            ),
+        priceForecastStatus: () => getJSON<PriceForecastStatusResponse>('/api/price-forecast/status'),
     },
 }
 

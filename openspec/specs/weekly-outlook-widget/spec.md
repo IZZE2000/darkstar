@@ -24,11 +24,15 @@ The existing `StrategyDomain` component ("Battery & Strategy" card) SHALL suppor
 - **THEN** the card remains on View B until the user switches back or the page reloads
 
 ### Requirement: View B displays 7-day price pills
-When the user switches to View B, the StrategyDomain card SHALL display 7 pill elements for D+1 through D+7.
+When the user switches to View B, the StrategyDomain card SHALL display 7 pill elements for D+1 through D+7. Each pill SHALL show the short weekday label and a numeric average price below it.
 
 #### Scenario: Pills render from outlook data
 - **WHEN** View B is active and outlook data is available
 - **THEN** 7 pills are rendered, each showing the short weekday label (e.g., "Mon", "Tue")
+
+#### Scenario: Numeric price shown below each pill
+- **WHEN** View B is active and outlook data is available
+- **THEN** each pill SHALL display the day's `avg_spot_p50` formatted to 2 decimal places below the day label (e.g., "0.45")
 
 #### Scenario: Forecast disabled or no data
 - **WHEN** `price_forecast.enabled` is `false` or no data exists

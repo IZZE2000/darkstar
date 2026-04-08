@@ -49,7 +49,47 @@ This document contains ideas, improvements, and tasks that are not yet scheduled
 
 ---
 
+#### [Price Forecast] Mock Script Inserts Timezone-Naive Timestamps
+
+**Goal:** Fix `scripts/insert_mock_price_forecasts.py` line 52 to include timezone offset in `slot_start`. Currently uses `strftime("%Y-%m-%dT%H:%M:%S")` which produces `2026-03-30T00:00:00` (no timezone), while production code produces `2026-03-30T00:00:00+02:00`. This causes join mismatches with `slot_observations` (which always includes timezone).
+
+**Notes:** Discovered during price-forecast-ui-enhancements verification (2026-04-08). Not a production bug — only affects dev/test data. Fix: use `.isoformat()` on a timezone-aware datetime instead of `strftime`. Also consider adding the same fix to `issue_timestamp` on the same line.
+
+---
+
+#### [Price Forecast] Discontinuity Between Actual and Forecasted Prices at Midnight
+
+**Goal:** Investigate and fix the large price spike at the boundary between historical actuals and forecasted prices (e.g., actual 0.16 at 23:45 jumping to forecast 0.70 at 00:00). The forecast should be continuous with recent actuals, especially for the D+1 boundary.
+
+**Notes:** Discovered during price-forecast-ui-enhancements verification (2026-04-08). The LightGBM price model doesn't use the most recent actual spot price as an input feature — it relies on lagged averages (`price_lag_1d`, `price_lag_7d`, `price_lag_24h_avg`) which smooth out the current price level. Possible improvements: (a) add a `price_last_known` feature using the most recent `slot_observations.export_price_sek_kwh` value, (b) apply a blending/stitching function at the actual-to-forecast boundary that smoothly transitions from the last known actual to the model's prediction over a few hours, (c) bias-correct the forecast series to anchor to the last known actual.
+
+---
+
+#### [Price Forecast] Sawtooth Pattern in Price Chart
+
+**Goal:** Investigate and fix the sawtooth/zigzag pattern visible in the Aurora Forecast Horizon price chart before certain timestamps (e.g., "Tue 00:15"). Determine whether this is a data artifact from mock/seed data or a model interpolation issue with overlapping forecast runs producing different values for the same slots.
+
+**Notes:** Observed during price-forecast-ui-enhancements verification (2026-04-08). Could be caused by: (a) mock data inserted via `scripts/insert_mock_price_forecasts.py`, (b) overlapping forecast runs with slightly different predictions for the same 15-min slots, (c) model interpolation artifacts from sparse training data. Check raw DB data first before assuming code bug.
+
+---
+
+#### [Price Forecast] Improve Price Alert Accuracy
+
+**Goal:** Review and improve the rule-based price alert thresholds in `backend/api/routers/analyst.py` (`_get_price_advice()`). Current alerts ("cheapest day ahead" at 30% threshold, "prices rising", "cheap overnight" at 25% threshold) may fire on noise or stale forecast data, producing alerts that don't match observed reality.
+
+**Notes:** Observed during price-forecast-ui-enhancements verification (2026-04-08). The alerts are dynamically generated from real forecast data (not hardcoded), but the simple percentage thresholds may need tuning. Consider: (a) requiring minimum absolute price difference, not just percentage, (b) filtering out stale forecast data before computing alerts, (c) confidence-weighting alerts based on model accuracy (d1_mae).
+
+---
+
 ### 💡 Future Ideas (Brainstorming)
+
+#### [S-Index] `max_safety_buffer_pct` Cap Suppresses Risk-Level Differentiation
+
+**Goal:** Make `max_safety_buffer_pct` risk-level-aware so that Risk 1 (Safety) users genuinely get a higher safety floor ceiling than Risk 3 (Neutral) users during high-deficit periods.
+
+**Notes:** Currently `max_safety_buffer_pct` defaults to 20% of battery capacity and does NOT vary by risk level. On days with moderate-to-high temporal deficit, most users hit the 20% cap regardless of risk level — meaning the floor is effectively identical for Risk 1 and Risk 3 users. The risk differentiation via `RISK_CONFIG` margins and `min_buffer_pct` in `s_index.py` only activates on easy/sunny days when the deficit is small enough to stay below the cap. Potential fix: make the cap a per-risk-level value (e.g., Risk 1: 30%, Risk 3: 20%, Risk 5: 15%). Discovered during Module 3 (S-Index Price Awareness) design — the Module 3 price addon deliberately bypasses this 20% cap by being additive on top of the already-capped base floor, bounded separately at 80% of capacity.
+
+---
 
 #### [EV] Multi-Day EV Charging Planning
 

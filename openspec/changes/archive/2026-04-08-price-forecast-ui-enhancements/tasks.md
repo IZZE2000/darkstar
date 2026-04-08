@@ -1,0 +1,120 @@
+## 1. Backend: Training Sample Count in Status Endpoint
+
+- [x] 1.1 In `backend/api/routers/price_forecast.py`, in the `get_price_forecast_status()` function, add a database query that counts total rows in the `price_forecasts` table. Use the same `get_learning_engine()` / db_path pattern used in `get_price_forecasts()`. Add the result as `training_samples_count` (integer) to the response dict alongside the existing `config.min_training_samples`.
+- [x] 1.2 Add a test in `tests/backend/test_price_forecast_api.py` (create file if needed) that calls `GET /api/price-forecast/status` and verifies `training_samples_count` is an integer >= 0 in the response.
+
+## 2. Backend: Price Forecast Accuracy Endpoint
+
+- [x] 2.1 In `backend/api/routers/price_forecast.py`, add a new endpoint `GET /api/price-forecast/accuracy`. It SHALL: (a) return early with `{"enabled": false, "d1_mae": null, "d1_bias": null, "status": "disabled"}` if price forecast is disabled, (b) query `price_forecasts` joined with `slot_observations` on `slot_start` where `price_forecasts.days_ahead = 1` AND `price_forecasts.spot_p50 IS NOT NULL` AND `slot_observations.export_price_sek_kwh IS NOT NULL`, filtered to the last 7 days, (c) compute MAE = `mean(abs(spot_p50 - export_price_sek_kwh))` and bias = `mean(spot_p50 - export_price_sek_kwh)`, (d) return `{"enabled": true, "d1_mae": <float>, "d1_bias": <float>, "sample_days": <int>, "status": "ok"}`, or `d1_mae: null` / `status: "insufficient_data"` if fewer than 2 days of pairs exist.
+- [x] 2.2 Add tests for the accuracy endpoint: (a) test disabled returns disabled status, (b) test with no paired data returns insufficient_data, (c) test with mock paired data returns correct MAE/bias values.
+
+## 3. Backend: Include Actuals in Price Forecast Endpoint
+
+- [x] 3.1 In `backend/api/routers/price_forecast.py`, modify the `get_price_forecasts()` endpoint to accept an optional query parameter `include_actuals: bool = False`. When `true`, for each forecast record, join `slot_observations.export_price_sek_kwh` on matching `slot_start` and add an `actual_spot` field (float or null) to each enriched forecast dict. When `false` or omitted, do not include `actual_spot` (backward compatible).
+- [x] 3.2 Add a test that calls `GET /api/price-forecast?include_actuals=true` and verifies `actual_spot` is present in the response records. Add a test that calls without the param and verifies `actual_spot` is NOT present.
+
+## 4. Frontend: TypeScript Types for New API Responses
+
+- [x] 4.1 In `frontend/src/lib/api.ts`, add a new type `PriceAccuracyResponse` with fields: `enabled: boolean`, `d1_mae: number | null`, `d1_bias: number | null`, `sample_days: number`, `status: string`.
+- [x] 4.2 In `frontend/src/lib/api.ts`, add a new type `PriceForecastSlot` with fields: `slot_start: string`, `days_ahead: number`, `spot_p10: number | null`, `spot_p50: number | null`, `spot_p90: number | null`, `import_p50: number | null`, `export_p50: number | null`, `actual_spot?: number | null`.
+- [x] 4.3 In `frontend/src/lib/api.ts`, update the `PriceForecastStatusResponse` type (or add it if it doesn't exist) to include `training_samples_count: number` alongside existing fields.
+- [x] 4.4 In the `Api` object in `frontend/src/lib/api.ts`, add API call functions: (a) `priceAccuracy: () => getJSON<PriceAccuracyResponse>('/api/price-forecast/accuracy')`, (b) `priceForecasts: (includeActuals?: boolean) => getJSON<PriceForecastResponse>('/api/price-forecast' + (includeActuals ? '?include_actuals=true' : ''))`, (c) `priceForecastStatus: () => getJSON<PriceForecastStatusResponse>('/api/price-forecast/status')`. Add these under the existing `priceForecast` section (near the existing `outlook` call).
+
+## 5. Frontend: Price Toggle in Aurora Forecast Horizon
+
+- [x] 5.1 In `frontend/src/pages/Aurora.tsx` line 48, change the `chartMode` state type from `useState<'load' | 'pv'>('pv')` to `useState<'load' | 'pv' | 'price'>('pv')`. Add a new state variable right below it: `const [priceForecastEnabled, setPriceForecastEnabled] = useState<boolean>(false)`. To populate it, add a fetch inside the existing `useEffect` at line 75 (the one that calls `fetchDashboard()`): call `Api.priceForecast.priceForecastStatus()` and set `setPriceForecastEnabled(res.enabled && true)`. Wrap in try/catch, default to false on error.
+- [x] 5.2 In the Forecast Horizon toggle button group — this is the `div` with class `inline-flex items-center gap-1 rounded-full border border-line/70 bg-surface2 px-1 py-0.5 text-[11px]` at line 513 that contains the Load (Zap) and PV (SunMedium) buttons. Add `DollarSign` to the lucide-react import at line 4. Then, AFTER the PV `<button>` (the one ending around line 527) and BEFORE the closing `</div>` of the toggle group, add: `{priceForecastEnabled && (<button type="button" className={`px-2 py-0.5 rounded-full ${chartMode === 'price' ? 'bg-accent text-[#0F1216]' : 'text-muted'}`} onClick={() => setChartMode('price')}><DollarSign className="h-3 w-3" /></button>)}`. This follows the exact same pattern as the Load and PV buttons.
+- [x] 5.3 In line 500, the header currently reads `Forecast Horizon (3 Days)`. Change this to: `{`Forecast Horizon (${chartMode === 'price' ? '7' : '3'} Days)`}`. In lines 501-504, the subtitle currently uses a ternary for probabilisticMode. Change it to: when `chartMode === 'price'`, show `'Price Forecast'`; otherwise keep the existing ternary (`probabilisticMode ? 'Probabilistic View (...)' : 'Decomposition View (...)'`). Full expression: `{chartMode === 'price' ? 'Price Forecast' : probabilisticMode ? \`Probabilistic View (${chartMode.toUpperCase()})\` : \`Decomposition View (${chartMode.toUpperCase()})\`}`.
+
+## 6. Frontend: Price Chart Data Fetching and Rendering
+
+- [x] 6.1 In `frontend/src/pages/Aurora.tsx`, add two state variables near the other state declarations (around line 55): `const [priceForecastSlots, setPriceForecastSlots] = useState<PriceForecastSlot[]>([])` and `const [priceForecastLoading, setPriceForecastLoading] = useState(false)`. Import `PriceForecastSlot` from `'../lib/api'`. Add a `useEffect` that watches `chartMode`: `useEffect(() => { if (chartMode === 'price' && priceForecastSlots.length === 0) { setPriceForecastLoading(true); Api.priceForecast.priceForecasts(true).then(res => setPriceForecastSlots(res.forecasts ?? [])).catch(err => console.error('Failed to load price forecasts:', err)).finally(() => setPriceForecastLoading(false)); } }, [chartMode])`.
+- [x] 6.2 The chart rendering is inside `<div className="flex-1 min-h-0">` at line 532. The existing code is a ternary chain: `loading ? <Loading> : probabilisticMode ? <ProbabilisticChart ...> : <DecompositionChart ...>`. Insert a NEW condition as the second check in the chain, right after the `loading` check and BEFORE `probabilisticMode`. The full ternary becomes: `{loading ? (<div>Loading...</div>) : chartMode === 'price' ? (priceForecastLoading ? (<div className="text-[11px] text-muted">Loading price forecast...</div>) : priceForecastSlots.length === 0 ? (<div className="text-[11px] text-muted">No price forecast data available</div>) : (<div className="h-full w-full"><ProbabilisticChart title="" color="#FFCE59" showOpenMeteo={false} slots={priceForecastSlots.map(s => ({ time: s.slot_start, p10: s.spot_p10, p50: s.spot_p50, p90: s.spot_p90, actual: s.actual_spot ?? null, open_meteo_kwh: null }))} /></div>)) : probabilisticMode ? (<ProbabilisticChart ...existing code...>) : (<DecompositionChart ...existing code...>)}`. Do NOT modify the existing ProbabilisticChart or DecompositionChart branches — only insert the `chartMode === 'price'` branch between `loading` and `probabilisticMode`.
+- [x] 6.3 The Probabilistic/Decomposition toggle is NOT a visible toggle button — it's a switch in The Bridge section (line 275), unrelated to Forecast Horizon. No changes needed for that toggle. However, the subtitle text from task 5.3 already handles showing "Price Forecast" instead of "Probabilistic/Decomposition View", which is sufficient. No additional work needed here — mark as done after verifying task 5.3 is complete.
+
+## 7. Frontend: Price MAE in KPI Strip
+
+- [x] 7.1 In `frontend/src/components/KPIStrip.tsx`, add an optional prop `priceAccuracy?: PriceAccuracyResponse` to the `KPIStripProps` interface. Import the type from `../lib/api`.
+- [x] 7.2 In `KPIStrip.tsx`, the "Max Price Spread" card is the SECOND `<Card>` in the grid (lines 72-97, identified by the text "Max Price Spread" at line 83). Wrap this entire `<Card>...</Card>` block in a conditional: `{priceAccuracy?.enabled ? (<Card className="p-4 flex items-center justify-between relative overflow-hidden"><div className="absolute inset-0 bg-amber-500/[0.02]" /><div className="flex items-center gap-3 relative z-10"><div className="p-2 rounded-full bg-amber-500/10 text-amber-400"><DollarSign className="h-5 w-5" /></div><div><div className="text-[10px] text-muted uppercase tracking-wider font-medium">Price Forecast Error</div><div className="text-lg font-semibold text-text">{priceAccuracy.d1_mae != null ? priceAccuracy.d1_mae.toFixed(2) : 'N/A'} <span className="text-xs font-normal text-muted">SEK/kWh</span></div></div></div><div className="text-right relative z-10"><div className="text-[10px] text-muted">MAE (7d)</div><Target className="h-4 w-4 text-amber-500/50 ml-auto" /></div></Card>) : (<original Max Price Spread Card unchanged>)}`. Import `DollarSign` from lucide-react at line 1. This pattern matches the existing PV/Load MAE cards exactly.
+- [x] 7.3 In `frontend/src/pages/Aurora.tsx`, add state: `const [priceAccuracy, setPriceAccuracy] = useState<PriceAccuracyResponse | null>(null)` (import type from `'../lib/api'`). In the `useEffect` at line 75 (the one that calls `fetchDashboard()` and `fetchSchedulerStatus()`), add a third async function `const fetchPriceAccuracy = async () => { try { const res = await Api.priceForecast.priceAccuracy(); setPriceAccuracy(res); } catch (err) { console.error('Failed to load price accuracy:', err); } }; fetchPriceAccuracy();`. Then pass the prop to KPIStrip: find where `<KPIStrip` is rendered and add `priceAccuracy={priceAccuracy}`.
+
+## 8. Frontend: Enhanced Dashboard Price Card — Mini Bars and Numeric Prices
+
+- [x] 8.1 In `frontend/src/components/CommandDomains.tsx`, in the View B pills section (around line 646), add the numeric average price below each pill's day label. Inside the pill `div`, add a second line showing `day.avg_spot_p50.toFixed(2)` in `text-[9px]` styling.
+- [x] 8.2 Below the pills row (after the closing `</div>` of the `flex gap-1 justify-between` div around line 668), add a mini bar chart row. Create a `div` with `flex gap-1 justify-between` containing 7 bars. Each bar's height is proportional: compute `maxP50 = Math.max(...outlookData.days.map(d => d.avg_spot_p50))`, then each bar height = `(day.avg_spot_p50 / maxP50) * 24` pixels (24px max height). Use the same `levelColors` map for background color. Each bar should be a `div` with `flex-1`, the computed height, and `rounded-sm`. Wrap the bar row in a container with `h-[28px] items-end flex` so bars align to the bottom.
+- [x] 8.3 In `CommandDomains.tsx`, inside the `{isPriceForecastEnabled && (...)}` block at line 547 that renders the toggle buttons, add a status dot AFTER the closing `</div>` of the toggle button group (line 565) but BEFORE the closing `)}` of the conditional. Add: `{hasPriceData ? (<div className="w-2 h-2 rounded-full bg-good ml-1" />) : (<div className="w-2 h-2 rounded-full bg-ai animate-pulse ml-1" />)}`. This places the dot immediately right of the Battery/Price toggle pills. Wrap the toggle `<div>` and the dot in a `<>...</>` fragment since the conditional currently returns a single div.
+
+## 9. Frontend: Training Progress Bar
+
+- [x] 9.1 In `frontend/src/components/CommandDomains.tsx`, add `priceForecastStatus` as an optional prop to `StrategyCardProps`: `priceForecastStatus?: { training_samples_count: number; config: { min_training_samples: number } }`. Pass this prop from `Dashboard.tsx`.
+- [x] 9.2 In `Dashboard.tsx`, fetch `Api.priceForecast.priceForecastStatus()` alongside the existing outlook fetch (in the deferred data fetching section). Store the result in state and pass it as `priceForecastStatus` prop to the `StrategyDomain` component.
+- [x] 9.3 In `CommandDomains.tsx`, in the "View B: No data yet" section (around line 690-703), replace the static "Collecting training data..." text with a progress bar. Compute `progress = priceForecastStatus ? (priceForecastStatus.training_samples_count / priceForecastStatus.config.min_training_samples) * 100 : 0` clamped to [0, 100]. Render: (a) a container div with `w-full h-2 bg-surface2 rounded-full overflow-hidden`, (b) an inner div with `h-full bg-ai rounded-full transition-all` and `width: ${progress}%`, (c) a text label below: `${priceForecastStatus?.training_samples_count ?? 0} / ${priceForecastStatus?.config.min_training_samples ?? 500} samples` in `text-[10px] text-muted mt-2`. Keep the existing "Price Forecasting Active" heading and AI icon above the progress bar.
+
+## 10. Testing and Verification (Round 1)
+
+- [x] 10.1 Run `npm run build` in the frontend directory and verify no TypeScript or build errors.
+- [x] 10.2 Run existing backend tests (`pytest tests/backend/`) and verify no regressions.
+- [x] 10.3 Run new backend tests added in tasks 1.2, 2.2, and 3.2 and verify they pass.
+
+## 11. Bug Fix: Remove redundant mini bar chart from Dashboard price card
+
+- [x] 11.1 In `frontend/src/components/CommandDomains.tsx`, delete the entire "Mini Bar Chart" section. This is the `<div className="h-[28px] items-end flex gap-1 justify-between mt-2">` block (around line 680-695) that contains the `maxP50` calculation and the proportional bar divs. Remove the entire block including its containing `div`.
+
+## 12. Bug Fix: Remove redundant status dot from Dashboard price card
+
+- [x] 12.1 In `frontend/src/components/CommandDomains.tsx`, find the `{isPriceForecastEnabled && (...)}` block (around line 549-575). Currently it wraps a `<>...</>` fragment containing the toggle `<div>` and a status dot conditional (`{hasPriceData ? ... : ...}`). Remove the status dot conditional entirely (the two `<div className="w-2 h-2 rounded-full ...">` elements and their ternary wrapper, around lines 569-573). Since the fragment now contains only the toggle div, replace the `<>...</>` fragment with just the toggle `<div>` directly.
+
+## 13. Bug Fix: Fix price pills to show rolling D+1..D+7 from today
+
+- [x] 13.1 In `backend/core/price_outlook.py`, in the `get_daily_outlook()` function, add a date filter so only rows where the aggregated date is >= today (in the configured timezone) are included. Currently the function queries `WHERE days_ahead BETWEEN 1 AND 7` but does not filter by actual date. Add: after aggregating daily data, filter out any entries where `date < today_str` (where `today_str` is `datetime.now(tz).strftime('%Y-%m-%d')`). This ensures stale forecasts from previous runs don't appear.
+- [x] 13.2 In the same function, change the final sort from `sorted(result, key=lambda x: x["days_ahead"])` to `sorted(result, key=lambda x: x["date"])`. This ensures chronological ordering by actual date, not by the `days_ahead` field which may be stale.
+- [x] 13.3 In the same function, add deduplication: if multiple forecast runs produced entries for the same date, keep only the entry with the latest `issue_timestamp` (or if that's not available at the aggregation level, keep the entry from the most recent `days_ahead` value, since a D+1 forecast for tomorrow is more recent than a D+3 forecast for tomorrow made 2 days ago). The simplest approach: before the final sort, deduplicate by `date` key, keeping the first occurrence (since the SQL already orders by `slot_start DESC` or similar).
+
+## 14. Bug Fix: Fix Aurora price chart to show 14-day rolling window with date X-axis
+
+- [x] 14.1 In `backend/api/routers/price_forecast.py`, in the `get_price_forecasts()` endpoint, when `include_actuals` is `true`, change the call to `get_price_forecasts_from_db()` to also fetch historical forecasts. Replace the current call `get_price_forecasts_from_db(db_path=db_path, limit=1000)` with a query that fetches forecasts where `slot_start >= 7 days ago`. Do this by adding an optional `since` parameter to the function call. If `get_price_forecasts_from_db` doesn't support a `since` parameter, add a direct SQL query instead: query `price_forecasts` table for rows `WHERE slot_start >= datetime('now', '-7 days')` ordered by `slot_start ASC`, and merge/replace the results with the existing forecast call. Deduplicate by `slot_start` (keep the row with the highest `days_ahead` value, as that represents the most recent forecast run for that slot).
+- [x] 14.2 In `frontend/src/components/ProbabilisticChart.tsx`, add an optional prop `dateAxisMode?: boolean` to the component props interface (alongside existing props like `title`, `color`, `slots`, `showOpenMeteo`). When `dateAxisMode` is `true`, change the X-axis label generation (around line 50-58) to format labels as ISO/EU dates (e.g., `"Apr 02"`) using `toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })` instead of the current weekday+time format. Group labels by date — only show each date label once (for the first slot of that day), and show empty string for subsequent slots of the same day.
+- [x] 14.3 In the same `ProbabilisticChart.tsx`, when `dateAxisMode` is `true`, add a "Today" annotation. After generating the date labels, find the label that corresponds to today's date and append `"\nToday"` to it (or add a second line below the date). If Chart.js doesn't support multiline tick labels easily, use a tick callback that returns `['Apr 08', 'Today']` as an array for today's date tick.
+- [x] 14.4 In `frontend/src/pages/Aurora.tsx`, in the price chart branch (around line 596-610), pass `dateAxisMode={true}` to the `<ProbabilisticChart>` component when rendering price forecast data.
+
+## 15. Bug Fix: Fix actuals overlay in price chart
+
+- [x] 15.1 Task 14.1 already ensures historical forecast slots are fetched. Verify that the `actuals_map` join in `price_forecast.py` (lines 108-122) works for these historical slots. The join uses exact string matching on `slot_start`. Since production data uses timezone-aware ISO format in both tables (confirmed: `slot_observations` and `price_forecasts` both store `+02:00`/`+01:00` suffixed timestamps), the join works correctly. No additional code change needed here — this task is satisfied by 14.1 returning historical slots that have matching observations. Mark as done after verifying 14.1 works end-to-end.
+
+## 16. Bug Fix: Allow negative Y-axis in price chart
+
+- [x] 16.1 In `frontend/src/components/ProbabilisticChart.tsx`, add an optional prop `allowNegativeY?: boolean` to the component props (same interface where you added `dateAxisMode`). In the Y-axis scale configuration (around line 199-208), change the `min` property from the hardcoded `min: 0` to: `min: allowNegativeY ? undefined : 0`. When `allowNegativeY` is `true`, Chart.js will auto-scale the Y-axis to fit all data including negative values. When `false` or omitted, behavior is unchanged (floor at 0).
+- [x] 16.2 In `frontend/src/pages/Aurora.tsx`, in the price chart branch (around line 596-610), pass `allowNegativeY={true}` to the `<ProbabilisticChart>` component (same place where you pass `dateAxisMode`).
+
+## 17. Clean up: Remove redundant `res.enabled && true`
+
+- [x] 17.1 In `frontend/src/pages/Aurora.tsx`, on line 102, change `setPriceForecastEnabled(res.enabled && true)` to `setPriceForecastEnabled(res.enabled)`.
+
+## 18. Testing and Verification (Round 2)
+
+- [x] 18.1 Run `npm run build` in the frontend directory and verify no TypeScript or build errors.
+- [x] 18.2 Run `uv run pytest tests/api/test_price_forecast_api.py -v` and verify all tests pass.
+- [x] 18.3 Run `uv run pytest tests/ -v` and verify no regressions across the full test suite.
+
+## 19. Bug Fix: Pills all dimmed — days_ahead not recalculated from actual date
+
+- [x] 19.1 In `backend/core/price_outlook.py`, in the `get_daily_outlook()` function, the `days_ahead` field stored in each daily entry comes from the raw DB row (line 91: `"days_ahead": days_ahead`). When multiple forecast runs cover the same date (e.g., a D+7 run from a week ago and a D+1 run from yesterday both have data for Apr 10), the aggregation groups by date but keeps whichever `days_ahead` was seen first. Since SQL orders by `slot_start ASC`, older (higher days_ahead) forecasts are processed first, so ALL days end up with `days_ahead=7` and confidence="low". **Fix:** After the date filter and before building the result list, recalculate `days_ahead` from the actual date difference: `days_ahead = (datetime.strptime(date_str, '%Y-%m-%d').date() - datetime.now(tz).date()).days`. Replace the stored `days_ahead` with this computed value. This ensures D+1 = tomorrow, D+2 = day after, etc., regardless of which forecast run produced the data.
+
+## 20. Bug Fix: Chart X-axis shows only 2 dates — empty string labels consumed by autoSkip
+
+- [x] 20.1 In `frontend/src/components/ProbabilisticChart.tsx`, the `dateAxisMode` label generation (lines 59-72) returns empty string `''` for non-first slots of each day. With 14 days of 15-min slots (~1344 data points), Chart.js `autoSkip` and `maxTicksLimit: 8` skip most labels and often land on empty ones, showing only ~2 visible dates. **Fix:** Replace the current approach. Instead of generating labels inline, keep ALL labels as empty strings and use a Chart.js `tick.callback` on the X-axis to control what shows. In the `scales.x.ticks` configuration, add a `callback` function: `callback: function(value, index) { const slot = slots[index]; if (!slot) return ''; const d = new Date(slot.time); const dateStr = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }); const todayStr = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }); const hour = d.getHours(); if (hour === 12) { return dateStr === todayStr ? [dateStr, 'Today'] : dateStr; } return ''; }`. This shows one label per day at the noon position. Set `autoSkip: false` and remove `maxTicksLimit` so Chart.js doesn't skip our carefully placed labels. Keep `maxRotation: 0`.
+- [x] 20.2 Since the tick callback now handles all label logic, simplify the `labels` array in `dateAxisMode` to just return `slots.map(() => '')` (all empty — the callback does the work). Remove the `seenDates` / `todayStr` logic from the labels generation since it's now in the callback.
+
+## 21. Bug Fix: Chart tooltip shows no date/time
+
+- [x] 21.1 In `frontend/src/components/ProbabilisticChart.tsx`, in the tooltip config (around lines 199-207), add a `callbacks` object with a `title` function that shows the full date and time for the hovered slot. Add inside the `tooltip` config: `callbacks: { title: function(tooltipItems) { const idx = tooltipItems[0]?.dataIndex; if (idx == null || !slots[idx]) return ''; const d = new Date(slots[idx].time); return d.toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }) + ' ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }); } }`. Note: the `slots` array must be accessible inside the callback — since the chart options are defined inside the component function body, `slots` is already in scope via closure.
+
+## 22. Bug Fix: "Today" label in chart — show date AND "Today" together
+
+- [x] 22.1 This is already handled by the tick callback in task 20.1 which returns `[dateStr, 'Today']` as a multiline label array. No additional work needed — mark as done after verifying task 20.1.
+
+## 23. Testing and Verification (Round 3)
+
+- [x] 23.1 Run `npm run build` in the frontend directory and verify no TypeScript or build errors.
+- [x] 23.2 Run `uv run pytest tests/api/test_price_forecast_api.py -v` and verify all tests pass.
+- [x] 23.3 Run `uv run pytest tests/ -v` and verify no regressions across the full test suite.

@@ -54,6 +54,7 @@ interface StrategyCardProps {
     batteryCapacity?: number | null
     outlookData?: import('../lib/api').PriceOutlookResponse
     priceAdvice?: import('../lib/api').AdviceItem[]
+    priceForecastStatus?: { training_samples_count: number; config: { min_training_samples: number } }
 }
 
 interface ControlParametersProps {
@@ -500,6 +501,7 @@ export function StrategyDomain({
     batteryCapacity,
     outlookData,
     priceAdvice,
+    priceForecastStatus,
 }: StrategyCardProps) {
     const [view, setView] = useState<'battery' | 'price'>('battery')
 
@@ -655,6 +657,7 @@ export function StrategyDomain({
                                     }}
                                 >
                                     {day.day_label}
+                                    <div className="text-[9px] opacity-90">{day.avg_spot_p50.toFixed(2)}</div>
                                 </div>
                                 {/* Tooltip - positioned below pill, full opacity */}
                                 <div className="absolute left-1/2 top-full mt-1 -translate-x-1/2 px-2 py-1 bg-text text-canvas text-[10px] rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 shadow-lg">
@@ -693,11 +696,20 @@ export function StrategyDomain({
                     <div className="w-12 h-12 rounded-full bg-ai/10 flex items-center justify-center mb-3">
                         <TrendingDown className="h-6 w-6 text-ai/60" />
                     </div>
-                    <div className="text-xs font-medium text-text mb-1">Price Forecasting Active</div>
-                    <div className="text-[10px] text-muted leading-relaxed">
-                        Collecting training data...
-                        <br />
-                        Forecasts will appear once sufficient price history is available.
+                    <div className="text-xs font-medium text-text mb-3">Price Forecasting Active</div>
+                    <div className="w-full max-w-[200px]">
+                        <div className="w-full h-2 bg-surface2 rounded-full overflow-hidden">
+                            <div
+                                className="h-full bg-ai rounded-full transition-all"
+                                style={{
+                                    width: `${Math.min(100, priceForecastStatus ? (priceForecastStatus.training_samples_count / priceForecastStatus.config.min_training_samples) * 100 : 0)}%`,
+                                }}
+                            />
+                        </div>
+                        <div className="text-[10px] text-muted mt-2">
+                            {priceForecastStatus?.training_samples_count ?? 0} /{' '}
+                            {priceForecastStatus?.config.min_training_samples ?? 500} samples
+                        </div>
                     </div>
                 </div>
             )}

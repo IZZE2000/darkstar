@@ -108,6 +108,10 @@ export default function Dashboard() {
     // Price Forecast Outlook
     const [priceOutlook, setPriceOutlook] = useState<import('../lib/api').PriceOutlookResponse | null>(null)
     const [priceAdvice, setPriceAdvice] = useState<import('../lib/api').AdviceItem[]>([])
+    const [priceForecastStatus, setPriceForecastStatus] = useState<{
+        training_samples_count: number
+        config: { min_training_samples: number }
+    } | null>(null)
 
     const { toast } = useToast()
 
@@ -366,6 +370,7 @@ export default function Dashboard() {
                 executorHealthData, // Phase 3
                 priceOutlookData, // Price Forecast
                 adviceData, // Price advice
+                priceForecastStatusData,
             ] = await Promise.allSettled([
                 Api.haAverage(), // Cached for 60s
                 Api.energyToday(),
@@ -374,6 +379,7 @@ export default function Dashboard() {
                 Api.executor.health(), // Phase 3
                 Api.priceForecast.outlook(), // Price Forecast
                 Api.getAdvice(), // Price advice
+                Api.priceForecast.priceForecastStatus(),
             ])
 
             // Phase 3: Update executor health status
@@ -384,6 +390,11 @@ export default function Dashboard() {
             // Price Forecast: Store outlook data
             if (priceOutlookData.status === 'fulfilled') {
                 setPriceOutlook(priceOutlookData.value)
+            }
+
+            // Price Forecast Status
+            if (priceForecastStatusData.status === 'fulfilled') {
+                setPriceForecastStatus(priceForecastStatusData.value)
             }
 
             // Price advice: Filter for price category
@@ -970,6 +981,7 @@ export default function Dashboard() {
                     batteryCapacity={batteryCapacity}
                     outlookData={priceOutlook}
                     priceAdvice={priceAdvice}
+                    priceForecastStatus={priceForecastStatus ?? undefined}
                 />
             </div>
         </main>
