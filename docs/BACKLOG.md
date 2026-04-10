@@ -81,6 +81,14 @@ This document contains ideas, improvements, and tasks that are not yet scheduled
 
 ---
 
+#### [Dashboard] Reorganize and Declutter Dashboard Layout
+
+**Goal:** Audit all dashboard cards for redundancy, oversized elements, and poor information hierarchy. Redesign the layout so the most actionable information is prominent and secondary data is accessible but not dominant.
+
+**Notes:** Raised after adding EV multi-day charging card to the Energy Resources section. The dashboard has grown organically and likely has cards that overlap in purpose or consume too much space relative to their value. Should be tackled as a standalone UX pass after the EV multi-day feature ships, so the final card set is known before optimizing layout.
+
+---
+
 ### 💡 Future Ideas (Brainstorming)
 
 #### [S-Index] `max_safety_buffer_pct` Cap Suppresses Risk-Level Differentiation
@@ -91,10 +99,8 @@ This document contains ideas, improvements, and tasks that are not yet scheduled
 
 ---
 
-#### [EV] Multi-Day EV Charging Planning
+#### ~~[EV] Multi-Day EV Charging Planning~~ → PROMOTED
 
-**Goal:** Allow users to plan EV charging across multiple days (e.g., "charge by Friday" from Monday), taking advantage of price differences over several days rather than just the next 24–48h horizon.
-
-**Notes:** Requires long-term price forecasting since Nordpool only publishes day-ahead prices (~13:00 for the following day). Candidate approach: a LightGBM model trained on weather (temperature, cloud cover), calendar features (weekday, season, holidays), and historical Nordpool prices to forecast 2–5 day price curves. Current `departure_time` field is recurring-daily only. Would need a date picker or "one-shot" mode alongside the recurring mode. Keep out of scope until long-term forecasting model exists.
+Promoted to active changes: `price-forecasting-module-4` (backend) and `price-forecasting-module-5` (UI + HA integration).
 
 ---

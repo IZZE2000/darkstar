@@ -19,7 +19,7 @@ import lightgbm as lgb
 import numpy as np
 import pandas as pd
 import pytz
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, func
 from sqlalchemy.orm import sessionmaker
 
 from backend.core.prices import calculate_import_export_prices
@@ -286,6 +286,48 @@ def _persist_forecasts(forecasts: list[dict[str, Any]], db_path: str) -> None:
         print(f"Error persisting forecasts: {exc}")
 
 
+def cleanup_price_forecast_duplicates(
+    db_path: str = "data/planner_learning.db",
+) -> int:
+    """
+    Delete all but the latest issue_timestamp row per (slot_start, days_ahead) pair.
+
+    Returns the number of rows deleted.
+    """
+    engine = create_engine(f"sqlite:///{db_path}")
+    SessionLocal = sessionmaker(bind=engine)
+    session = SessionLocal()
+
+    latest_per_slot = (
+        session.query(
+            PriceForecast.slot_start,
+            PriceForecast.days_ahead,
+            func.max(PriceForecast.issue_timestamp).label("latest_issue"),
+        )
+        .group_by(PriceForecast.slot_start, PriceForecast.days_ahead)
+        .subquery()
+    )
+
+    duplicates = (
+        session.query(PriceForecast)
+        .join(
+            latest_per_slot,
+            (PriceForecast.slot_start == latest_per_slot.c.slot_start)
+            & (PriceForecast.days_ahead == latest_per_slot.c.days_ahead),
+        )
+        .filter(PriceForecast.issue_timestamp != latest_per_slot.c.latest_issue)
+        .all()
+    )
+
+    count = len(duplicates)
+    for row in duplicates:
+        session.delete(row)
+
+    session.commit()
+    session.close()
+    return count
+
+
 async def get_price_forecasts_from_db(
     db_path: str = "data/planner_learning.db",
     days_ahead: int | None = None,
@@ -307,10 +349,41 @@ async def get_price_forecasts_from_db(
         SessionLocal = sessionmaker(bind=engine)
         session = SessionLocal()
 
-        query = session.query(PriceForecast)
-
         if days_ahead is not None:
-            query = query.filter(PriceForecast.days_ahead == days_ahead)
+            latest_per_slot = (
+                session.query(
+                    PriceForecast.slot_start,
+                    func.max(PriceForecast.issue_timestamp).label("latest_issue"),
+                )
+                .filter(PriceForecast.days_ahead == days_ahead)
+                .group_by(PriceForecast.slot_start)
+                .subquery()
+            )
+            query = (
+                session.query(PriceForecast)
+                .join(
+                    latest_per_slot,
+                    (PriceForecast.slot_start == latest_per_slot.c.slot_start)
+                    & (PriceForecast.issue_timestamp == latest_per_slot.c.latest_issue),
+                )
+                .filter(PriceForecast.days_ahead == days_ahead)
+            )
+        else:
+            latest_per_slot = (
+                session.query(
+                    PriceForecast.slot_start,
+                    PriceForecast.days_ahead,
+                    func.max(PriceForecast.issue_timestamp).label("latest_issue"),
+                )
+                .group_by(PriceForecast.slot_start, PriceForecast.days_ahead)
+                .subquery()
+            )
+            query = session.query(PriceForecast).join(
+                latest_per_slot,
+                (PriceForecast.slot_start == latest_per_slot.c.slot_start)
+                & (PriceForecast.days_ahead == latest_per_slot.c.days_ahead)
+                & (PriceForecast.issue_timestamp == latest_per_slot.c.latest_issue),
+            )
 
         query = query.order_by(PriceForecast.slot_start.desc()).limit(limit)
 
