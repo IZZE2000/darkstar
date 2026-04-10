@@ -341,7 +341,9 @@ async def get_executor_config() -> dict[str, Any]:
             "grid_max_export_power_switch": cfg.inverter.grid_max_export_power_switch,
         },
         "water_heater": {
-            "target_entity": cfg.water_heater.target_entity,
+            "target_entity": cfg.water_heater_devices[0].target_entity
+            if cfg.water_heater_devices
+            else None,
             "temp_normal": cfg.water_heater.temp_normal,
             "temp_off": cfg.water_heater.temp_off,
             "temp_boost": cfg.water_heater.temp_boost,
@@ -610,8 +612,8 @@ async def get_profile_suggestions(name: str) -> dict[str, Any]:
     in the profile's entity registry using the profile's default_entity values.
     """
     # Deferred imports to avoid circular dependencies
+    from backend.core.secrets import load_yaml
     from executor.profiles import load_profile
-    from inputs import load_yaml
 
     try:
         profile = load_profile(name)

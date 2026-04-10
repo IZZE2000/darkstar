@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import Card from '../../components/Card'
 import { useSettingsForm } from './hooks/useSettingsForm'
 import { SettingsField } from './components/SettingsField'
-import { batteryFieldList, batterySections, InverterProfile, BaseField } from './types'
+import { batteryFieldList, batterySections, InverterProfile, BaseField, generateProfileEntityFields } from './types'
 import { shouldRenderField } from './logic'
 import { motion, AnimatePresence } from 'framer-motion'
 import { AdditionalAdvancedNotice, GlobalAdvancedLockedNotice } from './components/AdvancedLockedNotice'
@@ -23,8 +23,19 @@ export const BatteryTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode 
             .catch((err) => console.error('Failed to load profiles:', err))
     }, [])
 
-    const { config, form, fieldErrors, loading, saving, handleChange, save, isDirty, haEntities, haLoading } =
-        useSettingsForm(batteryFieldList, profiles)
+    const {
+        config,
+        form,
+        fieldErrors,
+        loading,
+        saving,
+        statusMessage,
+        handleChange,
+        save,
+        isDirty,
+        haEntities,
+        haLoading,
+    } = useSettingsForm(batteryFieldList, profiles)
 
     const blocker = useUnsavedChangesGuard(isDirty)
     const hasHiddenSections = batterySections.some((s) => s.fields.every((f) => f.isAdvanced))
@@ -37,20 +48,9 @@ export const BatteryTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode 
         return batterySections.map((section) => {
             // Replace hardcoded "HA Control Entities" with dynamic fields from profile (battery category)
             if (section.title === 'HA Control Entities' && selectedProfile) {
-                const batteryEntities = Object.entries(selectedProfile.entities)
-                    .filter(([_, entity]) => entity.category === 'battery')
-                    .map(([key, entity]) => ({
-                        key: `executor.inverter.${key}`,
-                        label: entity.description,
-                        path: ['executor', 'inverter', key],
-                        type: 'entity' as const,
-                        helper: entity.required ? `Required for ${selectedProfile.name}` : `Optional`,
-                        required: entity.required,
-                        isAdvanced: false,
-                    }))
                 return {
                     ...section,
-                    fields: batteryEntities,
+                    fields: generateProfileEntityFields(selectedProfile, 'battery'),
                 }
             }
             return section
@@ -140,6 +140,29 @@ export const BatteryTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode 
             })}
 
             <AdditionalAdvancedNotice visible={!advancedMode} />
+
+            <div className="flex flex-wrap items-center gap-3">
+                <button
+                    disabled={saving}
+                    onClick={() => save()}
+                    className="flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-[11px] font-semibold transition btn-glow-primary bg-accent hover:bg-accent2 text-[#100f0e] disabled:opacity-50"
+                >
+                    {saving ? 'Saving…' : 'Save Battery Settings'}
+                </button>
+                {statusMessage && (
+                    <div
+                        className={`rounded-lg p-3 text-sm ${
+                            statusMessage.startsWith('Please fix') ||
+                            statusMessage.startsWith('Save failed') ||
+                            statusMessage.startsWith('Failed to load')
+                                ? 'bg-bad/10 border border-bad/30 text-bad'
+                                : 'bg-good/10 border border-good/30 text-good'
+                        }`}
+                    >
+                        {statusMessage}
+                    </div>
+                )}
+            </div>
 
             <NavigationBlockerDialog
                 visible={blocker.state === 'blocked'}

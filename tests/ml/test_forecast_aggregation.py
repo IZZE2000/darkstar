@@ -2,8 +2,8 @@ import unittest
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
-# We import inputs normally. We will patch OpenMeteoSolarForecast where it is USED.
-from inputs import _get_forecast_data_async
+# We import from forecasts module. We will patch OpenMeteoSolarForecast where it is USED.
+from backend.core.forecasts import _get_forecast_data_async
 
 
 class TestForecastAggregation(unittest.IsolatedAsyncioTestCase):
@@ -40,7 +40,7 @@ class TestForecastAggregation(unittest.IsolatedAsyncioTestCase):
         }
 
         # 4. Patch OpenMeteoSolarForecast inside inputs
-        with patch("inputs.OpenMeteoSolarForecast") as MockForecastClass:
+        with patch("backend.core.forecasts.OpenMeteoSolarForecast") as MockForecastClass:
             # Configure the mock instance
             mock_instance = AsyncMock()
             mock_instance.estimate.return_value = mock_estimate
@@ -49,7 +49,7 @@ class TestForecastAggregation(unittest.IsolatedAsyncioTestCase):
             MockForecastClass.return_value = mock_instance
 
             # Mock get_load_profile_from_ha to avoid HA calls
-            with patch("inputs.get_load_profile_from_ha", return_value=[0.5] * 96):
+            with patch("backend.core.ha_client.get_load_profile_from_ha", return_value=[0.5] * 96):
                 # 5. Call the function
                 result = await _get_forecast_data_async(price_slots, config)
 

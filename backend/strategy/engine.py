@@ -10,6 +10,15 @@ logger = logging.getLogger("darkstar.strategy")
 MAX_PV_DEFICIT_WEIGHT_BUMP = 0.1  # Was 0.4 - too aggressive, caused 37% target always
 MAX_TEMP_WEIGHT_BUMP = 0.05  # Was 0.2 - keep small to respect risk_appetite
 
+# Risk-based baseline shifts for dynamic export threshold (in SEK/kWh)
+RISK_BASELINE_SHIFTS = {
+    1: 0.15,  # Conservative: always maintain higher margin
+    2: 0.10,  # Cautious
+    3: 0.05,  # Balanced (default)
+    4: 0.02,  # Aggressive
+    5: 0.00,  # Maximum: can go to zero on high volatility days
+}
+
 
 class StrategyEngine:
     """
@@ -102,32 +111,49 @@ class StrategyEngine:
 
             kepler_overrides = {}
 
+            # Dynamic export threshold with continuous scaling based on price spread and risk appetite
+            risk_appetite = int(self.config.get("s_index", {}).get("risk_appetite", 3))
+            baseline = RISK_BASELINE_SHIFTS.get(risk_appetite, 0.05)
+
+            # Normalize spread: 0.0 at spread=0.3, 1.0 at spread=2.0
+            spread_norm = max(0.0, min(1.0, (spread - 0.3) / 1.7))
+
+            # Calculate threshold: 0.50 at low spread → baseline at high spread
+            export_threshold = round(0.50 - (0.50 - baseline) * spread_norm, 3)
+
+            kepler_overrides["export_threshold_sek_per_kwh"] = export_threshold
+
             if spread > 1.5:
                 logger.info(
                     f"Strategy: High Price Volatility (Spread {spread:.2f} SEK). Engaging Aggressive Mode."
                 )
                 kepler_overrides["wear_cost_sek_per_kwh"] = 0.0
                 kepler_overrides["ramping_cost_sek_per_kw"] = 0.01  # Very low
-                kepler_overrides["export_threshold_sek_per_kwh"] = 0.05
                 append_strategy_event(
                     "PRICE_VOLATILITY",
                     f"High Price Spread ({spread:.2f} SEK). Aggressive Mode engaged.",
-                    {"spread": spread, "mode": "aggressive"},
+                    {"spread": spread, "mode": "aggressive", "threshold": export_threshold},
                 )
 
             elif spread < 0.5:
                 logger.info(
                     f"Strategy: Low Price Volatility (Spread {spread:.2f} SEK). Engaging Conservative Mode."
                 )
-                # Assuming default wear cost is around 0.5-1.0 in config.
-                # We force it higher to discourage usage.
                 kepler_overrides["wear_cost_sek_per_kwh"] = 1.0
                 kepler_overrides["ramping_cost_sek_per_kw"] = 0.5  # High damping
-                kepler_overrides["export_threshold_sek_per_kwh"] = 0.2  # Need 20 ore spread
                 append_strategy_event(
                     "PRICE_VOLATILITY",
                     f"Low Price Spread ({spread:.2f} SEK). Conservative Mode engaged.",
-                    {"spread": spread, "mode": "conservative"},
+                    {"spread": spread, "mode": "conservative", "threshold": export_threshold},
+                )
+            else:
+                # Medium volatility: apply wear/ramping costs but with the dynamic threshold
+                # Use linear interpolation for wear/ramping between low (0.5) and high (1.5)
+                med_norm = (spread - 0.5) / 1.0  # 0.0 at 0.5, 1.0 at 1.5
+                kepler_overrides["wear_cost_sek_per_kwh"] = round(1.0 - med_norm * 1.0, 2)
+                kepler_overrides["ramping_cost_sek_per_kw"] = round(0.5 - med_norm * 0.49, 2)
+                logger.info(
+                    f"Strategy: Medium Price Volatility (Spread {spread:.2f} SEK). Using continuous scaling."
                 )
 
             if kepler_overrides:

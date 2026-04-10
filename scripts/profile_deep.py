@@ -76,7 +76,7 @@ async def main() -> None:
 
     # Step 4: Nordpool Prices
     start = time.time()
-    from inputs import get_nordpool_data
+    from backend.core.prices import get_nordpool_data
 
     price_data = await get_nordpool_data()
     _timings["4_nordpool"] = time.time() - start
@@ -84,7 +84,7 @@ async def main() -> None:
 
     # Step 5: Forecast Data
     start = time.time()
-    from inputs import get_forecast_data
+    from backend.core.forecasts import get_forecast_data
 
     forecast_result: dict[str, Any] = await get_forecast_data(price_data, config)
     _timings["5_forecast_data"] = time.time() - start
@@ -92,7 +92,7 @@ async def main() -> None:
 
     # Step 6: Initial State (HA Sensors)
     start = time.time()
-    from inputs import get_initial_state
+    from backend.core.ha_client import get_initial_state
 
     initial_state: dict[str, Any] = await get_initial_state()
     _timings["6_initial_state"] = time.time() - start

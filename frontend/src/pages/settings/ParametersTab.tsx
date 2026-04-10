@@ -136,7 +136,7 @@ export const ParametersTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMo
                     onClick={() => save()}
                     className="flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-[11px] font-semibold transition btn-glow-primary bg-accent hover:bg-accent2 text-[#100f0e] disabled:opacity-50"
                 >
-                    {saving ? 'Saving…' : 'Save Parameters'}
+                    {saving ? 'Saving…' : 'Save Parameter Settings'}
                 </button>
                 {statusMessage && (
                     <div

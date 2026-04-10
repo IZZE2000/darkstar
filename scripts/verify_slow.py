@@ -52,7 +52,6 @@ OLD_ROUTES = [
     ("GET", "/api/ha/services"),
     ("GET", "/api/ha/entity/sensor.test"),
     ("GET", "/api/ha/average"),
-    ("GET", "/api/ha/water_today"),
     ("GET", "/api/learning/status"),
     ("GET", "/api/learning/history"),
     ("POST", "/api/learning/run"),

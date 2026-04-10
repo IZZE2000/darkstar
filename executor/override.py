@@ -10,7 +10,7 @@ excess PV utilization).
 """
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
@@ -98,6 +98,8 @@ class SlotPlan:
     ev_charging_kw: float = 0.0
     soc_target: int = 50
     soc_projected: int = 50
+    ev_charger_plans: dict[str, float] = field(default_factory=lambda: {})
+    water_heater_plans: dict[str, float] = field(default_factory=lambda: {})
 
 
 class OverrideEvaluator:

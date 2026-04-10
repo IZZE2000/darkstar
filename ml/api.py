@@ -1,7 +1,7 @@
 """
 API router for Aurora-based forecasting.
 
-Supports hybrid PV forecasting with physics base + ML residual + corrector.
+Supports hybrid PV forecasting with physics base + ML residual.
 """
 
 from __future__ import annotations
@@ -12,13 +12,13 @@ import pandas as pd
 import pytz
 
 from backend.learning import LearningEngine, get_learning_engine
-from ml.weather import calculate_per_array_pv, calculate_physics_pv, get_weather_series
+from ml.weather import calculate_physics_pv, get_weather_series
 
 if TYPE_CHECKING:
     from datetime import datetime
 
 
-def _get_engine() -> LearningEngine:
+def get_engine() -> LearningEngine:
     """Return the shared LearningEngine instance."""
     return get_learning_engine()
 
@@ -48,11 +48,10 @@ async def get_forecast_slots(
     Hybrid PV Forecast Structure:
     - physics.pv_kwh: Physics-based forecast (POA irradiance calculation)
     - ml_residual.pv_kwh: ML residual correction (learns shadows, degradation)
-    - correction.pv_kwh: Corrector residual (short-term weather error)
-    - final.pv_kwh = physics + ml_residual + correction
+    - final.pv_kwh = physics + ml_residual
     - base.pv_kwh: Legacy field, equals physics.pv_kwh
     """
-    engine = _get_engine()
+    engine = get_engine()
     rows = await engine.store.get_forecasts_range(start_time, forecast_version)
 
     if not rows:
@@ -106,28 +105,20 @@ async def get_forecast_slots(
             }
 
     # Legacy Open-Meteo data (kept for backward compatibility)
+    # Now uses physics-based calculation from already-computed physics_data
     open_meteo_data: dict[str, dict[str, Any]] = {}
     if include_open_meteo and solar_arrays:
-        try:
-            if not weather_df.empty and "shortwave_radiation_w_m2" in weather_df.columns:
-                for ts_idx, row_data in weather_df.iterrows():
-                    ts_str = ts_idx.isoformat()  # type: ignore[attr-defined]
-                    radiation = row_data.get("shortwave_radiation_w_m2")
-                    total_kwh, per_array = calculate_per_array_pv(radiation, solar_arrays)
-                    open_meteo_data[ts_str] = {
-                        "open_meteo_kwh": total_kwh,
-                        "open_meteo_arrays": per_array if per_array else None,
-                    }
-        except Exception:
-            pass
+        for ts_str, phys_entry in physics_data.items():
+            open_meteo_data[ts_str] = {
+                "open_meteo_kwh": phys_entry.get("physics_kwh"),
+                "open_meteo_arrays": phys_entry.get("physics_arrays"),
+            }
 
     records: list[dict[str, Any]] = []
     for raw_row in df.to_dict("records"):
         row: dict[str, Any] = raw_row  # type: ignore[assignment]
         final_pv = float(row.get("pv_forecast_kwh") or 0.0)
         base_load = float(row.get("base_load_forecast_kwh") or row.get("load_forecast_kwh") or 0.0)
-        pv_correction = float(row.get("pv_correction_kwh") or 0.0)
-        load_corr = float(row.get("load_correction_kwh") or 0.0)
 
         pv_p10_val: float | None = row.get("pv_p10")
         pv_p90_val: float | None = row.get("pv_p90")
@@ -141,9 +132,8 @@ async def get_forecast_slots(
         phys_entry = physics_data.get(slot_ts_str, {})
         physics_kwh = float(phys_entry.get("physics_kwh", 0.0) or 0.0)
 
-        # Calculate ML residual: final - physics - correction
-        # Note: This is approximate since we don't store ml_residual separately
-        ml_residual_kwh = final_pv - physics_kwh - pv_correction
+        # Calculate ML residual: final - physics
+        ml_residual_kwh = final_pv - physics_kwh
 
         # Legacy Open-Meteo entry
         om_entry = open_meteo_data.get(slot_ts_str, {})
@@ -154,10 +144,9 @@ async def get_forecast_slots(
                 # Hybrid PV structure
                 "physics": {"pv_kwh": round(physics_kwh, 4)},
                 "ml_residual": {"pv_kwh": round(ml_residual_kwh, 4)},
-                "correction": {"pv_kwh": round(pv_correction, 4)},
                 "final": {
                     "pv_kwh": round(final_pv, 4),
-                    "load_kwh": round(base_load + load_corr, 4),
+                    "load_kwh": round(base_load, 4),
                 },
                 # Legacy fields (backward compatibility)
                 "base": {"pv_kwh": round(physics_kwh, 4), "load_kwh": round(base_load, 4)},

@@ -105,7 +105,6 @@ export type ConfigResponse = {
         water_min_spacing_hours: number
         sensor: string
         type: 'binary' | 'modulating'
-        nominal_power_kw: number
     }[]
     ev_chargers?: {
         id: string
@@ -134,12 +133,6 @@ export type ConfigSaveResponse = {
 export type HaAverageResponse = {
     average_load_kw?: number
     daily_kwh?: number
-    [key: string]: unknown
-}
-
-export type WaterTodayResponse = {
-    source?: 'home_assistant' | 'sqlite'
-    water_kwh_today?: number
     [key: string]: unknown
 }
 
@@ -439,6 +432,36 @@ export type LogInfoResponse = {
     last_modified: string
 }
 
+// Price Outlook Types (Tasks 3.1)
+export type PriceLevel = 'cheap' | 'normal' | 'expensive' | 'unknown'
+export type ConfidenceLevel = 'high' | 'medium' | 'low'
+
+export type PriceOutlookDay = {
+    date: string
+    day_label: string
+    days_ahead: number
+    avg_spot_p50: number
+    avg_spot_p10: number | null
+    avg_spot_p90: number | null
+    min_hour_p50: number
+    max_hour_p50: number
+    level: PriceLevel
+    confidence: ConfidenceLevel
+}
+
+export type PriceOutlookResponse = {
+    enabled: boolean
+    days: PriceOutlookDay[]
+    reference_avg: number | null
+    status: string
+}
+
+export type AdviceItem = {
+    category: string
+    message: string
+    priority: 'info' | 'warning' | 'error'
+}
+
 export type SystemHealthResponse = {
     learning: {
         total_runs: number
@@ -558,7 +581,6 @@ export const Api = {
     setTheme: (payload: { theme: string; accent_index?: number | null }) =>
         getJSON<ThemeSetResponse>('/api/theme', 'POST', payload),
     haAverage: () => getJSON<HaAverageResponse>('/api/ha/average'),
-    haWaterToday: () => getJSON<WaterTodayResponse>('/api/ha/water_today'),
     haTest: (payload: { url: string; token: string }) =>
         getJSON<{ status?: string; success?: boolean; message: string }>('/api/ha/test', 'POST', payload),
     haEntities: () =>
@@ -611,10 +633,6 @@ export const Api = {
             getJSON<AuroraBriefingResponse>('/api/aurora/briefing', 'POST', payload),
         toggleReflex: (enabled: boolean) =>
             getJSON<{ status: string; enabled: boolean }>('/api/aurora/config/toggle_reflex', 'POST', { enabled }),
-        toggleErrorCorrection: (enabled: boolean) =>
-            getJSON<{ status: string; enabled: boolean }>('/api/aurora/config/toggle_error_correction', 'POST', {
-                enabled,
-            }),
     },
     performanceData: (days = 7) => getJSON<AuroraPerformanceData>(`/api/performance/data?days=${days}`),
     // Executor controls
@@ -681,6 +699,10 @@ export const Api = {
     loadsDebug: () => getJSON<LoadsDebugResponse>('/api/loads/debug'),
     // Profile Management (Rev IP4)
     listProfiles: () => getJSON<import('../pages/settings/types').InverterProfile[]>('/api/profiles'),
+    // Price Forecast (Tasks 3.2)
+    priceForecast: {
+        outlook: () => getJSON<PriceOutlookResponse>('/api/price-forecast/outlook'),
+    },
 }
 
 export const Sel = {

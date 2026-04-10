@@ -26,15 +26,14 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytz
 
-from backend.loads.service import LoadDisaggregator
-
 # import yaml
 # Import existing HA config loader
-from inputs import load_home_assistant_config
+from backend.core.secrets import load_home_assistant_config
+from backend.loads.service import LoadDisaggregator
 
 from .actions import ActionDispatcher, ActionResult, HAClient
 from .config import load_executor_config, load_yaml
@@ -50,6 +49,15 @@ from .override import (
 logger = logging.getLogger(__name__)
 
 EXECUTOR_VERSION = "1.0.0"
+
+
+@dataclass
+class EVChargerState:
+    """Per-device EV charger runtime state."""
+
+    charging_active: bool = False
+    charging_started_at: datetime | None = None
+    charging_slot_end: datetime | None = None
 
 
 @dataclass
@@ -172,6 +180,9 @@ class ExecutorEngine:
         # Override notification deduplication (Issue 3 fix)
         self._last_override_type: str | None = None
 
+        # Cached system state for get_status() mode_intent computation
+        self._last_system_state: SystemState | None = None
+
         # System profile toggles (Rev O1)
         system_cfg = self._full_config.get("system", {})
         self._has_solar = system_cfg.get("has_solar", True)
@@ -179,16 +190,18 @@ class ExecutorEngine:
         self._has_water_heater = system_cfg.get("has_water_heater", True)
         self._has_ev_charger = system_cfg.get("has_ev_charger", False)
 
-        # EV charging state tracking (REV K25 Phase 5)
-        self._ev_charging_active = False
-        self._ev_charging_started_at: datetime | None = None
-        self._ev_charging_slot_end: datetime | None = None
+        # Per-device EV charging state tracking
+        self._ev_charger_states: dict[str, EVChargerState] = {}
 
         # REV F76 Phase 5: Smart logging state tracking (Issue 4 fix)
         self._ev_detected_last_tick = False
 
         # REV F76 Phase 5: Fail-safe error tracking (Issue 1 fix)
         self._ev_power_fetch_failed = False
+
+        # EV charge failure detection
+        self._ev_zero_power_ticks: int = 0
+        self._ev_failure_notified: bool = False
 
         # Recent errors tracking (Phase 3)
         self.recent_errors: collections.deque[dict[str, Any]] = collections.deque(maxlen=10)
@@ -198,6 +211,10 @@ class ExecutorEngine:
 
         # Async background tasks reference (RUF006 fix)
         self._background_tasks: set[asyncio.Task[Any]] = set()
+
+        # Config and profile mtime caching
+        self._config_mtime: float | None = None
+        self._profile_mtime: float | None = None
 
     def _get_db_path(self) -> str:
         """Get the path to the learning database."""
@@ -233,37 +250,64 @@ class ExecutorEngine:
         return True
 
     def reload_config(self) -> None:
-        """Reload configuration from config.yaml."""
+        """Reload configuration from config.yaml with mtime-based caching."""
+        current_config_mtime = Path(self.config_path).stat().st_mtime
+        if self._config_mtime is not None and current_config_mtime == self._config_mtime:
+            return
+
         with self._lock:
             self.config = load_executor_config(self.config_path)
             self._full_config = load_yaml(self.config_path)
+            self._config_mtime = current_config_mtime
             self.status.enabled = self.config.enabled
             self.status.shadow_mode = self.config.shadow_mode
             if self.dispatcher:
                 self.dispatcher.config = self.config  # propagate updated entities/settings
                 self.dispatcher.shadow_mode = self.config.shadow_mode
 
+            system_cfg = self._full_config.get("system", {})
+            self._has_water_heater = system_cfg.get("has_water_heater", True)
+            self._has_ev_charger = system_cfg.get("has_ev_charger", False)
+
             # Reload inverter profile if changed (REV FIX: Profile switch now takes effect immediately)
             from .profiles import get_profile_from_config
 
             try:
-                new_profile = get_profile_from_config(self._full_config)
-                if (
-                    new_profile.metadata.name != self.inverter_profile.metadata.name
-                    if self.inverter_profile
-                    else True
-                ):
-                    self.inverter_profile = new_profile
-                    self.status.profile_name = new_profile.metadata.name
-                    self.status.profile_error = None
-                    if self.dispatcher:
-                        self.dispatcher.profile = new_profile
-                    logger.info(
-                        "Inverter profile reloaded: %s v%s (%s)",
-                        new_profile.metadata.name,
-                        new_profile.metadata.version,
-                        ", ".join(new_profile.metadata.supported_brands),
-                    )
+                profile_name = self._full_config.get("system", {}).get(
+                    "inverter_profile", "generic"
+                )
+                profile_path = Path("profiles") / f"{profile_name}.yaml"
+
+                # Check profile mtime
+                should_reload_profile = True
+                if profile_path.exists():
+                    current_profile_mtime = profile_path.stat().st_mtime
+                    if (
+                        self._profile_mtime is not None
+                        and current_profile_mtime == self._profile_mtime
+                    ):
+                        should_reload_profile = False
+                    else:
+                        self._profile_mtime = current_profile_mtime
+
+                if should_reload_profile:
+                    new_profile = get_profile_from_config(self._full_config)
+                    if (
+                        new_profile.metadata.name != self.inverter_profile.metadata.name
+                        if self.inverter_profile
+                        else True
+                    ):
+                        self.inverter_profile = new_profile
+                        self.status.profile_name = new_profile.metadata.name
+                        self.status.profile_error = None
+                        if self.dispatcher:
+                            self.dispatcher.profile = new_profile
+                        logger.info(
+                            "Inverter profile reloaded: %s v%s (%s)",
+                            new_profile.metadata.name,
+                            new_profile.metadata.version,
+                            ", ".join(new_profile.metadata.supported_brands),
+                        )
             except Exception as e:
                 logger.error("Failed to reload inverter profile during config reload: %s", e)
                 self.status.profile_error = str(e)
@@ -279,13 +323,35 @@ class ExecutorEngine:
             now = datetime.now(tz)
             slot, slot_start = self._load_current_slot(now)
             if slot:
+                # Compute mode_intent using cached system state
+                mode_intent = None
+                try:
+                    if self._last_system_state is not None and self.inverter_profile is not None:
+                        decision = make_decision(
+                            slot,
+                            self._last_system_state,
+                            config=self.config.controller,
+                            inverter_config=self.config.inverter,
+                            water_heater_config=self.config.water_heater,
+                            water_heater_devices=self.config.water_heater_devices,
+                            profile=self.inverter_profile,
+                        )
+                        mode_intent = decision.mode_intent
+                except Exception as e:
+                    logger.debug("Could not compute mode_intent for status: %s", e)
+
                 current_slot_plan = {
                     "slot_start": slot_start,
                     "charge_kw": slot.charge_kw,
                     "export_kw": slot.export_kw,
                     "water_kw": slot.water_kw,
+                    "discharge_kw": slot.discharge_kw,
+                    "ev_charging_kw": slot.ev_charging_kw,
+                    "ev_charger_plans": slot.ev_charger_plans,
+                    "water_heater_plans": slot.water_heater_plans,
                     "soc_target": slot.soc_target,
                     "soc_projected": slot.soc_projected,
+                    "mode_intent": mode_intent,
                 }
         except Exception as e:
             logger.debug("Could not load current slot plan: %s", e)
@@ -358,13 +424,19 @@ class ExecutorEngine:
                     with contextlib.suppress(ValueError):
                         metrics["battery_kw"] = float(val) / 1000.0  # W to kW
 
-            # Water Heater Power
-            water_pwr_entity = input_sensors.get("water_power")
-            if water_pwr_entity:
-                val = await self.ha_client.get_state_value(water_pwr_entity)
-                if val and val not in ("unknown", "unavailable"):
-                    with contextlib.suppress(ValueError):
-                        metrics["water_kw"] = float(val) / 1000.0  # W to kW
+            # Water Heater Power (ARC15: read from water_heaters[] array, sum across enabled)
+            if self._has_water_heater:
+                water_heaters_array = self._full_config.get("water_heaters", [])
+                total_water_kw = 0.0
+                for heater in cast("list[dict[str, Any]]", water_heaters_array):
+                    sensor_entity = heater.get("sensor")
+                    if heater.get("enabled", True) and sensor_entity:
+                        val = await self.ha_client.get_state_value(sensor_entity)
+                        if val and val not in ("unknown", "unavailable"):
+                            with contextlib.suppress(ValueError):
+                                total_water_kw += float(val) / 1000.0  # W to kW
+                if total_water_kw > 0:
+                    metrics["water_kw"] = total_water_kw
 
         return metrics
 
@@ -1018,6 +1090,7 @@ class ExecutorEngine:
 
             # 3. Gather system state
             state = await self._gather_system_state()
+            self._last_system_state = state
 
             # Emit live metrics for UI sparklines (Rev E1)
             try:
@@ -1201,10 +1274,13 @@ class ExecutorEngine:
 
             # Rev EVFIX: Separate switch control from source isolation
             actual_ev_charging: bool = actual_ev_power_kw > 0.1
-            # Switch control: ONLY scheduled charging can turn on the switch
-            ev_should_charge_switch: bool = scheduled_ev_charging
             # Source isolation: Block discharge for both scheduled AND actual charging
             ev_should_charge_block: bool = scheduled_ev_charging or actual_ev_charging
+
+            # Preserve original slot before EV source isolation may overwrite discharge_kw
+            original_slot = slot
+            ev_isolation_reason: str | None = None
+            ev_charge_failed = False
 
             # Source Isolation: Block battery discharge when EV charging
             if ev_should_charge_block and self._has_battery:
@@ -1239,6 +1315,31 @@ class ExecutorEngine:
                     soc_target=slot.soc_target,
                     soc_projected=slot.soc_projected,
                 )
+
+                # EV charge failure detection: track ticks with zero actual power
+                if (
+                    scheduled_ev_charging
+                    and not actual_ev_charging
+                    and not self._ev_power_fetch_failed
+                ):
+                    self._ev_zero_power_ticks += 1
+                elif actual_ev_charging:
+                    self._ev_zero_power_ticks = 0
+
+                if self._ev_zero_power_ticks >= 5 and not self._ev_failure_notified:
+                    error_msg = (
+                        f"EV charge failure: {ev_charging_kw:.1f}kW scheduled, "
+                        f"{actual_ev_power_kw:.2f}kW actual for {self._ev_zero_power_ticks} consecutive ticks"
+                    )
+                    logger.warning(error_msg)
+                    if self.dispatcher:
+                        await self.dispatcher.notify_error(error_msg)
+                    self._ev_failure_notified = True
+                    ev_charge_failed = True
+
+                # Set isolation reason for execution record
+                actual_for_reason = actual_ev_power_kw if not self._ev_power_fetch_failed else 0.0
+                ev_isolation_reason = f"EV source isolation: {ev_charging_kw:.1f}kW scheduled, {actual_for_reason:.2f}kW actual"
             else:
                 # REV F76 Phase 5 (Issue 4): Smart state-based logging
                 if self._ev_detected_last_tick and not self._ev_power_fetch_failed:
@@ -1249,6 +1350,10 @@ class ExecutorEngine:
                     )
                 self._ev_detected_last_tick = False
 
+                # Reset EV failure detection when EV slot ends
+                self._ev_zero_power_ticks = 0
+                self._ev_failure_notified = False
+
             decision = make_decision(
                 slot,
                 state,
@@ -1256,38 +1361,51 @@ class ExecutorEngine:
                 self.config.controller,
                 self.config.inverter,
                 self.config.water_heater,
+                self.config.water_heater_devices,
                 self.inverter_profile,
             )
 
             self.status.last_action = decision.reason
 
-            # Control EV Charger Switch
-            if self._has_ev_charger and self.config.ev_charger.switch_entity:
-                await self._control_ev_charger(ev_should_charge_switch, ev_charging_kw, now)
+            # Control EV Charger Switch (per-device)
+            if self._has_ev_charger and self.config.ev_chargers:
+                await self._control_ev_charger(original_slot, now)
 
             # 6. Execute actions
             action_results: list[ActionResult] = []
             if self.dispatcher:
-                # Control Water Heater Temperature
-                if self._has_water_heater and self.config.water_heater.target_entity:
-                    water_result = await self.dispatcher.set_water_temp(decision.water_temp)
-                    action_results.append(water_result)
-
                 # REV UI11 Phase 7: Execute async actions
                 try:
+                    # Control Water Heater Temperature (per-device)
+                    if self._has_water_heater:
+                        if decision.water_temps and self.config.water_heater_devices:
+                            # New multi-device format: control each heater independently
+                            for device in self.config.water_heater_devices:
+                                temp = decision.water_temps.get(
+                                    device.id, self.config.water_heater.temp_off
+                                )
+                                water_result = await self.dispatcher.set_water_temp(
+                                    temp, device.target_entity
+                                )
+                                action_results.append(water_result)
+                        elif getattr(self.config.water_heater, "target_entity", None):
+                            # Legacy fallback: old-format schedule or single heater
+                            water_result = await self.dispatcher.set_water_temp(decision.water_temp)
+                            action_results.append(water_result)
+
                     # Fix Issue 0: Await expected coroutine properly
                     profile_results = await self.dispatcher.execute(decision)
                     action_results.extend(profile_results)
                 except Exception as e:
                     logger.error("Failed to execute async actions: %s", e)
-                    # Create a dummy failed result for the log
-                    action_results = [
+                    # Append a failed result for the log (do not replace existing results)
+                    action_results.append(
                         ActionResult(
                             action_type="execution_error",
                             success=False,
                             message=f"Async Execution Failed: {e!s}",
                         )
-                    ]
+                    )
 
                 # Phase 3: Capture errors from action results
                 for r in action_results:
@@ -1322,14 +1440,18 @@ class ExecutorEngine:
             duration_ms = int((time.time() - start_time) * 1000)
             record = self._create_execution_record(
                 now_iso=now_iso,
-                slot=slot,
+                slot=original_slot,
                 slot_start=slot_start,
                 state=state,
                 decision=decision,
                 override=override,
                 action_results=action_results,
-                success=(all(r.success for r in action_results) if action_results else True),
+                success=(
+                    not ev_charge_failed
+                    and (all(r.success for r in action_results) if action_results else True)
+                ),
                 duration_ms=duration_ms,
+                ev_isolation_reason=ev_isolation_reason,
             )
             self.history.log_execution(record)
 
@@ -1349,7 +1471,7 @@ class ExecutorEngine:
                 )
 
             # Rev F1: Update battery cost based on charging activity
-            self._update_battery_cost(state, decision, slot)
+            await self._update_battery_cost(state, decision, slot)
 
             self.status.last_run_status = "success"
             logger.info("Executor tick completed in %dms", duration_ms)
@@ -1471,6 +1593,29 @@ class ExecutorEngine:
             slot_data.get("projected_soc_percent", slot_data.get("soc_projected", 50)) or 50
         )
 
+        # Parse per-device EV charger plans (new multi-device format)
+        raw_ev_chargers = slot_data.get("ev_chargers")
+        ev_charger_plans: dict[str, float] = {}
+        if isinstance(raw_ev_chargers, dict):
+            typed_chargers = cast("dict[str, Any]", raw_ev_chargers)
+            ev_charger_plans = {
+                str(k): float(cast("float | str", v)) for k, v in typed_chargers.items()
+            }
+        elif not raw_ev_chargers and ev_charging_kw > 0 and self.config.ev_chargers:
+            # Backward compat: old-format schedule only has aggregate ev_charging_kw;
+            # map it to the first configured charger so per-device control still works.
+            ev_charger_plans = {self.config.ev_chargers[0].id: ev_charging_kw}
+
+        # Parse per-device water heater plans (new multi-device format)
+        raw_water_heaters = slot_data.get("water_heaters")
+        water_heater_plans: dict[str, float] = {}
+        if isinstance(raw_water_heaters, dict):
+            for k, v in raw_water_heaters.items():  # type: ignore[union-attr]
+                if isinstance(v, dict):
+                    water_heater_plans[str(k)] = float(v.get("heating_kw", 0.0))  # type: ignore[arg-type]
+                else:
+                    water_heater_plans[str(k)] = float(v)  # type: ignore[arg-type]
+
         return SlotPlan(
             charge_kw=charge_kw,
             discharge_kw=discharge_kw,
@@ -1480,6 +1625,8 @@ class ExecutorEngine:
             ev_charging_kw=ev_charging_kw,
             soc_target=soc_target,
             soc_projected=soc_projected,
+            ev_charger_plans=ev_charger_plans,
+            water_heater_plans=water_heater_plans,
         )
 
     async def _gather_system_state(self) -> SystemState:
@@ -1489,79 +1636,105 @@ class ExecutorEngine:
         if not self.ha_client:
             return state
 
+        from backend.core.ha_client import gather_sensor_reads
+
         # Get entity IDs from config (input_sensors section)
         input_sensors = self._full_config.get("input_sensors", {})
         soc_entity = input_sensors.get("battery_soc", "sensor.inverter_battery")
         pv_power_entity = input_sensors.get("pv_power", "sensor.inverter_pv_power")
         load_power_entity = input_sensors.get("load_power", "sensor.inverter_load_power")
 
+        system_config = self._full_config.get("system", {})
+        meter_type = system_config.get("grid_meter_type", "net")
+
+        work_mode_entity: str | None = getattr(self.config.inverter, "work_mode_entity", None)
+        grid_charging_entity: str | None = getattr(
+            self.config.inverter, "grid_charging_entity", None
+        )
+
+        ha = self.ha_client
+
+        # Build batch of independent sensor reads
+        reads: list[tuple[str, Any]] = []
+
+        if self.config.has_battery:
+            reads.append(("soc", lambda e=soc_entity: ha.get_state_value(e)))
+        if self.config.has_solar:
+            reads.append(("pv_power", lambda e=pv_power_entity: ha.get_state_value(e)))
+
+        reads.append(("load_power", lambda e=load_power_entity: ha.get_state_value(e)))
+
+        import_entity: str | None = None
+        export_entity: str | None = None
+        if meter_type == "dual":
+            import_entity = input_sensors.get("grid_import_power")
+            export_entity = input_sensors.get("grid_export_power")
+            if import_entity:
+                reads.append(("grid_import", lambda e=import_entity: ha.get_state_value(e)))
+            if export_entity:
+                reads.append(("grid_export", lambda e=export_entity: ha.get_state_value(e)))
+
+        if self.config.has_battery and work_mode_entity:
+            reads.append(("work_mode", lambda e=work_mode_entity: ha.get_state_value(e)))
+
+        if self.config.has_battery and grid_charging_entity:
+            reads.append(("grid_charging", lambda e=grid_charging_entity: ha.get_state_value(e)))
+
+        water_entity: str | None = None
+        if self.config.has_water_heater:
+            # Use first configured per-device target entity (or legacy global entity if present)
+            if self.config.water_heater_devices:
+                water_entity = self.config.water_heater_devices[0].target_entity
+            elif hasattr(self.config.water_heater, "target_entity"):
+                water_entity = self.config.water_heater.target_entity  # type: ignore[union-attr]
+            if water_entity:
+                reads.append(("water_temp", lambda e=water_entity: ha.get_state_value(e)))  # type: ignore[misc]
+
+        if self.config.manual_override_entity:
+            override_entity = self.config.manual_override_entity
+            reads.append(("manual_override", lambda e=override_entity: ha.get_state_value(e)))
+
         try:
-            # Get SoC (Rev O1)
-            if self.config.has_battery:
-                soc_str = await self.ha_client.get_state_value(soc_entity)
-                if soc_str and soc_str not in ("unknown", "unavailable"):
-                    state.current_soc_percent = float(soc_str)
+            results = await gather_sensor_reads(reads, context="executor_state")
 
-            # Get PV power (Rev O1)
-            if self.config.has_solar:
-                pv_str = await self.ha_client.get_state_value(pv_power_entity)
-                if pv_str and pv_str not in ("unknown", "unavailable"):
-                    state.current_pv_kw = float(pv_str) / 1000  # W to kW
+            soc_str = results.get("soc")
+            if soc_str and soc_str not in ("unknown", "unavailable"):
+                state.current_soc_percent = float(soc_str)
 
-            # Get load power
-            load_str = await self.ha_client.get_state_value(load_power_entity)
+            pv_str = results.get("pv_power")
+            if pv_str and pv_str not in ("unknown", "unavailable"):
+                state.current_pv_kw = float(pv_str) / 1000  # W to kW
+
+            load_str = results.get("load_power")
             if load_str and load_str not in ("unknown", "unavailable"):
                 state.current_load_kw = float(load_str) / 1000
 
-            # Get grid import/export (Rev E1) - only for dual metering
-            system_config = self._full_config.get("system", {})
-            meter_type = system_config.get("grid_meter_type", "net")
+            imp_str = results.get("grid_import")
+            if imp_str and imp_str not in ("unknown", "unavailable"):
+                state.current_import_kw = float(imp_str) / 1000
 
-            if meter_type == "dual":
-                import_entity = input_sensors.get("grid_import_power")
-                export_entity = input_sensors.get("grid_export_power")
+            exp_str = results.get("grid_export")
+            if exp_str and exp_str not in ("unknown", "unavailable"):
+                state.current_export_kw = float(exp_str) / 1000
 
-                if import_entity:
-                    imp_str = await self.ha_client.get_state_value(import_entity)
-                    if imp_str and imp_str not in ("unknown", "unavailable"):
-                        state.current_import_kw = float(imp_str) / 1000
+            work_mode = results.get("work_mode")
+            if work_mode:
+                state.current_work_mode = work_mode
 
-                if export_entity:
-                    exp_str = await self.ha_client.get_state_value(export_entity)
-                    if exp_str and exp_str not in ("unknown", "unavailable"):
-                        state.current_export_kw = float(exp_str) / 1000
-
-            # Get current work mode (only if entity configured)
-            work_mode_entity: str | None = getattr(self.config.inverter, "work_mode_entity", None)
-            if self.config.has_battery and work_mode_entity:
-                work_mode = await self.ha_client.get_state_value(work_mode_entity)
-                if work_mode:
-                    state.current_work_mode = work_mode
-
-            # Get grid charging state (only if entity configured)
-            grid_charging_entity: str | None = getattr(
-                self.config.inverter, "grid_charging_entity", None
-            )
-            if self.config.has_battery and grid_charging_entity and self.ha_client:
-                grid_charge = await self.ha_client.get_state_value(grid_charging_entity)
+            grid_charge = results.get("grid_charging")
+            if grid_charge is not None:
                 state.grid_charging_enabled = grid_charge == "on"
 
-            # Get water heater temp (Rev O1, only if entity configured)
-            if self.config.has_water_heater and self.config.water_heater.target_entity:
-                water_str = await self.ha_client.get_state_value(
-                    self.config.water_heater.target_entity
-                )
-                if water_str:
-                    state.current_water_temp = float(water_str)
+            water_str = results.get("water_temp")
+            if water_str:
+                state.current_water_temp = float(water_str)
 
             # Pass water heater configuration to state
             state.has_water_heater = self._has_water_heater
 
-            # Check manual override toggle (optional - don't fail if missing)
-            if self.config.manual_override_entity:
-                manual = await self.ha_client.get_state_value(self.config.manual_override_entity)
-                if manual is not None:
-                    state.manual_override_active = manual == "on"
+            manual = results.get("manual_override")
+            if manual is not None:
+                state.manual_override_active = manual == "on"
 
         except Exception as e:
             logger.warning("Failed to gather some system state: %s", e)
@@ -1579,6 +1752,7 @@ class ExecutorEngine:
         action_results: list[ActionResult],
         success: bool,
         duration_ms: int,
+        ev_isolation_reason: str | None = None,
     ) -> ExecutionRecord:
         """Create an execution record for logging."""
         return ExecutionRecord(
@@ -1591,6 +1765,9 @@ class ExecutorEngine:
             planned_water_kw=slot.water_kw,
             planned_soc_target=slot.soc_target,
             planned_soc_projected=slot.soc_projected,
+            ev_charging_kw=slot.ev_charging_kw,
+            ev_charger_plans=slot.ev_charger_plans if slot.ev_charger_plans else None,
+            water_heater_plans=slot.water_heater_plans if slot.water_heater_plans else None,
             # Commanded values
             commanded_work_mode=decision.mode_intent,
             commanded_grid_charging=1 if decision.mode_intent == "charge" else 0,
@@ -1608,7 +1785,7 @@ class ExecutorEngine:
             # Override
             override_active=1 if override.override_needed else 0,
             override_type=(override.override_type.value if override.override_needed else None),
-            override_reason=override.reason if override.override_needed else None,
+            override_reason=override.reason if override.override_needed else ev_isolation_reason,
             # Results (NEW: full detail for each controlled entity)
             action_results=[
                 {
@@ -1632,7 +1809,7 @@ class ExecutorEngine:
             executor_version=EXECUTOR_VERSION,
         )
 
-    def _update_battery_cost(
+    async def _update_battery_cost(
         self,
         state: SystemState,
         decision: ControllerDecision,
@@ -1683,22 +1860,9 @@ class ExecutorEngine:
             # Get current import price
             import_price = 0.5  # Default fallback
             try:
-                from inputs import get_nordpool_data
+                from backend.core.prices import get_nordpool_data
 
-                # Rev Fix: Safe async execution
-                # Check for existing event loop to avoid RuntimeError
-                try:
-                    loop = asyncio.get_running_loop()
-                except RuntimeError:
-                    loop = None
-
-                if loop and loop.is_running():
-                    logger.warning(
-                        "Event loop already running in Executor thread - skipping Nordpool fetch to avoid deadlock"
-                    )
-                    prices = []
-                else:
-                    prices = asyncio.run(get_nordpool_data("config.yaml"))
+                prices = await get_nordpool_data("config.yaml")
 
                 if prices:
                     # Get current slot's price
@@ -1725,120 +1889,117 @@ class ExecutorEngine:
         except Exception as e:
             logger.debug("Battery cost update skipped: %s", e)
 
-    async def _control_ev_charger(
-        self, should_charge: bool, charging_kw: float, now: datetime
-    ) -> None:
+    async def _control_ev_charger(self, slot: "SlotPlan | None", now: datetime) -> None:
         """
-        Control the EV charger switch and track charging state.
+        Control all configured EV charger switches per-device.
 
-        Args:
-            should_charge: Whether the schedule says EV should be charging
-            charging_kw: Planned charging power in kW
-            now: Current datetime
+        Each charger gets independent switch control and safety timeout based
+        on its per-device plan from slot.ev_charger_plans.
         """
         if not self.dispatcher or not self.ha_client:
             return
 
-        switch_entity = self.config.ev_charger.switch_entity
-        if not switch_entity:
-            return
+        for charger_cfg in self.config.ev_chargers:
+            switch_entity = charger_cfg.switch_entity
+            if not switch_entity:
+                continue
 
-        try:
-            # Check current state
-            current_state = await self.ha_client.get_state_value(switch_entity)
-            is_currently_on = current_state == "on" if current_state else False
+            charger_id = charger_cfg.id
+            charger_plan_kw = slot.ev_charger_plans.get(charger_id, 0.0) if slot else 0.0
+            should_charge = charger_plan_kw > 0.1
 
-            # Safety timeout: Check if we should stop due to expired plan
-            if is_currently_on and not should_charge and self._ev_charging_started_at:
-                elapsed = (now - self._ev_charging_started_at).total_seconds() / 60
-                max_duration = 30  # 30 minute safety timeout
-                if elapsed > max_duration:
-                    logger.warning(
-                        "EV charging safety timeout: Auto-stopping after %d minutes",
-                        int(elapsed),
-                    )
-                    should_charge = False  # Force stop
+            # Get or create per-device state
+            if charger_id not in self._ev_charger_states:
+                self._ev_charger_states[charger_id] = EVChargerState()
+            dev_state = self._ev_charger_states[charger_id]
 
-            # Determine action
-            if should_charge and not is_currently_on:
-                # Start charging via dispatcher (respects shadow mode)
-                result = await self.dispatcher.set_ev_charger_switch(
-                    switch_entity, turn_on=True, charging_kw=charging_kw
-                )
+            try:
+                current_state = await self.ha_client.get_state_value(switch_entity)
+                is_currently_on = current_state == "on" if current_state else False
 
-                if result.success:
-                    self._ev_charging_active = True
-                    self._ev_charging_started_at = now
-                    self._ev_charging_slot_end = now + timedelta(minutes=15)
-
-                    # Log charging event
-                    self.history.log_execution(
-                        ExecutionRecord(
-                            executed_at=now.isoformat(),
-                            slot_start=now.isoformat(),
-                            commanded_work_mode="ev_charge_start",
-                            before_soc_percent=0,  # Not applicable
-                            success=1 if not result.skipped else 0,
-                            source="ev_charger",
-                            duration_ms=result.duration_ms,
-                            action_results=[
-                                {
-                                    "type": result.action_type,
-                                    "success": result.success,
-                                    "message": result.message,
-                                    "entity_id": result.entity_id,
-                                    "previous_value": result.previous_value,
-                                    "new_value": result.new_value,
-                                    "verified_value": result.verified_value,
-                                    "verification_success": result.verification_success,
-                                    "skipped": result.skipped,
-                                    "error_details": result.error_details,
-                                }
-                            ],
+                # Safety timeout: stop if plan expired
+                if is_currently_on and not should_charge and dev_state.charging_started_at:
+                    elapsed = (now - dev_state.charging_started_at).total_seconds() / 60
+                    if elapsed > 30:
+                        logger.warning(
+                            "EV charger %s safety timeout: Auto-stopping after %d minutes",
+                            charger_id,
+                            int(elapsed),
                         )
+                        should_charge = False
+
+                if should_charge and not is_currently_on:
+                    result = await self.dispatcher.set_ev_charger_switch(
+                        switch_entity, turn_on=True, charging_kw=charger_plan_kw
                     )
-
-            elif not should_charge and is_currently_on:
-                # Stop charging via dispatcher (respects shadow mode)
-                result = await self.dispatcher.set_ev_charger_switch(
-                    switch_entity, turn_on=False, charging_kw=0.0
-                )
-
-                if result.success:
-                    self._ev_charging_active = False
-                    self._ev_charging_started_at = None
-                    self._ev_charging_slot_end = None
-
-                    # Log charging event
-                    self.history.log_execution(
-                        ExecutionRecord(
-                            executed_at=now.isoformat(),
-                            slot_start=now.isoformat(),
-                            commanded_work_mode="ev_charge_stop",
-                            before_soc_percent=0,
-                            success=1 if not result.skipped else 0,
-                            source="ev_charger",
-                            duration_ms=result.duration_ms,
-                            action_results=[
-                                {
-                                    "type": result.action_type,
-                                    "success": result.success,
-                                    "message": result.message,
-                                    "entity_id": result.entity_id,
-                                    "previous_value": result.previous_value,
-                                    "new_value": result.new_value,
-                                    "verified_value": result.verified_value,
-                                    "verification_success": result.verification_success,
-                                    "skipped": result.skipped,
-                                    "error_details": result.error_details,
-                                }
-                            ],
+                    if result.success:
+                        dev_state.charging_active = True
+                        dev_state.charging_started_at = now
+                        dev_state.charging_slot_end = now + timedelta(minutes=15)
+                        self.history.log_execution(
+                            ExecutionRecord(
+                                executed_at=now.isoformat(),
+                                slot_start=now.isoformat(),
+                                commanded_work_mode="ev_charge_start",
+                                before_soc_percent=0,
+                                success=1 if not result.skipped else 0,
+                                source="ev_charger",
+                                duration_ms=result.duration_ms,
+                                action_results=[
+                                    {
+                                        "type": result.action_type,
+                                        "success": result.success,
+                                        "message": result.message,
+                                        "entity_id": result.entity_id,
+                                        "charger_id": charger_id,
+                                        "previous_value": result.previous_value,
+                                        "new_value": result.new_value,
+                                        "verified_value": result.verified_value,
+                                        "verification_success": result.verification_success,
+                                        "skipped": result.skipped,
+                                        "error_details": result.error_details,
+                                    }
+                                ],
+                            )
                         )
+
+                elif not should_charge and is_currently_on:
+                    result = await self.dispatcher.set_ev_charger_switch(
+                        switch_entity, turn_on=False, charging_kw=0.0
                     )
+                    if result.success:
+                        dev_state.charging_active = False
+                        dev_state.charging_started_at = None
+                        dev_state.charging_slot_end = None
+                        self.history.log_execution(
+                            ExecutionRecord(
+                                executed_at=now.isoformat(),
+                                slot_start=now.isoformat(),
+                                commanded_work_mode="ev_charge_stop",
+                                before_soc_percent=0,
+                                success=1 if not result.skipped else 0,
+                                source="ev_charger",
+                                duration_ms=result.duration_ms,
+                                action_results=[
+                                    {
+                                        "type": result.action_type,
+                                        "success": result.success,
+                                        "message": result.message,
+                                        "entity_id": result.entity_id,
+                                        "charger_id": charger_id,
+                                        "previous_value": result.previous_value,
+                                        "new_value": result.new_value,
+                                        "verified_value": result.verified_value,
+                                        "verification_success": result.verification_success,
+                                        "skipped": result.skipped,
+                                        "error_details": result.error_details,
+                                    }
+                                ],
+                            )
+                        )
 
-            elif should_charge and is_currently_on:
-                # Continue charging - update tracking
-                self._ev_charging_slot_end = now + timedelta(minutes=15)
+                elif should_charge and is_currently_on:
+                    dev_state.charging_slot_end = now + timedelta(minutes=15)
 
-        except Exception as e:
-            logger.error("Failed to control EV charger: %s", e)
+            except Exception as e:
+                logger.error("Failed to control EV charger %s: %s", charger_id, e)

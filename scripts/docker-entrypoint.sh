@@ -40,8 +40,9 @@ cleanup() {
 
 trap cleanup SIGTERM SIGINT SIGHUP
 
+APP_VERSION=$(cat /app/VERSION 2>/dev/null || echo "unknown")
 log "=========================================="
-log "  Darkstar Energy Manager v2.5.1-beta"
+log "  Darkstar Energy Manager ${APP_VERSION}"
 log "=========================================="
 
 # Check for required config files

@@ -8,6 +8,8 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import func, select
 
+from backend.core.prices import get_nordpool_data
+from backend.core.secrets import load_yaml
 from backend.learning import LearningEngine, get_learning_engine
 from backend.learning.models import (
     LearningRun,
@@ -15,7 +17,6 @@ from backend.learning.models import (
     SlotObservation,
 )
 from backend.strategy.history import get_strategy_history
-from inputs import get_nordpool_data, load_yaml
 from ml.api import get_forecast_slots
 
 # from ml.weather import get_weather_volatility # Not strictly needed if we mock or reuse logic
@@ -389,7 +390,6 @@ async def aurora_dashboard() -> dict[str, Any]:
         "history": {"strategy_events": strategy_history},
         "status": "online" if engine else "offline",
         "state": {
-            "auto_tune_enabled": config.get("learning", {}).get("auto_tune_enabled", False),
             "reflex_enabled": config.get("learning", {}).get("reflex_enabled", False),
             "risk_profile": {
                 "risk_appetite": config.get("s_index", {}).get("risk_appetite", 3),

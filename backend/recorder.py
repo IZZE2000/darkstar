@@ -10,19 +10,21 @@ import pandas as pd
 import pytz
 import yaml
 
+from backend.core.ha_client import (
+    _normalize_energy_to_kwh,  # pyright: ignore[reportPrivateUsage]
+    gather_sensor_reads,
+    get_energy_from_power_history,
+    get_ha_entity_state,
+    get_ha_sensor_float,
+    get_ha_sensor_kw_normalized,
+)
+from backend.core.prices import get_current_slot_prices
 from backend.learning.backfill import BackfillEngine
 
 # Local imports
 from backend.learning.store import LearningStore
 from backend.loads.service import LoadDisaggregator
 from backend.validation import get_max_energy_per_slot, validate_energy_values
-from inputs import (
-    _normalize_energy_to_kwh,  # pyright: ignore[reportPrivateUsage]
-    get_current_slot_prices,
-    get_ha_entity_state,
-    get_ha_sensor_float,
-    get_ha_sensor_kw_normalized,
-)
 
 logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
 logger = logging.getLogger("recorder")
@@ -239,9 +241,21 @@ async def record_observation_from_current_state(
         entity = input_sensors.get(key)
         if not entity:
             return None, None
+        return await get_cumulative_kwh_for_entity(str(entity))
+
+    async def get_cumulative_kwh_for_entity(entity_id: str) -> tuple[float | None, datetime | None]:
+        """Fetch cumulative energy sensor value in kWh and its HA timestamp by entity ID.
+
+        Args:
+            entity_id: The Home Assistant entity ID to fetch
+
+        Returns:
+            Tuple of (kwh_value, sensor_timestamp) where sensor_timestamp is
+            the HA entity's last_updated time for time-proportional scaling.
+        """
         try:
             # Fetch full state to get both value and unit_of_measurement
-            state = await get_ha_entity_state(str(entity))
+            state = await get_ha_entity_state(entity_id)
             if not state:
                 return None, None
 
@@ -276,9 +290,51 @@ async def record_observation_from_current_state(
         except Exception:
             return None, None
 
-    # Current Power State (Snapshot)
-    pv_kw = await get_kw("pv_power")
-    total_load_kw = await get_kw("load_power")
+    # Grid Metering Logic (REV // UI5)
+    meter_type = config.get("system", {}).get("grid_meter_type", "net")
+
+    # Build batch of independent power sensor reads (Current Power State Snapshot)
+    power_reads: list[tuple[str, Any]] = [
+        ("pv_power", lambda: get_kw("pv_power")),
+        ("load_power", lambda: get_kw("load_power")),
+        ("battery_power", lambda: get_kw("battery_power")),
+    ]
+
+    # Collect water heater sensor reads (ARC15: read from water_heaters[] array)
+    water_heater_sensors: list[str] = []
+    if config.get("system", {}).get("has_water_heater", True):
+        for water_heater in config.get("water_heaters", []):
+            if water_heater.get("enabled", True):
+                sensor = water_heater.get("sensor")
+                if sensor:
+                    water_heater_sensors.append(str(sensor))
+                    power_reads.append(
+                        (f"wh_{sensor}", lambda s=str(sensor): get_ha_sensor_kw_normalized(s))
+                    )
+    if meter_type == "dual":
+        power_reads.append(("grid_import_power", lambda: get_kw("grid_import_power")))
+        power_reads.append(("grid_export_power", lambda: get_kw("grid_export_power")))
+    else:
+        power_reads.append(("grid_power", lambda: get_kw("grid_power")))
+
+    # Collect EV charger sensor reads into the batch
+    ev_charger_sensors: list[str] = []
+    if config.get("system", {}).get("has_ev_charger", False):
+        ev_chargers = config.get("ev_chargers", [])
+        for ev_charger in ev_chargers:
+            if ev_charger.get("enabled", True):
+                sensor = ev_charger.get("sensor")
+                if sensor:
+                    ev_charger_sensors.append(str(sensor))
+                    power_reads.append(
+                        (f"ev_{sensor}", lambda s=str(sensor): get_ha_sensor_kw_normalized(s))
+                    )
+
+    power_results = await gather_sensor_reads(power_reads, context="recorder_observation")
+
+    pv_kw: float = power_results.get("pv_power") or 0.0
+    total_load_kw: float = power_results.get("load_power") or 0.0
+    battery_kw: float = power_results.get("battery_power") or 0.0
 
     # Disaggregate loads if disaggregator is provided (REV // ML2)
     controllable_kw = 0.0
@@ -291,38 +347,17 @@ async def record_observation_from_current_state(
     else:
         load_kw = total_load_kw
 
-    # Grid Metering Logic (REV // UI5)
-    meter_type = config.get("system", {}).get("grid_meter_type", "net")
     import_kw: float = 0.0
     export_kw: float = 0.0
     grid_net_kw: float = 0.0
 
     if meter_type == "dual":
-        # Dual sensors (Import/Export separate)
-        import_kw = await get_kw("grid_import_power")
-        export_kw = await get_kw("grid_export_power")
+        import_kw = power_results.get("grid_import_power") or 0.0
+        export_kw = power_results.get("grid_export_power") or 0.0
     else:
-        # Net Meter (Single sensor, positive = import, negative = export)
-        grid_net_kw = await get_kw("grid_power")
+        grid_net_kw = power_results.get("grid_power") or 0.0
         import_kw = max(0.0, grid_net_kw)
         export_kw = max(0.0, -grid_net_kw)
-
-    battery_kw = await get_kw("battery_power")
-    water_kw = await get_kw("water_power")
-
-    # Collect EV charging power from all configured EV chargers
-    ev_charging_kw = 0.0
-    ev_chargers = config.get("ev_chargers", [])
-    for ev_charger in ev_chargers:
-        if ev_charger.get("enabled", True):
-            sensor = ev_charger.get("sensor")
-            if sensor:
-                try:
-                    val = await get_ha_sensor_kw_normalized(str(sensor))
-                    if val is not None:
-                        ev_charging_kw += val
-                except Exception:
-                    pass  # Sensor not available, skip
 
     # Apply inversion flags if configured (REV F55)
     input_sensors = config.get("input_sensors", {})
@@ -416,14 +451,56 @@ async def record_observation_from_current_state(
             import_kwh = import_kw * 0.25
             export_kwh = export_kw * 0.25
 
-    # Water and EV still use power snapshots (no cumulative sensors available)
-    # Calculate early so we can subtract from total load when using cumulative sensor
-    water_kwh = water_kw * 0.25
-    ev_charging_kwh = ev_charging_kw * 0.25
+    # Calculate EV charging energy using power history API
+    ev_charging_kwh = 0.0
+    ev_charger_energy: dict[str, float] = {}  # Task 8.1: per-device recording
+    if config.get("system", {}).get("has_ev_charger", False):
+        ev_chargers = config.get("ev_chargers", [])
+        for ev_charger in ev_chargers:
+            if ev_charger.get("enabled", True):
+                sensor = ev_charger.get("sensor")
+                charger_id = str(ev_charger.get("id", ""))
+                if sensor:
+                    energy = await get_energy_from_power_history(str(sensor), slot_start, slot_end)
+                    if energy is not None:
+                        ev_charging_kwh += energy
+                        if charger_id:
+                            ev_charger_energy[charger_id] = energy
+                        logger.debug(f"EV {charger_id}: history energy={energy:.3f} kWh")
+                    else:
+                        charger_power = power_results.get(f"ev_{sensor}") or 0.0
+                        device_kwh = charger_power * 0.25
+                        ev_charging_kwh += device_kwh
+                        if charger_id:
+                            ev_charger_energy[charger_id] = device_kwh
+                        logger.debug(f"EV {charger_id}: snapshot fallback={device_kwh:.3f} kWh")
 
-    # Isolate base load from deferrable loads when cumulative sensor was used
-    # Power snapshot path already uses disaggregator's base_load_kw
-    if used_cumulative_load:
+    # Calculate water heater energy using power history API
+    water_kwh = 0.0
+    water_heater_energy: dict[str, float] = {}  # Task 8.1: per-device recording
+    for water_heater in config.get("water_heaters", []):
+        if water_heater.get("enabled", True):
+            sensor = water_heater.get("sensor")
+            heater_id = str(water_heater.get("id", ""))
+            if sensor:
+                energy = await get_energy_from_power_history(str(sensor), slot_start, slot_end)
+                if energy is not None:
+                    water_kwh += energy
+                    if heater_id:
+                        water_heater_energy[heater_id] = energy
+                    logger.debug(f"Water {heater_id}: history energy={energy:.3f} kWh")
+                else:
+                    heater_power = power_results.get(f"wh_{sensor}") or 0.0
+                    device_kwh = heater_power * 0.25
+                    water_kwh += device_kwh
+                    if heater_id:
+                        water_heater_energy[heater_id] = device_kwh
+                    logger.debug(f"Water {heater_id}: snapshot fallback={device_kwh:.3f} kWh")
+
+    # Isolate base load: subtract known deferrable loads from total load.
+    # Apply when load represents total consumption (cumulative sensor, or power snapshot without
+    # disaggregator). Skip when disaggregator already provided base-load-only power_kw.
+    if (used_cumulative_load or not disaggregator) and (ev_charging_kwh > 0 or water_kwh > 0):
         base_load_kwh = load_kwh - ev_charging_kwh - water_kwh
         if base_load_kwh < 0:
             logger.warning(
@@ -489,8 +566,10 @@ async def record_observation_from_current_state(
         "load_kwh": load_kwh,
         "import_kwh": import_kwh,
         "export_kwh": export_kwh,
-        "water_kwh": water_kwh,
+        "water_kwh": water_kwh,  # Task 8.3: aggregate preserved for backward compat
+        "water_heater_energy": water_heater_energy if water_heater_energy else None,  # Task 8.2
         "ev_charging_kwh": ev_charging_kwh,
+        "ev_charger_energy": ev_charger_energy if ev_charger_energy else None,
         "batt_charge_kwh": batt_charge_kwh,
         "batt_discharge_kwh": batt_discharge_kwh,
         "soc_end_percent": soc_percent,
@@ -501,7 +580,8 @@ async def record_observation_from_current_state(
 
     logger.info(
         f"Recording observation for {slot_start}: SOC={soc_percent}% "
-        f"PV={pv_kwh:.3f}kWh Load={load_kwh:.3f}kWh Water={water_kwh:.3f}kWh Bat={battery_kw:.3f}kW"
+        f"PV={pv_kwh:.3f}kWh Load={load_kwh:.3f}kWh Water={water_kwh:.3f}kWh "
+        f"EV={ev_charging_kwh:.3f}kWh Bat={battery_kw:.3f}kW"
     )
 
     # Validate energy values before storage
@@ -527,23 +607,10 @@ async def _sleep_until_next_quarter() -> None:
     await asyncio.sleep(sleep_seconds)
 
 
-async def run_analyst() -> None:
-    """Run the Learning Analyst to update s_index_base_factor and bias adjustments."""
-    try:
-        from backend.learning.analyst import Analyst
-
-        config = _load_config()
-        print("[recorder] Running Analyst (Learning Loop)...")
-        analyst = Analyst(config)
-        await analyst.update_learning_overlays()
-    except Exception as e:
-        print(f"[recorder] Analyst failed: {e}")
-
-
 async def backfill_missing_prices():
     """Backfill missing price data for historical observations."""
     try:
-        from inputs import get_nordpool_data
+        from backend.core.prices import get_nordpool_data
 
         config = _load_config()
         db_path = config.get("learning", {}).get("sqlite_path", "data/planner_learning.db")
@@ -621,8 +688,6 @@ async def main() -> int:
     print("[recorder] Starting live observation recorder (15m cadence)")
 
     config = _load_config()
-    tz_name = config.get("timezone", "Europe/Stockholm")
-    tz = pytz.timezone(tz_name)
 
     # Run backfill on startup
     try:
@@ -632,14 +697,8 @@ async def main() -> int:
     except Exception as e:
         print(f"[recorder] Backfill failed: {e}")
 
-    # Run Analyst on startup
-    await run_analyst()
-
     # Run Price Backfill on startup
     await backfill_missing_prices()
-
-    # Track last analyst run date to run once daily at ~6 AM local
-    last_analyst_date = datetime.now(tz).date()
 
     # Initialize disaggregator (REV // ML2)
     disaggregator = LoadDisaggregator(config)
@@ -649,13 +708,6 @@ async def main() -> int:
             await record_observation_from_current_state(config, disaggregator)
         except Exception as exc:  # pragma: no cover - defensive logging
             print(f"[recorder] Error while recording observation: {exc}")
-
-        # Run Analyst once per day around 6 AM local time
-        now_local = datetime.now(tz)
-        if now_local.date() > last_analyst_date and now_local.hour >= 6:
-            print(f"[recorder] Daily Analyst run triggered ({now_local.date()})")
-            await run_analyst()
-            last_analyst_date = now_local.date()
 
         await _sleep_until_next_quarter()
 

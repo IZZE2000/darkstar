@@ -5,7 +5,7 @@ Type definitions for the Kepler MILP solver input/output.
 Migrated from backend/kepler/types.py for the new planner package.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 
 
@@ -15,6 +15,32 @@ class IncentiveBucket:
 
     threshold_soc: float
     value_sek: float
+
+
+@dataclass
+class WaterHeaterInput:
+    """Per-device water heater input for the Kepler MILP solver."""
+
+    id: str
+    power_kw: float
+    min_kwh_per_day: float
+    max_hours_between_heating: float
+    min_spacing_hours: float
+    force_on_slots: list[int] | None = None
+    heated_today_kwh: float = 0.0
+
+
+@dataclass
+class EVChargerInput:
+    """Per-device EV charger input for the Kepler MILP solver."""
+
+    id: str
+    max_power_kw: float
+    battery_capacity_kwh: float
+    current_soc_percent: float
+    plugged_in: bool
+    deadline: datetime | None
+    incentive_buckets: list[IncentiveBucket] = field(default_factory=lambda: [])
 
 
 @dataclass
@@ -32,53 +58,37 @@ class KeplerConfig:
     # Optional export limits (if any)
     max_export_power_kw: float | None = None
     max_import_power_kw: float | None = None
+    max_inverter_ac_kw: float | None = (
+        None  # Inverter AC output limit (PV + battery discharge combined)
+    )
     target_soc_kwh: float | None = None  # Minimum SoC at end of horizon
     target_soc_penalty_sek: float = 0.0  # Set by pipeline (Safety Floor penalty)
     curtailment_penalty_sek: float = 0.0  # Penalty for wasting available solar power
     ramping_cost_sek_per_kw: float = 0.0  # Penalty for power changes
     export_threshold_sek_per_kwh: float = 0.0  # Min spread to export
     grid_import_limit_kw: float | None = None  # Soft constraint
-    # Water heating as deferrable load (Rev K17/K18)
-    water_heating_power_kw: float = 0.0  # 0 = disabled
-    water_heating_min_kwh: float = 0.0  # Daily minimum
+    # Per-device water heater inputs (replaces scalar water fields)
+    water_heaters: list[WaterHeaterInput] = field(default_factory=lambda: [])
+
+    # Global water heating settings (apply to all heaters)
     water_heating_max_gap_hours: float = 0.0  # Threshold for gap penalty (0 = disabled)
-    water_heated_today_kwh: float = 0.0  # Already heated today (reduces remaining min)
-    water_comfort_penalty_sek: float = 0.50  # Penalty per hour beyond gap threshold
-    water_block_penalty_sek: float = 0.0  # Set by config (default 0.50)
-    water_reliability_penalty_sek: float = 0.0  # Set by config (default 1000.0)
-    max_block_hours: float = 2.0  # Rev K24: Dynamic window size per comfort level
-    water_min_spacing_hours: float = (
-        4.0  # Rev K21/PERF1: STRICT min gap between starts. Hard Constraint.
-    )
+    water_comfort_penalty_sek: float = 0.50  # Penalty per hour beyond gap threshold (deprecated)
+    water_block_penalty_sek: float = 0.0  # Penalty per slot for overshooting block window
+    water_reliability_penalty_sek: float = 0.0  # Penalty per day for missing daily minimum
+    max_block_hours: float = 2.0  # Rev K24: Dynamic window size per comfort level (global)
     water_spacing_penalty_sek: float = (
-        0.20  # DEPRECATED (PERF1): No longer used. Spacing is now a hard constraint.
+        0.20  # DEPRECATED (PERF1): No longer used. Spacing is now a hard constraint per device.
     )
-    # Rev WH2: Mid-block locking (force ON for specific slots)
-    force_water_on_slots: list[int] | None = None  # Slots indices that MUST be ON
-
-    # Rev WH2: Block start penalty
-    water_block_start_penalty_sek: float = 0.0  # Set by config (default 3.0)
-
-    # Rev K16 Phase 4: Switch penalty (Soft Spacing) - REMOVED (Reverted to Binary Starts)
-
-    # Rev WH2: Smart deferral
-    defer_up_to_hours: float = 0.0  # Allow heating until N hours into next day
+    water_block_start_penalty_sek: float = 0.0  # Penalty per block start (global)
+    defer_up_to_hours: float = 0.0  # Allow heating until N hours into next day (global)
 
     # Rev E4: Export Toggle
     enable_export: bool = True  # If False, enforce 0 export
 
-    # EV Charging as deferrable load (Rev K25)
-    ev_charging_enabled: bool = False  # Master switch for EV optimization
-    ev_max_power_kw: float = 0.0  # Max EV charging power (kW)
-    ev_battery_capacity_kwh: float = 0.0  # EV battery capacity
-    ev_current_soc_percent: float = 0.0  # Current EV SoC
-    ev_plugged_in: bool = False  # Whether car is currently plugged in
-    # Incentive buckets for piecewise linear objective (Rev // F51)
-    ev_incentive_buckets: list[IncentiveBucket] | None = None
-    # REV K25 Phase 3: Departure time constraint
-    ev_deadline: datetime | None = None  # Deadline for EV charging (None = no deadline)
-    # REV K25 Phase 5: Deadline urgency flag
-    ev_deadline_urgent: bool = False  # True if deadline < 1 hour away (maximize charging)
+    # EV Charging as deferrable load (per-device, multi-charger support)
+    ev_chargers: list[EVChargerInput] = field(
+        default_factory=lambda: []
+    )  # Per-device EV charger inputs
 
     def __post_init__(self):
         """Validate configuration after initialization."""
@@ -136,8 +146,14 @@ class KeplerResultSlot:
     cost_sek: float
     import_price_sek_kwh: float = 0.0
     export_price_sek_kwh: float = 0.0
-    water_heat_kw: float = 0.0  # Rev K17: Water heating power in this slot
-    ev_charge_kw: float = 0.0  # Rev K25: EV charging power in this slot
+    water_heat_kw: float = 0.0  # Aggregate water heating power (backward compat)
+    water_heater_results: dict[str, float] = field(
+        default_factory=lambda: {}
+    )  # Per-device: heater_id -> kW
+    ev_charge_kw: float = 0.0  # Aggregate EV charging power in this slot (backward compat)
+    ev_charger_results: dict[str, float] = field(
+        default_factory=lambda: {}
+    )  # Per-device: charger_id -> kW
     is_optimal: bool = True
 
 

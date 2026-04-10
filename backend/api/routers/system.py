@@ -16,12 +16,8 @@ from backend.api.models.system import (
     SystemHealthResponse,
     VersionResponse,
 )
-from inputs import (
-    get_ha_bool,
-    get_ha_sensor_float,
-    get_ha_sensor_kw_normalized,
-    load_yaml,
-)
+from backend.core.ha_client import get_ha_bool, get_ha_sensor_float, get_ha_sensor_kw_normalized
+from backend.core.secrets import load_yaml
 
 logger = logging.getLogger("darkstar.api.system")
 router = APIRouter(tags=["system"])

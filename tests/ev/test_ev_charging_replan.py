@@ -7,12 +7,13 @@ Covers asyncio cross-thread dispatch, config path fixes, and executor gating.
 
 import asyncio
 from pathlib import Path
+from typing import ClassVar
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import yaml
 
-from executor.config import EVChargerConfig
+from executor.config import EVChargerConfig, EVChargerDeviceConfig
 from executor.engine import ExecutorEngine
 
 
@@ -92,10 +93,16 @@ class TestEVReplanAsyncDispatch:
                 mock_run_threadsafe.return_value = mock_future
 
                 # Mock the scheduler service (imported inside the function)
-                with patch(
-                    "backend.services.scheduler_service.scheduler_service"
-                ) as mock_scheduler:
+                with (
+                    patch("backend.services.scheduler_service.scheduler_service") as mock_scheduler,
+                    patch("backend.ha_socket.load_yaml") as mock_load_yaml,
+                ):
                     mock_scheduler.trigger_now = AsyncMock(return_value=MagicMock(success=True))
+                    # Return the config literal
+                    mock_load_yaml.return_value = {
+                        "system": {"has_ev_charger": True},
+                        "ev_chargers": [{"enabled": True, "replan_on_plugin": True}],
+                    }
 
                     # Call the trigger method
                     client._trigger_ev_replan()
@@ -105,6 +112,11 @@ class TestEVReplanAsyncDispatch:
                     # Verify the coroutine and loop were passed correctly
                     args = mock_run_threadsafe.call_args
                     assert args[0][1] == loop  # Second arg should be the main loop
+
+                    # Close the coroutine that was passed to run_coroutine_threadsafe.
+                    # The mock intercepted it without consuming/awaiting it, so Python
+                    # would emit a "coroutine never awaited" warning during GC otherwise.
+                    mock_run_threadsafe.call_args[0][0].close()
 
                     # Verify add_done_callback was called
                     mock_future.add_done_callback.assert_called_once()
@@ -152,8 +164,16 @@ class TestEVReplanConfigPath:
             client = HAWebSocketClient()
             client.main_loop = asyncio.get_event_loop()
 
-            with patch("backend.services.scheduler_service.scheduler_service") as mock_scheduler:
+            with (
+                patch("backend.services.scheduler_service.scheduler_service") as mock_scheduler,
+                patch("backend.ha_socket.load_yaml") as mock_load_yaml,
+            ):
                 mock_scheduler.trigger_now = AsyncMock()
+                # Return the config literal
+                mock_load_yaml.return_value = {
+                    "system": {"has_ev_charger": True},
+                    "ev_chargers": [{"enabled": True, "replan_on_plugin": False}],
+                }
 
                 with patch("asyncio.run_coroutine_threadsafe") as mock_run_threadsafe:
                     client._trigger_ev_replan()
@@ -207,13 +227,13 @@ class TestEVInitialStateOverride:
 
             os.chdir(tmp_path)
 
-            from inputs import get_initial_state
+            from backend.core.ha_client import get_initial_state
 
             # Mock HA sensor calls
-            with patch("inputs.get_ha_sensor_float") as mock_float:
+            with patch("backend.core.ha_client.get_ha_sensor_float") as mock_float:
                 mock_float.return_value = 50.0  # SoC value
 
-                with patch("inputs.get_ha_bool") as mock_bool:
+                with patch("backend.core.ha_client.get_ha_bool") as mock_bool:
                     mock_bool.return_value = False  # Would normally return this
 
                     # Call with override=True
@@ -297,7 +317,10 @@ class TestExecutorEVSwitchGating:
         # Mock the dependencies
         engine._has_ev_charger = True
         engine._has_battery = True
-        engine.config.ev_charger = EVChargerConfig(switch_entity="switch.test_ev")
+        engine.config.ev_charger = EVChargerConfig(switch_entity="switch.test_ev")  # legacy
+        engine.config.ev_chargers = [
+            EVChargerDeviceConfig(id="main", switch_entity="switch.test_ev")
+        ]
 
         # Create a slot with NO scheduled EV charging
         slot = SlotPlan(
@@ -347,14 +370,215 @@ class TestExecutorEVSwitchGating:
                 # Run the tick
                 await engine._tick()
 
-                # Verify _control_ev_charger was called with should_charge=False
-                # (because no scheduled charging, even though actual charging detected)
+                # Verify _control_ev_charger was called with the slot
+                # (which has no per-device EV plans, so no switch will be turned on)
                 mock_control.assert_called_once()
                 call_args = mock_control.call_args[0]
-                should_charge = call_args[0]
+                slot_arg = call_args[0]
 
-                # Should be False because only scheduled_ev_charging should enable switch
-                assert should_charge is False, "Switch should remain OFF without scheduled charging"
+                # Slot has no scheduled EV charging — per-device plans are empty
+                assert slot_arg.ev_charging_kw == 0.0, "Slot should have no EV charging"
+                assert slot_arg.ev_charger_plans == {}, "No per-device plans should be present"
+
+
+class TestEVToggleReload:
+    from typing import ClassVar
+
+    _EV_CHARGERS: ClassVar[list[dict]] = [
+        {"enabled": True, "name": "Test EV", "sensor": "sensor.test_ev_power"}
+    ]
+
+    def _make_cfg(self, has_ev_charger: bool) -> dict:
+        return {
+            "system": {"has_ev_charger": has_ev_charger, "grid_meter_type": "net"},
+            "input_sensors": {},
+            "ev_chargers": self._EV_CHARGERS,
+        }
+
+    def test_reload_clears_ev_state_when_toggled_off(self, tmp_path):
+        """Task 2.1: reload_monitored_entities() clears EV state when has_ev_charger → false."""
+        from backend.ha_socket import HAWebSocketClient
+
+        with (
+            patch("backend.ha_socket.load_yaml", return_value=self._make_cfg(True)),
+            patch("backend.ha_socket.load_home_assistant_config", return_value={}),
+        ):
+            client = HAWebSocketClient()
+
+        # Sanity: EV state populated after init with has_ev_charger=True
+        assert len(client.ev_charger_configs) == 1
+        assert "ev_chargers" in client.latest_values
+
+        # Now flip the flag off and reload
+        with (
+            patch("backend.ha_socket.load_yaml", return_value=self._make_cfg(False)),
+            patch("backend.ha_socket.load_home_assistant_config", return_value={}),
+        ):
+            client.reload_monitored_entities()
+
+        assert client.ev_charger_configs == []
+        assert "ev_chargers" not in client.latest_values
+
+    def test_reload_rebuilds_ev_state_when_toggled_on(self, tmp_path):
+        """Task 2.2: reload_monitored_entities() rebuilds EV state when has_ev_charger → true."""
+        from backend.ha_socket import HAWebSocketClient
+
+        with (
+            patch("backend.ha_socket.load_yaml", return_value=self._make_cfg(False)),
+            patch("backend.ha_socket.load_home_assistant_config", return_value={}),
+        ):
+            client = HAWebSocketClient()
+
+        # Sanity: no EV state after init with has_ev_charger=False
+        assert client.ev_charger_configs == []
+        assert "ev_chargers" not in client.latest_values
+
+        # Now flip the flag on and reload
+        with (
+            patch("backend.ha_socket.load_yaml", return_value=self._make_cfg(True)),
+            patch("backend.ha_socket.load_home_assistant_config", return_value={}),
+        ):
+            client.reload_monitored_entities()
+
+        assert len(client.ev_charger_configs) == 1
+        assert "ev_chargers" in client.latest_values
+        assert len(client.latest_values["ev_chargers"]) == 1
+
+
+class TestPerDevicePlugSensorMapping:
+    """Task 7.4: Per-device plug sensor → charger ID mapping."""
+
+    _EV_CHARGERS: ClassVar[list[dict]] = [
+        {
+            "enabled": True,
+            "id": "charger_a",
+            "name": "Charger A",
+            "sensor": "sensor.ev_a_power",
+            "plug_sensor": "binary_sensor.ev_a_plug",
+        },
+        {
+            "enabled": True,
+            "id": "charger_b",
+            "name": "Charger B",
+            "sensor": "sensor.ev_b_power",
+            "plug_sensor": "binary_sensor.ev_b_plug",
+        },
+    ]
+
+    def _make_cfg(self):
+        return {
+            "system": {"has_ev_charger": True, "grid_meter_type": "net"},
+            "input_sensors": {},
+            "ev_chargers": self._EV_CHARGERS,
+        }
+
+    def test_charger_id_stored_in_ev_charger_configs(self):
+        """ev_charger_configs entries include the charger id from config."""
+        from backend.ha_socket import HAWebSocketClient
+
+        with (
+            patch("backend.ha_socket.load_yaml", return_value=self._make_cfg()),
+            patch("backend.ha_socket.load_home_assistant_config", return_value={}),
+        ):
+            client = HAWebSocketClient()
+
+        assert len(client.ev_charger_configs) == 2
+        ids = [cfg.get("id") for cfg in client.ev_charger_configs]
+        assert "charger_a" in ids
+        assert "charger_b" in ids
+
+    def test_trigger_ev_replan_passes_charger_id(self):
+        """_trigger_ev_replan(charger_id) checks that charger's settings."""
+        from backend.ha_socket import HAWebSocketClient
+
+        with (
+            patch("backend.ha_socket.load_yaml", return_value=self._make_cfg()),
+            patch("backend.ha_socket.load_home_assistant_config", return_value={}),
+        ):
+            client = HAWebSocketClient()
+
+        client.main_loop = MagicMock()
+
+        config_with_replan = {
+            "system": {"has_ev_charger": True},
+            "ev_chargers": [
+                {"enabled": True, "id": "charger_a", "replan_on_plugin": True},
+                {"enabled": True, "id": "charger_b", "replan_on_plugin": False},
+            ],
+        }
+
+        with (
+            patch("backend.ha_socket.load_yaml", return_value=config_with_replan),
+            patch("asyncio.run_coroutine_threadsafe") as mock_threadsafe,
+        ):
+            mock_future = MagicMock()
+            mock_threadsafe.return_value = mock_future
+
+            with patch("backend.services.scheduler_service.scheduler_service") as mock_svc:
+                mock_svc.trigger_now = AsyncMock()
+
+                # charger_a has replan_on_plugin=True → should trigger
+                client._trigger_ev_replan(charger_id="charger_a")
+                mock_threadsafe.assert_called_once()
+                # Close the coroutine before resetting to avoid RuntimeWarning
+                if mock_threadsafe.call_args_list:
+                    coro = mock_threadsafe.call_args_list[0].args[0]
+                    if hasattr(coro, "close"):
+                        coro.close()
+                mock_threadsafe.reset_mock()
+
+                # charger_b has replan_on_plugin=False → should NOT trigger
+                client._trigger_ev_replan(charger_id="charger_b")
+                mock_threadsafe.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_trigger_ev_replan_passes_charger_id_to_trigger_now(self):
+        """_trigger_ev_replan passes charger_id through to scheduler_service.trigger_now."""
+        from backend.ha_socket import HAWebSocketClient
+
+        with (
+            patch("backend.ha_socket.load_yaml", return_value=self._make_cfg()),
+            patch("backend.ha_socket.load_home_assistant_config", return_value={}),
+        ):
+            client = HAWebSocketClient()
+
+        client.main_loop = asyncio.get_event_loop()
+
+        config_with_replan = {
+            "system": {"has_ev_charger": True},
+            "ev_chargers": [
+                {"enabled": True, "id": "charger_a", "replan_on_plugin": True},
+            ],
+        }
+
+        with (
+            patch("backend.ha_socket.load_yaml", return_value=config_with_replan),
+            patch("asyncio.run_coroutine_threadsafe") as mock_threadsafe,
+        ):
+            mock_future = MagicMock()
+            mock_threadsafe.return_value = mock_future
+
+            async def dummy_coro():
+                pass
+
+            with patch(
+                "backend.services.scheduler_service.scheduler_service.trigger_now",
+                new_callable=MagicMock,
+                return_value=dummy_coro(),
+            ) as mock_trigger:
+                client._trigger_ev_replan(charger_id="charger_a")
+
+                mock_threadsafe.assert_called_once()
+                mock_trigger.assert_called_once_with(
+                    ev_plugged_in_override=True, ev_charger_id_override="charger_a"
+                )
+
+                coro = mock_threadsafe.call_args[0][0]
+                assert coro is not None
+                coro.close()  # Prevent ResourceWarning
+
+                # Loop is the second argument
+                assert mock_threadsafe.call_args[0][1] == client.main_loop
 
 
 if __name__ == "__main__":

@@ -13,6 +13,8 @@ from typing import Any, cast
 import pandas as pd
 import pytz
 
+from utils.time_utils import dst_safe_localize
+
 
 def dataframe_to_json_response(
     df: pd.DataFrame,
@@ -63,7 +65,7 @@ def dataframe_to_json_response(
     # Normalize timestamps
     start_series = pd.to_datetime(df_copy["start_time"], errors="coerce")
     if not start_series.dt.tz:
-        start_series = start_series.dt.tz_localize(tz)
+        start_series = dst_safe_localize(start_series, tz)
     else:
         start_series = start_series.dt.tz_convert(tz)
     df_copy["start_time"] = start_series
@@ -77,7 +79,7 @@ def dataframe_to_json_response(
 
     end_series = pd.to_datetime(df_copy["end_time"], errors="coerce")
     if not end_series.dt.tz:
-        end_series = end_series.dt.tz_localize(tz)
+        end_series = dst_safe_localize(end_series, tz)
     else:
         end_series = end_series.dt.tz_convert(tz)
     df_copy["end_time"] = end_series
@@ -137,6 +139,22 @@ def dataframe_to_json_response(
         record["reason"] = reason
         record["priority"] = priority
         record["is_historical"] = record.get("is_historical", False)
+
+        # Normalize water_heaters: ensure it's always a dict, not NaN
+        water_heaters_val = record.get("water_heaters")
+        if not isinstance(water_heaters_val, dict):
+            record["water_heaters"] = {}
+        else:
+            # Wrap raw kW values as {heating_kw: float} dicts for schedule output
+            record["water_heaters"] = {
+                k: ({"heating_kw": float(v)} if not isinstance(v, dict) else v)  # type: ignore[arg-type,misc]
+                for k, v in water_heaters_val.items()  # type: ignore[union-attr]
+            }
+
+        # Normalize ev_chargers: ensure it's always a dict, not NaN for non-solver rows
+        ev_chargers_val = record.get("ev_chargers")
+        if not isinstance(ev_chargers_val, dict):
+            record["ev_chargers"] = {}
 
         # Rev K22: Calculate planned cash flow cost (Grid Bill only)
         import_kwh = float(record.get("kepler_import_kwh") or record.get("import_kwh") or 0.0)

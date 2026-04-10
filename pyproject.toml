@@ -19,6 +19,7 @@ exclude = [
     "docs",
     "reference",
     "backend/static",  # Built frontend assets
+    "tests",  # Test files use pytest patterns not compatible with strict pyright
 ]
 
 [tool.ruff.lint]
@@ -62,6 +63,7 @@ line-ending = "auto"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 
 [tool.pyright]
 pythonVersion = "3.12"

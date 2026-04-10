@@ -64,12 +64,140 @@ The system SHALL automatically normalize cumulative energy sensor values to kWh,
 - **WHEN** a cumulative sensor reports `0.5` with `unit_of_measurement: "MWh"`
 - **THEN** the system SHALL normalize to `500.0 kWh`
 
+### Requirement: HA History API Power-to-Energy Conversion
+The system SHALL provide a generic function that fetches power sensor history from the HA History API for a given time window and computes energy as `mean(power_kw) × duration_hours` in kWh.
+
+#### Scenario: Power sensor with regular updates
+- **WHEN** the function is called for `sensor.ev_power` from `03:00` to `03:15`
+- **AND** the HA History API returns 15 data points averaging 5.0 kW
+- **THEN** the function SHALL return `1.25 kWh` (5.0 × 0.25)
+
+#### Scenario: Power sensor with sparse updates
+- **WHEN** the function is called for `sensor.ev_power` from `03:00` to `03:15`
+- **AND** the HA History API returns 3 data points: [5.0, 4.9, 5.1]
+- **THEN** the function SHALL return `1.25 kWh` (mean of 5.0 × 0.25)
+
+#### Scenario: History API returns empty data
+- **WHEN** the function is called for `sensor.ev_power` from `03:00` to `03:15`
+- **AND** the HA History API returns an empty response or no valid data points
+- **THEN** the function SHALL return `None`
+
+#### Scenario: History API call fails
+- **WHEN** the function is called and the HTTP request fails (timeout, connection error)
+- **THEN** the function SHALL return `None`
+
+#### Scenario: Power values require unit normalization
+- **WHEN** the HA History API returns values in Watts (unit_of_measurement: "W")
+- **THEN** the function SHALL normalize to kW before computing the average
+
+#### Scenario: Non-numeric and unavailable states are excluded
+- **WHEN** the HA History API returns states including "unknown", "unavailable", or non-numeric values
+- **THEN** the function SHALL exclude those data points from the average calculation
+
+### Requirement: EV Energy Recording via Power History
+The recorder SHALL calculate EV charging energy for each slot per-device by fetching each enabled charger's power sensor history over the slot window. The recorder SHALL store both aggregate `ev_charging_kwh` (sum across all chargers) and per-device energy in the slot observation.
+
+#### Scenario: Single EV charger recording unchanged
+- **WHEN** one enabled EV charger has `sensor: sensor.ev_power` configured
+- **THEN** the recorder SHALL call the power history function for the slot window
+- **AND** store the result as `ev_charging_kwh`
+
+#### Scenario: Multiple EV chargers with per-device tracking
+- **WHEN** two enabled EV chargers are configured (charger A: 2.0 kWh, charger B: 1.5 kWh)
+- **THEN** the recorder SHALL store `ev_charging_kwh = 3.5` (aggregate)
+- **AND** the recorder SHALL store per-device energy keyed by charger ID
+
+#### Scenario: EV history API fallback to power snapshot
+- **WHEN** the power history function returns `None` for an EV charger
+- **THEN** the recorder SHALL fall back to `current_power_kw * 0.25` using the point-in-time power reading for that specific charger
+
+### Requirement: Per-device EV energy storage
+The recorder SHALL store per-device EV energy in the slot observation metadata or as a JSON field, keyed by charger ID. This enables future per-device analytics without requiring schema changes per charger.
+
+#### Scenario: Per-device energy stored as JSON
+- **WHEN** the recorder stores a slot observation with two active EV chargers
+- **THEN** the observation SHALL include a field (e.g., `ev_charger_energy`) containing `{"ev_charger_1": 2.0, "ev_charger_2": 1.5}`
+
+#### Scenario: Single charger backward compatible
+- **WHEN** only one charger is active
+- **THEN** `ev_charging_kwh` SHALL contain the total (same as before)
+- **AND** `ev_charger_energy` SHALL contain `{"ev_charger_1": 2.0}`
+
+#### Scenario: No active chargers
+- **WHEN** no EV chargers are enabled or none are charging
+- **THEN** `ev_charging_kwh` SHALL be `0.0`
+- **AND** `ev_charger_energy` SHALL be `{}` or omitted
+
+### Requirement: Water Heater Energy Recording via Power History
+The recorder SHALL calculate water heater energy for each slot per-device by fetching each enabled heater's power sensor history over the slot window. The recorder SHALL store both aggregate `water_kwh` (sum across all heaters) and per-device energy in the slot observation.
+
+#### Scenario: Single water heater recording unchanged
+- **WHEN** one enabled water heater has `sensor: sensor.wh_power` configured
+- **THEN** the recorder SHALL call the power history function for the slot window
+- **AND** store the result as `water_kwh`
+
+#### Scenario: Multiple water heaters with per-device tracking
+- **WHEN** two enabled water heaters are configured (heater A: 0.75 kWh, heater B: 0.50 kWh)
+- **THEN** the recorder SHALL store `water_kwh = 1.25` (aggregate)
+- **AND** the recorder SHALL store per-device energy keyed by heater ID
+
+#### Scenario: Water heater history API fallback to power snapshot
+- **WHEN** the power history function returns `None` for a water heater
+- **THEN** the recorder SHALL fall back to `current_power_kw * 0.25` using the point-in-time power reading for that specific heater
+
+### Requirement: Per-device water energy storage
+The recorder SHALL store per-device water energy in the slot observation metadata or as a JSON field, keyed by heater ID. This enables future per-device analytics without requiring schema changes per heater.
+
+#### Scenario: Per-device energy stored as JSON
+- **WHEN** the recorder stores a slot observation with two active water heaters
+- **THEN** the observation SHALL include a field (e.g., `water_heater_energy`) containing `{"main_tank": 0.75, "upstairs_tank": 0.50}`
+
+#### Scenario: Single heater backward compatible
+- **WHEN** only one heater is active
+- **THEN** `water_kwh` SHALL contain the total (same as before)
+- **AND** `water_heater_energy` SHALL contain `{"main_tank": 0.75}`
+
+#### Scenario: No active heaters
+- **WHEN** no water heaters are enabled or none are heating
+- **THEN** `water_kwh` SHALL be `0.0`
+- **AND** `water_heater_energy` SHALL be `{}` or omitted
+
+### Requirement: Generic Function Robustness
+The power history function SHALL be production-grade: it SHALL use a reasonable HTTP timeout (10-15s), SHALL return `None` on any failure without raising exceptions, and SHALL log failures at warning level. The function SHALL NOT implement its own retry logic — retry is handled at the recorder service layer.
+
+#### Scenario: HTTP timeout
+- **WHEN** the HA History API does not respond within the timeout
+- **THEN** the function SHALL return `None`
+- **AND** log a warning with the entity ID and error
+
+#### Scenario: Connection error
+- **WHEN** the HTTP connection to HA fails
+- **THEN** the function SHALL return `None`
+- **AND** log a warning with the entity ID and error
+
+#### Scenario: Unexpected exception
+- **WHEN** any unexpected error occurs during processing
+- **THEN** the function SHALL catch the exception, return `None`, and log a warning
+
 ### Requirement: Snapshot Fallback
-The recorder SHALL fall back to power-snapshot based estimation (kW * 0.25h) only when a cumulative energy sensor is not provided for a specific metric.
+The recorder SHALL fall back to power-snapshot based estimation (kW × 0.25h) when the HA History API power-to-energy function returns `None` for a specific metric.
 
 #### Scenario: Missing total energy sensor
 - **WHEN** `input_sensors` only contains `pv_power: sensor.pv_current_kw` (no total energy sensor)
 - **THEN** the recorder SHALL continue to use `pv_power * 0.25` to estimate energy for the slot
+
+#### Scenario: History API unavailable for EV
+- **WHEN** the power history function returns `None` for an EV charger power sensor
+- **THEN** the recorder SHALL use `ev_power_kw × 0.25` to estimate energy for the slot
+
+#### Scenario: History API unavailable for water heater
+- **WHEN** the power history function returns `None` for a water heater power sensor
+- **THEN** the recorder SHALL use `water_power_kw × 0.25` to estimate energy for the slot
+
+#### Scenario: PV/load/grid unchanged
+- **WHEN** the recorder calculates PV, load, or grid energy
+- **THEN** the recorder SHALL continue using cumulative energy sensor deltas as the primary method
+- **AND** fall back to power snapshot only when no cumulative sensor is configured
 
 ### Requirement: Energy value validation before storage
 The recorder SHALL validate all energy values against physical limits before storing to `slot_observations`.
@@ -145,13 +273,13 @@ The learning engine's `etl_cumulative_to_slots` function SHALL use linear interp
 The recorder SHALL subtract energy from controllable loads (EV charging, water heating) from the total load before storing `load_kwh` in `slot_observations`. This ensures `load_kwh` represents base load only, enabling accurate ML training and forecast analysis.
 
 #### Scenario: Recorder subtracts EV charging energy from total load
-- **WHEN** the recorder calculates `total_load_kwh` as `5.0 kWh` from the cumulative sensor
-- **AND** EV charging consumed `2.0 kWh` during the slot
+- **WHEN** the recorder calculates `total_load_kwh` as `5.0 kWh`
+- **AND** EV charging consumed `2.0 kWh` during the slot (from power history or snapshot)
 - **THEN** the recorder SHALL store `3.0 kWh` as `load_kwh`
 
 #### Scenario: Recorder subtracts water heating energy from total load
 - **WHEN** the recorder calculates `total_load_kwh` as `4.0 kWh`
-- **AND** water heating consumed `0.75 kWh` during the slot
+- **AND** water heating consumed `0.75 kWh` during the slot (from power history or snapshot)
 - **THEN** the recorder SHALL store `3.25 kWh` as `load_kwh`
 
 #### Scenario: Recorder subtracts both EV and water from total load
@@ -162,9 +290,14 @@ The recorder SHALL subtract energy from controllable loads (EV charging, water h
 
 #### Scenario: Recorder clamps negative base load to zero
 - **WHEN** the recorder calculates `total_load_kwh` as `1.0 kWh`
-- **AND** EV charging consumed `2.0 kWh` (sensor drift or timing mismatch)
+- **AND** EV charging consumed `2.0 kWh` (timing mismatch)
 - **THEN** the recorder SHALL store `0.0 kWh` as `load_kwh`
 - **AND** the recorder SHALL log a warning about the negative base load
+
+#### Scenario: Load isolation always applies
+- **WHEN** EV or water energy is calculated via power history or snapshot fallback
+- **THEN** the recorder SHALL always subtract those values from total load
+- **AND** isolation SHALL NOT be conditional on any sensor type configuration
 
 #### Scenario: Recorder uses power snapshot fallback when no cumulative sensor
 - **WHEN** no `total_load_consumption` sensor is configured

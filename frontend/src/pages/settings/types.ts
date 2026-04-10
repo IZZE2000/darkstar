@@ -174,6 +174,20 @@ export const systemSections: SettingsSection[] = [
                 type: 'number',
             },
             {
+                key: 'system.inverter.max_ac_power_kw',
+                label: 'Inverter Max AC Power (kW)',
+                helper: 'Maximum AC power your inverter can produce.',
+                path: ['system', 'inverter', 'max_ac_power_kw'],
+                type: 'number',
+            },
+            {
+                key: 'system.inverter.max_dc_input_kw',
+                label: 'Inverter Max DC Input (kW)',
+                helper: 'Maximum DC power from PV strings.',
+                path: ['system', 'inverter', 'max_dc_input_kw'],
+                type: 'number',
+            },
+            {
                 key: 'export.enable_export',
                 label: 'Enable grid export',
                 path: ['export', 'enable_export'],
@@ -1032,46 +1046,6 @@ export const evSections: SettingsSection[] = [
             },
         ],
     },
-    {
-        title: 'Departure Time',
-        description: 'Set your daily departure time. The system will optimize charging to complete by this time.',
-        fields: [
-            {
-                key: 'ev_departure_time',
-                label: 'Departure Time',
-                path: ['ev_departure_time'],
-                type: 'text',
-                helper: 'Time you need the car ready by (24-hour format, e.g., "07:00"). Charging will be scheduled to complete before this time.',
-            },
-        ],
-    },
-    {
-        title: 'Control',
-        description: 'EV charging control settings.',
-        fields: [
-            {
-                key: 'executor.ev_charger.switch_entity',
-                label: 'EV Charger Switch',
-                path: ['executor', 'ev_charger', 'switch_entity'],
-                type: 'entity',
-                helper: 'Switch entity to enable/disable EV charging. Darkstar will turn this on when scheduled to charge.',
-            },
-            {
-                key: 'executor.ev_charger.replan_on_plugin',
-                label: 'Re-plan on Plugin',
-                path: ['executor', 'ev_charger', 'replan_on_plugin'],
-                type: 'boolean',
-                helper: 'Immediately re-run the planner when an EV is plugged in. Useful for opportunistic charging on arrival.',
-            },
-            {
-                key: 'executor.ev_charger.replan_on_unplug',
-                label: 'Re-plan on Unplug',
-                path: ['executor', 'ev_charger', 'replan_on_unplug'],
-                type: 'boolean',
-                helper: 'Immediately re-run the planner when an EV is unplugged. Frees up capacity for other loads.',
-            },
-        ],
-    },
 ]
 
 export const waterSections: SettingsSection[] = [
@@ -1087,39 +1061,6 @@ export const waterSections: SettingsSection[] = [
                 entityType: 'water_heater',
                 className: 'col-span-2',
                 helper: 'Add and configure water heaters for optimization. Each heater needs a unique ID, name, power rating, and sensor.',
-            },
-        ],
-    },
-    {
-        title: 'HA Sensors',
-        description: 'Home Assistant sensors for water heating monitoring.',
-        fields: [
-            {
-                key: 'input_sensors.water_power',
-                label: 'Water Heater Power (W/kW)',
-                path: ['input_sensors', 'water_power'],
-                type: 'entity',
-                helper: 'Power sensor of the water heater element. Used for live metrics and history.',
-            },
-            {
-                key: 'input_sensors.water_heater_consumption',
-                label: 'Water Heater Daily Energy',
-                path: ['input_sensors', 'water_heater_consumption'],
-                type: 'entity',
-                helper: 'Total energy consumed by the water heater today. Used for quota tracking.',
-            },
-        ],
-    },
-    {
-        title: 'Control',
-        description: 'Water heater control entity.',
-        fields: [
-            {
-                key: 'executor.water_heater.target_entity',
-                label: 'Water Heater Setpoint',
-                path: ['executor', 'water_heater', 'target_entity'],
-                type: 'entity',
-                helper: 'Thermostat entity that controls the water heater target temperature.',
             },
         ],
     },
@@ -1298,13 +1239,6 @@ export const advancedSections: SettingsSection[] = [
             },
 
             {
-                key: 'learning.auto_tune_enabled',
-                label: 'Enable Auto-Tuning',
-                helper: 'Automatically adjust system constants based on historical data.',
-                path: ['learning', 'auto_tune_enabled'],
-                type: 'boolean',
-            },
-            {
                 key: 'learning.reflex_enabled',
                 label: 'Enable Reflex Loop',
                 helper: 'Real-time parameter adjustment loop.',
@@ -1326,6 +1260,13 @@ export const advancedSections: SettingsSection[] = [
                     value: true,
                     disabledText: "Enable 'Home battery installed' in System Profile to configure",
                 },
+            },
+            {
+                key: 'price_forecast.enabled',
+                label: 'Enable Price Forecasting',
+                helper: 'Use ML-based spot price forecasts for D+1 through D+7. Requires sufficient training data.',
+                path: ['price_forecast', 'enabled'],
+                type: 'boolean',
             },
         ],
     },
@@ -1415,10 +1356,11 @@ export const standardInverterKeys = new Set([
     'max_discharge_power',
 ])
 
-export function generateProfileEntityFields(profile: InverterProfile): BaseField[] {
+export function generateProfileEntityFields(profile: InverterProfile, category?: string): BaseField[] {
     const fields: BaseField[] = []
 
     for (const [key, entity] of Object.entries(profile.entities)) {
+        if (category !== undefined && entity.category !== category) continue
         const isStandard = standardInverterKeys.has(key)
         const configPath = isStandard ? `executor.inverter.${key}` : `executor.inverter.custom_entities.${key}`
         const arrayPath = isStandard ? ['executor', 'inverter', key] : ['executor', 'inverter', 'custom_entities', key]

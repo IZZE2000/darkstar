@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
 
-import yaml
+from ruamel.yaml import YAML
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +29,29 @@ def _str_or_none(value: Any) -> str | None:
     if value is None or value == "" or str(value).strip() == "":
         return None
     return str(value)
+
+
+def _parse_departure_time(value: Any) -> str | None:
+    """Parse departure time from config value.
+
+    Handles both string "HH:MM" format and integer minutes-since-midnight (0-1439).
+    Defensive conversion for YAML 1.1 sexagesimal misparse (e.g., 16:00 -> 960).
+
+    Args:
+        value: Any value from config (str, int, None, or other)
+
+    Returns:
+        str in "HH:MM" format if valid, None otherwise
+    """
+    if value is None or value == "":
+        return None
+
+    if isinstance(value, int):
+        if 0 <= value <= 1439:
+            return f"{value // 60:02d}:{value % 60:02d}"
+        return None
+
+    return str(value) or None
 
 
 @dataclass
@@ -56,14 +79,27 @@ class InverterConfig:
 
 
 @dataclass
-class WaterHeaterConfig:
-    """Water heater control configuration."""
+class WaterHeaterGlobalConfig:
+    """Global water heater temperature configuration (house-level preferences)."""
 
-    target_entity: str | None = None
     temp_normal: int = 60
     temp_off: int = 40
     temp_boost: int = 70
     temp_max: int = 85
+
+
+# Backward compatibility alias
+WaterHeaterConfig = WaterHeaterGlobalConfig
+
+
+@dataclass
+class WaterHeaterDeviceConfig:
+    """Per-device water heater control configuration."""
+
+    id: str = ""
+    name: str = ""
+    target_entity: str | None = None
+    power_kw: float = 3.0
 
 
 DEFAULT_PENALTY_LEVELS = {
@@ -76,13 +112,26 @@ DEFAULT_PENALTY_LEVELS = {
 
 @dataclass
 class EVChargerConfig:
-    """EV charger control configuration."""
+    """EV charger control configuration (legacy single-charger)."""
 
     switch_entity: str | None = None
     max_power_kw: float = 7.4
     battery_capacity_kwh: float | None = None
     replan_on_plugin: bool = True
     replan_on_unplug: bool = False
+
+
+@dataclass
+class EVChargerDeviceConfig:
+    """Per-device EV charger configuration."""
+
+    id: str = ""
+    switch_entity: str | None = None
+    max_power_kw: float = 7.4
+    battery_capacity_kwh: float | None = None
+    replan_on_plugin: bool = True
+    replan_on_unplug: bool = False
+    departure_time: str | None = None
 
 
 @dataclass
@@ -119,7 +168,6 @@ class ControllerConfig:
     min_charge_w: float = 500.0
     round_step_w: float = 100.0
     write_threshold_w: float = 100.0
-    inverter_ac_limit_kw: float = 8.8
     charge_efficiency: float = 0.92
 
 
@@ -135,8 +183,10 @@ class ExecutorConfig:
     manual_override_entity: str | None = None
 
     inverter: InverterConfig = field(default_factory=InverterConfig)
-    water_heater: WaterHeaterConfig = field(default_factory=WaterHeaterConfig)
-    ev_charger: EVChargerConfig = field(default_factory=EVChargerConfig)
+    water_heater: WaterHeaterGlobalConfig = field(default_factory=WaterHeaterGlobalConfig)
+    water_heater_devices: list[WaterHeaterDeviceConfig] = field(default_factory=lambda: [])
+    ev_charger: EVChargerConfig = field(default_factory=EVChargerConfig)  # legacy compat
+    ev_chargers: list[EVChargerDeviceConfig] = field(default_factory=lambda: [])
     notifications: NotificationConfig = field(default_factory=NotificationConfig)
     controller: ControllerConfig = field(default_factory=ControllerConfig)
 
@@ -156,7 +206,8 @@ def load_yaml(path: str) -> dict[str, Any]:
     """Load YAML file with strict typing."""
     try:
         with Path(path).open(encoding="utf-8") as f:
-            raw_data = yaml.safe_load(f)
+            yaml_loader = YAML(typ="safe")
+            raw_data = yaml_loader.load(f)  # pyright: ignore[reportUnknownMemberType]
             return cast("dict[str, Any]", raw_data) if isinstance(raw_data, dict) else {}
     except FileNotFoundError:
         return {}
@@ -173,7 +224,8 @@ def load_executor_config(config_path: str = "config.yaml") -> ExecutorConfig:
     """
     try:
         with Path(config_path).open(encoding="utf-8") as f:
-            raw_data = yaml.safe_load(f)
+            yaml_loader = YAML(typ="safe")
+            raw_data = yaml_loader.load(f)  # pyright: ignore[reportUnknownMemberType]
             data: dict[str, Any] = (
                 cast("dict[str, Any]", raw_data) if isinstance(raw_data, dict) else {}
             )
@@ -282,13 +334,33 @@ def load_executor_config(config_path: str = "config.yaml") -> ExecutorConfig:
         if isinstance(executor_data.get("water_heater"), dict)
         else {}
     )
-    water_heater = WaterHeaterConfig(
-        target_entity=_str_or_none(water_data.get("target_entity")),
-        temp_normal=int(water_data.get("temp_normal", WaterHeaterConfig.temp_normal)),
-        temp_off=int(water_data.get("temp_off", WaterHeaterConfig.temp_off)),
-        temp_boost=int(water_data.get("temp_boost", WaterHeaterConfig.temp_boost)),
-        temp_max=int(water_data.get("temp_max", WaterHeaterConfig.temp_max)),
+
+    # Global water heater temperature config (house-level preferences, from executor.water_heater)
+    water_heater = WaterHeaterGlobalConfig(
+        temp_normal=int(water_data.get("temp_normal", WaterHeaterGlobalConfig.temp_normal)),
+        temp_off=int(water_data.get("temp_off", WaterHeaterGlobalConfig.temp_off)),
+        temp_boost=int(water_data.get("temp_boost", WaterHeaterGlobalConfig.temp_boost)),
+        temp_max=int(water_data.get("temp_max", WaterHeaterGlobalConfig.temp_max)),
     )
+
+    # Per-device water heater configs (from water_heaters[] array)
+    water_heaters_array = data.get("water_heaters", [])
+    water_heater_devices_list: list[WaterHeaterDeviceConfig] = []
+    for idx, heater in enumerate(cast("list[dict[str, Any]]", water_heaters_array)):
+        if not heater.get("enabled", True):
+            continue
+        target_ent = _str_or_none(heater.get("target_entity"))
+        if not target_ent:
+            continue  # Only include heaters with a target_entity
+        heater_id = str(heater.get("id", f"water_heater_{idx}"))
+        water_heater_devices_list.append(
+            WaterHeaterDeviceConfig(
+                id=heater_id,
+                name=str(heater.get("name", heater_id)),
+                target_entity=target_ent,
+                power_kw=float(heater.get("power_kw", WaterHeaterDeviceConfig.power_kw)),
+            )
+        )
 
     # EV Charger config (REV K25 Phase 5)
     ev_data: dict[str, Any] = (
@@ -303,6 +375,29 @@ def load_executor_config(config_path: str = "config.yaml") -> ExecutorConfig:
         replan_on_plugin=bool(ev_data.get("replan_on_plugin", EVChargerConfig.replan_on_plugin)),
         replan_on_unplug=bool(ev_data.get("replan_on_unplug", EVChargerConfig.replan_on_unplug)),
     )
+
+    # Per-device EV charger config (multi-device support)
+    ev_chargers_array = data.get("ev_chargers", [])
+    ev_chargers_list: list[EVChargerDeviceConfig] = []
+    for idx, charger in enumerate(cast("list[dict[str, Any]]", ev_chargers_array)):
+        if not charger.get("enabled", True):
+            continue
+        charger_id = str(charger.get("id", f"ev_charger_{idx}"))
+        ev_chargers_list.append(
+            EVChargerDeviceConfig(
+                id=charger_id,
+                switch_entity=_str_or_none(charger.get("switch_entity")),
+                max_power_kw=float(charger.get("max_power_kw", EVChargerDeviceConfig.max_power_kw)),
+                battery_capacity_kwh=charger.get("battery_capacity_kwh"),
+                replan_on_plugin=bool(
+                    charger.get("replan_on_plugin", EVChargerDeviceConfig.replan_on_plugin)
+                ),
+                replan_on_unplug=bool(
+                    charger.get("replan_on_unplug", EVChargerDeviceConfig.replan_on_unplug)
+                ),
+                departure_time=_parse_departure_time(charger.get("departure_time")),
+            )
+        )
 
     notif_data: dict[str, Any] = (
         executor_data.get("notifications", {})
@@ -396,9 +491,6 @@ def load_executor_config(config_path: str = "config.yaml") -> ExecutorConfig:
         write_threshold_w=float(
             str(ctrl_data.get("write_threshold_w", ControllerConfig.write_threshold_w))
         ),
-        inverter_ac_limit_kw=float(
-            str(ctrl_data.get("inverter_ac_limit_kw", ControllerConfig.inverter_ac_limit_kw))
-        ),
         charge_efficiency=float(
             str(ctrl_data.get("charge_efficiency", ControllerConfig.charge_efficiency))
         ),
@@ -412,7 +504,9 @@ def load_executor_config(config_path: str = "config.yaml") -> ExecutorConfig:
         manual_override_entity=_str_or_none(executor_data.get("manual_override_entity")),
         inverter=inverter,
         water_heater=water_heater,
+        water_heater_devices=water_heater_devices_list,
         ev_charger=ev_charger,
+        ev_chargers=ev_chargers_list,
         notifications=notifications,
         controller=controller,
         history_retention_days=int(executor_data.get("history_retention_days", 30)),

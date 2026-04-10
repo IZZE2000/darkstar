@@ -11,8 +11,9 @@ from typing import Any
 import pytz
 import requests
 
+from backend.core.ha_client import make_ha_headers
+from backend.core.secrets import load_home_assistant_config
 from backend.learning import LearningEngine, get_learning_engine
-from inputs import load_home_assistant_config, make_ha_headers
 
 
 def _parse_iso_timestamp(value: str) -> datetime | None:

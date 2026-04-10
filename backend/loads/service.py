@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from inputs import get_ha_sensor_kw_normalized
+from backend.core.ha_client import get_ha_sensor_kw_normalized
 
 from .base import DeferrableLoad, LoadType
 
@@ -66,7 +66,7 @@ class LoadDisaggregator:
             name = wh.get("name", load_id)
             entity_id = wh.get("sensor")
             l_type_str = wh.get("type", "binary")
-            nominal_power = wh.get("nominal_power_kw", wh.get("power_kw", 0.0))
+            nominal_power = wh.get("power_kw", 0.0)
 
             if not entity_id:
                 logger.warning(f"No sensor configured for water heater '{load_id}', skipping.")

@@ -10,7 +10,7 @@ import argparse
 import os
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -26,12 +26,12 @@ from ml.weather import calculate_physics_pv, get_weather_series
 
 @dataclass
 class TrainingConfig:
-    days_back: int = 90
     # Reduced from 500 to 100 to allow training on small datasets (Cold Start scenario)
     min_samples: int = 100
     models_dir: Path = Path("data/ml/models")
     load_model_name: str = "load_model.lgb"
     pv_model_name: str = "pv_model.lgb"
+    recency_half_life_days: float = 30.0  # Exponential decay half-life for sample weights
 
 
 def _parse_args() -> argparse.Namespace:
@@ -39,10 +39,10 @@ def _parse_args() -> argparse.Namespace:
         description="Train AURORA LightGBM models for load and PV.",
     )
     parser.add_argument(
-        "--days-back",
-        type=int,
-        default=90,
-        help=("Number of days of historical slot_observations to use for training (default: 90)."),
+        "--recency-half-life-days",
+        type=float,
+        default=30.0,
+        help="Half-life for exponential decay sample weighting (default: 30.0 days).",
     )
     parser.add_argument(
         "--min-samples",
@@ -67,31 +67,123 @@ def delete_trained_models(models_dir: Path = Path("data/ml/models")) -> None:
         print(f"Deleted model: {f}")
 
 
+def _compute_sample_weights(
+    df: pd.DataFrame,
+    half_life_days: float = 30.0,
+    config: TrainingConfig | None = None,
+) -> np.ndarray:
+    """Compute exponential decay weights based on sample age.
+
+    Weight = exp(-lambda * days_ago) where lambda = ln(2) / half_life_days
+
+    Args:
+        df: DataFrame with 'slot_start' column containing timestamps
+        half_life_days: Number of days for weight to decay to 0.5 (default: 30)
+        config: Optional TrainingConfig (can override half_life_days via config)
+
+    Returns:
+        Array of weights corresponding to each row in df
+    """
+    # Allow config override
+    if config is not None:
+        half_life_days = getattr(config, "recency_half_life_days", half_life_days)
+
+    if df.empty or "slot_start" not in df.columns:
+        return np.ones(len(df))
+
+    now = pd.Timestamp.now(tz=df["slot_start"].dt.tz)
+    days_ago = (now - df["slot_start"]).dt.total_seconds() / (24 * 3600)
+
+    # Exponential decay: weight = exp(-lambda * days_ago)
+    # At half_life_days, weight = 0.5, so lambda = ln(2) / half_life_days
+    lambda_param = np.log(2) / half_life_days
+    weights = np.exp(-lambda_param * days_ago)
+
+    return weights.values
+
+
 def _load_slot_observations(
     engine: LearningEngine,
-    start_time: datetime,
-    end_time: datetime,
+    start_time: datetime | None = None,
+    end_time: datetime | None = None,
 ) -> pd.DataFrame:
-    """Load slot observations, strictly filtering out zero-artifacts and sensor spikes."""
+    """Load slot observations, strictly filtering out zero-artifacts and sensor spikes.
+
+    If start_time is None, loads all available data from the earliest record.
+    If end_time is None, loads up to the current time.
+    """
     max_kwh = get_max_energy_per_slot(engine.config)
 
-    query = """
-        SELECT
-            slot_start,
-            load_kwh,
-            pv_kwh
-        FROM slot_observations
-        WHERE slot_start >= ? AND slot_start < ?
-          AND load_kwh > 0.001
-          AND load_kwh <= ?
-          AND pv_kwh <= ?
-        ORDER BY slot_start ASC
-    """
+    # Build query based on provided time range
+    if start_time is None and end_time is None:
+        # Load all available data
+        query = """
+            SELECT
+                slot_start,
+                load_kwh,
+                pv_kwh
+            FROM slot_observations
+            WHERE load_kwh > 0.001
+              AND load_kwh <= ?
+              AND pv_kwh <= ?
+            ORDER BY slot_start ASC
+        """
+        params = (max_kwh, max_kwh)
+    elif start_time is None:
+        # Load from beginning up to end_time
+        assert end_time is not None, "end_time must not be None when start_time is None"
+        query = """
+            SELECT
+                slot_start,
+                load_kwh,
+                pv_kwh
+            FROM slot_observations
+            WHERE slot_start < ?
+              AND load_kwh > 0.001
+              AND load_kwh <= ?
+              AND pv_kwh <= ?
+            ORDER BY slot_start ASC
+        """
+        params = (end_time.isoformat(), max_kwh, max_kwh)
+    elif end_time is None:
+        # Load from start_time to now
+        now = datetime.now(engine.timezone)
+        query = """
+            SELECT
+                slot_start,
+                load_kwh,
+                pv_kwh
+            FROM slot_observations
+            WHERE slot_start >= ?
+              AND slot_start < ?
+              AND load_kwh > 0.001
+              AND load_kwh <= ?
+              AND pv_kwh <= ?
+            ORDER BY slot_start ASC
+        """
+        params = (start_time.isoformat(), now.isoformat(), max_kwh, max_kwh)
+    else:
+        # Both start and end provided
+        query = """
+            SELECT
+                slot_start,
+                load_kwh,
+                pv_kwh
+            FROM slot_observations
+            WHERE slot_start >= ?
+              AND slot_start < ?
+              AND load_kwh > 0.001
+              AND load_kwh <= ?
+              AND pv_kwh <= ?
+            ORDER BY slot_start ASC
+        """
+        params = (start_time.isoformat(), end_time.isoformat(), max_kwh, max_kwh)
+
     with sqlite3.connect(engine.db_path, timeout=30.0) as conn:
         df = pd.read_sql_query(
             query,
             conn,
-            params=(start_time.isoformat(), end_time.isoformat(), max_kwh, max_kwh),
+            params=params,
         )
     if df.empty:
         return df
@@ -130,6 +222,7 @@ def _train_regressor(
     target: pd.Series,
     min_samples: int,
     alpha: float = 0.5,
+    sample_weight: np.ndarray | None = None,
 ) -> lgb.LGBMRegressor | None:
     """Train a LightGBM regressor (Quantile Regression) if enough samples are available."""
     if len(features) < min_samples:
@@ -153,7 +246,12 @@ def _train_regressor(
         verbosity=-1,
     )
 
-    model.fit(features, target)  # type: ignore[reportUnknownMemberType]
+    # Pass sample weights to fit() if provided
+    fit_kwargs: dict[str, Any] = {}
+    if sample_weight is not None:
+        fit_kwargs["sample_weight"] = sample_weight
+
+    model.fit(features, target, **fit_kwargs)  # type: ignore[reportUnknownMemberType]
     return model
 
 
@@ -165,8 +263,8 @@ def _save_model(model: lgb.LGBMRegressor, path: Path) -> None:
     print(f"Saved model to {path}")
 
 
-def train_models(days_back: int = 90, min_samples: int = 100) -> None:
-    cfg = TrainingConfig(days_back=days_back, min_samples=min_samples)
+def train_models(min_samples: int = 100, recency_half_life_days: float = 30.0) -> None:
+    cfg = TrainingConfig(min_samples=min_samples, recency_half_life_days=recency_half_life_days)
 
     print("--- Starting AURORA Training (Rev K16: Hybrid PV with Physics Residuals) ---")
 
@@ -179,27 +277,31 @@ def train_models(days_back: int = 90, min_samples: int = 100) -> None:
         return
 
     now = datetime.now(engine.timezone)
-    start_time = now - timedelta(days=max(cfg.days_back, 1))
 
     print(
-        "Training window: "
-        f"{start_time.isoformat()} to {now.isoformat()} "
-        f"({cfg.days_back} days back).",
+        "Training window: loading all available historical data "
+        f"with recency weighting (half-life={cfg.recency_half_life_days} days).",
     )
 
-    observations = _load_slot_observations(engine, start_time, now)
+    observations = _load_slot_observations(engine, end_time=now)
     if observations.empty:
-        print("Error: No valid (non-zero load) observations found in window.")
+        print("Error: No valid (non-zero load) observations found.")
         print("Action: Check if data_activator has run or if sensors are reporting 0.")
         return
 
-    print(f"Loaded {len(observations)} valid observation rows (filtered out zeros).")
+    # Get time range from observations for feature enrichment
+    obs_start = observations["slot_start"].min()
+    obs_end = observations["slot_start"].max()
+    print(f"Loaded {len(observations)} valid observation rows from {obs_start} to {obs_end}.")
 
     # Basic cleaning
     observations = observations.sort_values("slot_start")
 
+    # Compute sample weights based on recency
+    sample_weights = _compute_sample_weights(observations, config=cfg)
+
     # Enrich with hourly weather where available
-    weather_df = get_weather_series(start_time, now, config=engine.config)
+    weather_df = get_weather_series(obs_start, now, config=engine.config)
     if not weather_df.empty:
         observations = observations.merge(
             weather_df,
@@ -216,7 +318,7 @@ def train_models(days_back: int = 90, min_samples: int = 100) -> None:
             observations[col] = pd.to_numeric(observations[col], errors="coerce")
 
     # Enrich with context flags
-    vac_series = get_vacation_mode_series(start_time, now, config=engine.config)
+    vac_series = get_vacation_mode_series(obs_start, now, config=engine.config)
     if not vac_series.empty:
         vac_df = vac_series.to_frame(name="vacation_mode_flag")
         observations = observations.merge(
@@ -228,7 +330,7 @@ def train_models(days_back: int = 90, min_samples: int = 100) -> None:
     else:
         observations["vacation_mode_flag"] = 0.0
 
-    alarm_series = get_alarm_armed_series(start_time, now, config=engine.config)
+    alarm_series = get_alarm_armed_series(obs_start, now, config=engine.config)
     if not alarm_series.empty:
         alarm_df = alarm_series.to_frame(name="alarm_armed_flag")
         observations = observations.merge(
@@ -271,20 +373,16 @@ def train_models(days_back: int = 90, min_samples: int = 100) -> None:
     if not load_df.empty:
         X_load = load_df[feature_cols]
         y_load = load_df["load_kwh"].astype(float)
+        # Extract sample weights for load training samples
+        load_weights = sample_weights[load_df.index]
         print(f"Training load models on {len(X_load)} samples...")
 
         for q_name, alpha in quantiles.items():
             print(f"  > Training Load {q_name} (alpha={alpha})...")
-            model = _train_regressor(X_load, y_load, cfg.min_samples, alpha=alpha)
+            model = _train_regressor(
+                X_load, y_load, cfg.min_samples, alpha=alpha, sample_weight=load_weights
+            )
             if model is not None:
-                # Save as load_model_p50.lgb, load_model_p10.lgb, etc.
-                # For backward compatibility, p50 is also saved as load_model.lgb?
-                # No, let's switch to explicit names, but maybe keep p50 as default for now?
-                # The plan implies we load all 6. Let's save them with suffixes.
-                # But wait, existing forward.py expects "load_model.lgb".
-                # We should probably keep "load_model.lgb" as p50 for safety, or update forward.py to look for p50.
-                # I will save p50 as BOTH "load_model.lgb" AND "load_model_p50.lgb" to be safe during transition.
-
                 suffix = f"_{q_name}"
                 filename = cfg.load_model_name.replace(".lgb", f"{suffix}.lgb")
                 _save_model(model, cfg.models_dir / filename)
@@ -366,11 +464,15 @@ def train_models(days_back: int = 90, min_samples: int = 100) -> None:
 
         X_pv = pv_df[pv_feature_cols]
         y_pv = pv_df["pv_residual"].astype(float)
+        # Extract sample weights for PV training samples
+        pv_weights = sample_weights[pv_df.index]
         print(f"Training PV models on {len(X_pv)} samples (residual mode)...")
 
         for q_name, alpha in quantiles.items():
             print(f"  > Training PV {q_name} (alpha={alpha})...")
-            model = _train_regressor(X_pv, y_pv, cfg.min_samples, alpha=alpha)
+            model = _train_regressor(
+                X_pv, y_pv, cfg.min_samples, alpha=alpha, sample_weight=pv_weights
+            )
             if model is not None:
                 suffix = f"_{q_name}"
                 filename = cfg.pv_model_name.replace(".lgb", f"{suffix}.lgb")
@@ -391,7 +493,10 @@ def train_models(days_back: int = 90, min_samples: int = 100) -> None:
             "load_models_trained": not load_df.empty,
             "pv_models_trained": not pv_df.empty,
         }
-        run_params = {"days_back": cfg.days_back, "min_samples": cfg.min_samples}
+        run_params = {
+            "recency_half_life_days": cfg.recency_half_life_days,
+            "min_samples": cfg.min_samples,
+        }
 
         with sqlite3.connect(engine.db_path) as conn:
             conn.execute(
@@ -420,4 +525,7 @@ if __name__ == "__main__":
     args = _parse_args()
     if args.clear:
         delete_trained_models()
-    train_models(days_back=args.days_back, min_samples=args.min_samples)
+    train_models(
+        min_samples=args.min_samples,
+        recency_half_life_days=args.recency_half_life_days,
+    )

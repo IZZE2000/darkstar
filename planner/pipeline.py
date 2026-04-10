@@ -64,6 +64,14 @@ def calculate_ev_deadline(departure_time: str, now: datetime, timezone: str) -> 
     if not departure_time:
         return None
 
+    # Handle integer minutes-since-midnight (defensive fallback for YAML 1.1 sexagesimal misparse)
+    if isinstance(departure_time, int):
+        if 0 <= departure_time <= 1439:
+            departure_time = f"{departure_time // 60:02d}:{departure_time % 60:02d}"
+        else:
+            logger.warning(f"Invalid departure time integer: {departure_time} (must be 0-1439)")
+            return None
+
     try:
         # Parse the departure time
         hour, minute = map(int, departure_time.split(":"))
@@ -199,6 +207,7 @@ class PlannerPipeline:
         save_to_file: bool = True,
         record_training_episode: bool = False,
         now_override: datetime | None = None,
+        ev_plug_override_charger_id: str | None = None,
     ) -> pd.DataFrame:
         """
         Generate an optimal battery schedule.
@@ -275,11 +284,18 @@ class PlannerPipeline:
         else:
             now_slot = pd.Timestamp.now(tz=tz).floor("15min")
 
-        # Rev WH2: Determine forced water slots from previous schedule
-        force_water_timestamps: set[pd.Timestamp] = set()
-        if previous_schedule:
+        # Per-device mid-block detection (task 3.1)
+        # force_water_by_heater: heater_id → set of timestamps to force ON
+        water_heaters_cfg: list[dict[str, Any]] = active_config.get("water_heaters", [])
+        enabled_heater_ids: list[str] = [
+            str(wh.get("id", ""))
+            for wh in water_heaters_cfg
+            if wh.get("enabled", True) and wh.get("id")
+        ]
+        force_water_by_heater: dict[str, set[pd.Timestamp]] = {d: set() for d in enabled_heater_ids}
+
+        if previous_schedule and enabled_heater_ids:
             try:
-                # Find current slot in previous schedule
                 now_iso = now_slot.isoformat()
                 current_idx = -1
                 i: int = 0
@@ -289,24 +305,32 @@ class PlannerPipeline:
                         current_idx = i
                         break
 
-                # If we are currently heating (water_heating_kw > 0), force the rest of the block
                 if current_idx >= 0:
                     curr: dict[str, Any] = previous_schedule[current_idx]
-                    if float(curr.get("water_heating_kw", 0.0)) > 0:
-                        logger.info(
-                            "Rev WH2: Currently inside a water heating block - locking remaining slots."
-                        )
-                        # Look ahead until heating stops
-                        for i in range(current_idx, len(previous_schedule)):  # type: ignore[arg-type]
-                            s = previous_schedule[i]
-                            if float(s.get("water_heating_kw", 0.0)) > 0:
-                                # Parse ISO timestamp to match future_df index
-                                ts = pd.Timestamp(s["start_time"]).astimezone(tz)  # type: ignore[arg-type,index]
-                                force_water_timestamps.add(ts)
-                            else:
-                                break  # End of block
+                    curr_water_heaters: dict[str, Any] = curr.get("water_heaters", {})
+
+                    for heater_id in enabled_heater_ids:
+                        # Check if this specific heater is currently active
+                        heater_data: dict[str, Any] = curr_water_heaters.get(heater_id, {})
+                        currently_heating = float(heater_data.get("heating_kw", 0.0)) > 0
+
+                        if currently_heating:
+                            logger.info(
+                                "Mid-block lock: heater %s is active - locking remaining slots.",
+                                heater_id,
+                            )
+                            for j in range(current_idx, len(previous_schedule)):
+                                slot_s = previous_schedule[j]
+                                slot_water_heaters: dict[str, Any] = slot_s.get("water_heaters", {})
+                                slot_heater: dict[str, Any] = slot_water_heaters.get(heater_id, {})
+                                slot_heating = float(slot_heater.get("heating_kw", 0.0)) > 0
+                                if slot_heating:
+                                    ts = pd.Timestamp(slot_s["start_time"]).astimezone(tz)  # type: ignore[arg-type,index]
+                                    force_water_by_heater[heater_id].add(ts)
+                                else:
+                                    break
             except Exception as e:
-                logger.warning("Rev WH2: Failed to determine forced water slots: %s", e)
+                logger.warning("Failed to determine per-device forced water slots: %s", e)
 
         # 3. Strategy (S-Index & Safety Margins)
         s_index_debug: dict[str, Any] = {}
@@ -364,6 +388,14 @@ class PlannerPipeline:
 
             # Rev K23 Phase 3: Physical Deficit Logic
             # Replaces legacy Risk Factor + Dynamic Target SoC logic
+            # Temporal Safety Floor: Build full forecast DataFrame beyond price horizon
+            from planner.inputs.data_prep import build_forecast_dataframe
+
+            price_horizon_end = df.index[-1] if len(df) > 0 else None
+            full_forecast_df = build_forecast_dataframe(
+                input_data.get("forecast_data") or [], timezone_name
+            )
+
             soc_debug: dict[str, Any] = {}
             target_soc_kwh, soc_debug = calculate_safety_floor(
                 df,
@@ -373,6 +405,8 @@ class PlannerPipeline:
                 fetch_temperature_fn=lambda days, t: fetch_temperature_forecast(
                     days, t, active_config
                 ),
+                full_forecast_df=full_forecast_df,
+                price_horizon_end=price_horizon_end,
             )
 
             # Derive percentage for UI/Legacy compatibility
@@ -381,8 +415,8 @@ class PlannerPipeline:
             raw_factor: float | None = None
 
             logger.info(
-                "S-Index: Mode=physical_deficit, Deficit=%.3f, Floor=%.2f kWh (Start: %.2f%%), Risk=%d",
-                soc_debug.get("deficit_ratio", 0.0),
+                "S-Index: Mode=temporal_deficit, TemporalDeficit=%.2f kWh, Floor=%.2f kWh (%.2f%%), Risk=%d",
+                soc_debug.get("temporal_deficit_kwh", 0.0),
                 target_soc_kwh,
                 target_soc_pct,
                 s_index_cfg.get("risk_appetite", 3),
@@ -406,17 +440,26 @@ class PlannerPipeline:
             df["adjusted_pv_kwh"] = df["pv_forecast_kwh"]
             df["adjusted_load_kwh"] = df["load_forecast_kwh"]
 
-        # 4. Schedule Water Heating
-        # Get water heater daily consumption from HA sensor (Rev K18)
+        # 4. Per-device today's energy tracking (task 3.2)
         initial_state = input_data.get("initial_state", {})
-        ha_water_today = float(initial_state.get("water_heated_today_kwh", 0.0))
-        # Note: Kepler handles water_heating_kw in the MILP.
-        # Heuristic fallback removed in REV LCL01.
+        # Look for per-device states first, fall back to distributing aggregate
+        ha_water_states_raw: list[dict[str, Any]] = initial_state.get("water_heater_states", [])
+        ha_water_today_total = float(initial_state.get("water_heated_today_kwh", 0.0))
+
+        # Build per-device heated_today lookup from HA states or aggregate fallback
+        water_heated_today_by_id: dict[str, float] = {}
+        if ha_water_states_raw:
+            for wh_state in ha_water_states_raw:
+                hid = str(wh_state.get("id", ""))
+                if hid:
+                    water_heated_today_by_id[hid] = float(wh_state.get("heated_today_kwh", 0.0))
+        elif ha_water_today_total > 0 and len(enabled_heater_ids) == 1:
+            # Single heater: assign total to it
+            water_heated_today_by_id[enabled_heater_ids[0]] = ha_water_today_total
 
         # 5. Run Solver (Kepler)
         # CRITICAL: Only pass FUTURE slots to Kepler, starting from NOW with CURRENT real SoC
         # This ensures replanning during the day uses actual battery state, not midnight projection
-        initial_state = input_data.get("initial_state", {})
 
         # Get current real SoC from Home Assistant
         initial_soc_kwh = float(
@@ -429,7 +472,6 @@ class PlannerPipeline:
         logger.info("Pipeline initial_soc_kwh: %.3f (real SoC from HA)", initial_soc_kwh)
 
         # Filter to FUTURE slots only (>= now_slot)
-        # Kepler should optimize from NOW, not from midnight
         future_df = df[df.index >= now_slot].copy()
         if future_df.empty:
             logger.warning("No future slots available for Kepler! Using full DataFrame.")
@@ -439,32 +481,51 @@ class PlannerPipeline:
                 "Kepler: Planning %d future slots starting from %s", len(future_df), now_slot
             )
 
-        # Rev WH2: Map forced timestamps to Kepler indices
-        force_water_slots_indices: list[int] = []
-        if force_water_timestamps:
-            for i, (ts, _) in enumerate(future_df.iterrows()):
-                if ts in force_water_timestamps:
-                    force_water_slots_indices.append(i)
-            if force_water_slots_indices:
+        # Map per-device forced timestamps to Kepler slot indices (task 3.1)
+        force_on_slots_by_heater: dict[str, list[int]] = {}
+        for heater_id, forced_ts in force_water_by_heater.items():
+            if not forced_ts:
+                continue
+            indices: list[int] = []
+            for idx, (ts, _) in enumerate(future_df.iterrows()):
+                if ts in forced_ts:
+                    indices.append(idx)
+            if indices:
+                force_on_slots_by_heater[heater_id] = indices
                 logger.info(
-                    "Rev WH2: Forcing water heating ON for %d slots (mid-block lock)",
-                    len(force_water_slots_indices),
+                    "Mid-block lock: heater %s forcing %d slots ON",
+                    heater_id,
+                    len(indices),
                 )
 
-        kepler_input = planner_to_kepler_input(future_df, initial_soc_kwh)
+        # Build per-device water heater states for the adapter (task 3.3)
+        water_heater_states: list[dict[str, Any]] = []
+        for heater_id in enabled_heater_ids:
+            water_heater_states.append(
+                {
+                    "id": heater_id,
+                    "heated_today_kwh": water_heated_today_by_id.get(heater_id, 0.0),
+                    "force_on_slots": force_on_slots_by_heater.get(heater_id),
+                }
+            )
+
+        # Get max DC input for PV clipping
+        max_dc_input_kw = system_cfg.get("inverter", {}).get("max_dc_input_kw")
+        if max_dc_input_kw is not None:
+            max_dc_input_kw = float(max_dc_input_kw)
+
+        kepler_input = planner_to_kepler_input(future_df, initial_soc_kwh, max_dc_input_kw)
         kepler_config = config_to_kepler_config(
             active_config,
             overrides,
             kepler_input.slots,
-            force_water_on_slots=force_water_slots_indices,  # Rev WH2
+            water_heater_states=water_heater_states,  # task 3.3
         )
 
-        # Rev O1: Disable water heating in Kepler if no water heater
+        # Rev O1: Disable water heating in Kepler if no water heater (task 3.4)
         if not has_water_heater:
             logger.info("No water heater - disabling water heating optimization")
-            kepler_config.water_heating_min_kwh = 0.0
-            kepler_config.water_comfort_penalty_sek = 0.0
-            kepler_config.water_heating_max_gap_hours = 0.0
+            kepler_config.water_heaters = []
 
         # Rev O1: Constrain battery if no battery system
         if not has_battery:
@@ -472,61 +533,64 @@ class PlannerPipeline:
             kepler_config.max_charge_power_kw = 0.0
             kepler_config.max_discharge_power_kw = 0.0
 
-        # Rev K18: Pass water heated today to reduce remaining min requirement
-        kepler_config.water_heated_today_kwh = ha_water_today
-
-        # Rev K25: Pass EV state from Home Assistant sensors
+        # Per-device EV state: build EVChargerInput list for Kepler
         has_ev_charger = system_cfg.get("has_ev_charger", False)
         if has_ev_charger:
-            ev_soc = float(initial_state.get("ev_soc_percent", 0.0))
-            ev_plugged = bool(initial_state.get("ev_plugged_in", False))
-            kepler_config.ev_current_soc_percent = ev_soc
-            kepler_config.ev_plugged_in = ev_plugged
+            ev_charger_states_raw: list[dict[str, Any]] = initial_state.get("ev_charger_states", [])
+            ev_chargers_cfg: list[dict[str, Any]] = active_config.get("ev_chargers", [])
+            timezone_name = active_config.get("timezone", "Europe/Stockholm")
 
-            # REV K25 Phase 3: Calculate departure deadline
-            departure_time = active_config.get("ev_departure_time", "")
-            if departure_time and ev_plugged:
-                ev_deadline = calculate_ev_deadline(
-                    departure_time,
-                    now_slot.to_pydatetime(),
-                    active_config.get("timezone", "Europe/Stockholm"),
+            # Calculate per-device deadlines and attach to state dicts
+            ev_charger_states_with_deadline: list[dict[str, Any]] = []
+            for ev_cfg_item in ev_chargers_cfg:
+                if not ev_cfg_item.get("enabled", True):
+                    continue
+                charger_id = ev_cfg_item.get("id", "")
+                default_state: dict[str, Any] = {}
+                # Find matching HA state
+                ha_state = next(
+                    (s for s in ev_charger_states_raw if s.get("id") == charger_id),
+                    default_state,
                 )
-                kepler_config.ev_deadline = ev_deadline
-
-                # REV K25 Phase 5: Check if deadline is urgent (< 1 hour away)
-                if ev_deadline:
-                    hours_to_deadline = (
-                        ev_deadline - now_slot.to_pydatetime()
-                    ).total_seconds() / 3600
-                    if hours_to_deadline < 1.0:
-                        kepler_config.ev_deadline_urgent = True
-                        logger.warning(
-                            "REV K25: EV deadline approaching (%.1f hours) - maximizing charging power",
-                            hours_to_deadline,
+                departure_time = ev_cfg_item.get("departure_time", "")
+                deadline = None
+                if departure_time and ha_state.get("plugged_in", False):
+                    deadline = calculate_ev_deadline(
+                        departure_time,
+                        now_slot.to_pydatetime(),
+                        timezone_name,
+                    )
+                    if deadline:
+                        logger.info(
+                            "EV %s: SoC=%.1f%%, Plugged=%s, Departure=%s, Deadline=%s",
+                            charger_id,
+                            ha_state.get("soc_percent", 0.0),
+                            ha_state.get("plugged_in", False),
+                            departure_time,
+                            deadline.strftime("%Y-%m-%d %H:%M"),
                         )
                     else:
-                        kepler_config.ev_deadline_urgent = False
-
-                    logger.info(
-                        "EV Charger: SoC=%.1f%%, Plugged=%s, Departure=%s, Deadline=%s, Urgent=%s",
-                        ev_soc,
-                        ev_plugged,
-                        departure_time,
-                        ev_deadline.strftime("%Y-%m-%d %H:%M"),
-                        kepler_config.ev_deadline_urgent,
-                    )
-                else:
-                    logger.info(
-                        "EV Charger: SoC=%.1f%%, Plugged=%s",
-                        ev_soc,
-                        ev_plugged,
-                    )
-            else:
-                logger.info(
-                    "EV Charger: SoC=%.1f%%, Plugged=%s",
-                    ev_soc,
-                    ev_plugged,
+                        logger.info(
+                            "EV %s: SoC=%.1f%%, Plugged=%s",
+                            charger_id,
+                            ha_state.get("soc_percent", 0.0),
+                            ha_state.get("plugged_in", False),
+                        )
+                ev_charger_states_with_deadline.append(
+                    {
+                        "id": charger_id,
+                        "soc_percent": ha_state.get("soc_percent", 0.0),
+                        "plugged_in": ha_state.get("plugged_in", False),
+                        "deadline": deadline,
+                    }
                 )
+
+            # Rebuild kepler_config with per-device EV charger inputs
+            from planner.solver.adapter import build_ev_charger_inputs
+
+            kepler_config.ev_chargers = build_ev_charger_inputs(
+                ev_chargers_cfg, ev_charger_states_with_deadline
+            )
 
             # Rev K19: Vacation Mode Anti-Legionella
         vacation_cfg = water_cfg.get("vacation_mode", {})
@@ -541,10 +605,9 @@ class PlannerPipeline:
 
         if vacation_enabled:
             logger.info("Vacation mode enabled - disabling comfort-based water heating")
-            # Disable normal comfort-based heating AND top-ups (gap constraint)
-            kepler_config.water_heating_min_kwh = 0.0
-            kepler_config.water_comfort_penalty_sek = 0.0
-            kepler_config.water_heating_max_gap_hours = 0.0  # Disable top-ups
+            # Disable water heating (clear the per-device list)
+            kepler_config.water_heaters = []
+            kepler_config.water_heating_max_gap_hours = 0.0
 
             # Check if anti-legionella cycle is due
             sqlite_path = active_config.get("learning", {}).get(
@@ -552,13 +615,17 @@ class PlannerPipeline:
             )
             last_al = load_last_anti_legionella(sqlite_path)
 
-            # Smart detection: If water was already heated today (≥2 kWh), treat as anti-legionella done
-            # This prevents unnecessary heating when vacation mode is just enabled
-            if last_al is None and ha_water_today >= 2.0:
+            # Smart detection: If water was already heated today (≥2 kWh), treat as done
+            ha_water_today_total = (
+                sum(water_heated_today_by_id.values())
+                if water_heated_today_by_id
+                else ha_water_today_total
+            )
+            if last_al is None and ha_water_today_total >= 2.0:
                 logger.info(
                     "Vacation mode: No prior anti-legionella record, but %.1f kWh already heated today. "
                     "Setting last_anti_legionella_at to today.",
-                    ha_water_today,
+                    ha_water_today_total,
                 )
                 save_last_anti_legionella(sqlite_path, now_slot.to_pydatetime())
                 last_al = now_slot.to_pydatetime()
@@ -570,25 +637,26 @@ class PlannerPipeline:
             )
             interval_days = int(vacation_cfg.get("anti_legionella_interval_days", 7))
 
-            # Trigger scheduling after 14:00 (when tomorrow's prices are available)
-            # and when interval - 1 days have passed (allows scheduling in next 24h)
             if days_since >= (interval_days - 1) and now_slot.hour >= 14:
                 duration_hours = float(vacation_cfg.get("anti_legionella_duration_hours", 3.0))
-                # REV F66b: Check new ARC15 water_heaters[] array, fallback to legacy
-                water_heaters = active_config.get("water_heaters", [])
-                if water_heaters:
-                    enabled_heaters = [wh for wh in water_heaters if wh.get("enabled", True)]
-                    power_kw = sum(float(wh.get("power_kw", 0.0)) for wh in enabled_heaters)
-                else:
-                    power_kw = float(water_cfg.get("power_kw", 3.0))
-                al_kwh = duration_hours * power_kw
-                kepler_config.water_heating_min_kwh = al_kwh
+                # Rebuild per-device water heaters for anti-legionella
+                # Each heater runs for duration_hours, min_kwh = power_kw * duration_hours
+                from planner.solver.adapter import build_water_heater_inputs
+
+                al_heaters = build_water_heater_inputs(
+                    water_heaters_cfg, active_config.get("water_heating", {}), water_heater_states
+                )
+                for h in al_heaters:
+                    h.min_kwh_per_day = h.power_kw * duration_hours
+                kepler_config.water_heaters = al_heaters
+                al_kwh_total = sum(h.min_kwh_per_day for h in al_heaters)
                 schedule_anti_legionella = True
                 logger.info(
-                    "Anti-legionella due: %d days since last (interval=%d). Scheduling %.1f kWh.",
+                    "Anti-legionella due: %d days since last (interval=%d). Scheduling %.1f kWh across %d heaters.",
                     days_since,
                     interval_days,
-                    al_kwh,
+                    al_kwh_total,
+                    len(al_heaters),
                 )
             else:
                 logger.debug(
@@ -600,7 +668,7 @@ class PlannerPipeline:
         logger.info(
             "Kepler input initial_soc_kwh: %.3f, water_heated_today: %.2f kWh",
             kepler_input.initial_soc_kwh,
-            ha_water_today,
+            ha_water_today_total,
         )
 
         # Target SoC is applied via soft constraint in Kepler solver:
@@ -738,6 +806,7 @@ async def generate_schedule(
     config: dict[str, Any] | None = None,
     mode: str = "full",
     save_to_file: bool = True,
+    ev_plug_override_charger_id: str | None = None,
 ) -> pd.DataFrame:
     """
     Convenience function to generate a schedule.
@@ -759,4 +828,9 @@ async def generate_schedule(
 
     config_dict: dict[str, Any] = config or {}
     pipeline = PlannerPipeline(config_dict)
-    return await pipeline.generate_schedule(input_data, mode=mode, save_to_file=save_to_file)
+    return await pipeline.generate_schedule(
+        input_data,
+        mode=mode,
+        save_to_file=save_to_file,
+        ev_plug_override_charger_id=ev_plug_override_charger_id,
+    )

@@ -9,7 +9,7 @@ import pytz
 sys.path.append(str(Path.cwd()))
 
 from backend.core.cache import cache_sync
-from inputs import get_nordpool_data
+from backend.core.prices import get_nordpool_data
 
 
 def test_poisoned_cache_invalidation():
@@ -41,10 +41,10 @@ def test_poisoned_cache_invalidation():
     }
 
     with (
-        patch("inputs.yaml.safe_load", return_value=mock_config),
-        patch("inputs.Path.open", MagicMock()),
-        patch("inputs.datetime") as mock_datetime,
-        patch("inputs.Prices") as mock_prices,
+        patch("backend.core.prices.yaml.safe_load", return_value=mock_config),
+        patch("backend.core.prices.Path.open", MagicMock()),
+        patch("backend.core.prices.datetime") as mock_datetime,
+        patch("backend.core.prices.Prices") as mock_prices,
     ):
         mock_datetime.now.return_value = now
         mock_datetime.combine = datetime.datetime.combine  # Restore combine

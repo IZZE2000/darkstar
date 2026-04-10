@@ -1,24 +1,9 @@
 import logging
 
 from backend.api.routers.config import _validate_config_for_save
-from backend.config_migration import migrate_solar_arrays
 
 # Mock logging to avoid clutter
 logging.basicConfig(level=logging.INFO)
-
-
-def test_migration():
-    print("\n--- Testing Legacy Migration ---")
-    config = {"system": {"solar_array": {"azimuth": 180, "tilt": 35, "kwp": 10.5}}}
-    migrated_config, changed = migrate_solar_arrays(config)
-
-    assert changed is True
-    assert "solar_array" not in migrated_config["system"]
-    assert "solar_arrays" in migrated_config["system"]
-    assert len(migrated_config["system"]["solar_arrays"]) == 1
-    assert migrated_config["system"]["solar_arrays"][0]["kwp"] == 10.5
-    assert migrated_config["system"]["solar_arrays"][0]["name"] == "Main Array"
-    print("✅ Legacy migration successful")
 
 
 def assert_no_errors(issues, context=""):
@@ -138,7 +123,6 @@ def test_invalid_configs():
 
 
 if __name__ == "__main__":
-    test_migration()
     test_valid_configs()
     test_invalid_configs()
     print("\n✨ All configuration tests passed!")

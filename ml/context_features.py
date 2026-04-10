@@ -13,7 +13,9 @@ import pytz
 import requests
 import yaml
 
-from inputs import load_home_assistant_config, make_ha_headers
+from backend.core.ha_client import make_ha_headers
+from backend.core.secrets import load_home_assistant_config
+from utils.time_utils import dst_safe_date_range
 
 
 def _load_config(config_path: str = "config.yaml") -> dict[str, Any]:
@@ -93,7 +95,7 @@ def get_vacation_mode_series(
     # Build 15-minute slots in local time
     start_local = start_time.astimezone(tz)
     end_local = end_time.astimezone(tz)
-    slots = pd.date_range(
+    slots = dst_safe_date_range(
         start=start_local,
         end=end_local,
         freq="15min",
@@ -176,7 +178,7 @@ def get_alarm_armed_series(
 
     start_local = start_time.astimezone(tz)
     end_local = end_time.astimezone(tz)
-    slots = pd.date_range(
+    slots = dst_safe_date_range(
         start=start_local,
         end=end_local,
         freq="15min",

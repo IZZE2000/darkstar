@@ -11,6 +11,7 @@ import yaml
 
 from backend.learning.store import LearningStore
 from backend.validation import get_max_energy_per_slot
+from utils.time_utils import dst_safe_date_range, dst_safe_localize
 
 logger = logging.getLogger(__name__)
 
@@ -163,7 +164,7 @@ class LearningEngine:
                 df = pd.DataFrame(data, columns=["timestamp", "cumulative_value"])
                 df["timestamp"] = pd.to_datetime(df["timestamp"])
                 if df["timestamp"].dt.tz is None:
-                    df["timestamp"] = df["timestamp"].dt.tz_localize(self.timezone)
+                    df["timestamp"] = dst_safe_localize(df["timestamp"], self.timezone)
                 else:
                     df["timestamp"] = df["timestamp"].dt.tz_convert(self.timezone)
                 df = df.sort_values("timestamp").drop_duplicates(subset=["timestamp"], keep="last")
@@ -192,7 +193,7 @@ class LearningEngine:
         start_time: Any = min_ts.replace(minute=floored_minute, second=0, microsecond=0)
         end_time: Any = max_ts
 
-        slots = pd.date_range(
+        slots = dst_safe_date_range(
             start=start_time, end=end_time, freq=f"{resolution_minutes}min", tz=self.timezone
         )
 
@@ -291,7 +292,7 @@ class LearningEngine:
                 df = pd.DataFrame(data, columns=["timestamp", "power_value"])
                 df["timestamp"] = pd.to_datetime(df["timestamp"])
                 if df["timestamp"].dt.tz is None:
-                    df["timestamp"] = df["timestamp"].dt.tz_localize(self.timezone)
+                    df["timestamp"] = dst_safe_localize(df["timestamp"], self.timezone)
                 else:
                     df["timestamp"] = df["timestamp"].dt.tz_convert(self.timezone)
                 df = df.sort_values("timestamp").drop_duplicates(subset=["timestamp"], keep="last")
@@ -320,7 +321,7 @@ class LearningEngine:
         if rem != 0 or max_ts.second > 0:
             end_time += timedelta(minutes=(resolution_minutes - rem))
 
-        slots = pd.date_range(
+        slots = dst_safe_date_range(
             start=start_time,
             end=end_time,
             freq=f"{resolution_minutes}min",

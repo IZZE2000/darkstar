@@ -1,5 +1,6 @@
 from datetime import datetime
 
+import sqlalchemy as sa
 from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -326,3 +327,24 @@ class ExecutionLog(Base):
     executor_version: Mapped[str | None] = mapped_column(String)
     commanded_unit: Mapped[str] = mapped_column(String, default="A")
     action_results: Mapped[str | None] = mapped_column(Text)
+    ev_charging_kw: Mapped[float | None] = mapped_column(Float)
+
+
+class PriceForecast(Base):
+    __tablename__ = "price_forecasts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    slot_start: Mapped[str] = mapped_column(String, index=True)
+    issue_timestamp: Mapped[str] = mapped_column(String)
+    days_ahead: Mapped[int] = mapped_column(Integer)
+    spot_p10: Mapped[float | None] = mapped_column(Float)
+    spot_p50: Mapped[float | None] = mapped_column(Float)
+    spot_p90: Mapped[float | None] = mapped_column(Float)
+    wind_index: Mapped[float | None] = mapped_column(Float)
+    temperature_c: Mapped[float | None] = mapped_column(Float)
+    cloud_cover: Mapped[float | None] = mapped_column(Float)
+    radiation_wm2: Mapped[float | None] = mapped_column(Float)
+
+    __table_args__ = (
+        sa.Index("ix_price_forecasts_slot_start_issue_timestamp", "slot_start", "issue_timestamp"),
+    )

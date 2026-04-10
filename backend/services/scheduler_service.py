@@ -39,6 +39,11 @@ class SchedulerStatus:
     next_training_at: datetime | None = None
     last_training_status: str | None = None
 
+    # Price forecast daily snapshot status
+    price_forecast_enabled: bool = False
+    last_price_forecast_at: datetime | None = None
+    next_price_forecast_at: datetime | None = None
+
 
 class SchedulerService:
     """Async scheduler service running as FastAPI background task."""
@@ -77,15 +82,23 @@ class SchedulerService:
 
         logger.info("Scheduler stopped")
 
-    async def trigger_now(self, ev_plugged_in_override: bool | None = None) -> PlannerResult:
+    async def trigger_now(
+        self,
+        ev_plugged_in_override: bool | None = None,
+        ev_charger_id_override: str | None = None,
+    ) -> PlannerResult:
         """Manually trigger an immediate planner run.
 
         Args:
             ev_plugged_in_override: If True, passes plugged-in state to planner to avoid REST race
+            ev_charger_id_override: Charger ID to apply the plug state override to (Task 7.3)
         """
         self._status.current_task = "planning"
         try:
-            result = await planner_service.run_once(ev_plugged_in_override=ev_plugged_in_override)
+            result = await planner_service.run_once(
+                ev_plugged_in_override=ev_plugged_in_override,
+                ev_charger_id_override=ev_charger_id_override,
+            )
             self._update_status_from_result(result)
             return result
         finally:
@@ -108,6 +121,13 @@ class SchedulerService:
         if self._status.training_enabled:
             self._status.next_training_at = self._compute_next_training(config["ml_training"])
 
+        # Initial price forecast schedule
+        self._status.price_forecast_enabled = config.get("price_forecast", {}).get("enabled", False)
+        if self._status.price_forecast_enabled:
+            self._status.next_price_forecast_at = self._compute_next_price_forecast(
+                config.get("price_forecast", {})
+            )
+
         while self._running:
             try:
                 await asyncio.sleep(30)  # Check every 30 seconds
@@ -116,6 +136,9 @@ class SchedulerService:
                 config = self._load_config()
                 self._status.enabled = config.get("enabled", False)
                 self._status.training_enabled = config.get("ml_training", {}).get("enabled", False)
+                self._status.price_forecast_enabled = config.get("price_forecast", {}).get(
+                    "enabled", False
+                )
 
                 # Check Planning
                 if self._status.enabled:
@@ -132,6 +155,16 @@ class SchedulerService:
                         and self._status.current_task == "idle"
                     ):
                         await self._run_ml_training(config["ml_training"])
+
+                # Check Daily Price Forecast (runs independently at 06:00)
+                if self._status.price_forecast_enabled:
+                    now = datetime.now(UTC)
+                    if (
+                        self._status.next_price_forecast_at
+                        and now >= self._status.next_price_forecast_at
+                        and self._status.current_task == "idle"
+                    ):
+                        await self._run_price_forecast_daily(config.get("price_forecast", {}))
 
             except asyncio.CancelledError:
                 logger.info("Scheduler loop cancelled")
@@ -233,7 +266,10 @@ class SchedulerService:
         self._status.next_training_at = self._compute_next_training(config)
 
     def _compute_next_training(self, config: dict[str, Any]) -> datetime:
-        """Calculate next training date based on run_days and run_time."""
+        """Calculate next training date based on frequency and run_time.
+
+        Supports daily retraining (default) or weekly on specific days.
+        """
         import pytz
 
         try:
@@ -243,14 +279,8 @@ class SchedulerService:
             tz_str: str = glob_cfg.get("timezone", "Europe/Stockholm")
             tz = pytz.timezone(tz_str)
 
-            # Validate run_days (0-6)
-            run_days = config.get("run_days", [1, 4])
-            if not isinstance(run_days, list) or not all(
-                isinstance(d, int) and 0 <= d <= 6
-                for d in run_days  # type: ignore[arg-type]
-            ):
-                logger.warning(f"Invalid run_days {run_days}, using default [1, 4]")
-                run_days = [1, 4]
+            # Check frequency (daily or weekly)
+            frequency = config.get("frequency", "daily")
 
             # Validate run_time (HH:MM)
             run_time_str = config.get("run_time", "03:00")
@@ -264,29 +294,120 @@ class SchedulerService:
                 hour, minute = 3, 0
 
             now_local = datetime.now(tz)
-
-            # Try to find the next occurrence
-            days_checked = 0
             check_date = now_local.replace(hour=hour, minute=minute, second=0, microsecond=0)
 
-            # If today matches but run_time has passed, start checking from tomorrow
+            # If run_time has passed today, start from tomorrow
             if check_date <= now_local:
                 check_date += timedelta(days=1)
-                days_checked = 1
 
-            while days_checked < 8:
-                if check_date.weekday() in run_days:
-                    # Convert back to UTC for internal storage
-                    return check_date.astimezone(pytz.UTC)
-                check_date += timedelta(days=1)
-                days_checked += 1
+            if frequency == "daily":
+                # Daily retraining - next run is tomorrow at run_time
+                return check_date.astimezone(pytz.UTC)
+            else:
+                # Weekly retraining on specific days
+                run_days = config.get("run_days", [1, 4])  # Default Mon/Thu for backward compat
+                if not isinstance(run_days, list) or not all(
+                    isinstance(d, int) and 0 <= d <= 6
+                    for d in run_days  # type: ignore[arg-type]
+                ):
+                    logger.warning(f"Invalid run_days {run_days}, using default [1, 4]")
+                    run_days = [1, 4]
 
-            # Fallback (should not happen with valid run_days)
-            return now_local.astimezone(pytz.UTC) + timedelta(days=1)
+                # Find next matching day
+                days_checked = 0
+                while days_checked < 8:
+                    if check_date.weekday() in run_days:
+                        return check_date.astimezone(pytz.UTC)
+                    check_date += timedelta(days=1)
+                    days_checked += 1
+
+                # Fallback
+                return check_date.astimezone(pytz.UTC)
 
         except Exception as e:
             logger.error(f"Failed to compute next training time: {e}")
             return datetime.now(UTC) + timedelta(days=1)
+
+    async def _run_price_forecast_daily(self, config: dict[str, Any]) -> None:
+        """Execute daily price forecast generation at 06:00.
+
+        This runs independently of training and planner schedules to accumulate
+        weather snapshots for faster model bootstrap.
+        """
+        from ml.price_forecast import generate_price_forecasts
+
+        self._status.current_task = "price_forecast"
+        logger.info("Starting daily price forecast generation...")
+
+        try:
+            # Run price forecast generation
+            # Pass model_path=None to allow weather-only rows when no model exists
+            from backend.learning import get_learning_engine
+
+            engine = get_learning_engine()
+
+            forecasts = await generate_price_forecasts(
+                config=engine.config,
+                db_path=str(engine.db_path),
+                model_path=None,  # Let the function check if models exist
+            )
+
+            self._status.last_price_forecast_at = datetime.now(UTC)
+            logger.info(f"Daily price forecast completed: {len(forecasts)} records generated")
+
+        except Exception as e:
+            logger.error(f"Daily price forecast failed: {e}")
+            # Don't mark as failed status to avoid alerting - this is non-critical
+
+        self._status.current_task = "idle"
+        # Schedule next run for tomorrow at 06:00
+        self._status.next_price_forecast_at = self._compute_next_price_forecast(config)
+
+    def _compute_next_price_forecast(self, config: dict[str, Any]) -> datetime:
+        """Calculate next price forecast time at 06:00 local time."""
+        import pytz
+
+        try:
+            # Load timezone from global config or default
+            global_config = self._load_global_config()
+            tz_str: str = global_config.get("timezone", "Europe/Stockholm")
+            tz = pytz.timezone(tz_str)
+
+            # Default to 06:00, can be configured
+            run_time_str = config.get("daily_run_time", "06:00")
+            try:
+                hour, minute = map(int, run_time_str.split(":"))
+                if not (0 <= hour <= 23 and 0 <= minute <= 59):
+                    raise ValueError
+            except (ValueError, IndexError, AttributeError):
+                logger.warning(f"Invalid daily_run_time {run_time_str}, using default 06:00")
+                run_time_str = "06:00"
+                hour, minute = 6, 0
+
+            now_local = datetime.now(tz)
+            next_run = now_local.replace(hour=hour, minute=minute, second=0, microsecond=0)
+
+            # If run_time has passed today, schedule for tomorrow
+            if next_run <= now_local:
+                next_run += timedelta(days=1)
+
+            return next_run.astimezone(pytz.UTC)
+
+        except Exception as e:
+            logger.error(f"Failed to compute next price forecast time: {e}")
+            # Default to tomorrow at 06:00 UTC
+            return datetime.now(UTC).replace(hour=6, minute=0, second=0, microsecond=0) + timedelta(
+                days=1
+            )
+
+    def _load_global_config(self) -> dict[str, Any]:
+        """Load global config from config.yaml."""
+        try:
+            with Path("config.yaml").open() as f:
+                return yaml.safe_load(f) or {}
+        except Exception as e:
+            logger.warning(f"Failed to load global config: {e}")
+            return {}
 
     def _compute_next_run(
         self, from_time: datetime, every_minutes: int, jitter_minutes: int
@@ -312,6 +433,7 @@ class SchedulerService:
                 "every_minutes": int(schedule.get("every_minutes", 60)),
                 "jitter_minutes": int(schedule.get("jitter_minutes", 0)),
                 "ml_training": automation.get("ml_training", {}),
+                "price_forecast": cfg.get("price_forecast", {}),
             }
         except Exception as e:
             logger.warning(f"Failed to load scheduler config: {e}")
@@ -320,6 +442,7 @@ class SchedulerService:
                 "every_minutes": 60,
                 "jitter_minutes": 0,
                 "ml_training": {"enabled": False},
+                "price_forecast": {"enabled": False},
             }
 
 

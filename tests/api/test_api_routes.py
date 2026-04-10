@@ -1,5 +1,6 @@
 import sys
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -14,7 +15,13 @@ def client():
     app = create_app()
     # Unwrap Socket.IO wrapper to get raw FastAPI app
     fastapi_app = app.other_asgi_app if hasattr(app, "other_asgi_app") else app
-    with TestClient(fastapi_app) as client:
+    # Patch LearningStore so the lifespan doesn't initialise aiosqlite in a sync context.
+    # close() is called with await on shutdown so it must be an AsyncMock.
+    # get_learning_engine is patched globally by the autouse fixture in conftest.py.
+    with (
+        patch("backend.main.LearningStore", return_value=MagicMock(close=AsyncMock())),
+        TestClient(fastapi_app) as client,
+    ):
         yield client
 
 

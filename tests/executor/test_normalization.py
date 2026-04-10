@@ -8,8 +8,8 @@ import yaml
 # Add root to sys.path to import modules
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
+from backend.core.ha_client import get_ha_sensor_kw_normalized
 from executor.config import _str_or_none, load_executor_config
-from inputs import get_ha_sensor_kw_normalized
 
 
 @pytest.mark.asyncio
@@ -22,7 +22,7 @@ async def test_get_ha_sensor_kw_normalized():
     # Mock data for no units
     mock_none = {"state": "2.5", "attributes": {}}
 
-    with patch("inputs.get_ha_entity_state") as mock_get:
+    with patch("backend.core.ha_client.get_ha_entity_state") as mock_get:
         # Test W normalization
         mock_get.return_value = mock_w
         val = await get_ha_sensor_kw_normalized("any")
@@ -84,5 +84,5 @@ def test_load_executor_config_normalization(tmp_path):
     assert config.inverter.grid_charging_enable is None
     assert config.inverter.max_charge_current is None
     assert config.inverter.max_discharge_current is None
-    assert config.water_heater.target_entity is None
+    assert config.water_heater.temp_normal == 60
     assert config.automation_toggle_entity == "input_boolean.automation"

@@ -322,14 +322,17 @@ class HAClient:
             "HA call_service: %s.%s on %s with payload: %s", domain, service, entity_id, payload
         )
 
-        try:
+        async def _post() -> None:
             session = await self._get_session()
             async with session.post(
                 f"{self.base_url}/api/services/{domain}/{service}",
                 json=payload,
             ) as response:
                 response.raise_for_status()
-                return True
+
+        try:
+            await _retry_with_backoff(_post, max_retries=3, base_delay=1.0)
+            return True
         except aiohttp.ClientResponseError as e:
             raise HACallError(
                 message=f"Failed to call service {domain}.{service} on {entity_id}",
@@ -337,7 +340,7 @@ class HAClient:
                 response_body=str(e.message),
                 exception_type=type(e).__name__,
             ) from e
-        except aiohttp.ClientError as e:
+        except (aiohttp.ClientError, TimeoutError) as e:
             raise HACallError(
                 message=f"Failed to call service {domain}.{service} on {entity_id}",
                 exception_type=type(e).__name__,
@@ -769,10 +772,21 @@ class ActionDispatcher:
             duration_ms=duration_ms,
         )
 
-    async def set_water_temp(self, target: int) -> ActionResult:
-        """Set water heater target temperature."""
+    async def set_water_temp(self, target: int, target_entity: str | None = None) -> ActionResult:
+        """Set water heater target temperature.
+
+        Args:
+            target: Target temperature in °C
+            target_entity: HA entity to control. If None, falls back to
+                           config.water_heater.target_entity (legacy single-heater path).
+        """
         start = time.time()
-        entity = self.config.water_heater.target_entity
+        # Use passed entity; fall back to legacy single-entity config for backward compat
+        entity = (
+            target_entity
+            if target_entity is not None
+            else getattr(self.config.water_heater, "target_entity", None)
+        )
 
         if not _is_entity_configured(entity):
             logger.debug("Skipping water_temp action: entity not configured")

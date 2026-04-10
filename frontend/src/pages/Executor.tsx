@@ -15,7 +15,6 @@ import {
     X,
     BatteryCharging,
     Upload,
-    Droplets,
     ChevronDown,
     Download,
     Layers,
@@ -52,8 +51,11 @@ type ExecutorStatus = {
         charge_kw: number
         export_kw: number
         water_kw: number
+        discharge_kw: number
+        ev_charging_kw: number
         soc_target: number
         soc_projected: number
+        mode_intent?: string | null
     }
     last_action?: string
     override_active: boolean
@@ -95,6 +97,7 @@ type ExecutionRecord = {
     planned_water_kw?: number
     planned_soc_target?: number
     planned_soc_projected?: number
+    ev_charging_kw?: number
     // Commanded values (what we actually set)
     commanded_work_mode?: string
     commanded_grid_charging?: number
@@ -129,6 +132,15 @@ interface ActionResult {
     verification_success?: boolean
     skipped: boolean
     error_details?: string | null
+}
+
+// Mode badge mapping for commanded_work_mode / mode_intent
+type ModeBadge = { emoji: string; label: string; className: string }
+const MODE_BADGES: Record<string, ModeBadge> = {
+    charge: { emoji: '⚡', label: 'Charge', className: 'text-good bg-good/20' },
+    self_consumption: { emoji: '🔄', label: 'Self-consumption', className: 'text-blue-400 bg-blue-400/20' },
+    idle: { emoji: '⏸️', label: 'Idle', className: 'text-muted bg-surface2/50' },
+    export: { emoji: '↗️', label: 'Export', className: 'text-warn bg-warn/20' },
 }
 
 // API helpers - using relative paths for HA Ingress compatibility
@@ -822,112 +834,6 @@ export default function Executor() {
                         </div>
                     )}
                 </Card>
-
-                {/* Quick Actions Card - Hidden as per user request */}
-                {/* <Card className="lg:col-span-3 p-4 md:p-5 flex flex-col">
-                    <div className="flex items-center gap-2 mb-4">
-                        <Zap className="h-4 w-4 text-accent" />
-                        <span className="text-xs font-medium text-text">Quick Actions</span>
-                    </div>
-
-                    {status?.quick_action && (
-                        <div className="mb-3 p-3 rounded-lg bg-accent/10 border border-accent/30">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <div className="text-[11px] font-medium text-accent capitalize">
-                                        {status.quick_action.type.replace('_', ' ')} Active
-                                    </div>
-                                    <div className="text-[10px] text-muted">
-                                        {status.quick_action.remaining_minutes.toFixed(0)} min remaining
-                                    </div>
-                                </div>
-                                <button
-                                    onClick={async () => {
-                                        try {
-                                            await executorApi.quickAction.clear()
-                                            fetchAll()
-                                        } catch (e) {
-                                            // ignore
-                                            console.error(e)
-                                        }
-                                    }}
-                                    className="text-[10px] px-2 py-1 rounded bg-bad/20 text-bad hover:bg-bad/30 transition-colors"
-                                >
-                                    Cancel
-                                </button>
-                            </div>
-                        </div>
-                    )}
-
-                    <div className="space-y-2 flex-1">
-                        {[
-                            {
-                                type: 'force_charge',
-                                label: 'Force Charge',
-                                icon: BatteryCharging,
-                                labelClass: 'text-good',
-                                btnClass: 'bg-good/10 border-good/20 text-good hover:bg-good/20',
-                            },
-                            {
-                                type: 'force_discharge',
-                                label: 'Force Export',
-                                icon: Upload,
-                                labelClass: 'text-warn',
-                                btnClass: 'bg-warn/10 border-warn/20 text-warn hover:bg-warn/20',
-                            },
-                            {
-                                type: 'force_water_heater',
-                                label: 'Boost Water',
-                                icon: Droplets,
-                                labelClass: 'text-warn',
-                                btnClass: 'bg-warn/10 border-warn/20 text-warn hover:bg-warn/20',
-                            },
-                            {
-                                type: 'inverter_off',
-                                label: 'Inverter Off',
-                                icon: Power,
-                                labelClass: 'text-bad',
-                                btnClass: 'bg-bad/10 border-bad/20 text-bad hover:bg-bad/20',
-                            },
-                        ].map((action) => (
-                            <div key={action.type} className="flex items-center gap-2">
-                                <span
-                                    className={`text-[11px] ${action.labelClass} w-20 font-medium flex items-center gap-1`}
-                                >
-                                    <action.icon className="h-3 w-3" />
-                                    {action.label}
-                                </span>
-                                <div className="flex gap-1 flex-1">
-                                    {[15, 30, 60].map((mins) => (
-                                        <button
-                                            key={mins}
-                                            onClick={async () => {
-                                                try {
-                                                    await executorApi.quickAction.set(action.type, mins)
-                                                    fetchAll()
-                                                } catch (e: any) {
-                                                    alert('Failed: ' + e.message)
-                                                }
-                                            }}
-                                            disabled={status?.quick_action?.type === action.type}
-                                            className={`flex-1 px-2 py-1.5 text-[10px] rounded-lg border transition-all ${
-                                                status?.quick_action?.type === action.type
-                                                    ? 'bg-accent/20 border-accent/40 text-accent'
-                                                    : action.btnClass
-                                            }`}
-                                        >
-                                            {mins}m
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-
-                    <div className="mt-3 text-[9px] text-muted/60 text-center">
-                        Overrides schedule for selected duration
-                    </div>
-                </Card> */}
             </div>
 
             {/* Execution History */}
@@ -1057,6 +963,18 @@ export default function Executor() {
                                 </div>
                                 {status.current_slot_plan && (
                                     <div className="mt-2 grid grid-cols-4 gap-2 text-[10px]">
+                                        {/* Primary mode badge from mode_intent */}
+                                        {status.current_slot_plan.mode_intent &&
+                                            MODE_BADGES[status.current_slot_plan.mode_intent] && (
+                                                <div
+                                                    className={`flex items-center gap-1 col-span-4 ${MODE_BADGES[status.current_slot_plan.mode_intent].className} px-1.5 py-0.5 rounded w-fit`}
+                                                >
+                                                    <span>
+                                                        {MODE_BADGES[status.current_slot_plan.mode_intent].emoji}{' '}
+                                                        {MODE_BADGES[status.current_slot_plan.mode_intent].label}
+                                                    </span>
+                                                </div>
+                                            )}
                                         {status.current_slot_plan.charge_kw > 0 && (
                                             <div className="flex items-center gap-1 text-good">
                                                 <BatteryCharging className="h-3 w-3" />
@@ -1070,9 +988,13 @@ export default function Executor() {
                                             </div>
                                         )}
                                         {status.current_slot_plan.water_kw > 0 && (
-                                            <div className="flex items-center gap-1 text-water">
-                                                <Droplets className="h-3 w-3" />
-                                                <span>{status.current_slot_plan.water_kw.toFixed(1)}kW</span>
+                                            <div className="flex items-center gap-1 text-water bg-water/20 px-1.5 py-0.5 rounded w-fit">
+                                                <span>💧 Heating</span>
+                                            </div>
+                                        )}
+                                        {(status.current_slot_plan.ev_charging_kw ?? 0) > 0 && (
+                                            <div className="flex items-center gap-1 text-purple-400 bg-purple-400/20 px-1.5 py-0.5 rounded w-fit">
+                                                <span>🔌 EV</span>
                                             </div>
                                         )}
                                         {status.current_slot_plan.soc_target > 0 && (
@@ -1080,11 +1002,6 @@ export default function Executor() {
                                                 <span>SoC→{status.current_slot_plan.soc_target}%</span>
                                             </div>
                                         )}
-                                        {!status.current_slot_plan.charge_kw &&
-                                            !status.current_slot_plan.export_kw &&
-                                            !status.current_slot_plan.water_kw && (
-                                                <div className="text-muted/60 col-span-4">Idle / Self-consumption</div>
-                                            )}
                                     </div>
                                 )}
                             </div>
@@ -1118,32 +1035,26 @@ export default function Executor() {
                                             <span className="text-[11px] text-text font-mono">
                                                 {formatDateTime(record.executed_at)}
                                             </span>
-                                            {/* Quick summary badges */}
-                                            {record.commanded_charge_current_a &&
-                                                record.commanded_charge_current_a > 0 && (
-                                                    <span className="text-[9px] text-good bg-good/20 px-1.5 py-0.5 rounded">
-                                                        ⚡ Charge
-                                                    </span>
-                                                )}
-                                            {record.commanded_work_mode === 'Export First' && (
-                                                <span className="text-[9px] text-warn bg-warn/20 px-1.5 py-0.5 rounded">
-                                                    ↗ Export
+                                            {/* Primary mode badge from commanded_work_mode */}
+                                            {record.commanded_work_mode && MODE_BADGES[record.commanded_work_mode] && (
+                                                <span
+                                                    className={`text-[9px] px-1.5 py-0.5 rounded ${MODE_BADGES[record.commanded_work_mode].className}`}
+                                                >
+                                                    {MODE_BADGES[record.commanded_work_mode].emoji}{' '}
+                                                    {MODE_BADGES[record.commanded_work_mode].label}
                                                 </span>
                                             )}
-                                            {record.commanded_water_temp && record.commanded_water_temp > 50 && (
-                                                <span className="text-[9px] text-warn bg-warn/20 px-1.5 py-0.5 rounded">
-                                                    🔥 Heat
+                                            {/* Context badges */}
+                                            {(record.planned_water_kw ?? 0) > 0 && (
+                                                <span className="text-[9px] text-water bg-water/20 px-1.5 py-0.5 rounded">
+                                                    💧 Heating
                                                 </span>
                                             )}
-                                            {/* Idle badge if no active actions */}
-                                            {(!record.commanded_charge_current_a ||
-                                                record.commanded_charge_current_a === 0) &&
-                                                record.commanded_work_mode !== 'Export First' &&
-                                                (!record.commanded_water_temp || record.commanded_water_temp <= 50) && (
-                                                    <span className="text-[9px] text-muted/60 bg-surface2/50 px-1.5 py-0.5 rounded">
-                                                        — Idle
-                                                    </span>
-                                                )}
+                                            {(record.ev_charging_kw ?? 0) > 0 && (
+                                                <span className="text-[9px] text-purple-400 bg-purple-400/20 px-1.5 py-0.5 rounded">
+                                                    🔌 EV
+                                                </span>
+                                            )}
                                         </div>
                                         <div className="flex items-center gap-2">
                                             {record.override_active ? (

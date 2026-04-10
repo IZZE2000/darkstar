@@ -82,7 +82,7 @@ export default function Dashboard() {
     const [batteryCapacity, setBatteryCapacity] = useState<number>(0)
     const [avgLoad, setAvgLoad] = useState<{ kw: number; dailyKwh: number } | null>(null)
     const [currentSlotTarget, setCurrentSlotTarget] = useState<number>(0)
-    const [waterToday, setWaterToday] = useState<{ kwh: number; source: string } | null>(null)
+    const [waterToday] = useState<{ kwh: number; source: string } | null>(null)
     const [comfortLevel, setComfortLevel] = useState<number>(0)
     const [vacationMode, setVacationMode] = useState<boolean>(false)
     const [vacationModeHA, setVacationModeHA] = useState<boolean>(false)
@@ -104,6 +104,10 @@ export default function Dashboard() {
     // Phase 3: Executor health status
     const [executorHealth, setExecutorHealth] = useState<import('../lib/api').ExecutorHealthResponse | null>(null)
     const [config, setConfig] = useState<any>(null)
+
+    // Price Forecast Outlook
+    const [priceOutlook, setPriceOutlook] = useState<import('../lib/api').PriceOutlookResponse | null>(null)
+    const [priceAdvice, setPriceAdvice] = useState<import('../lib/api').AdviceItem[]>([])
 
     const { toast } = useToast()
 
@@ -360,17 +364,35 @@ export default function Dashboard() {
                 auroraData,
                 historyData,
                 executorHealthData, // Phase 3
+                priceOutlookData, // Price Forecast
+                adviceData, // Price advice
             ] = await Promise.allSettled([
                 Api.haAverage(), // Cached for 60s
                 Api.energyToday(),
                 Api.aurora.dashboard(),
                 Api.scheduleTodayWithHistory(),
                 Api.executor.health(), // Phase 3
+                Api.priceForecast.outlook(), // Price Forecast
+                Api.getAdvice(), // Price advice
             ])
 
             // Phase 3: Update executor health status
             if (executorHealthData.status === 'fulfilled') {
                 setExecutorHealth(executorHealthData.value)
+            }
+
+            // Price Forecast: Store outlook data
+            if (priceOutlookData.status === 'fulfilled') {
+                setPriceOutlook(priceOutlookData.value)
+            }
+
+            // Price advice: Filter for price category
+            if (adviceData.status === 'fulfilled' && adviceData.value?.advice) {
+                const adviceList = Array.isArray(adviceData.value.advice) ? adviceData.value.advice : []
+                const filteredAdvice = adviceList.filter(
+                    (item: import('../lib/api').AdviceItem) => item.category === 'price',
+                )
+                setPriceAdvice(filteredAdvice)
             }
 
             if (haAverageData.status === 'fulfilled') {
@@ -946,6 +968,8 @@ export default function Dashboard() {
                     safetyFloor={plannerMeta?.s_index?.safety_floor?.calculated_floor_kwh ?? null}
                     deficitRatio={plannerMeta?.s_index?.safety_floor?.deficit_ratio ?? null}
                     batteryCapacity={batteryCapacity}
+                    outlookData={priceOutlook}
+                    priceAdvice={priceAdvice}
                 />
             </div>
         </main>

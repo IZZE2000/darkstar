@@ -145,13 +145,16 @@ Darkstar's intelligence is powered by the **Aurora Suite**, which consists of th
 
 ### 5.1 Aurora Vision (The Eyes)
 *   **Role**: Forecasting.
-*   **Architecture**: Physics-First Hybrid PV Forecasting.
-*   **Mechanism**: Three-layer composition:
+*   **Architecture**: Physics-First Hybrid PV Forecasting with Recency-Weighted Training.
+*   **Mechanism**: Two-layer composition:
     1. **Physics Base**: `OpenMeteoSolarForecast` with panel tilt/azimuth calculates POA (Plane of Array) irradiance using solar position and radiation data.
     2. **ML Residual**: LightGBM model learns residual = actual - physics, capturing shadows, panel degradation, and system efficiency differences.
-    3. **Corrector**: Short-term adjustments for weather forecast errors.
 *   **Training Filter**: PV models train only on slots with `pv_kwh IS NOT NULL AND (radiation > 10 OR pv_kwh > 0.01)` to exclude nighttime noise.
 *   **Load Forecasting**: LightGBM with 11 features (time, weather, context).
+*   **Recency-Weighted Training**: LightGBM models use exponential decay sample weighting (half-life = 30 days by default) so recent observations have higher influence on training than older data.
+    *   **Formula**: `weight = exp(-lambda * days_ago)` where `lambda = ln(2) / half_life_days`
+    *   **Decay Profile**: 1-day-old ≈ 1.0 weight, 30-day-old ≈ 0.5 weight (half-life), 180-day-old ≈ 0.05 weight
+    *   **Benefits**: Automatically adapts to changing conditions (seasonal patterns, equipment changes) without manual retraining schedule adjustments
 *   **Uncertainty**: Provides p10/p50/p90 confidence intervals for probabilistic S-Index.
 *   **Extended Horizon**: Aurora forecasts 168 hours (7 days), enabling S-Index to use probabilistic bands for D+1 to D+4 even when price data only covers 48 hours.
 *   **Config**: `s_index.s_index_horizon_days` (integer, default 4) controls how many future days are considered.
@@ -160,7 +163,6 @@ Darkstar's intelligence is powered by the **Aurora Suite**, which consists of th
     {
       "physics": {"pv_kwh": 0.65},
       "ml_residual": {"pv_kwh": -0.08},
-      "correction": {"pv_kwh": -0.03},
       "final": {"pv_kwh": 0.54},
       "base": {"pv_kwh": 0.65, "load_kwh": 0.5}
     }
@@ -225,9 +227,14 @@ All daily energy totals are now aggregated from the `SlotObservation` table:
 
 ```
 ┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│  Cumulative HA  │────▶│  Recorder        │────▶│  SlotObservation│
-│  Sensors        │     │  (15-min deltas) │     │  (SQLite)       │
+│  Power HA       │────▶│  Recorder        │────▶│  SlotObservation│
+│  Sensors        │     │  (15-min avg)    │     │  (SQLite)       │
 └─────────────────┘     └──────────────────┘     └────────┬────────┘
+        │                        ▲
+        │   HA History API       │
+        │   (avg power × time)   │
+        └────────────────────────┘
+        [EV/Water: power history → kWh]
                                                           │
                                     ┌─────────────────────┘
                                     │
@@ -245,7 +252,7 @@ All daily energy totals are now aggregated from the `SlotObservation` table:
 ### Benefits
 1. **Data Consistency**: Dashboard, ML training, and planning all use the same data
 2. **Simplified Config**: Removed 7 `today_*` sensors from configuration requirements
-3. **EV Isolation**: EV charging is properly isolated from house load in all displays
+3. **EV Isolation**: EV charging is properly isolated from house load in all displays. EV and water heater energy is measured via the HA History API (average power × slot duration), with power snapshot as fallback when history is unavailable.
 4. **Historical Accuracy**: No dependency on HA's daily reset timing
 
 ### API Changes
@@ -591,15 +598,22 @@ The backend was migrated from Flask (WSGI) to FastAPI (ASGI) for native async su
 backend/
 ├── main.py                 # ASGI app factory, Socket.IO wrapper
 ├── core/
+│   ├── secrets.py          # Config/secrets loading
+│   ├── ha_client.py        # Home Assistant HTTP client
+│   ├── prices.py           # Nordpool price fetching
+│   ├── forecasts.py        # PV/load forecast orchestration
+│   ├── cache.py            # TTL cache
 │   └── websockets.py       # AsyncServer singleton, sync→async bridge
 ├── api/
 │   └── routers/            # FastAPI APIRouters
 │       ├── system.py       # /api/version
 │       ├── config.py       # /api/config
-│       ├── schedule.py     # /api/schedule, /api/scheduler/status
+│       ├── schedule.py     # /api/schedule, /api/scheduler/status, /api/simulate
 │       ├── executor.py     # /api/executor/*
 │       ├── forecast.py     # /api/aurora/*, /api/forecast/*
-│       ├── services.py     # /api/ha/*, /api/status, /api/energy/*
+│       ├── ha.py           # /api/ha/*, /api/ha-socket
+│       ├── energy.py       # /api/energy/*, /api/performance/data
+│       ├── water.py        # /api/water/boost
 │       ├── learning.py     # /api/learning/*
 │       ├── debug.py        # /api/debug/*, /api/history/*
 │       ├── legacy.py       # /api/run_planner, /api/initial_state
@@ -627,7 +641,7 @@ To ensure compatibility with Home Assistant Ingress (which exposes the add-on un
 As of **REV ARC11**, Darkstar has successfully completed its transition to a fully asynchronous architecture. The legacy "Hybrid Mode" has been eliminated.
 
 **Key Characteristics:**
-*   **Fully Asynchronous Services:** The Recorder, LearningEngine, BackfillEngine, and Analyst all run as native `asyncio` tasks.
+*   **Fully Asynchronous Services:** The Recorder, LearningEngine, and BackfillEngine all run as native `asyncio` tasks.
 *   **Unified Database Layer:** `LearningStore` uses `AsyncSession` (SQLAlchemy 2.0) exclusively. Synchronous engines and session factories have been removed to prevent blocking IO.
 *   **Non-blocking Background Loops:** All background services use `await asyncio.sleep()` for timing, ensuring the FastAPI event loop remains responsive.
 
@@ -646,7 +660,7 @@ To prevent `database is locked` errors, Darkstar uses **WAL (Write-Ahead Logging
 **Problem:** Multiple components write to `planner_learning.db`:
 - `ExecutionHistory` (sync engine, executor thread)
 - `LearningStore` (async engine, FastAPI services)
-- `Recorder`, `BackfillEngine`, `Analyst` (async engines)
+- `Recorder`, `BackfillEngine` (async engines)
 
 SQLite's default journal mode (`DELETE`) only allows one writer at a time, causing lock contention.
 
@@ -834,6 +848,7 @@ ev_chargers:
 3.  **Storage** (`backend/recorder.py`):
     - The `Recorder` stores this clean **Base Load** into the `slot_observations` table
     - Controllable loads are tracked separately for analytics
+    - `ev_charging_kwh` and `water_kwh` are computed by querying the HA History API for average power over the slot window, converting to energy via `mean(kW) × 0.25h`. When the History API returns no data, the recorder falls back to the current power snapshot × 0.25h estimation.
 
 4.  **Forecasting** (`ml/forward.py`):
     - ML models are trained on this clean historical base load (without controllable loads)
@@ -900,7 +915,12 @@ heat_pumps:
 ```
 
 To add a new load type:
-1. Define the array schema in `config.default.yaml`
+1. Define the array schema in `config.default.yaml` with a `sensor` (power) field:
+   ```yaml
+   new_load_type:
+     - id: example
+       sensor: sensor.example_power
+   ```
 2. Add entity type to `backend/loads/models.py`
 3. Register the load type in `backend/loads/service.py`
 4. Add UI section in `frontend/src/pages/settings/types.ts`

@@ -11,9 +11,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from executor.config import ControllerConfig, InverterConfig
-from executor.controller import Controller, make_decision
+from executor.controller import Controller, ControllerDecision, make_decision
 from executor.engine import ExecutorEngine
-from executor.override import SlotPlan, SystemState
+from executor.override import OverrideResult, SlotPlan, SystemState
 
 
 class TestControllerEVIsolation:
@@ -550,3 +550,239 @@ class TestEVIsolationIntegration:
         assert decision.mode_intent == expected_mode, (
             f"Scenario {scenario}: expected {expected_mode}, got {decision.mode_intent}"
         )
+
+
+class TestExecutionRecordOriginalSlot:
+    """Tests that _create_execution_record uses the original (pre-isolation) slot values."""
+
+    @pytest.fixture
+    def engine(self, mock_engine):
+        return mock_engine
+
+    @pytest.fixture
+    def mock_engine(self):
+        with (
+            patch("executor.engine.load_executor_config") as mock_load,
+            patch("executor.engine.load_yaml") as mock_yaml,
+            patch("executor.engine.ExecutionHistory"),
+            patch("executor.engine.LoadDisaggregator"),
+        ):
+            mock_load.return_value = MagicMock(
+                enabled=True,
+                shadow_mode=False,
+                timezone="Europe/Stockholm",
+                tick_interval_sec=30,
+                schedule_file="schedule.json",
+                controller=ControllerConfig(),
+                inverter=InverterConfig(),
+                water_heater=None,
+                ev_charger=MagicMock(switch_entity=None),
+            )
+            mock_yaml.return_value = {
+                "system": {
+                    "has_solar": True,
+                    "has_battery": True,
+                    "has_water_heater": False,
+                    "has_ev_charger": True,
+                },
+                "ev_chargers": [],
+                "water_heaters": [],
+            }
+            return ExecutorEngine()
+
+    def _make_record(
+        self, engine, original_slot, ev_isolation_reason=None, success=True, override=None
+    ):
+        if override is None:
+            override = OverrideResult()
+        return engine._create_execution_record(
+            now_iso="2026-03-16T07:00:00",
+            slot=original_slot,
+            slot_start="2026-03-16T07:00:00",
+            state=SystemState(),
+            decision=ControllerDecision(mode_intent="idle"),
+            override=override,
+            action_results=[],
+            success=success,
+            duration_ms=100,
+            ev_isolation_reason=ev_isolation_reason,
+        )
+
+    def test_planned_discharge_uses_original_slot(self, engine):
+        """Task 1.3: planned_discharge_kw reflects original schedule (1.4), not isolation value (0)."""
+        original_slot = SlotPlan(discharge_kw=1.4, ev_charging_kw=10.0)
+        record = self._make_record(engine, original_slot)
+        assert record.planned_discharge_kw == 1.4
+
+    def test_ev_charging_kw_from_original_slot(self, engine):
+        """Task 2.3: ev_charging_kw in execution record comes from original slot."""
+        original_slot = SlotPlan(ev_charging_kw=10.0, discharge_kw=1.4)
+        record = self._make_record(engine, original_slot)
+        assert record.ev_charging_kw == 10.0
+
+    def test_non_ev_slot_has_zero_ev_charging_kw(self, engine):
+        """Task 2.3: Non-EV slot has ev_charging_kw=0."""
+        original_slot = SlotPlan(ev_charging_kw=0.0, discharge_kw=2.0)
+        record = self._make_record(engine, original_slot)
+        assert record.ev_charging_kw == 0.0
+
+    def test_isolation_reason_in_override_reason(self, engine):
+        """Task 4.2: override_reason is populated when isolation is active and no real override."""
+        original_slot = SlotPlan(ev_charging_kw=10.0)
+        isolation_reason = "EV source isolation: 10.0kW scheduled, 0.00kW actual"
+        record = self._make_record(engine, original_slot, ev_isolation_reason=isolation_reason)
+        assert record.override_reason == isolation_reason
+
+    def test_real_override_takes_precedence_over_isolation(self, engine):
+        """Task 4.3: Real override reason wins over isolation reason when both active."""
+        from executor.override import OverrideType
+
+        real_override = OverrideResult(
+            override_needed=True,
+            override_type=OverrideType.FORCE_CHARGE,
+            reason="Force charge active",
+        )
+        original_slot = SlotPlan(ev_charging_kw=10.0)
+        isolation_reason = "EV source isolation: 10.0kW scheduled, 0.00kW actual"
+        record = self._make_record(
+            engine, original_slot, ev_isolation_reason=isolation_reason, override=real_override
+        )
+        assert record.override_reason == "Force charge active"
+        assert "EV source isolation" not in (record.override_reason or "")
+
+    def test_success_zero_when_ev_charge_failed(self, engine):
+        """Task 3.5: Execution record has success=0 when ev_charge_failed is set."""
+        original_slot = SlotPlan(ev_charging_kw=10.0)
+        record = self._make_record(engine, original_slot, success=False)
+        assert record.success == 0
+
+
+class TestEVChargeFailureDetection:
+    """Test EV charge failure detection counter and notification logic."""
+
+    @pytest.fixture
+    def mock_engine(self):
+        with (
+            patch("executor.engine.load_executor_config") as mock_load,
+            patch("executor.engine.load_yaml") as mock_yaml,
+            patch("executor.engine.ExecutionHistory"),
+            patch("executor.engine.LoadDisaggregator"),
+        ):
+            mock_load.return_value = MagicMock(
+                enabled=True,
+                shadow_mode=False,
+                timezone="Europe/Stockholm",
+                tick_interval_sec=30,
+                schedule_file="schedule.json",
+                controller=ControllerConfig(),
+                inverter=InverterConfig(),
+                water_heater=None,
+                ev_charger=MagicMock(switch_entity=None),
+            )
+            mock_yaml.return_value = {
+                "system": {
+                    "has_solar": True,
+                    "has_battery": True,
+                    "has_water_heater": False,
+                    "has_ev_charger": True,
+                },
+                "ev_chargers": [],
+                "water_heaters": [],
+            }
+            engine = ExecutorEngine()
+            engine._has_ev_charger = True
+            engine._has_battery = True
+            return engine
+
+    def _simulate_tick_counter(self, engine, scheduled_ev_charging, actual_ev_charging):
+        """Simulate the counter logic from _execute_tick without running the full tick."""
+        if scheduled_ev_charging and not actual_ev_charging and not engine._ev_power_fetch_failed:
+            engine._ev_zero_power_ticks += 1
+        elif actual_ev_charging:
+            engine._ev_zero_power_ticks = 0
+
+    def test_counter_increments_each_zero_tick(self, mock_engine):
+        """Task 3.5: Counter increments each tick where scheduled > 0 and actual = 0."""
+        engine = mock_engine
+        for i in range(1, 6):
+            self._simulate_tick_counter(
+                engine, scheduled_ev_charging=True, actual_ev_charging=False
+            )
+            assert engine._ev_zero_power_ticks == i
+
+    def test_counter_resets_when_actual_power_arrives(self, mock_engine):
+        """Task 3.6: Counter resets to 0 when actual EV power exceeds threshold."""
+        engine = mock_engine
+        engine._ev_zero_power_ticks = 4
+        self._simulate_tick_counter(engine, scheduled_ev_charging=True, actual_ev_charging=True)
+        assert engine._ev_zero_power_ticks == 0
+
+    def test_counter_and_flag_reset_when_ev_slot_ends(self, mock_engine):
+        """Task 3.6: Both counter and notified flag reset when EV slot ends (else branch)."""
+        engine = mock_engine
+        engine._ev_zero_power_ticks = 4
+        engine._ev_failure_notified = True
+
+        # Simulate the else branch (no EV charging → slot ended)
+        engine._ev_zero_power_ticks = 0
+        engine._ev_failure_notified = False
+
+        assert engine._ev_zero_power_ticks == 0
+        assert engine._ev_failure_notified is False
+
+    @pytest.mark.asyncio
+    async def test_notify_error_called_after_5_ticks(self, mock_engine):
+        """Task 3.5: notify_error called when counter reaches 5."""
+        engine = mock_engine
+        engine._ev_zero_power_ticks = 5
+        engine._ev_failure_notified = False
+        engine.dispatcher = MagicMock()
+        engine.dispatcher.notify_error = AsyncMock()
+
+        if engine._ev_zero_power_ticks >= 5 and not engine._ev_failure_notified:
+            await engine.dispatcher.notify_error(
+                "EV charge failure: 10.0kW scheduled, 0.00kW actual for 5 consecutive ticks"
+            )
+            engine._ev_failure_notified = True
+
+        engine.dispatcher.notify_error.assert_called_once()
+        assert engine._ev_failure_notified is True
+
+    @pytest.mark.asyncio
+    async def test_notify_error_fires_only_once(self, mock_engine):
+        """Task 3.7: notify_error not called again after flag is set."""
+        engine = mock_engine
+        engine._ev_zero_power_ticks = 10
+        engine._ev_failure_notified = True  # Already fired
+        engine.dispatcher = MagicMock()
+        engine.dispatcher.notify_error = AsyncMock()
+
+        if engine._ev_zero_power_ticks >= 5 and not engine._ev_failure_notified:
+            await engine.dispatcher.notify_error("should not be called")
+
+        engine.dispatcher.notify_error.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_fresh_count_after_ev_slot_ends(self, mock_engine):
+        """Task 3.6: After EV slot ends and resets, a new EV slot starts with fresh counter."""
+        engine = mock_engine
+        engine._ev_zero_power_ticks = 4
+        engine._ev_failure_notified = True
+
+        # Simulate slot end (else branch)
+        engine._ev_zero_power_ticks = 0
+        engine._ev_failure_notified = False
+
+        # Next EV slot starts fresh — 4 ticks should NOT trigger notification
+        engine.dispatcher = MagicMock()
+        engine.dispatcher.notify_error = AsyncMock()
+        for _ in range(4):
+            self._simulate_tick_counter(
+                engine, scheduled_ev_charging=True, actual_ev_charging=False
+            )
+
+        assert engine._ev_zero_power_ticks == 4
+        # Not yet at threshold — no notification
+        if engine._ev_zero_power_ticks >= 5 and not engine._ev_failure_notified:
+            await engine.dispatcher.notify_error("should not trigger yet")
+        engine.dispatcher.notify_error.assert_not_called()

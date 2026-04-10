@@ -400,6 +400,30 @@ class HealthChecker:
                 )
             )
 
+        # Task 10.3: Detect deprecated executor.ev_charger section (switch_entity, replan_*)
+        # These fields have moved to per-device ev_chargers[].switch_entity etc.
+        deprecated_executor_ev_fields = [
+            k
+            for k in ("switch_entity", "replan_on_plugin", "replan_on_unplug")
+            if ev_cfg.get(k) not in (None, "", False)
+        ]
+        if deprecated_executor_ev_fields:
+            issues.append(
+                HealthIssue(
+                    category="config",
+                    severity="warning",
+                    message=(
+                        f"Deprecated setting(s) in executor.ev_charger: "
+                        f"{', '.join(deprecated_executor_ev_fields)}"
+                    ),
+                    guidance=(
+                        "These fields have moved to per-device settings in ev_chargers[]. "
+                        "Run config migration (Settings > Advanced > Migrate Config) or manually "
+                        "move them to each charger's switch_entity / replan_on_plugin / replan_on_unplug field."
+                    ),
+                )
+            )
+
         return issues
 
     async def check_ha_connection(self) -> list[HealthIssue]:
@@ -529,8 +553,7 @@ class HealthChecker:
             "total_battery_charge": is_learning_enabled,
             "total_battery_discharge": is_learning_enabled,
             # Features (WARNING if missing but enabled)
-            "water_power": has_water_heater,
-            "water_heater_consumption": has_water_heater,
+            # ARC15: water_power and water_heater_consumption removed - now in water_heaters[]
             "alarm_state": False,  # Optional
             "vacation_mode": False,  # Optional
         }
@@ -551,7 +574,7 @@ class HealthChecker:
                 hardware_enabled = sensor_requirements.get(key, True)
 
                 # Skip checking if hardware is disabled
-                if hardware_enabled is False and key in ["battery_soc", "pv_power", "water_power"]:
+                if hardware_enabled is False and key in ["battery_soc", "pv_power"]:
                     continue
 
                 entities_to_check.append((entity_id, f"input_sensors.{key}", hardware_enabled))
@@ -577,14 +600,8 @@ class HealthChecker:
                 if soc_target:
                     entities_to_check.append((soc_target, "executor.soc_target_entity", True))
 
-            # Water heater - Require has_water_heater
-            if has_water_heater:
-                water = executor.get("water_heater", {})
-                target_entity = water.get("target_entity")
-                if target_entity:
-                    entities_to_check.append(
-                        (target_entity, "executor.water_heater.target_entity", True)
-                    )
+            # ARC15: Water heater sensors now in water_heaters[] array
+            # Per-heater checks are handled below
 
             # General toggle entities - Always check
             for key in ["automation_toggle_entity"]:
@@ -635,6 +652,25 @@ class HealthChecker:
                         ),
                     )
                 )
+
+        # ARC15: Per-heater health checks for water_heaters[] array
+        if has_water_heater:
+            water_heaters = self._config.get("water_heaters", [])
+            for idx, heater in enumerate(water_heaters):
+                if heater.get("enabled", True):
+                    heater_name = heater.get("name", f"Water Heater {idx + 1}")
+                    if not heater.get("sensor"):
+                        issues.append(
+                            HealthIssue(
+                                category="config",
+                                severity="warning",
+                                message=f"Water heater '{heater_name}' missing power sensor",
+                                guidance=(
+                                    f"Add 'sensor' to water_heaters[{idx}] in config.yaml "
+                                    f"for power monitoring and load disaggregation."
+                                ),
+                            )
+                        )
 
         # Check each entity concurrently using asyncio.gather
         headers = {"Authorization": f"Bearer {token}"}

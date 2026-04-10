@@ -15,6 +15,7 @@ import {
     ChevronRight,
     Palmtree,
     Loader2,
+    TrendingDown,
 } from 'lucide-react'
 import Card from './Card'
 import { Api, ExecutorStatusResponse } from '../lib/api'
@@ -51,6 +52,8 @@ interface StrategyCardProps {
     safetyFloor?: number | null
     deficitRatio?: number | null
     batteryCapacity?: number | null
+    outlookData?: import('../lib/api').PriceOutlookResponse
+    priceAdvice?: import('../lib/api').AdviceItem[]
 }
 
 interface ControlParametersProps {
@@ -495,7 +498,11 @@ export function StrategyDomain({
     safetyFloor,
     deficitRatio,
     batteryCapacity,
+    outlookData,
+    priceAdvice,
 }: StrategyCardProps) {
+    const [view, setView] = useState<'battery' | 'price'>('battery')
+
     // Calculate tradable amount
     let tradableKwh: number | null = null
     let floorPct: number | null = null
@@ -504,79 +511,196 @@ export function StrategyDomain({
         floorPct = (safetyFloor / batteryCapacity) * 100
     }
 
+    // Check if price forecast is enabled (show toggle) and if data is available
+    const isPriceForecastEnabled = outlookData?.enabled === true
+    const hasPriceData = outlookData && outlookData.days.length > 0
+
+    // Color mapping for price levels
+    const levelColors: Record<string, string> = {
+        cheap: 'bg-green-500',
+        normal: 'bg-amber-500',
+        expensive: 'bg-red-500',
+        unknown: 'bg-gray-400',
+    }
+
+    // Confidence opacity mapping
+    const confidenceOpacity: Record<string, number> = {
+        high: 1.0,
+        medium: 0.75,
+        low: 0.5,
+    }
+
     return (
-        <Card className="p-4 flex flex-col h-full relative overflow-hidden">
+        <Card className="p-4 flex flex-col h-full relative">
             <div className="absolute inset-0 bg-ai/[0.01]" />
 
             {/* Header */}
-            <div className="flex items-center gap-2 mb-4 relative z-10">
-                <div className="p-1.5 rounded-lg bg-ai/10 text-ai">
-                    <Gauge className="h-4 w-4" />
+            <div className="flex items-center justify-between mb-4 relative z-10">
+                <div className="flex items-center gap-2">
+                    <div className="p-1.5 rounded-lg bg-ai/10 text-ai">
+                        <Gauge className="h-4 w-4" />
+                    </div>
+                    <span className="text-sm font-medium text-text">Battery & Strategy</span>
                 </div>
-                <span className="text-sm font-medium text-text">Battery & Strategy</span>
+
+                {/* Toggle - visible when price forecast is enabled */}
+                {isPriceForecastEnabled && (
+                    <div className="flex items-center gap-1 bg-surface2/50 rounded-lg p-0.5">
+                        <button
+                            onClick={() => setView('battery')}
+                            className={`px-2 py-1 text-[10px] font-medium rounded transition-all ${
+                                view === 'battery' ? 'bg-ai/20 text-ai' : 'text-muted hover:text-text'
+                            }`}
+                        >
+                            Battery
+                        </button>
+                        <button
+                            onClick={() => setView('price')}
+                            className={`px-2 py-1 text-[10px] font-medium rounded transition-all ${
+                                view === 'price' ? 'bg-ai/20 text-ai' : 'text-muted hover:text-text'
+                            }`}
+                        >
+                            Price
+                        </button>
+                    </div>
+                )}
             </div>
 
-            <div className="grid grid-cols-2 gap-4 relative z-10">
-                {/* SoC Big Display */}
-                <div className="col-span-2 flex items-center gap-3 p-3 rounded-xl bg-surface2/30 border border-line/30">
-                    <Battery
-                        className={`h-8 w-8 ${
-                            (soc ?? 0) > 50 ? 'text-good' : (soc ?? 0) > 20 ? 'text-warn' : 'text-bad'
-                        }`}
-                    />
-                    <div>
-                        <div className="text-2xl font-bold text-text">{soc?.toFixed(0) ?? '—'}%</div>
-                        <div className="text-[10px] text-muted">
-                            {socTarget != null ? `Targeting ${socTarget.toFixed(0)}%` : 'Current SoC'}
+            {/* View A: Battery/Strategy Content */}
+            {view === 'battery' && (
+                <>
+                    <div className="grid grid-cols-2 gap-4 relative z-10">
+                        {/* SoC Big Display */}
+                        <div className="col-span-2 flex items-center gap-3 p-3 rounded-xl bg-surface2/30 border border-line/30">
+                            <Battery
+                                className={`h-8 w-8 ${
+                                    (soc ?? 0) > 50 ? 'text-good' : (soc ?? 0) > 20 ? 'text-warn' : 'text-bad'
+                                }`}
+                            />
+                            <div>
+                                <div className="text-2xl font-bold text-text">{soc?.toFixed(0) ?? '—'}%</div>
+                                <div className="text-[10px] text-muted">
+                                    {socTarget != null ? `Targeting ${socTarget.toFixed(0)}%` : 'Current SoC'}
+                                </div>
+                            </div>
                         </div>
                     </div>
-                </div>
-            </div>
 
-            {/* S-Index Details Grid (Bottom Row) */}
-            <div className="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-line/30 relative z-10">
-                {/* 1. S-Index */}
-                <div>
-                    <div className="text-[10px] text-muted uppercase tracking-wider mb-1">S-Index</div>
-                    <div className="text-lg font-semibold text-text">{sIndex ? `x${sIndex.toFixed(2)}` : '—'}</div>
-                    <div className="text-[10px] text-ai/80">Strategy Factor</div>
-                </div>
+                    {/* S-Index Details Grid (Bottom Row) */}
+                    <div className="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-line/30 relative z-10">
+                        {/* 1. S-Index */}
+                        <div>
+                            <div className="text-[10px] text-muted uppercase tracking-wider mb-1">S-Index</div>
+                            <div className="text-lg font-semibold text-text">
+                                {sIndex ? `x${sIndex.toFixed(2)}` : '—'}
+                            </div>
+                            <div className="text-[10px] text-ai/80">Strategy Factor</div>
+                        </div>
 
-                {/* 2. Cycles / Risk */}
-                <div>
-                    <div className="text-[10px] text-muted uppercase tracking-wider mb-1">Cycles</div>
-                    <div className="text-lg font-semibold text-text">{cycles?.toFixed(1) ?? '—'}</div>
-                    <div className="text-[10px] text-muted">{riskLabel ? riskLabel : 'Daily usage'}</div>
-                </div>
+                        {/* 2. Cycles / Risk */}
+                        <div>
+                            <div className="text-[10px] text-muted uppercase tracking-wider mb-1">Cycles</div>
+                            <div className="text-lg font-semibold text-text">{cycles?.toFixed(1) ?? '—'}</div>
+                            <div className="text-[10px] text-muted">{riskLabel ? riskLabel : 'Daily usage'}</div>
+                        </div>
 
-                {/* 3. Safety Floor - New for Rev K23 */}
-                <div>
-                    <div className="text-[10px] text-muted uppercase tracking-wider mb-1">Safety Floor</div>
-                    <div className="text-lg font-semibold text-text">
-                        {safetyFloor != null ? `${safetyFloor.toFixed(1)}` : '—'}{' '}
-                        <span className="text-[10px] font-normal text-muted">kWh</span>
-                    </div>
-                    <div className="text-[10px] text-muted">
-                        {floorPct != null ? `${floorPct.toFixed(0)}% Reserved` : 'Min charge'}
-                    </div>
-                </div>
+                        {/* 3. Safety Floor - New for Rev K23 */}
+                        <div>
+                            <div className="text-[10px] text-muted uppercase tracking-wider mb-1">Safety Floor</div>
+                            <div className="text-lg font-semibold text-text">
+                                {safetyFloor != null ? `${safetyFloor.toFixed(1)}` : '—'}{' '}
+                                <span className="text-[10px] font-normal text-muted">kWh</span>
+                            </div>
+                            <div className="text-[10px] text-muted">
+                                {floorPct != null ? `${floorPct.toFixed(0)}% Reserved` : 'Min charge'}
+                            </div>
+                        </div>
 
-                {/* 4. Deficit / Tradable - New for Rev K23 */}
-                <div>
-                    <div className="text-[10px] text-muted uppercase tracking-wider mb-1">
-                        {tradableKwh != null ? 'Tradable' : 'Deficit'}
+                        {/* 4. Deficit / Tradable - New for Rev K23 */}
+                        <div>
+                            <div className="text-[10px] text-muted uppercase tracking-wider mb-1">
+                                {tradableKwh != null ? 'Tradable' : 'Deficit'}
+                            </div>
+                            <div className="text-lg font-semibold text-text">
+                                {tradableKwh != null
+                                    ? tradableKwh.toFixed(1)
+                                    : deficitRatio != null
+                                      ? (deficitRatio * 100).toFixed(0) + '%'
+                                      : '—'}
+                                {tradableKwh != null && (
+                                    <span className="text-[10px] font-normal text-muted"> kWh</span>
+                                )}
+                            </div>
+                            <div className="text-[10px] text-muted">
+                                {tradableKwh != null ? 'Available' : 'Load/PV Gap'}
+                            </div>
+                        </div>
                     </div>
-                    <div className="text-lg font-semibold text-text">
-                        {tradableKwh != null
-                            ? tradableKwh.toFixed(1)
-                            : deficitRatio != null
-                              ? (deficitRatio * 100).toFixed(0) + '%'
-                              : '—'}
-                        {tradableKwh != null && <span className="text-[10px] font-normal text-muted"> kWh</span>}
+                </>
+            )}
+
+            {/* View B: Price Outlook */}
+            {view === 'price' && hasPriceData && (
+                <div className="flex flex-col h-full">
+                    {/* 7-Day Pills */}
+                    <div className="flex gap-1 justify-between mb-4">
+                        {outlookData.days.map((day) => (
+                            <div key={day.date} className="group relative flex-1">
+                                {/* Pill with opacity (separate from tooltip to avoid inheritance) */}
+                                <div
+                                    className={`py-2 px-1 text-center text-[10px] font-medium text-white ${levelColors[day.level] || 'bg-gray-400'}`}
+                                    style={{
+                                        opacity: confidenceOpacity[day.confidence] || 0.5,
+                                        borderRadius: 'var(--radius-pill)',
+                                    }}
+                                >
+                                    {day.day_label}
+                                </div>
+                                {/* Tooltip - positioned below pill, full opacity */}
+                                <div className="absolute left-1/2 top-full mt-1 -translate-x-1/2 px-2 py-1 bg-text text-canvas text-[10px] rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 shadow-lg">
+                                    {day.day_label}: avg {day.avg_spot_p50.toFixed(2)} kr/kWh
+                                    <br />
+                                    min {day.min_hour_p50.toFixed(2)}, max {day.max_hour_p50.toFixed(2)}
+                                    <br />({day.confidence} confidence)
+                                </div>
+                            </div>
+                        ))}
                     </div>
-                    <div className="text-[10px] text-muted">{tradableKwh != null ? 'Available' : 'Load/PV Gap'}</div>
+
+                    {/* Price Advice Items */}
+                    <div className="flex-1 overflow-y-auto">
+                        {priceAdvice && priceAdvice.length > 0 ? (
+                            <div className="space-y-2">
+                                {priceAdvice.map((advice, idx) => (
+                                    <div key={idx} className="p-2 rounded bg-surface2/30 border border-line/30">
+                                        <div className="text-[10px] text-muted uppercase tracking-wider mb-1">
+                                            Price Alert
+                                        </div>
+                                        <div className="text-xs text-text">{advice.message}</div>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="text-[10px] text-muted text-center py-4">No price alerts this week</div>
+                        )}
+                    </div>
                 </div>
-            </div>
+            )}
+
+            {/* View B: No data yet (enabled but still collecting) */}
+            {view === 'price' && isPriceForecastEnabled && !hasPriceData && (
+                <div className="flex flex-col items-center justify-center h-full text-center px-4">
+                    <div className="w-12 h-12 rounded-full bg-ai/10 flex items-center justify-center mb-3">
+                        <TrendingDown className="h-6 w-6 text-ai/60" />
+                    </div>
+                    <div className="text-xs font-medium text-text mb-1">Price Forecasting Active</div>
+                    <div className="text-[10px] text-muted leading-relaxed">
+                        Collecting training data...
+                        <br />
+                        Forecasts will appear once sufficient price history is available.
+                    </div>
+                </div>
+            )}
         </Card>
     )
 }

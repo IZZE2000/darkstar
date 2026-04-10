@@ -10,7 +10,7 @@ sys.path.append(str(Path(__file__).parent.parent.resolve()))
 
 import yaml
 
-from inputs import get_all_input_data
+from backend.core.forecasts import get_all_input_data
 from planner.pipeline import generate_schedule
 
 
@@ -34,7 +34,9 @@ def get_version_string() -> str:
 
 
 async def main(
-    progress_callback: Any | None = None, ev_plugged_in_override: bool | None = None
+    progress_callback: Any | None = None,
+    ev_plugged_in_override: bool | None = None,
+    ev_charger_id_override: str | None = None,
 ) -> int:
     config: dict[str, Any] = load_yaml("config.yaml")
     automation: dict[str, Any] = config.get("automation", {})
@@ -48,7 +50,9 @@ async def main(
 
     # Build inputs and run planner
     input_data = await get_all_input_data(
-        "config.yaml", ev_plugged_in_override=ev_plugged_in_override
+        "config.yaml",
+        ev_plugged_in_override=ev_plugged_in_override,
+        ev_plug_override_charger_id=ev_charger_id_override,
     )
 
     # Phase: Applying learning

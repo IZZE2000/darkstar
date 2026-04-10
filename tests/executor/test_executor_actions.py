@@ -140,6 +140,24 @@ class TestHAClientCallService:
 
             assert exc_info.value.exception_type == "ClientError"
 
+    @pytest.mark.asyncio
+    async def test_call_service_timeout_raises_ha_call_error(self):
+        """call_service raises HACallError on TimeoutError."""
+        client = HAClient("http://ha:8123", "token123")
+
+        # Create mock session that raises TimeoutError
+        mock_session = MagicMock()
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(side_effect=TimeoutError("Request timed out"))
+        mock_cm.__aexit__ = AsyncMock(return_value=None)
+        mock_session.post.return_value = mock_cm
+
+        with patch.object(client, "_get_session", return_value=mock_session):
+            with pytest.raises(HACallError) as exc_info:
+                await client.call_service("switch", "turn_on", "switch.test")
+
+            assert exc_info.value.exception_type == "TimeoutError"
+
 
 class TestHAClientSetMethods:
     """Test HAClient setter methods."""
@@ -365,16 +383,24 @@ class TestSetWaterTemp:
             InverterConfig,
             NotificationConfig,
             WaterHeaterConfig,
+            WaterHeaterDeviceConfig,
         )
 
         return ExecutorConfig(
             inverter=InverterConfig(),
             controller=ControllerConfig(),
             water_heater=WaterHeaterConfig(
-                target_entity="input_number.water_heater_target",
                 temp_normal=50,
                 temp_off=40,
             ),
+            water_heater_devices=[
+                WaterHeaterDeviceConfig(
+                    id="main",
+                    name="Main Heater",
+                    target_entity="input_number.water_heater_target",
+                    power_kw=3.0,
+                )
+            ],
             notifications=NotificationConfig(),
         )
 
@@ -395,7 +421,7 @@ class TestSetWaterTemp:
             shadow_mode=False,
         )
 
-        result = await dispatcher.set_water_temp(50)
+        result = await dispatcher.set_water_temp(50, "input_number.water_heater_target")
 
         # Assert skipped because already at target
         assert result.success is True
@@ -425,7 +451,7 @@ class TestSetWaterTemp:
             shadow_mode=True,  # Enable shadow mode
         )
 
-        result = await dispatcher.set_water_temp(50)
+        result = await dispatcher.set_water_temp(50, "input_number.water_heater_target")
 
         # Assert skipped due to shadow mode
         assert result.success is True
@@ -446,9 +472,6 @@ class TestSetWaterTemp:
 
         from executor.actions import ActionDispatcher
 
-        # Set target_entity to None (not configured)
-        base_config.water_heater.target_entity = None
-
         ha_client = MagicMock()
 
         dispatcher = ActionDispatcher(
@@ -457,7 +480,8 @@ class TestSetWaterTemp:
             shadow_mode=False,
         )
 
-        result = await dispatcher.set_water_temp(50)
+        # Pass None explicitly (or call without entity) to test not-configured path
+        result = await dispatcher.set_water_temp(50, None)
 
         # Assert skipped due to entity not configured
         assert result.success is True
@@ -487,7 +511,7 @@ class TestSetWaterTemp:
             shadow_mode=False,
         )
 
-        result = await dispatcher.set_water_temp(50)
+        result = await dispatcher.set_water_temp(50, "input_number.water_heater_target")
 
         # Assert successful execution
         assert result.success is True

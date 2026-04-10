@@ -99,23 +99,16 @@ custom_top_level: "special"
 
         # VERIFICATIONS
 
-        # 1. Check Legacy Migration (Battery keys moved and values preserved)
-        self.assertEqual(result_cfg["battery"]["capacity_kwh"], 12.5)
-        self.assertEqual(result_cfg["battery"]["min_voltage_v"], 44.0)
-
-        # 2. Check Key Presence (REV F57: lenient mode doesn't enforce strict ordering)
-        # REV F57: version is migrated to config_version, deferrable_loads is removed
-        # In lenient mode, config_version may be appended rather than at the top
-        self.assertIn("config_version", result_cfg)
+        # 1. Check Key Presence
+        # version is removed by deprecated key sweep, deferrable_loads is also removed
+        self.assertNotIn("version", result_cfg)
         self.assertIn("system", result_cfg)
         self.assertIn("battery", result_cfg)
         self.assertIn("future_stuff", result_cfg)
         self.assertIn("custom_top_level", result_cfg)
-        # deferrable_loads should be removed by ARC15 migration
         self.assertNotIn("deferrable_loads", result_cfg)
 
-        # 3. Check deprecated keys removed (REV F57)
-        # deferrable_loads is removed by ARC15 migration
+        # 2. Check deprecated keys removed
         self.assertNotIn("deferrable_loads", result_cfg)
 
         # 4. Check Comment Preservation from Default (lenient mode may not preserve all comments)

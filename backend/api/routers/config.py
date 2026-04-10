@@ -11,8 +11,8 @@ from backend.config_migration import (
     remove_deprecated_keys,
     template_aware_merge,
 )
+from backend.core.secrets import load_home_assistant_config, load_notifications_config, load_yaml
 from executor.profiles import get_profile_from_config
-from inputs import load_home_assistant_config, load_notifications_config, load_yaml
 
 logger = logging.getLogger("darkstar.api.config")
 
@@ -353,6 +353,31 @@ def _validate_config_for_save(
                 }
             )
 
+    # Inverter: WARNING if AC power not configured
+    inverter_cfg = system_cfg.get("inverter", {})
+    if (
+        system_cfg.get("has_battery", True) or system_cfg.get("has_solar", True)
+    ) and not inverter_cfg.get("max_ac_power_kw"):
+        issues.append(
+            {
+                "severity": "warning",
+                "message": "Inverter AC power limit not configured",
+                "guidance": "Set system.inverter.max_ac_power_kw to your inverter's maximum AC output power. "
+                "Without this, the planner may schedule more export than your inverter can deliver.",
+            }
+        )
+
+    # Inverter: WARNING if DC input not configured (only relevant with solar)
+    if system_cfg.get("has_solar", True) and not inverter_cfg.get("max_dc_input_kw"):
+        issues.append(
+            {
+                "severity": "warning",
+                "message": "Inverter DC input limit not configured",
+                "guidance": "Set system.inverter.max_dc_input_kw to your inverter's maximum DC input from PV strings. "
+                "Without this, PV forecasts above your inverter's capacity won't be clipped.",
+            }
+        )
+
     # Water heater: WARNING (feature disabled, system still works)
     # ARC15: Also validate new water_heaters[] array format
     if system_cfg.get("has_water_heater", True):
@@ -520,6 +545,33 @@ def _validate_config_for_save(
                             "severity": "warning",
                             "message": f"EV charger '{ev.get('id', i + 1)}' uses unsupported type: '{ev_type}'",
                             "guidance": "Variable power control is not yet implemented. Current implementation uses binary ON/OFF control at max_power_kw. Change type to 'binary' to suppress this warning.",
+                        }
+                    )
+
+                # Validate per-device departure_time format
+                dev_departure = str(ev.get("departure_time", "") or "")
+                if dev_departure and not re.match(
+                    r"^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$", dev_departure
+                ):
+                    issues.append(
+                        {
+                            "severity": "error",
+                            "message": f"EV charger '{ev.get('id', i + 1)}' has invalid departure_time format: '{dev_departure}'",
+                            "guidance": "departure_time must be in 24-hour HH:MM format (e.g., '07:00' or '23:30').",
+                        }
+                    )
+
+                # Validate per-device switch_entity format
+                switch_entity = ev.get("switch_entity", "")
+                if switch_entity and not (
+                    switch_entity.startswith("switch.")
+                    or switch_entity.startswith("input_boolean.")
+                ):
+                    issues.append(
+                        {
+                            "severity": "warning",
+                            "message": f"EV charger '{ev.get('id', i + 1)}' switch_entity may be invalid: {switch_entity}",
+                            "guidance": "switch_entity should be a Home Assistant switch entity ID (e.g., 'switch.ev_charger' or 'input_boolean.ev_charger').",
                         }
                     )
 
@@ -811,28 +863,3 @@ async def reset_config() -> dict[str, str]:
         shutil.copy(str(default_cfg), "config.yaml")
         return {"status": "success"}
     return {"status": "error", "message": "Default config not found"}
-
-
-@router.post(
-    "/api/aurora/config/toggle_error_correction",
-    summary="Toggle Error Correction",
-    description="Toggle ML error correction in config.",
-)
-async def toggle_error_correction(enabled: bool = Body(..., embed=True)):
-    """Toggle error correction setting."""
-    try:
-        conf = load_yaml("config.yaml") or {}
-        if "learning" not in conf:
-            conf["learning"] = {}
-
-        conf["learning"]["error_correction_enabled"] = enabled
-
-        yaml_handler = YAML()
-        yaml_handler.preserve_quotes = True
-        with Path("config.yaml").open("w", encoding="utf-8") as f:
-            yaml_handler.dump(conf, f)  # type: ignore[no-untyped-call]
-
-        return {"status": "success", "enabled": enabled}
-    except Exception as e:
-        logger.exception("Failed to toggle error correction")
-        raise HTTPException(status_code=500, detail=str(e)) from e

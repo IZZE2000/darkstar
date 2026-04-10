@@ -7,7 +7,7 @@ from typing import Any
 
 import websockets
 
-from inputs import load_home_assistant_config, load_yaml
+from backend.core.secrets import load_home_assistant_config, load_yaml
 
 logger = logging.getLogger("darkstar.ha_socket")
 
@@ -18,6 +18,7 @@ class HAWebSocketClient:
         self._load_config()
         self.id_counter = 1
         self.inversion_flags: dict[str, bool] = {}
+        self.water_heater_configs: list[dict[str, Any]] = []
         self.ev_charger_configs: list[
             dict[str, Any]
         ] = []  # Rev F64: Store EV config with index and name
@@ -107,8 +108,21 @@ class HAWebSocketClient:
                     mapping[sensors["grid_export_power"]] = "grid_export_kw"
             if "battery_power" in sensors:
                 mapping[sensors["battery_power"]] = "battery_kw"
-            if "water_power" in sensors:
-                mapping[sensors["water_power"]] = "water_kw"
+
+            # ARC15: Water heater sensors from water_heaters[] array
+            if system.get("has_water_heater", False):
+                water_heaters: list[dict[str, Any]] = cfg.get("water_heaters", [])
+                self.water_heater_configs: list[dict[str, Any]] = []
+                used_water_sensors: set[str] = set()
+                for idx, wh in enumerate(water_heaters):
+                    if wh.get("enabled", True):
+                        wh_name = wh.get("name", f"Water Heater {idx + 1}")
+                        active_idx = len(self.water_heater_configs)
+                        self.water_heater_configs.append({"index": active_idx, "name": wh_name})
+                        if wh.get("sensor") and wh["sensor"] not in used_water_sensors:
+                            mapping[wh["sensor"]] = f"water_kw_{active_idx}"
+                            used_water_sensors.add(wh["sensor"])
+
             if "vacation_mode" in sensors:
                 mapping[sensors["vacation_mode"]] = "vacation_mode"
 
@@ -123,8 +137,11 @@ class HAWebSocketClient:
                 for idx, ev in enumerate(ev_chargers):
                     if ev.get("enabled", True):
                         ev_name = ev.get("name", f"EV {idx + 1}")
+                        ev_id = ev.get("id", f"ev_charger_{idx}")
                         active_idx = len(self.ev_charger_configs)
-                        self.ev_charger_configs.append({"index": active_idx, "name": ev_name})
+                        self.ev_charger_configs.append(
+                            {"index": active_idx, "name": ev_name, "id": ev_id}
+                        )
                         # Only map sensors that aren't already used for the same type
                         # This allows same sensor for different types (e.g., one sensor for both power and soc)
                         # but prevents duplicate mappings within the same type
@@ -151,6 +168,9 @@ class HAWebSocketClient:
                 logger.info(
                     f"✅ Initialized {len(self.ev_charger_configs)} EV chargers for monitoring"
                 )
+            else:
+                self.ev_charger_configs = []
+                self.latest_values.pop("ev_chargers", None)
 
             # Store inversion flags for efficient lookup in _handle_state_change
             self.inversion_flags = {
@@ -359,10 +379,22 @@ class HAWebSocketClient:
                 # Build aggregate for backward compat
                 any_plugged = any(ev.get("plugged_in", False) for ev in ev_chargers)
 
-                # Trigger immediate re-plan when car plugs in
+                # Trigger immediate re-plan on plug-in or unplug (Task 7.2/7.3: pass charger ID)
+                charger_id = (
+                    self.ev_charger_configs[ev_idx].get("id", f"ev_charger_{ev_idx}")
+                    if ev_idx < len(self.ev_charger_configs)
+                    else f"ev_charger_{ev_idx}"
+                )
                 if is_plugged:
-                    logger.info(f"EV{ev_idx} plugged in - triggering immediate re-plan")
-                    self._trigger_ev_replan()
+                    logger.info(
+                        f"EV{ev_idx} ({charger_id}) plugged in - triggering immediate re-plan"
+                    )
+                    self._trigger_ev_replan(charger_id=charger_id, plugged_in=True)
+                else:
+                    logger.info(
+                        f"EV{ev_idx} ({charger_id}) unplugged - triggering immediate re-plan"
+                    )
+                    self._trigger_ev_replan(charger_id=charger_id, plugged_in=False)
 
                 # Emit entity change event
                 from backend.events import emit_ha_entity_change
@@ -508,6 +540,77 @@ class HAWebSocketClient:
                 logger.error(f"Failed to handle EV power change: {e}")
             return
 
+        # ARC15: Handle water heater power changes - indexed per heater
+        if key and key.startswith("water_kw_"):
+            try:
+                wh_idx = int(key.split("_")[-1])
+                state_val = new_state.get("state")
+                logger.debug(f"WH{wh_idx} power updated: {entity_id}={state_val}")
+
+                # Parse numeric value (handle unknown/unavailable gracefully)
+                value = 0.0
+                if state_val and str(state_val).lower() not in (
+                    "unknown",
+                    "unavailable",
+                    "none",
+                    "null",
+                    "",
+                ):
+                    value = float(state_val)
+                    # Normalize units if needed (kW vs W)
+                    unit = str(
+                        new_state.get("attributes", {}).get("unit_of_measurement", "")
+                    ).upper()
+                    if unit == "W":
+                        value = value / 1000.0
+
+                    # Apply inversion if configured
+                    if self.inversion_flags.get(key, False):
+                        value = -value
+
+                    # Sanitize value (prevent NaN/Inf from crashing JSON transport)
+                    import math
+
+                    if math.isnan(value) or math.isinf(value):
+                        logger.warning(f"DIAG: Sanitized invalid float for {key}: {value} -> 0.0")
+                        value = 0.0
+
+                # Initialize water_heater data structure if needed
+                water_heaters: list[dict[str, Any]] = self.latest_values.get("water_heaters", [])
+                if not water_heaters:
+                    self.latest_values["water_heaters"] = water_heaters = []
+
+                # Ensure we have entries for all configured water heaters
+                while len(water_heaters) < len(self.water_heater_configs):
+                    water_heaters.append(
+                        {
+                            "name": self.water_heater_configs[len(water_heaters)].get(
+                                "name", f"Water Heater {len(water_heaters) + 1}"
+                            ),
+                            "kw": 0.0,
+                        }
+                    )
+
+                # Update this water heater's power
+                if wh_idx < len(water_heaters):
+                    water_heaters[wh_idx]["kw"] = value
+
+                # Build aggregate for backward compat
+                total_wh_kw = sum(wh.get("kw", 0.0) for wh in water_heaters)
+
+                # Emit via live_metrics
+                from backend.events import emit_live_metrics
+
+                emit_live_metrics(
+                    {
+                        "water_heaters": water_heaters,
+                        "water_kw": total_wh_kw,
+                    }
+                )
+            except Exception as e:
+                logger.error(f"Failed to handle water heater power change: {e}")
+            return
+
         # Handle numeric sensors (existing logic)
         state_val: Any = None
         try:
@@ -605,36 +708,64 @@ class HAWebSocketClient:
         self._load_config()
         self.monitored_entities = self._get_monitored_entities()
 
-    def _trigger_ev_replan(self):
-        """Trigger immediate re-planning for EV state changes (Rev K25 + EVFIX)."""
+    def _trigger_ev_replan(self, charger_id: str | None = None, plugged_in: bool = True):
+        """Trigger immediate re-planning for EV state changes (Rev K25 + EVFIX + Task 7.2/7.3).
+
+        Args:
+            charger_id: ID of the charger that triggered the replan. When provided,
+                checks that specific charger's replan_on_plugin/replan_on_unplug setting.
+                Falls back to checking the first enabled charger if not provided.
+            plugged_in: True if the EV just plugged in, False if it unplugged.
+        """
         try:
-            # Check if replan_on_plugin is enabled in config (Rev EVFIX: use ev_chargers[])
+            # Check if replan_on_plugin/replan_on_unplug is enabled in config (Rev EVFIX: use ev_chargers[])
             cfg = load_yaml("config.yaml")
             ev_chargers = cfg.get("ev_chargers", [])
 
-            # Find first enabled EV charger
-            first_enabled_ev = None
-            for ev in ev_chargers:
-                if ev.get("enabled", True):
-                    first_enabled_ev = ev
-                    break
+            # Task 7.2: Find the specific charger that triggered the replan (or first enabled)
+            triggering_ev = None
+            if charger_id:
+                for ev in ev_chargers:
+                    if ev.get("enabled", True) and ev.get("id") == charger_id:
+                        triggering_ev = ev
+                        break
+            if triggering_ev is None:
+                # Fallback: first enabled charger
+                for ev in ev_chargers:
+                    if ev.get("enabled", True):
+                        triggering_ev = ev
+                        break
 
-            if not first_enabled_ev:
+            if not triggering_ev:
                 logger.debug("No enabled EV charger found, skipping replan")
                 return
 
-            if not first_enabled_ev.get("replan_on_plugin", True):
-                logger.debug(
-                    "EV replan on plugin disabled for charger: %s",
-                    first_enabled_ev.get("name", "unknown"),
-                )
-                return
+            if plugged_in:
+                if not triggering_ev.get("replan_on_plugin", True):
+                    logger.debug(
+                        "EV replan on plugin disabled for charger: %s",
+                        triggering_ev.get("name", "unknown"),
+                    )
+                    return
+            else:
+                if not triggering_ev.get("replan_on_unplug", False):
+                    logger.debug(
+                        "EV replan on unplug disabled for charger: %s",
+                        triggering_ev.get("name", "unknown"),
+                    )
+                    return
 
             # Import here to avoid circular imports
             from backend.services.scheduler_service import scheduler_service
 
-            # Trigger immediate re-planning with plug state override
-            logger.info("Triggering immediate EV re-plan via scheduler_service (plugged_in=True)")
+            # Task 7.3: Pass charger_id through so get_initial_state can override that
+            # specific charger's plug state
+            effective_charger_id = charger_id or triggering_ev.get("id")
+            logger.info(
+                "Triggering immediate EV re-plan for charger %s via scheduler_service (plugged_in=%s)",
+                effective_charger_id,
+                plugged_in,
+            )
 
             # Rev EVFIX: Use run_coroutine_threadsafe for cross-thread dispatch
             if self.main_loop is None:
@@ -642,7 +773,11 @@ class HAWebSocketClient:
                 return
 
             future = asyncio.run_coroutine_threadsafe(
-                scheduler_service.trigger_now(ev_plugged_in_override=True), self.main_loop
+                scheduler_service.trigger_now(
+                    ev_plugged_in_override=plugged_in,
+                    ev_charger_id_override=effective_charger_id,
+                ),
+                self.main_loop,
             )
 
             # Add done callback to log any exceptions

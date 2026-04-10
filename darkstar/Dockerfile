@@ -37,11 +37,11 @@ COPY planner/ ./planner/
 COPY executor/ ./executor/
 COPY bin/ ./bin/
 COPY profiles/ ./profiles/
+COPY utils/ ./utils/
 COPY ml/*.py ./ml/
 # Models are generated at runtime (Clean Slate strategy)
 RUN mkdir -p ml/models
 COPY ml/models/defaults/ ./ml/models/defaults/
-COPY inputs.py ./
 
 # Copy frontend source and build (AFTER copying backend to avoid overwriting static assets)
 COPY frontend/ ./frontend/
@@ -51,6 +51,7 @@ RUN cd frontend && pnpm build
 COPY config.default.yaml ./
 COPY secrets.example.yaml ./
 COPY VERSION ./
+COPY ml/regions.json ./ml/regions.json
 
 # Copy Alembic migration files for automatic database schema updates
 COPY alembic.ini ./

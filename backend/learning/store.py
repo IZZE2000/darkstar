@@ -238,7 +238,9 @@ class LearningStore:
                     temp_c=forecast.get("temp_c"),
                     forecast_version=forecast_version,
                 )
-                # Preserve corrections on conflict
+                # UPSERT: Update existing forecasts with new values
+                # Note: Correction columns (pv_correction_kwh, load_correction_kwh, correction_source)
+                # are no longer written but remain in DB schema for backward compatibility
                 stmt = stmt.on_conflict_do_update(
                     index_elements=["slot_start", "forecast_version"],
                     set_={
@@ -375,8 +377,8 @@ class LearningStore:
                     func.date(SlotObservation.slot_start) >= cutoff_date,
                     SlotObservation.soc_end_percent.is_not(None),
                     SlotObservation.soc_end_percent < threshold_percent,
-                    cast(func.strftime("%H", SlotObservation.slot_start), Integer) >= start_hour,
-                    cast(func.strftime("%H", SlotObservation.slot_start), Integer) < end_hour,
+                    cast(func.substr(SlotObservation.slot_start, 12, 2), Integer) >= start_hour,
+                    cast(func.substr(SlotObservation.slot_start, 12, 2), Integer) < end_hour,
                 )
                 .order_by(SlotObservation.slot_start.desc())
             )

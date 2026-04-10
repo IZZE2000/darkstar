@@ -13,8 +13,19 @@ import { useUnsavedChangesGuard } from './hooks/useUnsavedChangesGuard'
 
 export const WaterTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }) => {
     const navigate = useNavigate()
-    const { config, form, fieldErrors, loading, saving, handleChange, save, isDirty, haEntities, haLoading } =
-        useSettingsForm(waterFieldList, [])
+    const {
+        config,
+        form,
+        fieldErrors,
+        loading,
+        saving,
+        statusMessage,
+        handleChange,
+        save,
+        isDirty,
+        haEntities,
+        haLoading,
+    } = useSettingsForm(waterFieldList, [])
 
     const blocker = useUnsavedChangesGuard(isDirty)
     const hasHiddenSections = waterSections.some((s) => s.fields.every((f) => f.isAdvanced))
@@ -98,6 +109,29 @@ export const WaterTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode })
             })}
 
             <AdditionalAdvancedNotice visible={!advancedMode} />
+
+            <div className="flex flex-wrap items-center gap-3">
+                <button
+                    disabled={saving}
+                    onClick={() => save()}
+                    className="flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-[11px] font-semibold transition btn-glow-primary bg-accent hover:bg-accent2 text-[#100f0e] disabled:opacity-50"
+                >
+                    {saving ? 'Saving…' : 'Save Water Settings'}
+                </button>
+                {statusMessage && (
+                    <div
+                        className={`rounded-lg p-3 text-sm ${
+                            statusMessage.startsWith('Please fix') ||
+                            statusMessage.startsWith('Save failed') ||
+                            statusMessage.startsWith('Failed to load')
+                                ? 'bg-bad/10 border border-bad/30 text-bad'
+                                : 'bg-good/10 border border-good/30 text-good'
+                        }`}
+                    >
+                        {statusMessage}
+                    </div>
+                )}
+            </div>
 
             <NavigationBlockerDialog
                 visible={blocker.state === 'blocked'}

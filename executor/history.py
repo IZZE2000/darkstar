@@ -36,6 +36,9 @@ class ExecutionRecord:
     planned_water_kw: float | None = None
     planned_soc_target: int | None = None
     planned_soc_projected: int | None = None
+    ev_charging_kw: float | None = None
+    ev_charger_plans: dict[str, float] | None = None
+    water_heater_plans: dict[str, float] | None = None
 
     # What we actually commanded (after override logic)
     commanded_work_mode: str | None = None
@@ -110,6 +113,7 @@ class ExecutionHistory:
                 planned_water_kw=record.planned_water_kw,
                 planned_soc_target=record.planned_soc_target,
                 planned_soc_projected=record.planned_soc_projected,
+                ev_charging_kw=record.ev_charging_kw,
                 commanded_work_mode=record.commanded_work_mode,
                 commanded_grid_charging=record.commanded_grid_charging,
                 commanded_charge_current_a=record.commanded_charge_current_a,

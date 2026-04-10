@@ -24,9 +24,8 @@ system:
   grid:
     max_power_kw: 8                    # HARD limit: max grid import (cannot be exceeded)
   inverter:
-    # NOTE: Currently not implemented. Planned for future inverter clipping feature.
-    # See docs/BACKLOG.md "Inverter Clipping Support" for details.
-    max_power_kw: 8.0                 # Maximum inverter AC power output
+    max_ac_power_kw: 10.0              # Maximum inverter AC power output (PV + battery discharge)
+    max_dc_input_kw: 12.0              # Maximum DC power from PV strings (clips PV forecast)
   location:
     latitude: 55.123                # Decimal degrees, positive north (for PV forecasting)
     longitude: 13.123               # Decimal degrees, positive east (for PV forecasting)
@@ -95,9 +94,9 @@ water_heaters:
     min_kwh_per_day: 6.0             # Minimum daily energy requirement (kWh)
     max_hours_between_heating: 8     # Max comfort gap between heating cycles
     water_min_spacing_hours: 4       # Minimum gap between heating starts
-    sensor: sensor.vvb_power         # Home Assistant entity for power reading
+    sensor: ''                       # Home Assistant entity for power reading
+    target_entity: ''                # Thermostat entity for controlling this heater
     type: binary                     # Load type: binary (on/off) or modulating
-    nominal_power_kw: 3.0            # Nominal power for load calculations
 
   # Example: Second water heater (disabled by default)
   # - id: upstairs_tank
@@ -108,24 +107,28 @@ water_heaters:
   #   max_hours_between_heating: 12
   #   water_min_spacing_hours: 4
   #   sensor: sensor.wh2_power
+  #   target_entity: ''
   #   type: binary
-  #   nominal_power_kw: 3.0
 
 # EV Chargers (Array for multiple electric vehicles)
 # ARC15: Replaces deferrable_loads entry for EV charging
 # Note: penalty_levels are configured per-EV in the UI (Settings > Parameters)
 # They define willingness to pay for charging at different battery levels
 ev_chargers:
-  - id: ev_charger_1                # Unique identifier (slug format)
-    name: "Generic EV"            # Display name in UI
+  - id: ev_charger_1                 # Unique identifier (slug format)
+    name: "EV-01"                    # Display name in UI
     enabled: false                   # Master toggle for this EV (set true to enable)
     max_power_kw: 11.0               # Maximum charging power (kW)
     battery_capacity_kwh: 82.0       # Battery capacity for SoC calculations (kWh)
-    sensor: sensor.tesla_power       # Home Assistant entity for power reading
+    sensor: ""                       # Home Assistant entity for power reading
     soc_sensor: ""                   # EV battery state of charge (%) - Required for smart charging
     plug_sensor: ""                  # EV plug status sensor - Required for smart charging
     type: binary                     # Load type: binary (ON/OFF) only. Variable power control not yet implemented
     nominal_power_kw: 11.0           # Nominal power for load calculations
+    departure_time: ""               # Daily departure time "HH:MM" (24-hour). Car must be ready by this time.
+    switch_entity: ""                # HA entity to enable/disable smart charging (e.g. switch.ev_charger)
+    replan_on_plugin: true           # Re-run planner immediately when this EV plugs in
+    replan_on_unplug: false          # Re-run planner immediately when this EV unplugs
 
   # Example: Second EV (disabled by default)
   # - id: ev_charger_2
@@ -136,12 +139,10 @@ ev_chargers:
   #   sensor: sensor.fiat_power
   #   type: variable
   #   nominal_power_kw: 7.4
-
-# EV Departure Time (REV K25)
-# Universal departure time that applies to all EVs. The system will optimize
-# charging to complete by this time each day. Format: "HH:MM" (24-hour)
-# Example: "07:00" means car must be ready by 7:00 AM daily
-ev_departure_time: "07:00"
+  #   departure_time: ""
+  #   switch_entity: ""
+  #   replan_on_plugin: true
+  #   replan_on_unplug: false
 
 # S-Index Configuration (Risk & Safety Strategy)
 s_index:
@@ -180,22 +181,18 @@ automation:
     enabled: true                      # Enable automatic ML model retraining
     run_days: [1, 4]                   # Days of week to train (0=Mon, 6=Sun)
     run_time: "03:00"                  # Time of day to run training (HH:MM)
-    error_correction_enabled: true     # Enable training of error correction models (requires graduated models)
 
 # Learning Engine (Aurora Reflex)
 # Learning Engine Configuration
-# The learning system has three main components:
+# The learning system has two main components:
 # 1. Telemetry: Records planner decisions, forecasts, and actual outcomes to SQLite
-# 2. Analyst (Auto-Tune): Adjusts forecast overlays based on historical bias (hourly load/PV corrections)
-# 3. Reflex: Tunes physical/policy parameters (S-Index, PV confidence, battery cost) based on safety/ROI analysis
+# 2. Reflex: Tunes physical/policy parameters (S-Index, PV confidence, battery cost) based on safety/ROI analysis
 learning:
   enable: true                         # Master switch: enables telemetry storage and learning features
   sqlite_path: "data/planner_learning.db"  # Database path for storing planner telemetry (observations, forecasts, plans, metrics)
   horizon_days: 3                      # Number of days of Aurora ML forecasts to generate (2-7 days, affects CPU usage)
   min_improvement_threshold: 0.015     # Minimum improvement (0-1 scale) required before applying learned adjustments (prevents noise)
-  auto_tune_enabled: true              # Enable Analyst: automatically adjusts forecast overlays based on historical bias (hourly load/PV corrections)
   reflex_enabled: true                 # Enable Reflex: tunes physical/policy parameters (S-Index, PV confidence, battery cost, capacity) based on safety/confidence/ROI/capacity analysis
-  error_correction_enabled: true       # Enable ML error correction models (requires graduated Aurora models, Level 2+)
   min_sample_threshold: 2              # Minimum data points required before applying learned adjustments (prevents premature tuning with insufficient data)
 
   # Rate Limits for Aurora Reflex Parameter Tuning
@@ -222,6 +219,12 @@ pricing:
   vat_percent: 25.0                    # VAT percentage on electricity
   grid_transfer_fee_sek: 0.2456        # Grid operator transfer fee per kWh
   energy_tax_sek: 0.439                # Energy tax per kWh
+
+# Price Forecasting (Nordpool spot price prediction)
+price_forecast:
+  enabled: false                       # Master toggle for price forecasting (disabled by default)
+  min_training_samples: 500            # Minimum paired samples before model activates
+  model_name: "price_model.lgb"        # LightGBM model filename
 
 # Forecasting Adjustments (Aurora ML tuning)
 forecasting:
@@ -257,7 +260,6 @@ input_sensors:
   pv_power: ""             # Current PV production (W or kW)
   load_power: ""         # Current load consumption (W or kW)
   battery_power: ""   # Current battery power (+ discharge, - charge)
-  water_power: ""                  # Current water heater power (W or kW)
   grid_power: ""         # Current grid power (+ import, - export) (Used if meter_type=net)
   grid_import_power: ""    # Current grid import power (W/kW) (Used if meter_type=dual)
   grid_export_power: ""    # Current grid export power (W/kW) (Used if meter_type=dual)
@@ -269,7 +271,6 @@ input_sensors:
   total_grid_import: ""          # Cumulative grid import (kWh)
   total_load_consumption: ""  # Cumulative load (kWh)
   total_pv_production: ""           # Cumulative PV production (kWh)
-  water_heater_consumption: ""               # Water heater daily energy (kWh)
 
 # Executor (control loop that WRITES to Home Assistant)
 executor:
@@ -307,7 +308,6 @@ executor:
 
   # Controller Parameters (electrical conversion constants)
   controller:
-    inverter_ac_limit_kw: 8.8          # Max AC power output of inverter
     min_charge_a: 10.0                 # Minimum meaningful charge current (A)
     round_step_a: 5.0                  # Round current commands to nearest X amps
     write_threshold_a: 5.0             # Only write if change exceeds X amps
@@ -321,25 +321,10 @@ executor:
   # The executor controls your water heater by setting a target temperature.
   # These temps define the operating modes:
   water_heater:
-    target_entity: ""  # HA entity to control
     temp_off: 40       # Idle mode (legionella-safe minimum)
     temp_normal: 60    # Scheduled heating target (used by planner)
     temp_boost: 70     # Manual boost button (Dashboard/Executor)
     temp_max: 85       # PV dump target + safety limit (never exceeded)
-
-  # EV Charger Control
-  # The executor controls EV charging by setting charge current or enabling/disabling.
-  # NOTE: Penalty levels for optimization are configured per-EV in the ev_chargers[] array
-  # (accessible via UI: Settings > Parameters > EV Chargers). The settings below are for
-  # executor control and re-planning triggers only.
-  ev_charger:
-    switch_entity: ""        # HA entity to enable/disable smart charging (e.g. switch.ev_charger)
-    control_entity: ""       # HA entity for charge current (A) or power (W)
-    control_mode: "current"  # "current" (A), "power" (W), or "switch" (on/off)
-    max_current_a: 32.0      # Max charge current when control_mode=current
-    enabled_entity: ""       # HA entity to enable/disable smart charging (read-only state)
-    replan_on_plugin: true   # Re-run planner immediately when EV plugs in
-    replan_on_unplug: false  # Re-run planner immediately when EV unplugs
 
   # Notifications (via Home Assistant notify service)
   notifications:

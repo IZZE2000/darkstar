@@ -23,6 +23,7 @@ from ml.train import (
     _load_slot_observations,  # type: ignore[reportPrivateUsage]
 )
 from ml.weather import get_weather_series
+from utils.time_utils import dst_safe_localize
 
 AURORA_VERSION = "aurora"
 BASELINE_VERSION = "baseline_7_day_avg"
@@ -83,7 +84,7 @@ def _generate_baseline_forecasts(
     df: pd.DataFrame = observations.copy()
     df["slot_start"] = pd.to_datetime(df["slot_start"])
     if df["slot_start"].dt.tz is None:
-        df["slot_start"] = df["slot_start"].dt.tz_localize(engine.timezone)
+        df["slot_start"] = dst_safe_localize(df["slot_start"], engine.timezone)
     else:
         df["slot_start"] = df["slot_start"].dt.tz_convert(engine.timezone)
 

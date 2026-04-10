@@ -47,7 +47,7 @@ COPY bin/ ./bin/
 COPY ml/*.py ./ml/
 RUN mkdir -p ml/models
 COPY ml/models/defaults/ ./ml/models/defaults/
-COPY inputs.py ./
+COPY utils/ ./utils/
 COPY scripts/ ./scripts/
 COPY scripts/docker-entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
@@ -60,6 +60,7 @@ COPY alembic/ ./alembic/
 COPY VERSION ./VERSION
 COPY config.default.yaml ./config.default.yaml
 COPY secrets.example.yaml ./secrets.example.yaml
+COPY ml/regions.json ./ml/regions.json
 
 # Build frontend (Vite outputs to backend/static, FastAPI serves from there)
 COPY frontend/ ./frontend/

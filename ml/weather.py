@@ -5,6 +5,8 @@ Weather data fetching and processing for Aurora.
 from __future__ import annotations
 
 import asyncio
+import copy
+import json
 import math
 import time
 from pathlib import Path
@@ -14,6 +16,8 @@ import pandas as pd
 import pytz
 import requests
 import yaml
+
+from utils.time_utils import dst_safe_localize
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -70,7 +74,7 @@ def _calculate_solar_position(
     if utc_offset is not None:
         timezone_offset = utc_offset.total_seconds() / 3600.0
     time_offset = eq_time / 60.0 + (longitude / 15.0) - timezone_offset
-    hour_angle = 15.0 * (hour - 12.0 - time_offset)
+    hour_angle = 15.0 * (hour - 12.0 + time_offset)
     hour_angle_rad = math.radians(hour_angle)
 
     # Solar elevation angle
@@ -187,7 +191,9 @@ def calculate_physics_pv(
         return round(pv_kwh, 4), []
 
     solar_elevation = solar_pos["elevation"]
-    solar_azimuth = solar_pos["azimuth"]
+    # Convert solar azimuth from North convention (0=North, clockwise) to
+    # South convention (0=South, positive=West) expected by _calculate_poa_irradiance
+    solar_azimuth = solar_pos["azimuth"] - 180.0
 
     # If sun is below horizon, return 0
     if solar_elevation <= 0:
@@ -285,6 +291,8 @@ def get_weather_series(
     config: dict[str, Any] | None = None,
     *,
     config_path: str = "config.yaml",
+    forecast_days: int = 2,
+    extra_params: list[str] | None = None,
 ) -> pd.DataFrame:
     """
     Fetch hourly outdoor weather data from Open-Meteo for the given window.
@@ -294,6 +302,15 @@ def get_weather_series(
         - temp_c: 2m air temperature in °C
         - cloud_cover_pct: total cloud cover in percent
         - shortwave_radiation_w_m2: shortwave radiation
+        - wind_speed_10m: wind speed at 10m height (if requested via extra_params)
+
+    Args:
+        start_time: Start of the time window
+        end_time: End of the time window
+        config: Optional configuration dict (will load from config_path if not provided)
+        config_path: Path to config file (default: "config.yaml")
+        forecast_days: Number of days to forecast (default: 2, max: 16)
+        extra_params: Additional Open-Meteo hourly parameters to fetch (e.g., ["wind_speed_10m"])
 
     This helper is best-effort and will return an empty DataFrame if the
     request fails or contains no usable data.
@@ -312,8 +329,21 @@ def get_weather_series(
     start_date_obj = start_local.date()
     end_date_obj = end_local.date()
 
+    # Build parameter list including any extra params
+    hourly_params: list[str] = [
+        "temperature_2m",
+        "cloud_cover",
+        "shortwave_radiation",
+    ]
+    if extra_params:
+        hourly_params.extend(extra_params)
+    hourly_param_str = ",".join(hourly_params)
+
+    # Build extra params key for caching
+    extra_params_key = "_".join(sorted(extra_params)) if extra_params else "none"
+
     # --- Cache Lookup ---
-    cache_key = f"{latitude:.2f}_{longitude:.2f}_{start_date_obj}_{end_date_obj}"
+    cache_key = f"{latitude:.2f}_{longitude:.2f}_{start_date_obj}_{end_date_obj}_{forecast_days}_{extra_params_key}"
     now_ts = time.time()
     if cache_key in _weather_cache:
         cached_ts, cached_df = _weather_cache[cache_key]
@@ -321,13 +351,6 @@ def get_weather_series(
             return cached_df.copy()
 
     try:
-        hourly_params: list[str] = [
-            "temperature_2m",
-            "cloud_cover",
-            "shortwave_radiation",
-        ]
-        hourly_param_str = ",".join(hourly_params)
-
         # Always use forecast API with past_days + forecast_days for complete coverage
         url = "https://api.open-meteo.com/v1/forecast"
         params = {
@@ -335,7 +358,7 @@ def get_weather_series(
             "longitude": longitude,
             "hourly": hourly_param_str,
             "past_days": 1,  # Yesterday's hindcast
-            "forecast_days": 2,  # Today and tomorrow's forecast
+            "forecast_days": forecast_days,
             "timezone": timezone_name,
         }
 
@@ -357,8 +380,9 @@ def get_weather_series(
         return pd.DataFrame(dtype="float64")
 
     dt_index = pd.to_datetime(times)
-    dt_index = dt_index.tz_localize("UTC") if dt_index.tz is None else dt_index.tz_convert("UTC")
-    dt_index = dt_index.tz_convert(tz)
+    # Open-Meteo returns local-time strings when timezone is specified in the request.
+    # Localize to the requested timezone (not UTC) to avoid shifting by the UTC offset.
+    dt_index = dst_safe_localize(dt_index, tz) if dt_index.tz is None else dt_index.tz_convert(tz)
 
     data: dict[str, list[float]] = {}
     if temps and len(temps) == len(times):
@@ -368,10 +392,24 @@ def get_weather_series(
     if sw_rad and len(sw_rad) == len(times):
         data["shortwave_radiation_w_m2"] = sw_rad
 
+    # Extract any extra parameters
+    if extra_params:
+        for param in extra_params:
+            values: list[Any] = hourly.get(param) or []
+            if values and len(values) == len(times):
+                # Map Open-Meteo param names to our column names
+                col_name = param.replace("_", "_")
+                data[col_name] = values
+
     if not data:
         return pd.DataFrame(dtype="float64")
 
     df = pd.DataFrame(data, index=dt_index).astype("float64")
+
+    # DST spring-forward can create duplicate timestamps (e.g. 2:00 AM shifted to
+    # 3:00 AM which already exists). Drop duplicates before resampling.
+    if df.index.duplicated().any():
+        df = df[~df.index.duplicated(keep="last")]
 
     # REV F67: Resample from hourly to 15-minute resolution via linear interpolation.
     # This ensures all slots (Bug #1) get weather data (radiation/temp/clouds).
@@ -394,6 +432,8 @@ async def async_get_weather_series(
     config: dict[str, Any] | None = None,
     *,
     config_path: str = "config.yaml",
+    forecast_days: int = 2,
+    extra_params: list[str] | None = None,
 ) -> pd.DataFrame:
     """
     Asynchronous wrapper for get_weather_series using asyncio.to_thread.
@@ -402,7 +442,13 @@ async def async_get_weather_series(
     network call to Open-Meteo API.
     """
     return await asyncio.to_thread(
-        get_weather_series, start_time, end_time, config, config_path=config_path
+        get_weather_series,
+        start_time,
+        end_time,
+        config,
+        config_path=config_path,
+        forecast_days=forecast_days,
+        extra_params=extra_params,
     )
 
 
@@ -510,79 +556,6 @@ def get_temperature_series(
     return series
 
 
-def calculate_pv_from_radiation(
-    radiation_w_m2: float | None,
-    capacity_kw: float,
-    efficiency: float = 0.85,
-    slot_hours: float = 0.25,
-) -> float | None:
-    """
-    Calculate PV production estimate from shortwave radiation.
-
-    Formula: PV_kWh = (radiation_W_m2 / 1000) * capacity_kW * efficiency * slot_hours
-
-    Args:
-        radiation_w_m2: Shortwave radiation in W/m² (from Open-Meteo)
-        capacity_kw: Total DC peak power in kilowatts
-        efficiency: System efficiency factor (default 0.85, accounts for inverter,
-                    wiring, temperature losses)
-        slot_hours: Duration of the time slot in hours (default 0.25 = 15 minutes)
-
-    Returns:
-        Estimated PV production in kWh, or None if radiation data is missing
-    """
-    if radiation_w_m2 is None or capacity_kw <= 0:
-        return None
-
-    irradiance_kw_m2 = radiation_w_m2 / 1000.0
-    pv_kwh = irradiance_kw_m2 * capacity_kw * efficiency * slot_hours
-    return round(pv_kwh, 4)
-
-
-def calculate_per_array_pv(
-    radiation_w_m2: float | None,
-    solar_arrays: list[dict[str, Any]],
-    efficiency: float = 0.85,
-    slot_hours: float = 0.25,
-) -> tuple[float | None, list[dict[str, float]]]:
-    """
-    Calculate PV estimates for each solar array and the sum.
-
-    Args:
-        radiation_w_m2: Shortwave radiation in W/m² (from Open-Meteo)
-        solar_arrays: List of array configs with 'name' and 'kwp' keys
-        efficiency: System efficiency factor (default 0.85)
-        slot_hours: Duration of the time slot in hours (default 0.25)
-
-    Returns:
-        Tuple of (sum_kwh, per_array_list) where per_array_list contains
-        dicts with 'name' and 'kwh' keys. Returns (None, []) if no data.
-    """
-    if radiation_w_m2 is None or not solar_arrays:
-        return None, []
-
-    per_array: list[dict[str, float]] = []
-    total_kwh = 0.0
-    has_valid_data = False
-
-    for arr in solar_arrays:
-        name = arr.get("name", "Unknown")
-        kwp = float(arr.get("kwp", 0) or 0)
-        if kwp <= 0:
-            continue
-
-        arr_kwh = calculate_pv_from_radiation(radiation_w_m2, kwp, efficiency, slot_hours)
-        if arr_kwh is not None:
-            per_array.append({"name": name, "kwh": arr_kwh})
-            total_kwh += arr_kwh
-            has_valid_data = True
-
-    if not has_valid_data:
-        return None, []
-
-    return round(total_kwh, 4), per_array
-
-
 def calculate_physics_for_slots(
     slots: list[dict[str, Any]],
     config: dict[str, Any],
@@ -650,3 +623,158 @@ def calculate_physics_for_slots(
         )
 
     return results
+
+
+def load_regions_config(regions_path: str = "ml/regions.json") -> dict[str, Any]:
+    """Load regional weather coordinates configuration."""
+    try:
+        with Path(regions_path).open(encoding="utf-8") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {}
+    except json.JSONDecodeError:
+        print(f"Warning: Invalid JSON in {regions_path}")
+        return {}
+
+
+def get_regional_weather(
+    start_time: datetime,
+    end_time: datetime,
+    price_area: str,
+    config: dict[str, Any] | None = None,
+    *,
+    config_path: str = "config.yaml",
+    regions_path: str = "ml/regions.json",
+) -> dict[str, pd.DataFrame]:
+    """
+    Fetch weather data for all coordinates defined for a price area.
+
+    Args:
+        start_time: Start of the time window
+        end_time: End of the time window
+        price_area: Nordpool price area (e.g., "SE1", "SE2", "SE3", "SE4")
+        config: Optional configuration dict
+        config_path: Path to config file
+        regions_path: Path to regions.json file
+
+    Returns:
+        Dict mapping coordinate keys to their weather DataFrames
+    """
+    cfg: dict[str, Any] = config or _load_config(config_path)
+    regions = load_regions_config(regions_path)
+
+    # Get fallback coordinates from config
+    system_cfg: dict[str, Any] = cfg.get("system", {}) or {}
+    loc_cfg: dict[str, Any] = system_cfg.get("location", {}) or {}
+    fallback_lat: float = float(loc_cfg.get("latitude", 59.3))
+    fallback_lon: float = float(loc_cfg.get("longitude", 18.1))
+
+    # Check if price_area exists in regions
+    if price_area not in regions:
+        print(
+            f"Warning: Price area '{price_area}' not found in {regions_path}, falling back to home coordinates"
+        )
+        # Fetch weather for home coordinates only
+        df = get_weather_series(
+            start_time,
+            end_time,
+            cfg,
+            config_path=config_path,
+            forecast_days=16,
+            extra_params=["wind_speed_10m"],
+        )
+        return {"local": df}
+
+    area_coords = regions[price_area]
+    results: dict[str, pd.DataFrame] = {}
+
+    for coord_key, coord_data in area_coords.items():
+        try:
+            lat = float(coord_data.get("lat", fallback_lat))
+            lon = float(coord_data.get("lon", fallback_lon))
+
+            # Create a temporary config with this coordinate
+            temp_cfg = copy.deepcopy(cfg)
+            temp_cfg.setdefault("system", {}).setdefault("location", {})
+            temp_cfg["system"]["location"]["latitude"] = lat
+            temp_cfg["system"]["location"]["longitude"] = lon
+
+            df = get_weather_series(
+                start_time,
+                end_time,
+                temp_cfg,
+                config_path=config_path,
+                forecast_days=16,
+                extra_params=["wind_speed_10m"],
+            )
+
+            if not df.empty:
+                results[coord_key] = df
+            else:
+                print(f"Warning: No weather data for {price_area}/{coord_key}")
+
+        except Exception as exc:
+            print(f"Warning: Failed to fetch weather for {price_area}/{coord_key}: {exc}")
+
+    # If no coordinates succeeded, fall back to home coordinates
+    if not results:
+        print(
+            f"Warning: All regional weather fetches failed for {price_area}, falling back to home coordinates"
+        )
+        df = get_weather_series(
+            start_time,
+            end_time,
+            cfg,
+            config_path=config_path,
+            forecast_days=16,
+            extra_params=["wind_speed_10m"],
+        )
+        return {"local": df}
+
+    return results
+
+
+def compute_regional_wind_index(
+    regional_weather: dict[str, pd.DataFrame],
+) -> pd.Series:
+    """
+    Compute the regional wind index as the arithmetic mean of wind speeds
+    across all available coordinates.
+
+    Args:
+        regional_weather: Dict mapping coordinate keys to weather DataFrames
+
+    Returns:
+        Series with the averaged wind index values
+    """
+    wind_series_list: list[pd.Series] = []
+
+    for coord_key, df in regional_weather.items():
+        if df.empty:
+            continue
+
+        # Look for wind speed column (could be named wind_speed_10m or similar)
+        wind_col = None
+        for col in df.columns:
+            if "wind_speed" in col.lower():
+                wind_col = col
+                break
+
+        if wind_col is None:
+            print(f"Warning: No wind speed column found for coordinate {coord_key}")
+            continue
+
+        wind_series = df[wind_col].copy()
+        wind_series.name = coord_key
+        wind_series_list.append(wind_series)
+
+    if not wind_series_list:
+        # Return empty series if no wind data available
+        return pd.Series(dtype="float64", name="wind_index")
+
+    # Combine all series and compute mean (handles different indices via outer join)
+    combined = pd.concat(wind_series_list, axis=1)
+    wind_index = combined.mean(axis=1, skipna=True)
+    wind_index.name = "wind_index"
+
+    return wind_index

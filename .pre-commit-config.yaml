@@ -25,7 +25,8 @@ repos:
         entry: uv run pyright
         language: system
         types: [python]
-        pass_filenames: false
+        pass_filenames: true
+        exclude: ^tests/
       - id: validate-profiles
         name: Validate Inverter Profiles
         entry: uv run python scripts/validate_profiles.py

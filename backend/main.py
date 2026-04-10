@@ -20,28 +20,31 @@ from fastapi.staticfiles import StaticFiles
 from backend.api.routers import (
     config,
     dashboard,
+    energy,
     executor,
     forecast,
+    ha,
     learning,
     legacy,
     loads,
     schedule,
-    services,
     system,
     theme,
+    water,
 )
 from backend.api.routers.analyst import router as analyst_router
 from backend.api.routers.debug import router as debug_router
 from backend.api.routers.executor import get_executor_instance
 from backend.api.routers.forecast import forecast_router
+from backend.api.routers.price_forecast import router as price_forecast_router
 from backend.core.websockets import ws_manager
 
 logger = logging.getLogger("darkstar.main")
 
 
 # Import inputs for config loading
+from backend.core.secrets import load_yaml
 from backend.learning.store import LearningStore
-from inputs import load_yaml
 
 
 @asynccontextmanager
@@ -256,8 +259,10 @@ def create_app() -> socketio.ASGIApp:
     app.include_router(forecast.router)
     app.include_router(executor.router)
     app.include_router(config.router)
-    app.include_router(services.router_ha)
-    app.include_router(services.router_services)
+    app.include_router(ha.router)
+    app.include_router(ha.router_misc)
+    app.include_router(energy.router)
+    app.include_router(water.router)
     app.include_router(legacy.router)
     app.include_router(learning.router)
     app.include_router(loads.router)
@@ -266,6 +271,7 @@ def create_app() -> socketio.ASGIApp:
     app.include_router(forecast_router)
     app.include_router(debug_router)
     app.include_router(analyst_router)
+    app.include_router(price_forecast_router)
 
     # 4. Health Check - Using comprehensive HealthChecker
     @app.get("/api/health")

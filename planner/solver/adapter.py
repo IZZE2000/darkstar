@@ -5,12 +5,23 @@ Convert between Planner DataFrame format and Kepler solver types.
 Migrated from backend/kepler/adapter.py during Rev K13 modularization.
 """
 
+import logging
 from datetime import datetime  # noqa: TC003
 from typing import Any
 
 import pandas as pd
 
-from .types import IncentiveBucket, KeplerConfig, KeplerInput, KeplerInputSlot, KeplerResult
+from .types import (
+    EVChargerInput,
+    IncentiveBucket,
+    KeplerConfig,
+    KeplerInput,
+    KeplerInputSlot,
+    KeplerResult,
+    WaterHeaterInput,
+)
+
+logger = logging.getLogger(__name__)
 
 
 def _get_config_version(config: dict[str, Any]) -> int:
@@ -18,125 +29,155 @@ def _get_config_version(config: dict[str, Any]) -> int:
     return int(config.get("config_version", 1))
 
 
-def _aggregate_water_heaters(
-    water_heaters: list[dict[str, Any]], legacy_wh: dict[str, Any] | None = None
-) -> dict[str, Any]:
+def build_water_heater_inputs(
+    water_heaters_config: list[dict[str, Any]],
+    global_wh_cfg: dict[str, Any] | None = None,
+    water_heater_states: list[dict[str, Any]] | None = None,
+) -> list[WaterHeaterInput]:
     """
-    Aggregate multiple water heaters into single KeplerConfig parameters.
-    ARC15: Sum power ratings, use legacy water_heating or first heater for comfort settings.
+    Build per-device WaterHeaterInput list from water_heaters[] config + state.
 
     Args:
-        water_heaters: List of water heater configs from new structure
-        legacy_wh: Legacy water_heating section for fallback comfort settings
+        water_heaters_config: List of water heater config dicts from config.yaml
+        global_wh_cfg: Global water_heating section (for enable_top_ups, spacing override)
+        water_heater_states: Optional per-device state dicts.
+            Each dict should have: id, heated_today_kwh (float), force_on_slots (list[int] | None)
+            If None or empty, defaults are used.
+
+    Returns:
+        List of WaterHeaterInput objects for enabled heaters with power_kw > 0.
     """
-    enabled_wh: list[dict[str, Any]] = [wh for wh in water_heaters if wh.get("enabled", True)]
+    enabled_wh: list[dict[str, Any]] = [
+        wh
+        for wh in water_heaters_config
+        if wh.get("enabled", True) and float(wh.get("power_kw", 0.0)) > 0
+    ]
 
     if not enabled_wh:
-        return {
-            "power_kw": 0.0,
-            "min_kwh_per_day": 0.0,
-            "comfort_level": 3,
-            "enable_top_ups": True,
-            "max_hours_between_heating": 8.0,
-            "min_spacing_hours": 5.0,
-            "defer_up_to_hours": 0.0,
-        }
+        return []
 
-    # Sum power ratings and daily requirements
-    total_power = sum(float(wh.get("power_kw", 0.0)) for wh in enabled_wh)
-    total_min_kwh = sum(float(wh.get("min_kwh_per_day", 0.0)) for wh in enabled_wh)
+    global_cfg = global_wh_cfg or {}
+    enable_top_ups: bool = bool(global_cfg.get("enable_top_ups", True))
 
-    # Use first enabled heater's timing settings (device-specific)
-    first_wh: dict[str, Any] = enabled_wh[0]
+    # Build state lookup by heater ID
+    state_by_id: dict[str, dict[str, Any]] = {}
+    if water_heater_states:
+        for s in water_heater_states:
+            heater_id = s.get("id", "")
+            if heater_id:
+                state_by_id[heater_id] = s
 
-    # Comfort settings: use legacy water_heating section if available, otherwise heater's values
-    # The water_heaters array has 'water_min_spacing_hours' not 'min_spacing_hours'
-    spacing_hours: Any = first_wh.get("water_min_spacing_hours") or first_wh.get(
-        "min_spacing_hours"
-    )
+    result: list[WaterHeaterInput] = []
+    for wh in enabled_wh:
+        heater_id: str = str(wh.get("id", ""))
+        if not heater_id:
+            continue
 
-    if legacy_wh:
-        # Use legacy section for comfort settings (global user preferences)
-        return {
-            "power_kw": total_power,
-            "min_kwh_per_day": total_min_kwh,
-            "comfort_level": int(legacy_wh.get("comfort_level", 3)),
-            "enable_top_ups": bool(legacy_wh.get("enable_top_ups", True)),
-            "max_hours_between_heating": float(first_wh.get("max_hours_between_heating", 8.0)),
-            "min_spacing_hours": float(spacing_hours or legacy_wh.get("min_spacing_hours", 5.0)),
-            "defer_up_to_hours": float(legacy_wh.get("defer_up_to_hours", 0.0)),
-        }
-    else:
-        # No legacy section - use defaults
-        return {
-            "power_kw": total_power,
-            "min_kwh_per_day": total_min_kwh,
-            "comfort_level": int(first_wh.get("comfort_level", 3)),
-            "enable_top_ups": bool(first_wh.get("enable_top_ups", True)),
-            "max_hours_between_heating": float(first_wh.get("max_hours_between_heating", 8.0)),
-            "min_spacing_hours": float(spacing_hours or 5.0),
-            "defer_up_to_hours": float(first_wh.get("defer_up_to_hours", 0.0)),
-        }
+        # The config array uses 'water_min_spacing_hours' (with prefix) - handle both
+        spacing_hours_raw: Any = wh.get("water_min_spacing_hours") or wh.get("min_spacing_hours")
+        spacing_hours: float = float(spacing_hours_raw or 5.0)
 
+        # When top-ups disabled globally, disable per-device spacing too
+        if not enable_top_ups:
+            spacing_hours = 0.0
 
-def _aggregate_ev_chargers(ev_chargers: list[dict[str, Any]]) -> dict[str, Any]:
-    """
-    Aggregate multiple EV chargers into single KeplerConfig parameters.
-    ARC15: Sum max power, use largest battery capacity, merge incentive buckets.
-    """
-    enabled_ev: list[dict[str, Any]] = [ev for ev in ev_chargers if ev.get("enabled", True)]
+        state = state_by_id.get(heater_id, {})
+        heated_today = float(state.get("heated_today_kwh", 0.0))
+        force_on_slots: list[int] | None = state.get("force_on_slots")
 
-    if not enabled_ev:
-        return {
-            "max_power_kw": 0.0,
-            "battery_capacity_kwh": 0.0,
-            "penalty_levels": [],
-        }
-
-    # Sum max charging power
-    total_max_power = sum(float(ev.get("max_power_kw", 0.0)) for ev in enabled_ev)
-
-    # Use largest battery capacity (conservative approach)
-    max_battery_capacity = max(float(ev.get("battery_capacity_kwh", 0.0)) for ev in enabled_ev)
-
-    # Merge incentive buckets from all EVs (take the most conservative penalties)
-    all_buckets: list[dict[str, Any]] = []
-    for ev in enabled_ev:
-        levels: list[dict[str, Any]] = ev.get("penalty_levels", [])
-        if levels:
-            all_buckets.extend(levels)
-
-    # If multiple EVs have penalty levels, merge by taking max penalty at each threshold
-    merged_buckets: list[dict[str, Any]] = []
-    if all_buckets:
-        # Group by threshold SoC and take highest penalty
-        threshold_map: dict[float, float] = {}
-        for bucket in all_buckets:
-            if "max_soc" in bucket:
-                threshold = float(bucket["max_soc"])
-                penalty = float(bucket.get("penalty_sek", 0.0))
-                threshold_map[threshold] = max(threshold_map.get(threshold, 0.0), penalty)
-
-        # Sort by threshold and create merged buckets
-        for threshold in sorted(threshold_map.keys()):
-            merged_buckets.append(
-                {
-                    "max_soc": threshold,
-                    "penalty_sek": threshold_map[threshold],
-                }
+        result.append(
+            WaterHeaterInput(
+                id=heater_id,
+                power_kw=float(wh.get("power_kw", 3.0)),
+                min_kwh_per_day=float(wh.get("min_kwh_per_day", 0.0)),
+                max_hours_between_heating=float(wh.get("max_hours_between_heating", 8.0)),
+                min_spacing_hours=spacing_hours,
+                force_on_slots=force_on_slots if force_on_slots else None,
+                heated_today_kwh=heated_today,
             )
+        )
 
-    return {
-        "max_power_kw": total_max_power,
-        "battery_capacity_kwh": max_battery_capacity,
-        "penalty_levels": merged_buckets,
-    }
+    return result
 
 
-def planner_to_kepler_input(df: pd.DataFrame, initial_soc_kwh: float) -> KeplerInput:
+def build_ev_charger_inputs(
+    ev_chargers_config: list[dict[str, Any]],
+    ev_charger_states: list[dict[str, Any]] | None = None,
+) -> list[EVChargerInput]:
+    """
+    Build per-device EVChargerInput list from ev_chargers[] config + HA state.
+
+    Args:
+        ev_chargers_config: List of ev_charger config dicts from config.yaml
+        ev_charger_states: Optional list of per-device HA state dicts.
+            Each dict should have: id, soc_percent, plugged_in, deadline (optional)
+            If None or empty, HA state defaults are used (0% SoC, not plugged in).
+
+    Returns:
+        List of EVChargerInput objects for enabled chargers.
+        Chargers not plugged in are still included (solver skips them internally).
+    """
+    enabled_ev: list[dict[str, Any]] = [ev for ev in ev_chargers_config if ev.get("enabled", True)]
+
+    # Build state lookup by charger ID
+    state_by_id: dict[str, dict[str, Any]] = {}
+    if ev_charger_states:
+        for s in ev_charger_states:
+            charger_id = s.get("id", "")
+            if charger_id:
+                state_by_id[charger_id] = s
+
+    result: list[EVChargerInput] = []
+    for ev in enabled_ev:
+        charger_id: str = ev.get("id", "")
+        if not charger_id:
+            continue
+
+        state = state_by_id.get(charger_id, {})
+
+        soc_percent = float(state.get("soc_percent", 0.0))
+        plugged_in = bool(state.get("plugged_in", False))
+        deadline = state.get("deadline")  # datetime | None
+
+        # Build incentive buckets from penalty_levels config
+        penalty_levels: list[dict[str, Any]] = ev.get("penalty_levels", [])
+        buckets: list[IncentiveBucket] = [
+            IncentiveBucket(
+                threshold_soc=float(p.get("max_soc", 100.0)),
+                value_sek=float(p.get("penalty_sek", 0.0)),
+            )
+            for p in penalty_levels
+            if "max_soc" in p or "penalty_sek" in p
+        ]
+
+        result.append(
+            EVChargerInput(
+                id=charger_id,
+                max_power_kw=float(ev.get("max_power_kw", 0.0)),
+                battery_capacity_kwh=float(ev.get("battery_capacity_kwh", 0.0)),
+                current_soc_percent=soc_percent,
+                plugged_in=plugged_in,
+                deadline=deadline,
+                incentive_buckets=buckets,
+            )
+        )
+
+    return result
+
+
+def planner_to_kepler_input(
+    df: pd.DataFrame,
+    initial_soc_kwh: float,
+    max_dc_input_kw: float | None = None,
+) -> KeplerInput:
     """
     Convert Planner DataFrame to KeplerInput.
     Expects DataFrame index to be timestamps (start_time).
+
+    Args:
+        df: DataFrame with forecast data
+        initial_soc_kwh: Initial battery state of charge in kWh
+        max_dc_input_kw: Maximum DC power from PV strings (clips PV forecast)
     """
     slots: list[KeplerInputSlot] = []
 
@@ -159,6 +200,18 @@ def planner_to_kepler_input(df: pd.DataFrame, initial_soc_kwh: float) -> KeplerI
         # Prefer adjusted forecasts if available (already represents Base Load)
         load = float(row.get("adjusted_load_kwh", row.get("load_forecast_kwh", 0.0)))
         pv = float(row.get("adjusted_pv_kwh", row.get("pv_forecast_kwh", 0.0)))
+
+        # PV DC clipping: limit PV to max DC input capacity
+        if max_dc_input_kw is not None:
+            slot_hours = (end_time - start_time).total_seconds() / 3600.0
+            max_pv_kwh = max_dc_input_kw * slot_hours
+            if pv > max_pv_kwh:
+                original_pv = pv
+                pv = max_pv_kwh
+                logger.debug(
+                    f"PV clipped from {original_pv:.3f} to {pv:.3f} kWh at {start_time} "
+                    f"(max_dc={max_dc_input_kw}kW)"
+                )
 
         slots.append(
             KeplerInputSlot(
@@ -282,7 +335,8 @@ def config_to_kepler_config(
     planner_config: dict[str, Any],
     overrides: dict[str, Any] | None = None,
     slots: list[Any] | None = None,
-    force_water_on_slots: list[int] | None = None,
+    water_heater_states: list[dict[str, Any]] | None = None,
+    ev_charger_states: list[dict[str, Any]] | None = None,
 ) -> KeplerConfig:
     """
     Convert the main config dictionary to KeplerConfig.
@@ -313,27 +367,25 @@ def config_to_kepler_config(
 
     # ARC15: Detect config format and load water heating settings
     config_version = _get_config_version(planner_config)
-    water_heaters = planner_config.get("water_heaters", [])
+    water_heaters_cfg = planner_config.get("water_heaters", [])
     ev_chargers = planner_config.get("ev_chargers", [])
-    legacy_wh = planner_config.get("water_heating", {})
+    global_wh = planner_config.get("water_heating", {})
 
-    if config_version >= 2 and water_heaters:
-        # Use new entity-centric structure (aggregate multiple heaters)
-        # Pass legacy section for comfort settings fallback
-        wh_cfg = _aggregate_water_heaters(water_heaters, legacy_wh)
+    # Build per-device WaterHeaterInput list
+    if config_version >= 2 and water_heaters_cfg:
+        water_inputs = build_water_heater_inputs(water_heaters_cfg, global_wh, water_heater_states)
     else:
-        # Fallback to legacy format
-        wh_cfg = legacy_wh
+        # Legacy format: no per-device support
+        water_inputs = []
 
-    # ARC15: Load EV charging settings
+    # For global comfort settings, use the water_heating section
+    wh_cfg = global_wh
+
+    # ARC15: Load EV charging settings (per-device)
     if config_version >= 2 and ev_chargers:
-        # Use new entity-centric structure (aggregate multiple chargers)
-        ev_cfg = _aggregate_ev_chargers(ev_chargers)
-        ev_enabled = any(ev.get("enabled", True) for ev in ev_chargers)
+        ev_inputs = build_ev_charger_inputs(ev_chargers, ev_charger_states)
     else:
-        # Fallback to legacy format
-        ev_cfg = planner_config.get("ev_charger", {})
-        ev_enabled = system.get("has_ev_charger", False)
+        ev_inputs = []
 
     capacity = float(battery.get("capacity_kwh", 13.5))
     charge_eff = float(battery.get("charge_efficiency", 0.95))
@@ -392,6 +444,11 @@ def config_to_kepler_config(
             if system.get("grid", {}).get("max_power_kw")
             else None
         ),
+        max_inverter_ac_kw=(
+            float(system.get("inverter", {}).get("max_ac_power_kw"))
+            if system.get("inverter", {}).get("max_ac_power_kw")
+            else None
+        ),
         ramping_cost_sek_per_kw=float(
             planner_config.get("kepler", {}).get(
                 "ramping_cost_sek_per_kw", get_val("ramping_cost_sek_per_kw", 0.05)
@@ -400,64 +457,39 @@ def config_to_kepler_config(
         curtailment_penalty_sek=float(
             planner_config.get("kepler", {}).get("curtailment_penalty_sek", 0.1)
         ),
-        # Water heating as deferrable load
-        water_heating_power_kw=float(wh_cfg.get("power_kw", 0.0)),
-        water_heating_min_kwh=float(wh_cfg.get("min_kwh_per_day", 0.0)),
-        # PRODUCTION FIX B1: Disable BOTH gap penalty AND spacing when enable_top_ups=false
+        export_threshold_sek_per_kwh=get_val("export_threshold_sek_per_kwh", 0.0),
+        # Per-device water heater inputs
+        water_heaters=water_inputs,
+        # Global water heating settings
+        # PRODUCTION FIX B1: Disable gap constraint when enable_top_ups=false
         water_heating_max_gap_hours=float(
             wh_cfg.get("max_hours_between_heating", 8.0)
             if wh_cfg.get("enable_top_ups", True)
             else 0.0
         ),
-        water_heated_today_kwh=0.0,  # Set in pipeline from HA sensor
         # Rev K23: Multi-Parameter Comfort Control (ALWAYS applied)
         # Rev K24: Apply bulk mode override if enable_top_ups=false
-        # type: ignore[arg-type]
-        **(
+        # Use total power/daily_kwh across all heaters for max_block_hours calculation
+        **(  # type: ignore[arg-type]
             _apply_bulk_mode_override(
                 _comfort_level_to_penalty(
                     int(wh_cfg.get("comfort_level", 3)),
-                    daily_kwh=float(wh_cfg.get("min_kwh_per_day", 0.0)),
-                    heater_power_kw=float(wh_cfg.get("power_kw", 0.0)),
+                    daily_kwh=sum(h.min_kwh_per_day for h in water_inputs),
+                    heater_power_kw=sum(h.power_kw for h in water_inputs),
                 )
             )
             if not wh_cfg.get("enable_top_ups", True)
             else _comfort_level_to_penalty(
                 int(wh_cfg.get("comfort_level", 3)),
-                daily_kwh=float(wh_cfg.get("min_kwh_per_day", 0.0)),
-                heater_power_kw=float(wh_cfg.get("power_kw", 0.0)),
+                daily_kwh=sum(h.min_kwh_per_day for h in water_inputs),
+                heater_power_kw=sum(h.power_kw for h in water_inputs),
             )
         ),
-        # Rev WH1: Disable spacing constraints when top-ups are disabled
-        water_min_spacing_hours=float(
-            wh_cfg.get("min_spacing_hours", 5.0) if wh_cfg.get("enable_top_ups", True) else 0.0
-        ),
-        water_spacing_penalty_sek=float(
-            wh_cfg.get("spacing_penalty_sek", 0.20) if wh_cfg.get("enable_top_ups", True) else 0.0
-        ),
-        # Rev WH2: Smart Water Heating Logic
-        force_water_on_slots=force_water_on_slots,
         defer_up_to_hours=float(wh_cfg.get("defer_up_to_hours", 0.0)),
         # Rev E4: Export Toggle
         enable_export=bool(planner_config.get("export", {}).get("enable_export", True)),
-        # Rev // F51: Piecewise Incentive Buckets
-        ev_charging_enabled=ev_enabled,
-        ev_max_power_kw=float(ev_cfg.get("max_power_kw", 0.0)),
-        ev_battery_capacity_kwh=float(ev_cfg.get("battery_capacity_kwh", 0.0)),
-        ev_current_soc_percent=0.0,  # Set by pipeline from HA sensor
-        ev_plugged_in=False,  # Set by pipeline from HA sensor
-        ev_deadline=None,  # Set by pipeline from HA sensor
-        ev_deadline_urgent=False,  # Set by pipeline from HA sensor
-        ev_incentive_buckets=[
-            IncentiveBucket(
-                threshold_soc=float(p.get("max_soc", 100.0)),
-                value_sek=float(p.get("penalty_sek", 0.0)),
-            )
-            for p in ev_cfg.get("penalty_levels", [])
-            if "max_soc" in p or "penalty_sek" in p
-        ]
-        if ev_cfg.get("penalty_levels")
-        else None,
+        # Per-device EV charger inputs (multi-device support)
+        ev_chargers=ev_inputs,
     )
 
     return kepler_cfg
@@ -517,11 +549,13 @@ def kepler_result_to_dataframe(
                 "grid_export_kw": s.grid_export_kwh / duration_h,
                 "import_kwh": s.grid_import_kwh,
                 "export_kwh": s.grid_export_kwh,
-                "water_heating_kw": s.water_heat_kw,  # From Kepler MILP (Rev K17)
+                "water_heating_kw": s.water_heat_kw,  # Aggregate (backward compat)
+                "water_heaters": s.water_heater_results,  # Per-device: heater_id -> kW
                 "water_from_grid_kwh": 0.0,
                 "water_from_pv_kwh": 0.0,
                 "water_from_battery_kwh": 0.0,
-                "ev_charging_kw": s.ev_charge_kw,  # From Kepler MILP (Rev K25)
+                "ev_charging_kw": s.ev_charge_kw,  # Aggregate EV charging power (backward compat)
+                "ev_chargers": s.ev_charger_results,  # Per-device: charger_id -> kW
                 "projected_battery_cost": 0.0,
             }
         )
