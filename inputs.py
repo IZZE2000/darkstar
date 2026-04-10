@@ -939,7 +939,7 @@ async def get_initial_state(
             if ha_ev_soc is not None:
                 ev_soc_percent = ha_ev_soc
             else:
-                logger.warning("EV SoC sensor %s returned no data, defaulting to 0%", ev_soc_entity)
+                logger.warning("EV SoC sensor %s returned no data, defaulting to 0%%", ev_soc_entity)
         else:
             logger.warning("has_ev_charger is true but ev_soc sensor is not configured")
 
