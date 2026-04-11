@@ -3,6 +3,7 @@
 import sqlite3
 import tempfile
 import unittest
+from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -302,18 +303,20 @@ class TestPriceForecastAccuracy(unittest.TestCase):
         mock_get_engine.return_value = mock_engine
         self._create_tables()
 
+        day1 = (datetime.now() - timedelta(days=2)).strftime("%Y-%m-%dT00:00:00")
+        day2 = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%dT00:00:00")
         conn = sqlite3.connect(self.db_path)
         conn.execute(
-            "INSERT INTO price_forecasts (slot_start, days_ahead, spot_p50) VALUES ('2026-04-01T00:00:00', 1, 0.50)"
+            f"INSERT INTO price_forecasts (slot_start, days_ahead, spot_p50) VALUES ('{day1}', 1, 0.50)"
         )
         conn.execute(
-            "INSERT INTO slot_observations (slot_start, export_price_sek_kwh) VALUES ('2026-04-01T00:00:00', 0.60)"
+            f"INSERT INTO slot_observations (slot_start, export_price_sek_kwh) VALUES ('{day1}', 0.60)"
         )
         conn.execute(
-            "INSERT INTO price_forecasts (slot_start, days_ahead, spot_p50) VALUES ('2026-04-02T00:00:00', 1, 0.70)"
+            f"INSERT INTO price_forecasts (slot_start, days_ahead, spot_p50) VALUES ('{day2}', 1, 0.70)"
         )
         conn.execute(
-            "INSERT INTO slot_observations (slot_start, export_price_sek_kwh) VALUES ('2026-04-02T00:00:00', 0.80)"
+            f"INSERT INTO slot_observations (slot_start, export_price_sek_kwh) VALUES ('{day2}', 0.80)"
         )
         conn.commit()
         conn.close()
@@ -342,6 +345,8 @@ class TestPriceForecastIncludeActuals(unittest.TestCase):
         Path(self.db_path).unlink()
 
     def _create_tables(self):
+        recent = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%dT00:00:00")
+        issue = (datetime.now() - timedelta(days=2)).strftime("%Y-%m-%dT12:00:00")
         conn = sqlite3.connect(self.db_path)
         conn.execute(
             "CREATE TABLE price_forecasts (id INTEGER PRIMARY KEY, slot_start TEXT, issue_timestamp TEXT, days_ahead INTEGER, spot_p10 REAL, spot_p50 REAL, spot_p90 REAL, wind_index REAL, temperature_c REAL, cloud_cover REAL, radiation_wm2 REAL)"
@@ -350,10 +355,10 @@ class TestPriceForecastIncludeActuals(unittest.TestCase):
             "CREATE TABLE slot_observations (id INTEGER PRIMARY KEY, slot_start TEXT, export_price_sek_kwh REAL)"
         )
         conn.execute(
-            "INSERT INTO price_forecasts (slot_start, issue_timestamp, days_ahead, spot_p50) VALUES ('2026-04-01T00:00:00', '2026-03-31T12:00:00', 1, 0.5)"
+            f"INSERT INTO price_forecasts (slot_start, issue_timestamp, days_ahead, spot_p50) VALUES ('{recent}', '{issue}', 1, 0.5)"
         )
         conn.execute(
-            "INSERT INTO slot_observations (slot_start, export_price_sek_kwh) VALUES ('2026-04-01T00:00:00', 0.6)"
+            f"INSERT INTO slot_observations (slot_start, export_price_sek_kwh) VALUES ('{recent}', 0.6)"
         )
         conn.commit()
         conn.close()

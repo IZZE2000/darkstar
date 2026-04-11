@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 from collections.abc import Callable, Coroutine
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -123,7 +124,7 @@ def _normalize_energy_to_kwh(value: float, unit: str | None) -> float:
     """Normalize energy value to kWh based on Home Assistant unit_of_measurement.
 
     Handles common energy units: Wh, kWh, MWh with case-insensitive matching.
-    Assumes kWh if no unit is specified (conservative fallback).
+    Uses magnitude-based heuristic when no unit is specified.
 
     Args:
         value: The raw numeric value from HA
@@ -133,18 +134,40 @@ def _normalize_energy_to_kwh(value: float, unit: str | None) -> float:
         Value normalized to kWh
     """
     if not unit:
-        return value  # Assume kWh if no unit specified
-
-    unit_clean = str(unit).upper().replace(" ", "_")
-
-    if unit_clean in ("WH", "WATT_HOUR", "WATT_HOURS"):
-        return value / 1000.0
-    elif unit_clean in ("KWH", "KILOWATT_HOUR", "KILOWATT_HOURS"):
+        if value > 100_000:
+            result = value / 1000.0
+            logger.info(
+                "Energy normalization: %s (no unit) → %s kWh (Wh inferred from magnitude)",
+                value,
+                result,
+            )
+            return result
+        logger.debug("Energy normalization: %s (no unit) → %s kWh (assumed kWh)", value, value)
         return value
-    elif unit_clean in ("MWH", "MEGAWATT_HOUR", "MEGAWATT_HOURS"):
-        return value * 1000.0
+
+    unit_clean = re.sub(r"[^A-Z0-9]", "", str(unit).upper())
+
+    if unit_clean in ("WH", "WATTHOUR", "WATTHOURS"):
+        result = value / 1000.0
+        logger.debug(
+            "Energy normalization: %s %s → %s kWh (from unit_of_measurement)", value, unit, result
+        )
+        return result
+    elif unit_clean in ("KWH", "KILOWATTHOUR", "KILOWATTHOURS"):
+        logger.debug(
+            "Energy normalization: %s %s → %s kWh (from unit_of_measurement)", value, unit, value
+        )
+        return value
+    elif unit_clean in ("MWH", "MEGAWATTHOUR", "MEGAWATTHOURS"):
+        result = value * 1000.0
+        logger.debug(
+            "Energy normalization: %s %s → %s kWh (from unit_of_measurement)", value, unit, result
+        )
+        return result
     else:
-        # Unknown unit - assume kWh (conservative)
+        logger.warning(
+            "Energy normalization: unknown unit '%s' for value %s, assuming kWh", unit, value
+        )
         return value
 
 
@@ -431,6 +454,7 @@ async def get_load_profile_from_ha(config: dict[str, Any]) -> list[float]:
         time_buckets = [0.0] * (96 * 7)  # 7 days * 96 slots per day
         prev_state = None
         prev_time = None
+        cached_unit: str | None = None
 
         start_time_local = start_time.astimezone(local_tz)
 
@@ -450,6 +474,10 @@ async def get_load_profile_from_ha(config: dict[str, Any]) -> list[float]:
                 # Normalize energy unit to kWh (handles Wh, kWh, MWh)
                 attributes = state.get("attributes", {})
                 unit = attributes.get("unit_of_measurement")
+                if unit is not None and unit != "":
+                    cached_unit = unit
+                if unit is None or unit == "":
+                    unit = cached_unit
                 current_value = _normalize_energy_to_kwh(current_value, unit)
 
                 if prev_state is not None and prev_time is not None:
@@ -511,6 +539,11 @@ async def get_load_profile_from_ha(config: dict[str, Any]) -> list[float]:
 
         # Validate and clean the profile
         total_daily = sum(daily_profile)
+        if total_daily > 500:
+            print(
+                f"Warning: Daily total {total_daily:.1f} kWh/day for {entity_id} exceeds 500 kWh sanity bound, using dummy profile"
+            )
+            return get_dummy_load_profile(config)
         if total_daily <= 0:
             print(f"Warning: No valid energy consumption data found for {entity_id}")
             return get_dummy_load_profile(config)
