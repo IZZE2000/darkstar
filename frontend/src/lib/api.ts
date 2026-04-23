@@ -405,6 +405,9 @@ export type HealthIssue = {
     message: string
     guidance: string
     entity_id?: string | null
+    code?: string | null
+    details?: Record<string, unknown> | null
+    retry_in_s?: number | null
 }
 
 export type HealthResponse = {

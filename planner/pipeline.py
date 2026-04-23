@@ -20,11 +20,13 @@ if TYPE_CHECKING:
     from datetime import datetime
 
 from backend.learning.store import LearningStore
+from planner.errors import PlannerError, PlannerErrorCode
 from planner.inputs.data_prep import apply_safety_margins, prepare_df
 from planner.inputs.learning import load_learning_overlays
 from planner.inputs.weather import fetch_temperature_forecast
 from planner.output.schedule import save_schedule_to_json
 from planner.output.soc_target import apply_soc_target_percent
+from planner.preflight import run_preflight
 from planner.solver.adapter import (
     config_to_kepler_config,
     kepler_result_to_dataframe,
@@ -689,6 +691,8 @@ class PlannerPipeline:
             risk_appetite = int(s_index_cfg.get("risk_appetite", 3))
             kepler_config.target_soc_penalty_sek = RISK_PENALTY_MAP.get(risk_appetite, 8.0)
 
+        run_preflight(input_data, active_config)
+
         solver = KeplerSolver()
         result = await asyncio.to_thread(solver.solve, kepler_input, kepler_config)
 
@@ -749,8 +753,17 @@ class PlannerPipeline:
             logger.error(
                 "Planner generated invalid schedule (empty or missing columns). Aborting save to prevent data loss."
             )
-            # This will bubble up to SchedulerService as an error, triggering the smart retry loop
-            raise ValueError("Planner generated invalid schedule (safety guard)")
+            raise PlannerError(
+                code=PlannerErrorCode.INVALID_SCHEDULE,
+                details={
+                    "solver_status": result.status_msg if result else "unknown",
+                    "initial_soc_kwh": initial_soc_kwh,
+                    "max_soc_kwh": kepler_config.capacity_kwh
+                    * kepler_config.max_soc_percent
+                    / 100.0,
+                    "capacity_kwh": kepler_config.capacity_kwh,
+                },
+            )
 
         if save_to_file:
             # Prepare window responsibilities (placeholder, Kepler doesn't return windows yet)

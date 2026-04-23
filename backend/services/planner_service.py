@@ -8,14 +8,23 @@ for running inside the FastAPI process without blocking the event loop.
 import asyncio
 import logging
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from backend.core.cache import cache
 from backend.core.websockets import ws_manager
+from planner.errors import (
+    PlannerError,
+    PlannerErrorCode,
+    is_config_blocking,
+    is_transient,
+    is_warning_only,
+)
 
 logger = logging.getLogger("darkstar.services.planner")
+
+_BACKOFF_STEPS = [60, 120, 240, 300]  # seconds, last value is cap
 
 
 @dataclass
@@ -27,6 +36,9 @@ class PlannerResult:
     slot_count: int = 0
     error: str | None = None
     duration_ms: float = 0
+    error_code: str | None = None
+    error_details: dict[str, Any] | None = None
+    fix_hint: str | None = None
 
 
 class PlannerService:
@@ -35,7 +47,67 @@ class PlannerService:
     def __init__(self) -> None:
         self._lock = asyncio.Lock()
         self._current_phase: str | None = None
-        self._planner_start_time: datetime | None = None  # Track total elapsed time
+        self._planner_start_time: datetime | None = None
+
+        # Retry policy state (in-memory only, always resets on restart).
+        # On startup, _retry_suspended=False so the first run always proceeds.
+        self._last_error_code: PlannerErrorCode | None = None
+        self._last_error_at: datetime | None = None
+        self._last_error_details: dict[str, Any] | None = None
+        self._next_retry_at: datetime | None = None
+        self._consecutive_failures: int = 0
+        self._retry_suspended: bool = False
+
+    @property
+    def retry_suspended(self) -> bool:
+        """Whether automatic retries are suspended."""
+        return self._retry_suspended
+
+    @property
+    def next_retry_at(self) -> datetime | None:
+        """Timestamp of next scheduled retry."""
+        return self._next_retry_at
+
+    @property
+    def last_error_code(self) -> PlannerErrorCode | None:
+        """Most recent planner error code."""
+        return self._last_error_code
+
+    @property
+    def last_error_details(self) -> dict[str, Any] | None:
+        """Details of most recent planner error."""
+        return self._last_error_details
+
+    @property
+    def retry_in_s(self) -> int | None:
+        """Seconds until next retry, or None if suspended."""
+        if self._retry_suspended:
+            return None
+        if self._next_retry_at is None:
+            return None
+        remaining = (self._next_retry_at - datetime.now()).total_seconds()
+        return max(0, int(remaining))
+
+    def _apply_retry_policy(self, code: PlannerErrorCode) -> None:
+        now = datetime.now()
+        if is_warning_only(code):
+            # Warning-only: treat as success for retry purposes
+            return
+        if is_config_blocking(code):
+            self._retry_suspended = True
+            self._next_retry_at = None
+        elif is_transient(code):
+            step_index = min(self._consecutive_failures - 1, len(_BACKOFF_STEPS) - 1)
+            delay = _BACKOFF_STEPS[max(0, step_index)]
+            self._next_retry_at = now + timedelta(seconds=delay)
+        else:
+            # Invariant/state errors: normal 60s cadence
+            self._next_retry_at = now + timedelta(seconds=60)
+
+    def clear_retry_suspension(self) -> None:
+        """Clear retry suspension and schedule an immediate retry."""
+        self._retry_suspended = False
+        self._next_retry_at = datetime.now()
 
     async def _emit_progress(self, phase: str) -> None:
         """Emit progress event via WebSocket."""
@@ -100,7 +172,7 @@ class PlannerService:
         async with self._lock:
             start = datetime.now()
             planned_at = start
-            self._planner_start_time = start  # Track total time from start
+            self._planner_start_time = start
 
             try:
                 await self._emit_progress("fetching_inputs")
@@ -131,12 +203,36 @@ class PlannerService:
 
                 if result.success:
                     await self._emit_progress("complete")
-                    # Invalidate cache and emit WebSocket event
+                    self._on_success()
                     await self._notify_success(result)
                 else:
+                    self._consecutive_failures += 1
                     await self._notify_error(result)
 
-                # Reset phase tracking
+                self._current_phase = None
+                self._planner_start_time = None
+
+                return result
+
+            except PlannerError as e:
+                logger.exception("Planner execution failed with typed error: %s", e.code)
+                self._consecutive_failures += 1
+                self._last_error_code = e.code
+                self._last_error_at = datetime.now()
+                self._last_error_details = e.details or {}
+                self._apply_retry_policy(e.code)
+
+                result = PlannerResult(
+                    success=False,
+                    planned_at=start,
+                    error=e.message,
+                    duration_ms=(datetime.now() - start).total_seconds() * 1000,
+                    error_code=e.code.value,
+                    error_details=e.details,
+                    fix_hint=e.fix_hint,
+                )
+                await self._notify_error(result)
+
                 self._current_phase = None
                 self._planner_start_time = None
 
@@ -144,19 +240,34 @@ class PlannerService:
 
             except Exception as e:
                 logger.exception("Planner execution failed")
+                self._consecutive_failures += 1
+                self._last_error_code = PlannerErrorCode.UNKNOWN
+                self._last_error_at = datetime.now()
+                self._last_error_details = {"exception": str(e)}
+                self._apply_retry_policy(PlannerErrorCode.UNKNOWN)
+
                 result = PlannerResult(
                     success=False,
                     planned_at=start,
                     error=f"{type(e).__name__}: {e!s}",
                     duration_ms=(datetime.now() - start).total_seconds() * 1000,
+                    error_code=PlannerErrorCode.UNKNOWN.value,
+                    error_details={"exception": str(e)},
                 )
                 await self._notify_error(result)
 
-                # Reset phase tracking
                 self._current_phase = None
                 self._planner_start_time = None
 
                 return result
+
+    def _on_success(self) -> None:
+        self._consecutive_failures = 0
+        self._retry_suspended = False
+        self._last_error_code = None
+        self._last_error_at = None
+        self._last_error_details = None
+        self._next_retry_at = None
 
     def _count_schedule_slots(self) -> int:
         """Count slots in schedule.json for metadata."""
@@ -199,6 +310,8 @@ class PlannerService:
                     "planned_at": result.planned_at.isoformat(),
                     "error": result.error,
                     "duration_ms": result.duration_ms,
+                    "code": result.error_code,
+                    "details": result.error_details,
                 },
             )
             logger.error("Planner failed: %s", result.error)

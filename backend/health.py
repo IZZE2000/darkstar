@@ -128,15 +128,26 @@ class HealthIssue:
     message: str  # User-friendly message
     guidance: str  # How to fix
     entity_id: str | None = None  # Specific entity involved (if applicable)
+    code: str | None = None  # Machine-readable error code
+    details: dict[str, Any] | None = None  # Structured diagnostic data
+    retry_in_s: int | None = None  # Seconds until next planner retry
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        d: dict[str, Any] = {
             "category": self.category,
             "severity": self.severity,
             "message": self.message,
             "guidance": self.guidance,
-            "entity_id": self.entity_id,
         }
+        if self.entity_id is not None:
+            d["entity_id"] = self.entity_id
+        if self.code is not None:
+            d["code"] = self.code
+        if self.details is not None:
+            d["details"] = self.details
+        if self.retry_in_s is not None:
+            d["retry_in_s"] = self.retry_in_s
+        return d
 
 
 @dataclass
@@ -176,6 +187,37 @@ class HealthChecker:
         self._config: dict[str, Any] = {}
         self._secrets: dict[str, Any] = {}
 
+    def check_planner(self) -> list[HealthIssue]:
+        """Check planner service health from last error state."""
+        issues: list[HealthIssue] = []
+
+        try:
+            from backend.services.planner_service import planner_service
+            from planner.errors import fix_hints, is_config_blocking, user_message
+
+            if planner_service.last_error_code is None:
+                return issues
+
+            code = planner_service.last_error_code
+            severity = "critical" if is_config_blocking(code) else "warning"
+            hints = fix_hints(code)
+
+            issues.append(
+                HealthIssue(
+                    category="planner",
+                    severity=severity,
+                    message=user_message(code),
+                    guidance=hints[0] if hints else "",
+                    code=code.value,
+                    details=planner_service.last_error_details,
+                    retry_in_s=planner_service.retry_in_s,
+                )
+            )
+        except Exception as e:
+            logger.debug("Could not check planner health: %s", e)
+
+        return issues
+
     async def check_all(self) -> HealthStatus:
         """Run all health checks and return combined status."""
         issues: list[HealthIssue] = []
@@ -203,6 +245,9 @@ class HealthChecker:
 
         # Check load forecast health (REV F65 Phase 5c)
         issues.extend(self.check_load_forecast())
+
+        # Check planner health (error codes + retry policy)
+        issues.extend(self.check_planner())
 
         # Determine overall health
         has_critical = any(i.severity == "critical" for i in issues)

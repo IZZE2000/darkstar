@@ -143,7 +143,22 @@ class SchedulerService:
                 # Check Planning
                 if self._status.enabled:
                     now = datetime.now(UTC)
-                    if self._status.next_run_at and now >= self._status.next_run_at:
+                    # Respect planner retry policy: skip if suspended or before retry time
+                    if planner_service.retry_suspended:
+                        pass  # Config-blocking error: wait for settings_saved event
+                    elif planner_service.next_retry_at is not None:
+                        retry_at_utc = (
+                            planner_service.next_retry_at.replace(tzinfo=UTC)
+                            if planner_service.next_retry_at.tzinfo is None
+                            else planner_service.next_retry_at
+                        )
+                        if (
+                            now >= retry_at_utc
+                            and self._status.next_run_at
+                            and now >= self._status.next_run_at
+                        ):
+                            await self._run_scheduled(config)
+                    elif self._status.next_run_at and now >= self._status.next_run_at:
                         await self._run_scheduled(config)
 
                 # Check Training (ARC11)
@@ -181,37 +196,23 @@ class SchedulerService:
             result = await planner_service.run_once()
             self._update_status_from_result(result)
 
-            if not result.success:
-                # Smart retry on failure
-                await self._smart_retry()
-
         finally:
             self._status.current_task = "idle"
 
-            # Schedule next run
-            self._status.next_run_at = self._compute_next_run(
-                datetime.now(UTC),
-                config.get("every_minutes", 60),
-                config.get("jitter_minutes", 0),
-            )
-
-    async def _smart_retry(self) -> None:
-        """Retry planner after failure with exponential backoff."""
-        retry_delays = [60, 120, 300]  # 1min, 2min, 5min
-
-        for delay in retry_delays:
-            if not self._running:
-                break
-
-            logger.info(f"Smart retry in {delay}s...")
-            await asyncio.sleep(delay)
-
-            result = await planner_service.run_once()
-            self._update_status_from_result(result)
-
-            if result.success:
-                logger.info("Smart retry succeeded")
-                break
+            # If planner_service has set a retry time, use it; otherwise use the normal cadence
+            if planner_service.next_retry_at is not None and not planner_service.retry_suspended:
+                retry_utc = (
+                    planner_service.next_retry_at.replace(tzinfo=UTC)
+                    if planner_service.next_retry_at.tzinfo is None
+                    else planner_service.next_retry_at
+                )
+                self._status.next_run_at = retry_utc
+            else:
+                self._status.next_run_at = self._compute_next_run(
+                    datetime.now(UTC),
+                    config.get("every_minutes", 60),
+                    config.get("jitter_minutes", 0),
+                )
 
     def _update_status_from_result(self, result: PlannerResult) -> None:
         """Update scheduler status from planner result."""

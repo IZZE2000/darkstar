@@ -119,6 +119,9 @@ def build_ev_charger_inputs(
     """
     enabled_ev: list[dict[str, Any]] = [ev for ev in ev_chargers_config if ev.get("enabled", True)]
 
+    # Filter out chargers registered as disabled (missing/zero max_power_kw)
+    enabled_ev = [ev for ev in enabled_ev if not ev.get("disabled_reason")]
+
     # Build state lookup by charger ID
     state_by_id: dict[str, dict[str, Any]] = {}
     if ev_charger_states:
@@ -153,7 +156,7 @@ def build_ev_charger_inputs(
         result.append(
             EVChargerInput(
                 id=charger_id,
-                max_power_kw=float(ev.get("max_power_kw", 0.0)),
+                max_power_kw=float(ev.get("max_power_kw") or 0.0),
                 battery_capacity_kwh=float(ev.get("battery_capacity_kwh", 0.0)),
                 current_soc_percent=soc_percent,
                 plugged_in=plugged_in,

@@ -35,20 +35,12 @@ export default function QuickActions({ executorPaused, onRefresh }: QuickActions
             if (onRefresh) setTimeout(onRefresh, 500)
         }
 
-        const handlePlannerError = () => {
-            setPlannerProgress(null)
-            setFeedback({ type: 'error', message: 'Planner failed' })
-            setTimeout(() => setFeedback(null), 3000)
-        }
-
         socket.on('planner_progress', handleProgress)
         socket.on('schedule_updated', handleScheduleUpdated)
-        socket.on('planner_error', handlePlannerError)
 
         return () => {
             socket.off('planner_progress', handleProgress)
             socket.off('schedule_updated', handleScheduleUpdated)
-            socket.off('planner_error', handlePlannerError)
         }
     }, [onRefresh])
 

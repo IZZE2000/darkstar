@@ -12,6 +12,8 @@ from typing import Any
 
 import pulp  # type: ignore[import,no-redef]
 
+from planner.errors import PlannerError, PlannerErrorCode
+
 from .types import (
     EVChargerInput,
     KeplerConfig,
@@ -151,6 +153,9 @@ class KeplerSolver:
         soc_violation: dict[int, Any] = pulp.LpVariable.dicts(  # type: ignore[reportUnknownMemberType]
             "soc_violation_kwh", range(T + 1), lowBound=0.0
         )
+        soc_overshoot: dict[int, Any] = pulp.LpVariable.dicts(  # type: ignore[reportUnknownMemberType]
+            "soc_overshoot_kwh", range(T + 1), lowBound=0.0
+        )
         target_under_violation: Any = pulp.LpVariable(
             "target_under_violation_kwh", lowBound=0.0
         )  # Penalty for being BELOW target at end of horizon
@@ -223,6 +228,7 @@ class KeplerSolver:
 
         # Penalty constants
         MIN_SOC_PENALTY = 1000.0  # Hard constraint - don't violate min_soc!
+        MAX_SOC_PENALTY = 1000.0  # Soft constraint - prefer to stay below max_soc
         # Target penalty comes from config (derived from risk_appetite in pipeline)
         target_soc_penalty = config.target_soc_penalty_sek
         curtailment_penalty = config.curtailment_penalty_sek
@@ -377,11 +383,11 @@ class KeplerSolver:
 
             # Soft Min/Max SoC Constraints
             prob += soc[t] >= min_soc_kwh - soc_violation[t]
-            prob += soc[t] <= max_soc_kwh
+            prob += soc[t] <= max_soc_kwh + soc_overshoot[t]
 
         # Terminal constraints
         prob += soc[T] >= min_soc_kwh - soc_violation[T]
-        prob += soc[T] <= max_soc_kwh
+        prob += soc[T] <= max_soc_kwh + soc_overshoot[T]
 
         # Terminal SoC Target (BIDIRECTIONAL soft constraint)
         # Penalize both being UNDER target (risk) AND OVER target (missed discharge opportunity)
@@ -476,6 +482,7 @@ class KeplerSolver:
         prob += (  # type: ignore[operator]
             pulp.lpSum(total_cost)
             + MIN_SOC_PENALTY * pulp.lpSum(soc_violation)
+            + MAX_SOC_PENALTY * pulp.lpSum(soc_overshoot)
             + gap_violation_penalty  # Deprecated in K16 (0.0)
             + gap_violation_penalty  # Deprecated in K16 (0.0)
             # Per-device block overshoot penalty (task 2.9)
@@ -553,6 +560,15 @@ class KeplerSolver:
         if not is_optimal:
             prob.writeLP("kepler_debug.lp")  # type: ignore[reportUnknownMemberType]
             print(f"Solver failed: {status}. LP written to kepler_debug.lp")
+
+            # Map PuLP status to structured PlannerError
+            details = {"solver_status": status, "solve_duration_s": round(solve_duration, 3)}
+            if prob.status == pulp.LpStatusInfeasible:  # type: ignore[reportUnknownMemberType,reportAttributeAccessIssue]
+                raise PlannerError(code=PlannerErrorCode.SOLVER_INFEASIBLE, details=details)
+            elif solve_duration >= 30:  # timeLimit used above
+                raise PlannerError(code=PlannerErrorCode.SOLVER_TIMEOUT, details=details)
+            elif prob.status == pulp.LpStatusUndefined:  # type: ignore[reportUnknownMemberType,reportAttributeAccessIssue]
+                raise PlannerError(code=PlannerErrorCode.SOLVER_UNDEFINED, details=details)
 
         result_slots: list[KeplerResultSlot] = []
         final_total_cost: float = 0.0

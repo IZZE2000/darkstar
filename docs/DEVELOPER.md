@@ -99,6 +99,12 @@ Located in `backend/learning/reflex.py`, this is the long-term feedback loop.
 ### 3. The Planner (The Optimizer)
 Located in `planner.py`, the system now uses **Kepler**, a Mixed-Integer Linear Programming (MILP) solver, to generate optimal schedules.
 
+**Pre-flight Validator** (`planner/preflight.py`): Before Kepler runs, a deterministic validator checks battery config, initial SoC range, EV charger parameters, price/forecast data availability, and numeric sanity. Blocking failures raise `PlannerError` with a typed error code; non-blocking conditions (stale SoC, past EV deadlines) log warnings and continue.
+
+**Error Code Taxonomy** (`planner/errors.py`): Every planner failure produces a `PlannerErrorCode` enum value (e.g., `CONFIG_INVALID`, `SOLVER_INFEASIBLE`, `PRICES_UNAVAILABLE`) with a human-readable `user_message()` and actionable `fix_hints()`. The `PlannerError` exception carries code, message, fix hint, and a structured details dict.
+
+**Retry Policy** (`backend/services/planner_service.py`): After a failure, the `PlannerService` applies a retry policy keyed on error code category: config-blocking errors suspend retries until settings are saved; transient errors use exponential backoff (60s → 120s → 240s → 300s cap); invariant errors retry at normal 60s cadence; warning-only codes do not block scheduling.
+
 *   **Objective**: Minimizes total cost (Import - Export + Wear) over a 48h horizon.
 *   **Constraints**: Respects battery capacity, inverter limits, and energy balance.
 *   **Strategic S-Index**: Applies a decoupled safety strategy:

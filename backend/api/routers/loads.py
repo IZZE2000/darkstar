@@ -52,6 +52,7 @@ async def get_loads_debug(
                     "healthy": load.is_healthy,
                     "type": load.type.value,
                     "sensor": load.sensor_key,
+                    "disabled_reason": load.disabled_reason,
                 }
             )
 

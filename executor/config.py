@@ -387,7 +387,9 @@ def load_executor_config(config_path: str = "config.yaml") -> ExecutorConfig:
             EVChargerDeviceConfig(
                 id=charger_id,
                 switch_entity=_str_or_none(charger.get("switch_entity")),
-                max_power_kw=float(charger.get("max_power_kw", EVChargerDeviceConfig.max_power_kw)),
+                max_power_kw=float(
+                    charger.get("max_power_kw") or EVChargerDeviceConfig.max_power_kw
+                ),
                 battery_capacity_kwh=charger.get("battery_capacity_kwh"),
                 replan_on_plugin=bool(
                     charger.get("replan_on_plugin", EVChargerDeviceConfig.replan_on_plugin)

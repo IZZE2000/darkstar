@@ -311,6 +311,15 @@ async def save_config(
             # Log but don't fail the save if executor reload fails
             logger.warning("Failed to reload executor config after save: %s", e)
 
+        # Clear planner retry suspension so planning resumes after config fix
+        try:
+            from backend.services.planner_service import planner_service
+
+            planner_service.clear_retry_suspension()
+            logger.info("Planner retry suspension cleared after config save")
+        except Exception as e:
+            logger.warning("Failed to clear planner retry suspension: %s", e)
+
         # Return success with any warnings
         if warnings:
             return {"status": "success", "warnings": warnings}  # type: ignore[return-value]

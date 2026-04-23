@@ -300,6 +300,12 @@ export const EntityArrayEditor: React.FC<EntityArrayEditorProps> = ({
                                         <div>
                                             <label className="text-[10px] uppercase font-bold text-muted mb-1.5 block">
                                                 {isWaterHeater ? 'Power Rating' : 'Max Charging Power'} (kW) *
+                                                {!isWaterHeater && (
+                                                    <span className="normal-case font-normal text-muted/70 ml-1">
+                                                        Required (e.g. 7.4, 11, 22 kW). Missing or zero disables the
+                                                        charger.
+                                                    </span>
+                                                )}
                                             </label>
                                             <NumberInput
                                                 value={
