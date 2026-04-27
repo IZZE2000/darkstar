@@ -39,6 +39,10 @@ The model SHALL use the following feature categories: calendar features (hour, d
 ### Requirement: Price forecast inference
 The system SHALL generate price forecasts for D+1 through D+7 at 15-minute slot resolution. D+1 forecasts SHALL serve as fallback before the ~13:00 CET Nordpool day-ahead auction. Once real Nordpool D+1 prices are available, they SHALL take precedence over the D+1 forecast. When no trained model exists, the system SHALL still fetch regional weather and persist rows with null spot prediction columns to accumulate training data.
 
+`get_price_forecasts_from_db` SHALL return exactly one record per `slot_start` value. When multiple DB rows share the same `slot_start` (due to duplicate writes), the function SHALL keep the row with the latest `issue_timestamp`; if rows also tie on `issue_timestamp`, any single row for that slot is acceptable. This guarantee applies regardless of whether `days_ahead` filtering is active.
+
+`get_d1_price_forecast_fallback` SHALL deduplicate its return value on `slot_start` before returning, so that callers never receive two entries with the same slot timestamp.
+
 #### Scenario: Daily forecast generation
 - **WHEN** the forecast pipeline runs and a trained price model exists
 - **THEN** the system SHALL generate p10/p50/p90 spot price forecasts for all 15-minute slots from D+1 through D+7
@@ -57,6 +61,16 @@ The system SHALL generate price forecasts for D+1 through D+7 at 15-minute slot 
 - **THEN** the system SHALL still fetch regional weather data and build feature rows for D+1 through D+7
 - **AND** the system SHALL persist those rows with spot_p10, spot_p50, and spot_p90 set to null
 - **AND** the system SHALL NOT return these rows to downstream consumers as price forecasts
+
+#### Scenario: DB query deduplicates by slot_start
+- **WHEN** `get_price_forecasts_from_db` is called and the DB contains multiple rows for the same `slot_start` with the same `days_ahead`
+- **THEN** the function SHALL return exactly one row for that `slot_start`
+- **AND** the returned row SHALL have the latest `issue_timestamp` among all candidates
+
+#### Scenario: Fallback deduplicates before returning
+- **WHEN** `get_d1_price_forecast_fallback` retrieves rows from the DB and two rows share the same `slot_start`
+- **THEN** the function SHALL return only one entry per `slot_start`
+- **AND** the returned list SHALL have no duplicate `slot_start` values
 
 ### Requirement: Price forecast scheduling
 The system SHALL call `generate_price_forecasts()` on two independent schedules: once on every training cycle (regardless of whether training succeeded), and once per day on a dedicated daily tick (e.g., 06:00). This ensures weather snapshots accumulate continuously from first install, enabling the model to train within approximately one week.

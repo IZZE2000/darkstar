@@ -275,3 +275,82 @@ async def test_dedup_excludes_weather_only_rows(tmp_db):
     for r in results:
         assert r["spot_p50"] is not None, f"Null spot_p50 for slot {r['slot_start']}"
         assert r["issue_timestamp"] == "2026-04-09T14:00:00+02:00"
+
+
+@pytest.mark.asyncio
+async def test_dedup_tied_issue_timestamps(tmp_db):
+    """Insert duplicate rows with same slot_start, days_ahead, and issue_timestamp — assert exactly one row per slot."""
+    db_path, engine = tmp_db
+
+    slots = [f"2026-04-10T{h:02d}:{m:02d}:00+02:00" for h in range(24) for m in (0, 30)]
+
+    rows = []
+    for s in slots:
+        rows.append(
+            {
+                "slot_start": s,
+                "issue_timestamp": "2026-04-09T14:00:00+02:00",
+                "days_ahead": 1,
+                "spot_p10": 0.4,
+                "spot_p50": 0.5,
+                "spot_p90": 0.6,
+            }
+        )
+        rows.append(
+            {
+                "slot_start": s,
+                "issue_timestamp": "2026-04-09T14:00:00+02:00",
+                "days_ahead": 1,
+                "spot_p10": 0.45,
+                "spot_p50": 0.55,
+                "spot_p90": 0.65,
+            }
+        )
+
+    _insert_forecasts(engine, rows)
+
+    results = await get_price_forecasts_from_db(db_path=db_path, days_ahead=1, limit=96)
+    assert len(results) == 48, f"Expected 48, got {len(results)}"
+
+    slot_starts = [r["slot_start"] for r in results]
+    assert len(set(slot_starts)) == 48, "Duplicate slot_starts found in results"
+
+
+@pytest.mark.asyncio
+async def test_d1_fallback_dedup(tmp_db, price_config):
+    """Seed DB with duplicate slot_start entries — assert no duplicate slot_start in fallback return."""
+    db_path, engine = tmp_db
+
+    slots = [f"2026-04-10T{h:02d}:{m:02d}:00+02:00" for h in range(24) for m in (0, 30)]
+
+    rows = []
+    for s in slots:
+        rows.append(
+            {
+                "slot_start": s,
+                "issue_timestamp": "2026-04-09T14:00:00+02:00",
+                "days_ahead": 1,
+                "spot_p10": 0.4,
+                "spot_p50": 0.5,
+                "spot_p90": 0.6,
+            }
+        )
+        rows.append(
+            {
+                "slot_start": s,
+                "issue_timestamp": "2026-04-09T14:00:00+02:00",
+                "days_ahead": 1,
+                "spot_p10": 0.45,
+                "spot_p50": 0.55,
+                "spot_p90": 0.65,
+            }
+        )
+
+    _insert_forecasts(engine, rows)
+
+    result = await get_d1_price_forecast_fallback(config=price_config, db_path=db_path)
+    assert result is not None
+    assert len(result) == 48, f"Expected 48, got {len(result)}"
+
+    slot_starts = [r["slot_start"] for r in result]
+    assert len(set(slot_starts)) == 48, "Duplicate slot_starts found in fallback result"

@@ -11,6 +11,7 @@ This module generates 7-day price forecasts by:
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -26,6 +27,8 @@ from backend.core.prices import calculate_import_export_prices
 from backend.learning.models import PriceForecast
 from ml.price_features import build_price_features_batch
 from ml.weather import compute_regional_wind_index, get_regional_weather
+
+logger = logging.getLogger(__name__)
 
 
 def derive_consumer_prices(
@@ -389,25 +392,27 @@ async def get_price_forecasts_from_db(
 
         results = query.all()
 
-        forecasts: list[dict[str, Any]] = []
+        best_by_slot: dict[str, dict[str, Any]] = {}
         for pf in results:
-            forecasts.append(
-                {
-                    "slot_start": pf.slot_start,
-                    "issue_timestamp": pf.issue_timestamp,
-                    "days_ahead": pf.days_ahead,
-                    "spot_p10": pf.spot_p10,
-                    "spot_p50": pf.spot_p50,
-                    "spot_p90": pf.spot_p90,
-                    "wind_index": pf.wind_index,
-                    "temperature_c": pf.temperature_c,
-                    "cloud_cover": pf.cloud_cover,
-                    "radiation_wm2": pf.radiation_wm2,
-                }
-            )
+            row = {
+                "slot_start": pf.slot_start,
+                "issue_timestamp": pf.issue_timestamp,
+                "days_ahead": pf.days_ahead,
+                "spot_p10": pf.spot_p10,
+                "spot_p50": pf.spot_p50,
+                "spot_p90": pf.spot_p90,
+                "wind_index": pf.wind_index,
+                "temperature_c": pf.temperature_c,
+                "cloud_cover": pf.cloud_cover,
+                "radiation_wm2": pf.radiation_wm2,
+            }
+            key = pf.slot_start
+            existing = best_by_slot.get(key)
+            if existing is None or pf.issue_timestamp > existing["issue_timestamp"]:
+                best_by_slot[key] = row
 
         session.close()
-        return forecasts
+        return list(best_by_slot.values())
 
     except Exception as exc:
         print(f"Error retrieving forecasts: {exc}")
@@ -434,6 +439,21 @@ async def get_d1_price_forecast_fallback(
 
         # Filter out weather-only rows (null-prediction rows)
         valid_forecasts = [f for f in forecasts if f.get("spot_p50") is not None]
+
+        # Deduplicate on slot_start (defence-in-depth against DB duplicates leaking through)
+        seen: set[str] = set()
+        deduped: list[dict[str, Any]] = []
+        for f in valid_forecasts:
+            slot = f["slot_start"]
+            if slot not in seen:
+                seen.add(slot)
+                deduped.append(f)
+        if len(deduped) < len(valid_forecasts):
+            logger.warning(
+                "get_d1_price_forecast_fallback dropped %d duplicate slot_start entries",
+                len(valid_forecasts) - len(deduped),
+            )
+        valid_forecasts = deduped
 
         if not valid_forecasts:
             return None

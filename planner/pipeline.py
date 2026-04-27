@@ -731,9 +731,18 @@ class PlannerPipeline:
         # Kepler only planned future slots, so result_df matches future_df indices
         final_df = future_df.join(result_df, rsuffix="_kepler")
 
+        if len(result_df) != len(future_df):
+            logger.error(
+                "Result merge length mismatch: result_df=%d, future_df=%d — "
+                "possible duplicate timestamps in price input",
+                len(result_df),
+                len(future_df),
+            )
+
         # Copy ALL columns from result_df to final_df (overwrite existing, add new)
+        # Use index-aligned assignment (not .values) to avoid ValueError on length mismatch
         for col in result_df.columns:
-            final_df[col] = result_df[col].values
+            final_df[col] = result_df[col]
 
         # Restore water_heating_kw (it was set in schedule_water_heating but overwritten above)
         if water_heating_series is not None:
