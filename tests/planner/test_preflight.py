@@ -51,8 +51,8 @@ def _valid_config(**battery_overrides) -> dict:
         capacity_kwh=10.0,
         min_soc_percent=10.0,
         max_soc_percent=90.0,
-        max_charge_power_kw=5.0,
-        max_discharge_power_kw=5.0,
+        max_charge_w=5000,
+        max_discharge_w=5000,
     )
     battery.update(battery_overrides)
     return {"system": {"has_battery": True}, "battery": battery, "ev_chargers": []}
@@ -90,14 +90,14 @@ def test_battery_config_invalid_capacity():
 
 
 def test_battery_config_invalid_charge_power():
-    config = _valid_config(max_charge_power_kw=0.0)
+    config = _valid_config(max_charge_w=0)
     with pytest.raises(PlannerError) as exc:
         check_battery_config(config)
     assert exc.value.code == PlannerErrorCode.CONFIG_INVALID
 
 
 def test_battery_config_invalid_discharge_power():
-    config = _valid_config(max_discharge_power_kw=0.0)
+    config = _valid_config(max_discharge_w=0)
     with pytest.raises(PlannerError) as exc:
         check_battery_config(config)
     assert exc.value.code == PlannerErrorCode.CONFIG_INVALID

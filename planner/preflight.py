@@ -28,8 +28,8 @@ def check_battery_config(config: dict[str, Any]) -> None:
     min_pct = battery.get("min_soc_percent", 0.0)
     max_pct = battery.get("max_soc_percent", 100.0)
     capacity = battery.get("capacity_kwh", 0.0)
-    max_charge = battery.get("max_charge_power_kw", 0.0)
-    max_discharge = battery.get("max_discharge_power_kw", 0.0)
+    max_charge = battery.get("max_charge_w", 0.0) / 1000
+    max_discharge = battery.get("max_discharge_w", 0.0) / 1000
 
     if min_pct >= max_pct:
         raise PlannerError(
@@ -50,12 +50,12 @@ def check_battery_config(config: dict[str, Any]) -> None:
         if max_charge <= 0:
             raise PlannerError(
                 code=PlannerErrorCode.CONFIG_INVALID,
-                details={"field": "battery.max_charge_power_kw", "value": max_charge},
+                details={"field": "battery.max_charge_w", "value": max_charge},
             )
         if max_discharge <= 0:
             raise PlannerError(
                 code=PlannerErrorCode.CONFIG_INVALID,
-                details={"field": "battery.max_discharge_power_kw", "value": max_discharge},
+                details={"field": "battery.max_discharge_w", "value": max_discharge},
             )
 
 

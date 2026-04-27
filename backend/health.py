@@ -372,7 +372,6 @@ class HealthChecker:
 
         # REV LCL01: Validate system profile toggle consistency
         system_cfg = self._config.get("system", {})
-        water_cfg = self._config.get("water_heating", {})
         battery_cfg = self._config.get("battery", {})
 
         # Battery misconfiguration = critical (breaks MILP solver)
@@ -397,37 +396,33 @@ class HealthChecker:
 
         # Water heater misconfiguration = warning (feature disabled, not broken)
         if system_cfg.get("has_water_heater", True):
-            power_kw = water_cfg.get("power_kw", 0)
-            try:
-                power_kw = float(power_kw) if power_kw else 0.0
-            except (ValueError, TypeError):
-                power_kw = 0.0
-            if power_kw <= 0:
+            water_heaters = self._config.get("water_heaters", [])
+            has_power = any(
+                h.get("enabled", True) and float(h.get("power_kw", 0) or 0) > 0
+                for h in water_heaters
+            )
+            if not has_power:
                 issues.append(
                     HealthIssue(
                         category="config",
                         severity="warning",
                         message="Water heater enabled but power not configured",
-                        guidance="Set water_heating.power_kw to your heater's power (e.g., 3.0), "
+                        guidance="Set water_heaters[].power_kw to your heater's power (e.g., 3.0), "
                         "or set system.has_water_heater to false.",
                     )
                 )
 
         # Solar misconfiguration = warning (PV forecasts will be zero)
         if system_cfg.get("has_solar", True):
-            solar_cfg = system_cfg.get("solar_array", {})
-            kwp = solar_cfg.get("kwp", 0)
-            try:
-                kwp = float(kwp) if kwp else 0.0
-            except (ValueError, TypeError):
-                kwp = 0.0
-            if kwp <= 0:
+            solar_arrays = system_cfg.get("solar_arrays", [])
+            has_kwp = any(float(a.get("kwp", 0) or 0) > 0 for a in solar_arrays)
+            if not has_kwp:
                 issues.append(
                     HealthIssue(
                         category="config",
                         severity="warning",
                         message="Solar enabled but panel size not configured",
-                        guidance="Set system.solar_array.kwp to your PV capacity (e.g., 10.0), "
+                        guidance="Set system.solar_arrays[].kwp to your PV capacity (e.g., 10.0), "
                         "or set system.has_solar to false.",
                     )
                 )
