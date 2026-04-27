@@ -182,6 +182,10 @@ async def lifespan(app: FastAPI):
 
     await recorder_service.stop()
 
+    from backend.ha_socket import stop_ha_socket_client
+
+    stop_ha_socket_client()
+
 
 def get_base_path(request: Request) -> str:
     """Get the base path for frontend assets.

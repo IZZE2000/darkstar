@@ -883,102 +883,116 @@ class ExecutorEngine:
             logger.error("Failed to initialize HA client, executor shutting down")
             return
 
-        while not self._stop_event.is_set():
-            # Reload config to get latest settings
-            self.reload_config()
+        try:
+            while not self._stop_event.is_set():
+                # Reload config to get latest settings
+                self.reload_config()
 
-            # Check if enabled
-            if not self.config.enabled:
-                logger.debug("Executor disabled in config, sleeping")
-                self.status.last_skip_reason = "disabled_in_config"
-                await asyncio.sleep(10)  # Check every 10s
-                continue
+                # Check if enabled
+                if not self.config.enabled:
+                    logger.debug("Executor disabled in config, sleeping")
+                    self.status.last_skip_reason = "disabled_in_config"
+                    await asyncio.sleep(10)  # Check every 10s
+                    continue
 
-            # Check if paused
-            if self.is_paused:
-                logger.debug("Executor paused, sleeping")
-                self.status.last_skip_reason = "paused_by_user"
-                await asyncio.sleep(10)
-                continue
+                # Check if paused
+                if self.is_paused:
+                    logger.debug("Executor paused, sleeping")
+                    self.status.last_skip_reason = "paused_by_user"
+                    await asyncio.sleep(10)
+                    continue
 
-            # Calculate next run time
-            now = datetime.now(tz)
-            next_run = self._compute_next_run(now)
-            self.status.next_run_at = next_run
-
-            # Wait until next run time
-            wait_seconds = (next_run - now).total_seconds()
-            if wait_seconds > 1:  # Only wait if more than 1s
-                logger.debug(
-                    "Waiting %.1fs until next run at %s",
-                    wait_seconds,
-                    next_run.isoformat(),
-                )
-                # Async wait with check for stop event
-                # We can't easily "wait on event" in async without an async event
-                # So we sleep in chunks or just sleep.
-                # Since _stop_event is threading.Event, we can't await it directly.
-                # We'll just sleep. If stop event is set, loop checks at top.
-                # To be more responsive, we could sleep in small increments, but
-                # strictly sticking to asyncio.sleep is fine for now.
-
-                # Correction: We should check stop_event periodically if wait is long
-                # But since we are inside asyncio.run(), the threading event set from outside
-                # is the signaling mechanism.
-
-                # Let's use a small loop for responsiveness
-                end_wait = time.time() + wait_seconds
-                while time.time() < end_wait:
-                    if self._stop_event.is_set():
-                        return
-                    sleep_time = min(1.0, end_wait - time.time())
-                    await asyncio.sleep(sleep_time)
-
-                # Re-check current time after waiting
+                # Calculate next run time
                 now = datetime.now(tz)
+                next_run = self._compute_next_run(now)
+                self.status.next_run_at = next_run
 
-            # Prevent double execution - check if we ran recently
-            if self.status.last_run_at:
+                # Wait until next run time
+                wait_seconds = (next_run - now).total_seconds()
+                if wait_seconds > 1:  # Only wait if more than 1s
+                    logger.debug(
+                        "Waiting %.1fs until next run at %s",
+                        wait_seconds,
+                        next_run.isoformat(),
+                    )
+                    # Async wait with check for stop event
+                    # We can't easily "wait on event" in async without an async event
+                    # So we sleep in chunks or just sleep.
+                    # Since _stop_event is threading.Event, we can't await it directly.
+                    # We'll just sleep. If stop event is set, loop checks at top.
+                    # To be more responsive, we could sleep in small increments, but
+                    # strictly sticking to asyncio.sleep is fine for now.
+
+                    # Correction: We should check stop_event periodically if wait is long
+                    # But since we are inside asyncio.run(), the threading event set from outside
+                    # is the signaling mechanism.
+
+                    # Let's use a small loop for responsiveness
+                    end_wait = time.time() + wait_seconds
+                    while time.time() < end_wait:
+                        if self._stop_event.is_set():
+                            return
+                        sleep_time = min(1.0, end_wait - time.time())
+                        await asyncio.sleep(sleep_time)
+
+                    # Re-check current time after waiting
+                    now = datetime.now(tz)
+
+                # Prevent double execution - check if we ran recently
+                if self.status.last_run_at:
+                    try:
+                        last_run = self.status.last_run_at
+                        # Skip if we ran within the last interval minus a buffer
+                        min_interval = self.config.interval_seconds - 30  # 30s buffer
+                        seconds_since_last = (now - last_run).total_seconds()
+                        if seconds_since_last < min_interval:
+                            logger.debug(
+                                "Skipping - already ran %.0fs ago (min interval: %ds)",
+                                seconds_since_last,
+                                min_interval,
+                            )
+                            self.status.last_run_status = "skipped"
+                            self.status.last_skip_reason = "already_ran_recently"
+                            # Don't tight-loop - wait until next boundary
+                            continue  # Will recalculate next_run on next iteration
+                    except Exception as e:
+                        logger.debug("Could not parse last_run_at: %s", e)
+
+                # Execute tick
                 try:
-                    last_run = self.status.last_run_at
-                    # Skip if we ran within the last interval minus a buffer
-                    min_interval = self.config.interval_seconds - 30  # 30s buffer
-                    seconds_since_last = (now - last_run).total_seconds()
-                    if seconds_since_last < min_interval:
-                        logger.debug(
-                            "Skipping - already ran %.0fs ago (min interval: %ds)",
-                            seconds_since_last,
-                            min_interval,
+                    tick_start = datetime.now(tz)
+                    logger.info("Executing scheduled tick at %s", tick_start.isoformat())
+
+                    # The Core Fix: await the async tick
+                    await self._tick()
+
+                    tick_duration = (datetime.now(tz) - tick_start).total_seconds()
+
+                    # Rev PERF2: Performance Logging
+                    if tick_duration > 1.0:
+                        logger.warning(
+                            "\u26a0\ufe0f SLOW TICK: %.2fs (Threshold: 1.0s)", tick_duration
                         )
-                        self.status.last_run_status = "skipped"
-                        self.status.last_skip_reason = "already_ran_recently"
-                        # Don't tight-loop - wait until next boundary
-                        continue  # Will recalculate next_run on next iteration
+                    else:
+                        logger.info("Tick completed in %.2fs", tick_duration)
                 except Exception as e:
-                    logger.debug("Could not parse last_run_at: %s", e)
+                    logger.exception("Executor tick failed: %s", e)
+                    self.status.last_run_status = "error"
+                    self.status.last_error = str(e)
 
-            # Execute tick
-            try:
-                tick_start = datetime.now(tz)
-                logger.info("Executing scheduled tick at %s", tick_start.isoformat())
-
-                # The Core Fix: await the async tick
-                await self._tick()
-
-                tick_duration = (datetime.now(tz) - tick_start).total_seconds()
-
-                # Rev PERF2: Performance Logging
-                if tick_duration > 1.0:
-                    logger.warning("\u26a0\ufe0f SLOW TICK: %.2fs (Threshold: 1.0s)", tick_duration)
-                else:
-                    logger.info("Tick completed in %.2fs", tick_duration)
-            except Exception as e:
-                logger.exception("Executor tick failed: %s", e)
-                self.status.last_run_status = "error"
-                self.status.last_error = str(e)
-
-            # No fixed sleep - next iteration will calculate proper wait time
-            # This eliminates drift and ensures alignment to interval boundaries
+                # No fixed sleep - next iteration will calculate proper wait time
+                # This eliminates drift and ensures alignment to interval boundaries
+        finally:
+            for task in list(self._background_tasks):
+                task.cancel()
+            if self._background_tasks:
+                await asyncio.gather(*self._background_tasks, return_exceptions=True)
+            if self.ha_client:
+                try:
+                    await self.ha_client.close()
+                    logger.info("HA client session closed")
+                except Exception:
+                    logger.warning("Failed to close HA client session", exc_info=True)
 
         logger.info("Executor background loop stopped")
 

@@ -689,6 +689,11 @@ class HAWebSocketClient:
         finally:
             self.stats["events_processed"] += 1
 
+    def stop(self):
+        """Signal the WebSocket client to stop."""
+        self.running = False
+        logger.info("HA WebSocket client stop requested")
+
     def start(self):
         self.running = True
 
@@ -822,6 +827,14 @@ def reload_ha_socket_client():
     """Trigger a reload of the monitored entities in the running client."""
     if _ha_client:
         _ha_client.reload_monitored_entities()
+
+
+def stop_ha_socket_client():
+    """Stop the HA WebSocket client."""
+    global _ha_client
+    if _ha_client is not None:
+        _ha_client.stop()
+        logger.info("✅ HA WebSocket client stop requested")
 
 
 def get_ha_socket_status() -> dict[str, Any]:
