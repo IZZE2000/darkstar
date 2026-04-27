@@ -232,6 +232,7 @@ class PlannerService:
                     fix_hint=e.fix_hint,
                 )
                 await self._notify_error(result)
+                await self._emit_progress("failed")
 
                 self._current_phase = None
                 self._planner_start_time = None
@@ -255,6 +256,7 @@ class PlannerService:
                     error_details={"exception": str(e)},
                 )
                 await self._notify_error(result)
+                await self._emit_progress("failed")
 
                 self._current_phase = None
                 self._planner_start_time = None

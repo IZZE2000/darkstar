@@ -11,6 +11,10 @@ class HealthIssue(BaseModel):
     message: str
     guidance: str
     entity_id: str | None = None
+    code: str | None = None
+    details: dict[str, object] | None = None
+    retry_in_s: int | None = None
+    config_blocking: bool = False
 
 
 class HealthResponse(BaseModel):

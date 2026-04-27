@@ -102,8 +102,8 @@ function RootLayout() {
         <>
             <Sidebar />
             <div className="lg:pl-[96px]">
-                {/* Show health alerts if not fully healthy */}
-                {healthStatus && !healthStatus.healthy && <SystemAlert health={healthStatus} />}
+                {/* Show health alerts whenever issues exist (critical or warning) */}
+                {healthStatus && healthStatus.issues.length > 0 && <SystemAlert health={healthStatus} />}
 
                 {/* REV UI23: Show config incomplete warning banner */}
                 {configWarnings?.warnings && configWarnings.warnings.length > 0 && (

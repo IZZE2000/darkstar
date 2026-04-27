@@ -131,6 +131,7 @@ class HealthIssue:
     code: str | None = None  # Machine-readable error code
     details: dict[str, Any] | None = None  # Structured diagnostic data
     retry_in_s: int | None = None  # Seconds until next planner retry
+    config_blocking: bool = False  # True when the error requires a config change to resolve
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {
@@ -147,6 +148,8 @@ class HealthIssue:
             d["details"] = self.details
         if self.retry_in_s is not None:
             d["retry_in_s"] = self.retry_in_s
+        if self.config_blocking:
+            d["config_blocking"] = True
         return d
 
 
@@ -211,6 +214,7 @@ class HealthChecker:
                     code=code.value,
                     details=planner_service.last_error_details,
                     retry_in_s=planner_service.retry_in_s,
+                    config_blocking=is_config_blocking(code),
                 )
             )
         except Exception as e:

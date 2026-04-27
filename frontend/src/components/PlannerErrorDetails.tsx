@@ -112,12 +112,7 @@ export function PlannerErrorDetails({ issue, open, onClose }: PlannerErrorDetail
     }
 
     const details = issue.details || {}
-    const isConfigBlocking = [
-        'CONFIG_INVALID',
-        'EV_MISSING_POWER',
-        'EV_INVALID_CAPACITY',
-        'INITIAL_SOC_OUT_OF_RANGE',
-    ].includes(issue.code || '')
+    const isConfigBlocking = issue.config_blocking === true
 
     return (
         <Modal open={open} onOpenChange={() => onClose()} title="Planner Error Details" size="md">

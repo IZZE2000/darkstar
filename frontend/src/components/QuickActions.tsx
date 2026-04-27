@@ -26,7 +26,12 @@ export default function QuickActions({ executorPaused, onRefresh }: QuickActions
         const socket = getSocket()
 
         const handleProgress = (data: PlannerProgress) => {
-            setPlannerProgress(data)
+            if (data.phase === 'failed') {
+                setPlannerProgress(data)
+                setTimeout(() => setPlannerProgress(null), 3000)
+            } else {
+                setPlannerProgress(data)
+            }
         }
 
         const handleScheduleUpdated = () => {
@@ -112,6 +117,8 @@ export default function QuickActions({ executorPaused, onRefresh }: QuickActions
                 return `Applying...${timeStr}`
             case 'complete':
                 return 'Done ✓'
+            case 'failed':
+                return 'Failed ✗'
             default:
                 return `Planning...${timeStr}`
         }
@@ -120,6 +127,7 @@ export default function QuickActions({ executorPaused, onRefresh }: QuickActions
     const getProgressBarWidth = () => {
         if (!plannerProgress) return '0%'
         if (plannerProgress.phase === 'complete') return '100%'
+        if (plannerProgress.phase === 'failed') return '0%'
 
         // Estimate progress based on phase and elapsed time
         const elapsed = plannerProgress.elapsed_ms / 1000 // seconds

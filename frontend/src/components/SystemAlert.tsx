@@ -20,6 +20,7 @@ export interface HealthIssue {
     code?: string | null
     details?: Record<string, unknown> | null
     retry_in_s?: number | null
+    config_blocking?: boolean
 }
 
 export interface HealthStatus {
@@ -39,7 +40,7 @@ export function SystemAlert({ health, onDismiss }: SystemAlertProps) {
     const [selectedIssue, setSelectedIssue] = useState<HealthIssue | null>(null)
     const [collapsed, setCollapsed] = useState(false)
 
-    if (!health || health.healthy) {
+    if (!health || health.issues.length === 0) {
         return null
     }
 
