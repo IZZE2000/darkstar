@@ -19,6 +19,7 @@ import pytz
 if TYPE_CHECKING:
     from datetime import datetime
 
+from backend.core.version import get_version
 from backend.learning.store import LearningStore
 from planner.errors import PlannerError, PlannerErrorCode
 from planner.inputs.data_prep import apply_safety_margins, prepare_df
@@ -225,7 +226,7 @@ class PlannerPipeline:
         Returns:
             DataFrame with the complete schedule
         """
-        logger.info("PlannerPipeline.generate_schedule(mode=%s)", mode)
+        logger.info("Darkstar %s — PlannerPipeline.generate_schedule(mode=%s)", get_version(), mode)
 
         # 1. Configuration & Overrides
         active_config = self.config
