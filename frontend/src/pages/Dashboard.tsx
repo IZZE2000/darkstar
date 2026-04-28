@@ -106,7 +106,7 @@ export default function Dashboard() {
     const [config, setConfig] = useState<any>(null)
 
     // Price Forecast Outlook
-    const [priceOutlook, setPriceOutlook] = useState<import('../lib/api').PriceOutlookResponse | null>(null)
+    const [priceOutlook, setPriceOutlook] = useState<import('../lib/api').PriceOutlookResponse | undefined>(undefined)
     const [priceAdvice, setPriceAdvice] = useState<import('../lib/api').AdviceItem[]>([])
     const [priceForecastStatus, setPriceForecastStatus] = useState<{
         training_samples_count: number

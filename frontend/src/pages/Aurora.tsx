@@ -60,7 +60,7 @@ export default function Aurora() {
     const [priceForecastEnabled, setPriceForecastEnabled] = useState<boolean>(false)
     const [priceForecastSlots, setPriceForecastSlots] = useState<PriceForecastSlot[]>([])
     const [priceForecastLoading, setPriceForecastLoading] = useState(false)
-    const [priceAccuracy, setPriceAccuracy] = useState<PriceAccuracyResponse | null>(null)
+    const [priceAccuracy, setPriceAccuracy] = useState<PriceAccuracyResponse | undefined>(undefined)
 
     // Performance Data State
     const [perfData, setPerfData] = useState<AuroraPerformanceData | null>(null)

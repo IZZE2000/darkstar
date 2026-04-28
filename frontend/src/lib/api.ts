@@ -61,8 +61,13 @@ export type ConfigResponse = {
         inverter_profile?: string
         battery?: { capacity_kwh?: number }
         solar_array?: { kwp?: number }
+        solar_arrays?: { kwp?: number; name?: string }[]
         grid?: { max_power_kw?: number }
         inverter?: { max_power_kw?: number }
+        has_solar?: boolean
+        has_battery?: boolean
+        has_water_heater?: boolean
+        has_ev_charger?: boolean
     }
     // Battery is also at root level in actual API response
     battery?: { capacity_kwh?: number; min_soc_percent?: number; max_soc_percent?: number }

@@ -14,7 +14,7 @@ import { useUnsavedChangesGuard } from './hooks/useUnsavedChangesGuard'
 export const EVTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }) => {
     const navigate = useNavigate()
     const { form, fieldErrors, loading, saving, statusMessage, handleChange, save, isDirty, haEntities, haLoading } =
-        useSettingsForm(evFieldList, [], 'ev')
+        useSettingsForm(evFieldList, [])
 
     const blocker = useUnsavedChangesGuard(isDirty)
     const hasHiddenSections = evSections.some((s) => s.fields.every((f) => f.isAdvanced))

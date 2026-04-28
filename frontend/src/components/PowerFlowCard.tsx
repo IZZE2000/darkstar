@@ -52,8 +52,7 @@ export default function PowerFlowCard({ data, systemConfig, compact = false }: P
         }
     }, [showEvTooltip, handleOutsideClick])
 
-    const handleEvInteract = useCallback((e: React.MouseEvent | React.TouchEvent) => {
-        e.stopPropagation()
+    const handleEvInteract = useCallback(() => {
         setShowEvTooltip((prev) => !prev)
     }, [])
 

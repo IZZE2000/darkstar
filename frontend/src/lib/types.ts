@@ -123,7 +123,6 @@ export type AuroraDashboardResponse = {
     horizon: AuroraHorizon
     history: {
         strategy_events?: StrategyEvent[]
-        strategy_events?: StrategyEvent[]
     }
     metrics?: {
         mae_pv_aurora?: number | null

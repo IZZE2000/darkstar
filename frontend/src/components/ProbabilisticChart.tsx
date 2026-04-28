@@ -193,7 +193,7 @@ export default function ProbabilisticChart({
                 borderColor: '#334155',
                 borderWidth: 1,
                 callbacks: {
-                    title: function (tooltipItems) {
+                    title: function (tooltipItems: { dataIndex?: number }[]) {
                         const idx = tooltipItems[0]?.dataIndex
                         if (idx == null || !slots[idx]) return ''
                         const d = new Date(slots[idx].time)
