@@ -1198,7 +1198,6 @@ class ExecutorEngine:
                 # Normal override evaluation
                 # Read override thresholds from config (with sensible defaults)
                 battery_cfg = self._full_config.get("battery", {})
-                override_cfg = self._full_config.get("executor", {}).get("override", {})
 
                 override = evaluate_overrides(
                     state,
@@ -1206,10 +1205,6 @@ class ExecutorEngine:
                     config={
                         # min_soc_floor: triggers emergency charge when SoC drops BELOW this
                         "min_soc_floor": float(battery_cfg.get("min_soc_percent", 10.0)),
-                        # excess_pv_threshold_kw: surplus PV needed to trigger water heating
-                        "excess_pv_threshold_kw": float(
-                            override_cfg.get("excess_pv_threshold_kw", 2.0)
-                        ),
                         "water_temp_boost": self.config.water_heater.temp_boost,
                         "water_temp_max": self.config.water_heater.temp_max,
                         "water_temp_off": self.config.water_heater.temp_off,
@@ -1396,6 +1391,25 @@ class ExecutorEngine:
                             # Legacy fallback: old-format schedule or single heater
                             water_result = await self.dispatcher.set_water_temp(decision.water_temp)
                             action_results.append(water_result)
+
+                    # Control Excess PV Custom Entity (7.2-7.4)
+                    from executor.config import ExcessPVSinkType
+
+                    if self.config.excess_pv.sink == ExcessPVSinkType.CUSTOM_ENTITY:
+                        is_fallback = (
+                            override.override_needed
+                            and override.override_type.value == "slot_failure_fallback"
+                        )
+                        if is_fallback:
+                            custom_value = self.config.excess_pv.custom_entity.off_value
+                        else:
+                            custom_value = (
+                                self.config.excess_pv.custom_entity.on_value
+                                if original_slot.custom_entity_active
+                                else self.config.excess_pv.custom_entity.off_value
+                            )
+                        custom_result = await self.dispatcher.set_custom_entity(custom_value)
+                        action_results.append(custom_result)
 
                     # Fix Issue 0: Await expected coroutine properly
                     profile_results = await self.dispatcher.execute(decision)
@@ -1620,6 +1634,16 @@ class ExecutorEngine:
                 else:
                     water_heater_plans[str(k)] = float(v)  # type: ignore[arg-type]
 
+        # Parse water heating boost flags
+        raw_boost = slot_data.get("water_heating_boost")
+        water_heating_boost: dict[str, bool] = {}
+        if isinstance(raw_boost, dict):
+            for k, v in raw_boost.items():  # type: ignore[union-attr]
+                water_heating_boost[str(k)] = bool(v)  # type: ignore[arg-type]
+
+        # Parse custom entity active flag
+        custom_entity_active = bool(slot_data.get("custom_entity_active", False))
+
         return SlotPlan(
             charge_kw=charge_kw,
             discharge_kw=discharge_kw,
@@ -1631,6 +1655,8 @@ class ExecutorEngine:
             soc_projected=soc_projected,
             ev_charger_plans=ev_charger_plans,
             water_heater_plans=water_heater_plans,
+            water_heating_boost=water_heating_boost,
+            custom_entity_active=custom_entity_active,
         )
 
     async def _gather_system_state(self) -> SystemState:

@@ -351,11 +351,15 @@ class Controller:
         temps: dict[str, int] = {}
         for device in self.water_heater_devices:
             planned_kw = slot.water_heater_plans.get(device.id, 0.0)
-            temps[device.id] = (
-                self.water_heater_config.temp_normal
-                if planned_kw > 0
-                else self.water_heater_config.temp_off
-            )
+            is_boost = slot.water_heating_boost.get(device.id, False)
+            if is_boost and planned_kw > 0:
+                # Excess PV boost uses temp_max (85°C, the PV dump target).
+                # temp_boost (70°C) is reserved for the manual dashboard boost button.
+                temps[device.id] = self.water_heater_config.temp_max
+            elif planned_kw > 0:
+                temps[device.id] = self.water_heater_config.temp_normal
+            else:
+                temps[device.id] = self.water_heater_config.temp_off
         return temps
 
     def _generate_reason(self, slot: SlotPlan, mode_intent: str) -> str:

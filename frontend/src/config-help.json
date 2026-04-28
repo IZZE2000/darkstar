@@ -125,8 +125,6 @@
   "executor.notifications.on_soc_target_change": "Notify when SoC target changes",
   "executor.notifications.on_override_activated": "Notify when manual override triggers",
   "executor.notifications.on_error": "Notify on executor errors",
-  "executor.override.low_soc_export_floor": "SoC % at which to prevent planned exports",
-  "executor.override.excess_pv_threshold_kw": "Surplus PV (kW) needed to trigger PV dump",
   "dashboard.auto_refresh_enabled": "Auto-refresh dashboard schedule display",
   "dashboard.overlay_defaults": "Default chart overlays",
   "ui.theme": "Color theme name",

@@ -1,5 +1,4 @@
 import Card from './Card'
-console.log('🔥 ChartCard.tsx loaded - TIMESTAMP:', Date.now())
 import { useEffect, useRef, useState } from 'react'
 import {
     Chart as ChartJS,
@@ -226,6 +225,8 @@ type ChartValues = {
     discharge?: (number | null)[]
     export?: (number | null)[]
     water?: (number | null)[]
+    waterBoost?: (boolean | null)[]
+    customEntityActive?: (number | null)[]
     evCharging?: (number | null)[]
     socTarget?: (number | null)[]
     socProjected?: (number | null)[]
@@ -317,7 +318,7 @@ const createChartData = (
                 backgroundColor: (context: ScriptableContext<'line'>) => {
                     const ctx = context.chart.ctx
                     const isDark = document.documentElement.classList.contains('dark')
-                    const opacity = isDark ? 0.5 : 0.65 // Higher in light mode
+                    const opacity = isDark ? 0.2 : 0.65 // Higher in light mode
                     const gradient = ctx.createLinearGradient(0, 0, 0, context.chart.height)
                     gradient.addColorStop(0, `rgba(255, 206, 89, ${opacity})`) // DS.accent
                     gradient.addColorStop(1, 'rgba(255, 206, 89, 0)')
@@ -328,7 +329,7 @@ const createChartData = (
                 tension: 0.4,
                 pointRadius: 0,
                 borderWidth: 3,
-                order: 2,
+                order: 20,
             } as ChartDataset,
             {
                 type: 'bar',
@@ -336,7 +337,7 @@ const createChartData = (
                 data: values.load,
                 backgroundColor: 'rgba(0, 183, 181, 0.25)', // DS.house cyan at 25%
                 borderColor: DS.house,
-                glow: true,
+                glow: false,
                 borderWidth: 0,
                 borderRadius: 2,
                 yAxisID: 'y1',
@@ -352,7 +353,7 @@ const createChartData = (
                 data: values.charge ?? values.labels.map(() => null),
                 backgroundColor: 'rgba(241, 81, 50, 0.25)', // DS.bad - grid charge costs money
                 borderColor: DS.bad,
-                glow: true,
+                glow: false,
                 borderWidth: 0,
                 borderRadius: 2,
                 hidden: true,
@@ -369,7 +370,7 @@ const createChartData = (
                 data: values.discharge ?? values.labels.map(() => null),
                 backgroundColor: 'rgba(236, 72, 153, 0.25)', // DS.peak (pink) at 25%
                 borderColor: DS.peak,
-                glow: true,
+                glow: false,
                 borderWidth: 0,
                 borderRadius: 2,
                 hidden: true,
@@ -386,7 +387,7 @@ const createChartData = (
                 data: values.export ?? values.labels.map(() => null),
                 backgroundColor: 'rgba(31, 178, 86, 0.3)', // DS.good - selling is positive!
                 borderColor: DS.good,
-                glow: true,
+                glow: false,
                 borderWidth: 0,
                 borderRadius: 2,
                 hidden: true,
@@ -401,9 +402,31 @@ const createChartData = (
                 type: 'bar',
                 label: 'Water Heating (kW)',
                 data: values.water ?? values.labels.map(() => null),
-                backgroundColor: 'rgba(78, 168, 222, 0.25)', // DS.water at 25%
+                backgroundColor: 'rgba(78, 168, 222, 0.25)',
                 borderColor: DS.water,
+                glow: false,
+                borderWidth: 0,
+                borderRadius: 2,
+                hidden: true,
+                yAxisID: 'y1',
+                barPercentage: 0.85,
+                categoryPercentage: 0.9,
+                grouped: false,
+                order: 0,
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            } as any,
+            {
+                type: 'bar',
+                label: 'Water Heating Boost (kW)',
+                data:
+                    values.waterBoost?.map((b, i) =>
+                        b && values.water && i < values.water.length ? values.water[i] : null,
+                    ) ?? values.labels.map(() => null),
+                backgroundColor: 'rgba(0, 255, 200, 0.90)',
+                borderColor: '#00ffc8ff',
                 glow: true,
+                glowBlur: 20,
+                glowOpacity: 1.0,
                 borderWidth: 0,
                 borderRadius: 2,
                 hidden: true,
@@ -420,9 +443,28 @@ const createChartData = (
                 data: values.evCharging ?? values.labels.map(() => null),
                 backgroundColor: 'rgba(139, 92, 246, 0.25)', // DS.ai (violet) at 25%
                 borderColor: DS.ai,
-                glow: true,
+                glow: false,
                 borderWidth: 0,
                 borderRadius: 2,
+                yAxisID: 'y1',
+                barPercentage: 0.85,
+                categoryPercentage: 0.9,
+                grouped: false,
+                order: 0,
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            } as any,
+            {
+                type: 'bar',
+                label: 'Excess PV Sink (kW)',
+                data: values.customEntityActive ?? values.labels.map(() => null),
+                backgroundColor: 'rgba(255, 182, 64, 0.90)',
+                borderColor: '#FF9F40',
+                glow: true,
+                glowBlur: 20,
+                glowOpacity: 1.0,
+                borderWidth: 0,
+                borderRadius: 2,
+                hidden: true,
                 yAxisID: 'y1',
                 barPercentage: 0.85,
                 categoryPercentage: 0.9,
@@ -597,7 +639,7 @@ const createChartData = (
     // Add no-data message if needed
     if (values.hasNoData) {
         // cast to ExtendedChartData here to avoid ChartData strictness while manipulating plugins
-        ;(baseData as ExtendedChartData).plugins = {
+        ; (baseData as ExtendedChartData).plugins = {
             tooltip: {
                 enabled: true,
                 external: true,
@@ -761,13 +803,14 @@ const glowPlugin: Plugin = {
             glow?: boolean
             borderColor?: string
             glowBlur?: number
+            glowOpacity?: number
         }
 
         if (dataset.glow) {
             ctx.save()
             const isDark = document.documentElement.classList.contains('dark')
-            // Softer glow: lower opacity, larger radius
-            ctx.shadowColor = hexToRgba(dataset.borderColor as string, isDark ? 0.4 : 0.25)
+            const opacity = dataset.glowOpacity ?? (isDark ? 0.4 : 0.25)
+            ctx.shadowColor = hexToRgba(dataset.borderColor as string, opacity)
             ctx.shadowBlur = dataset.glowBlur ?? (isDark ? 30 : 20)
             ctx.shadowOffsetX = 0
             ctx.shadowOffsetY = 0
@@ -802,7 +845,7 @@ export default function ChartCard({
     const [overlays, setOverlays] = useState(() => {
         // Load from localStorage if available, otherwise use defaults
         const STORAGE_KEY = 'darkstar-chart-overlays'
-        const STORAGE_VERSION = 4 // Increment to force migration
+        const STORAGE_VERSION = 5 // Increment to force migration
 
         try {
             const saved = localStorage.getItem(STORAGE_KEY)
@@ -823,6 +866,7 @@ export default function ChartCard({
                         export: true,
                         water: false,
                         ev: false,
+                        excessPvSink: false,
                         socTarget: false,
                         socProjected: false,
                         socActual: true,
@@ -843,6 +887,7 @@ export default function ChartCard({
                     export: parsed.export ?? true,
                     water: parsed.water ?? false,
                     ev: parsed.ev ?? false,
+                    excessPvSink: parsed.excessPvSink ?? false,
                     socTarget: parsed.socTarget ?? false,
                     socProjected: parsed.socProjected ?? false,
                     socActual: parsed.socActual ?? true,
@@ -862,6 +907,7 @@ export default function ChartCard({
             export: true,
             water: false,
             ev: false,
+            excessPvSink: false,
             socTarget: false,
             socProjected: false,
             socActual: true,
@@ -870,6 +916,7 @@ export default function ChartCard({
     })
     const [showOverlayMenu, setShowOverlayMenu] = useState(false)
     const [pricingConfig, setPricingConfig] = useState<{ vat: number; fees: number } | undefined>()
+    const [excessPvPowerKw, setExcessPvPowerKw] = useState(1.0)
     const [scaling, setScaling] = useState({
         solarKwp: 10,
         gridMaxKw: 8,
@@ -920,10 +967,17 @@ export default function ChartCard({
                     setPricingConfig({ vat, fees })
                 }
 
+                // Load custom entity power_kw for chart bar scaling
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const powerKw = (config as any)?.executor?.excess_pv?.custom_entity?.power_kw
+                if (powerKw != null) {
+                    setExcessPvPowerKw(Number(powerKw))
+                }
+
                 // For NEW users (no localStorage), enable all overlays by default
                 if (!hasStoredPreferences) {
                     setOverlays({
-                        _version: 3,
+                        _version: 5,
                         price: true,
                         pv: true,
                         load: true,
@@ -932,6 +986,7 @@ export default function ChartCard({
                         export: true,
                         water: true,
                         ev: true,
+                        excessPvSink: false,
                         socTarget: true,
                         socProjected: true,
                         socActual: true,
@@ -1067,7 +1122,7 @@ export default function ChartCard({
         if (!isChartUsable(chartInstance) || Object.keys(themeColors).length === 0) return
         const applyData = (slots: ScheduleSlot[]) => {
             if (!isChartUsable(chartRef.current)) return
-            const liveData = buildLiveData(slots, currentDay, themeColors, pricingConfig)
+            const liveData = buildLiveData(slots, currentDay, themeColors, pricingConfig, excessPvPowerKw)
             if (!liveData) return
 
             setHasNoDataMessage(!!liveData.hasNoData)
@@ -1080,19 +1135,21 @@ export default function ChartCard({
             if (ds[4]) ds[4].hidden = !overlays.discharge
             if (ds[5]) ds[5].hidden = !overlays.export
             if (ds[6]) ds[6].hidden = !overlays.water
-            if (ds[7]) ds[7].hidden = !overlays.ev
-            if (ds[8]) ds[8].hidden = !overlays.socTarget
-            if (ds[9]) ds[9].hidden = !overlays.socProjected
-            if (ds[10]) ds[10].hidden = !overlays.socActual
+            if (ds[7]) ds[7].hidden = !overlays.water
+            if (ds[8]) ds[8].hidden = !overlays.ev
+            if (ds[9]) ds[9].hidden = !overlays.excessPvSink
+            if (ds[10]) ds[10].hidden = !overlays.socTarget
+            if (ds[11]) ds[11].hidden = !overlays.socProjected
+            if (ds[12]) ds[12].hidden = !overlays.socActual
 
             // Actual Overlays
-            if (ds[11]) ds[11].hidden = !overlays.showActual || !overlays.pv
-            if (ds[12]) ds[12].hidden = !overlays.showActual || !overlays.load
-            if (ds[13]) ds[13].hidden = !overlays.showActual || !overlays.charge
-            if (ds[14]) ds[14].hidden = !overlays.showActual || !overlays.discharge
-            if (ds[15]) ds[15].hidden = !overlays.showActual || !overlays.ev
-            if (ds[16]) ds[16].hidden = !overlays.showActual || !overlays.export
-            if (ds[17]) ds[17].hidden = !overlays.showActual || !overlays.water
+            if (ds[13]) ds[13].hidden = !overlays.showActual || !overlays.pv
+            if (ds[14]) ds[14].hidden = !overlays.showActual || !overlays.load
+            if (ds[15]) ds[15].hidden = !overlays.showActual || !overlays.charge
+            if (ds[16]) ds[16].hidden = !overlays.showActual || !overlays.discharge
+            if (ds[17]) ds[17].hidden = !overlays.showActual || !overlays.ev
+            if (ds[18]) ds[18].hidden = !overlays.showActual || !overlays.export
+            if (ds[19]) ds[19].hidden = !overlays.showActual || !overlays.water
 
             try {
                 if (chartRef.current) {
@@ -1147,7 +1204,7 @@ export default function ChartCard({
                 console.error('Failed to load schedule:', err)
                 setHasNoDataMessage(true)
             })
-    }, [currentDay, overlays, themeColors, refreshToken, slotsOverride, useHistoryForToday, pricingConfig])
+    }, [currentDay, overlays, themeColors, refreshToken, slotsOverride, useHistoryForToday, pricingConfig, excessPvPowerKw])
 
     // Memoize theme colors to prevent unnecessary re-computations
     return (
@@ -1191,6 +1248,7 @@ export default function ChartCard({
                                 ['EV', 'ev', 'bg-ai/20 border-ai'],
                                 ['Export', 'export', 'bg-good/20 border-good'],
                                 ['Water', 'water', 'bg-water/20 border-water'],
+                                ['Excess PV', 'excessPvSink', 'bg-bad/20 border-good'],
                                 ['SoC Target', 'socTarget', 'bg-night/20 border-night'],
                                 ['SoC Proj', 'socProjected', 'bg-night/20 border-night'],
                                 ['SoC Act', 'socActual', 'bg-night/20 border-night'],
@@ -1202,11 +1260,10 @@ export default function ChartCard({
                                     e.preventDefault()
                                     setOverlays((o) => ({ ...o, [key]: !o[key as keyof typeof o] }))
                                 }}
-                                className={`rounded-full px-2.5 py-0.5 border transition-all duration-150 font-medium ${
-                                    overlays[key as keyof typeof overlays]
+                                className={`rounded-full px-2.5 py-0.5 border transition-all duration-150 font-medium ${overlays[key as keyof typeof overlays]
                                         ? `${activeClass} shadow-sm`
                                         : 'border-line/40 text-muted/60 hover:border-line hover:text-muted'
-                                }`}
+                                    }`}
                             >
                                 {label}
                             </button>
@@ -1218,11 +1275,10 @@ export default function ChartCard({
                             e.preventDefault()
                             setOverlays((o) => ({ ...o, showActual: !o.showActual }))
                         }}
-                        className={`rounded-full px-3 py-1 border text-[10px] font-semibold transition-all duration-150 whitespace-nowrap ${
-                            overlays.showActual
+                        className={`rounded-full px-3 py-1 border text-[10px] font-semibold transition-all duration-150 whitespace-nowrap ${overlays.showActual
                                 ? 'bg-accent text-canvas border-accent shadow-md shadow-accent/30'
                                 : 'border-line/40 text-muted/60 hover:border-accent hover:text-accent'
-                        }`}
+                            }`}
                     >
                         📊 Actual
                     </button>
@@ -1250,6 +1306,7 @@ function buildLiveData(
     day: DaySel,
     themeColors: Record<string, string> = {},
     pricing?: { vat: number; fees: number },
+    excessPvPowerKw: number = 1.0,
 ): (ExtendedChartData & { hasTomorrowPrices: boolean }) | null {
     const hasTomorrowPrices = slots.some((slot) => isTomorrow(slot.start_time) && slot.import_price_sek_kwh != null)
     const filtered = slots.filter((slot) => isToday(slot.start_time) || isTomorrow(slot.start_time))
@@ -1345,6 +1402,8 @@ function buildLiveData(
     const discharge: (number | null)[] = []
     const exp: (number | null)[] = []
     const water: (number | null)[] = []
+    const waterBoost: (boolean | null)[] = []
+    const customEntityActive: (number | null)[] = []
     const evCharging: (number | null)[] = []
     const socTarget: (number | null)[] = []
     const socProjected: (number | null)[] = []
@@ -1387,6 +1446,10 @@ function buildLiveData(
             exp.push(rawExportKwh != null ? rawExportKwh / hourFraction : null)
 
             water.push(slot.water_heating_kw ?? null)
+            waterBoost.push(
+                slot.water_heating_boost && Object.values(slot.water_heating_boost).some(Boolean) ? true : null,
+            )
+            customEntityActive.push(slot.custom_entity_active ? excessPvPowerKw : null)
             evCharging.push(slot.ev_charging_kw ?? null)
             socTarget.push(slot.soc_target_percent ?? null)
             socProjected.push(slot.projected_soc_percent ?? null)
@@ -1410,6 +1473,8 @@ function buildLiveData(
             exp.push(null)
             evCharging.push(null)
             water.push(null)
+            waterBoost.push(null)
+            customEntityActive.push(null)
             socTarget.push(null)
             socProjected.push(null)
             socActual.push(null)
@@ -1447,6 +1512,8 @@ function buildLiveData(
                 discharge,
                 export: exp,
                 water,
+                waterBoost,
+                customEntityActive,
                 evCharging,
                 socTarget,
                 socProjected,

@@ -100,7 +100,6 @@ export const EntityArrayEditor: React.FC<EntityArrayEditorProps> = ({
     const isWaterHeater = entityType === 'water_heater'
     const maxEntities = isWaterHeater ? 4 : 3
     const title = isWaterHeater ? 'Water Heaters' : 'EV Chargers'
-
     const addEntity = () => {
         if (entities.length >= maxEntities) return
         const newEntity = isWaterHeater

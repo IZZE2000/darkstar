@@ -45,6 +45,53 @@ from planner.vacation_state import load_last_anti_legionella, save_last_anti_leg
 logger = logging.getLogger("darkstar.planner")
 
 
+def _calculate_excess_pv_flags(
+    kepler_slots: list[Any],
+    water_heaters: list[Any],
+    ev_chargers: list[Any],
+    df: pd.DataFrame,
+) -> list[bool]:
+    """Pre-calculate per-slot excess PV flags from raw forecasts.
+
+    excess[t] = max(0, pv_forecast[t] - load_forecast[t] - min_water_heat_forecast[t] - min_ev_forecast[t]) > 0
+
+    Returns list of booleans, one per slot.
+    """
+
+    T = len(kepler_slots)
+    if T == 0:
+        return []
+
+    slot_hours_list: list[float] = []
+    for s in kepler_slots:
+        duration = (s.end_time - s.start_time).total_seconds() / 3600.0
+        slot_hours_list.append(duration)
+
+    avg_slot_hours = sum(slot_hours_list) / len(slot_hours_list) if slot_hours_list else 0.25
+
+    # Minimum water heating per slot (sum across all heaters, min_kwh_per_day spread evenly)
+    min_water_heat_per_slot = 0.0
+    for wh in water_heaters:
+        kwh_per_slot = wh.power_kw * avg_slot_hours
+        if kwh_per_slot > 0:
+            min_water_heat_per_slot += wh.min_kwh_per_day / (24.0 / avg_slot_hours)
+
+    # Minimum EV charging per slot
+    min_ev_per_slot = 0.0
+    for ev in ev_chargers:
+        if ev.plugged_in and ev.max_power_kw > 0:
+            min_ev_per_slot += ev.max_power_kw * avg_slot_hours
+
+    flags: list[bool] = []
+    for t in range(T):
+        pv_kwh = kepler_slots[t].pv_kwh
+        load_kwh = kepler_slots[t].load_kwh
+        excess = pv_kwh - load_kwh - min_water_heat_per_slot - min_ev_per_slot
+        flags.append(excess > 0)
+
+    return flags
+
+
 def calculate_ev_deadline(departure_time: str, now: datetime, timezone: str) -> datetime | None:
     """
     Calculate the next occurrence of departure time from current time.
@@ -524,6 +571,23 @@ class PlannerPipeline:
             kepler_input.slots,
             water_heater_states=water_heater_states,  # task 3.3
         )
+
+        # Pre-calculate excess PV slot flags from raw forecasts (task 3.1)
+        excess_pv_sink = kepler_config.excess_pv_sink
+        if excess_pv_sink != "disabled" and len(kepler_input.slots) > 0:
+            excess_pv_flags = _calculate_excess_pv_flags(
+                kepler_input.slots,
+                kepler_config.water_heaters,
+                kepler_config.ev_chargers,
+                future_df,
+            )
+            kepler_config.excess_pv_slots = excess_pv_flags
+            logger.info(
+                "Excess PV: %d/%d slots have excess PV (sink=%s)",
+                sum(excess_pv_flags),
+                len(excess_pv_flags),
+                excess_pv_sink,
+            )
 
         # Rev O1: Disable water heating in Kepler if no water heater (task 3.4)
         if not has_water_heater:

@@ -345,11 +345,20 @@ executor:
   # Override Configuration (real-time safety triggers)
   # These settings control when the executor overrides the planned schedule
   # to protect the battery or utilize excess energy.
-  override:
-    # Excess PV threshold: Minimum surplus PV power (kW) to trigger water heating.
-    # When PV production exceeds load by this amount AND battery is >95%,
-    # the executor will heat water to dump free solar energy.
-    excess_pv_threshold_kw: 2.0        # Surplus PV (kW) needed to trigger PV dump
+  override: {}
+
+  # Excess PV Dispatch
+  # Configures how forecast excess PV energy is utilized.
+  # The planner proactively schedules excess PV into the chosen sink.
+  excess_pv:
+    sink: disabled                     # Sink type: water_heater_boost | custom_entity | disabled
+    boost_reward_sek_per_kwh: 0.5      # Reward for using excess PV at sink vs exporting (SEK/kWh)
+    soc_threshold_percent: 95          # Battery SoC % required before sink activates (default 95)
+    custom_entity:
+      entity: ""                       # Home Assistant entity ID (e.g., switch.pool_pump)
+      on_value: "1"                    # Value to set when excess PV is available
+      off_value: "0"                   # Value to set when excess PV is not available
+      power_kw: 1.0                    # Estimated power consumption (kW) — used by solver for reward sizing
 
 # =============================================================================
 # UI Settings

@@ -811,29 +811,6 @@ def _validate_config_for_save(
                 }
             )
 
-    # Override Thresholds (WARNING)
-    override_cfg = executor_cfg.get("override", {})
-    excess_pv = override_cfg.get("excess_pv_threshold_kw")
-    if excess_pv is not None:
-        try:
-            val = float(excess_pv)
-            if val < 0:
-                issues.append(
-                    {
-                        "severity": "warning",
-                        "message": "Excess PV threshold cannot be negative.",
-                        "guidance": "Check executor.override.excess_pv_threshold_kw.",
-                    }
-                )
-        except (ValueError, TypeError):
-            issues.append(
-                {
-                    "severity": "error",
-                    "message": "Excess PV threshold must be a number.",
-                    "guidance": "Set executor.override.excess_pv_threshold_kw to a valid kW value.",
-                }
-            )
-
     # Export floor validation (0-100 range)
     export_cfg = config.get("export", {})
     export_floor = export_cfg.get("export_floor_soc_percent")

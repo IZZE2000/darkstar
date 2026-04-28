@@ -119,6 +119,7 @@ DEPRECATED_NESTED_KEYS = {
     ],
     "executor.override": [
         "low_soc_export_floor",  # Moved to export.export_floor_soc_percent
+        "excess_pv_threshold_kw",  # Removed: excess PV now handled by planner
     ],
 }
 

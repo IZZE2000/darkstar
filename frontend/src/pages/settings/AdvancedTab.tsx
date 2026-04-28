@@ -14,8 +14,20 @@ import { useUnsavedChangesGuard } from './hooks/useUnsavedChangesGuard'
 export const AdvancedTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }) => {
     const navigate = useNavigate()
     const { toast } = useToast()
-    const { config, form, fieldErrors, loading, saving, statusMessage, handleChange, save, reload, isDirty } =
-        useSettingsForm(advancedFieldList, [])
+    const {
+        config,
+        form,
+        fieldErrors,
+        loading,
+        saving,
+        statusMessage,
+        handleChange,
+        save,
+        reload,
+        isDirty,
+        haEntities,
+        haLoading,
+    } = useSettingsForm(advancedFieldList, [])
 
     const blocker = useUnsavedChangesGuard(isDirty)
 
@@ -136,6 +148,8 @@ export const AdvancedTab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode
                                         fullForm={form}
                                         config={config as unknown as Record<string, unknown>}
                                         advancedMode={advancedMode}
+                                        haEntities={haEntities}
+                                        haLoading={haLoading}
                                     />
                                 ))}
                             </div>

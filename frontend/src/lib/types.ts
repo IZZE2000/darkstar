@@ -26,6 +26,8 @@ export type ScheduleSlot = {
     actual_pv_kwh?: number
     actual_water_kw?: number
     actual_ev_charging_kw?: number
+    water_heating_boost?: Record<string, boolean>
+    custom_entity_active?: boolean
 }
 
 export type Status = { value: number; timestamp: string; planned_at?: string; planner_version?: string }

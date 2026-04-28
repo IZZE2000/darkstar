@@ -93,6 +93,15 @@ class KeplerConfig:
         default_factory=lambda: []
     )  # Per-device EV charger inputs
 
+    # Excess PV dispatch
+    excess_pv_slots: list[bool] = field(
+        default_factory=lambda: []
+    )  # Per-slot flags: True if excess PV available
+    excess_pv_sink: str = "disabled"  # water_heater_boost | custom_entity | disabled
+    excess_pv_reward_sek_per_kwh: float = 0.5  # Reward for using excess PV at sink vs exporting
+    excess_pv_soc_threshold_percent: float = 95.0  # Battery SoC % required before sink activates
+    excess_pv_custom_entity_power_kw: float = 1.0  # Estimated power of custom entity (kW)
+
     def __post_init__(self):
         """Validate configuration after initialization."""
         # Rev F39: Validate battery configuration
@@ -157,6 +166,10 @@ class KeplerResultSlot:
     ev_charger_results: dict[str, float] = field(
         default_factory=lambda: {}
     )  # Per-device: charger_id -> kW
+    water_heating_boost: dict[str, bool] = field(
+        default_factory=lambda: {}
+    )  # Per-device: heater_id -> boost active
+    custom_entity_active: bool = False  # Whether custom entity sink should be on
     is_optimal: bool = True
 
 

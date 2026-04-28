@@ -97,3 +97,39 @@ ChartCard SHALL render all chart lines with a consistent smooth style using Char
 #### Scenario: Other power lines follow consistent style
 - **WHEN** any power or energy line is rendered in the chart
 - **THEN** the line SHALL use smooth rendering (`tension: 0.4`) unless a stepped display is semantically appropriate
+
+### Requirement: Water heating boost bars visually differ from normal heating
+
+The ChartCard SHALL render water heating boost bars with a lighter blue tint and enhanced glow effect, visually distinguishing them from normal water heating bars.
+
+#### Scenario: Boost water bar renders with lighter tint
+- **WHEN** a slot has water heating in boost mode
+- **THEN** the water heating bar SHALL use `rgba(120, 200, 240, 0.30)` for background color
+- **AND** the bar SHALL use `#78C8F0` for border color
+- **AND** the bar shape (width, border radius) SHALL be identical to normal water heating bars
+
+#### Scenario: Boost water bar renders with super glow
+- **WHEN** a slot has water heating in boost mode
+- **THEN** the bar SHALL render with `shadowBlur: 60` and `shadowColor` opacity at 0.6
+- **AND** the glow SHALL be more prominent than the default water heating glow
+
+#### Scenario: Normal water bar renders with existing style
+- **WHEN** a slot has water heating in normal mode (not boost)
+- **THEN** the water heating bar SHALL use the existing color scheme (`rgba(78, 168, 222, 0.25)`)
+- **AND** the bar SHALL render with the existing default glow
+
+### Requirement: Custom entity sink bar displayed in chart
+
+The ChartCard SHALL render a new bar dataset for the custom entity sink, visible in slots where the entity is toggled on.
+
+#### Scenario: Custom entity bar displayed during excess PV slot
+- **WHEN** the schedule has a custom entity active in slot 14
+- **THEN** a bar SHALL appear at slot 14 using color `rgba(255, 159, 64, 0.30)` / `#FF9F40`
+- **AND** the bar SHALL have the same super glow as boost bars (`shadowBlur: 60`, opacity 0.6)
+- **AND** the bar SHALL be toggleable from the Overlays menu
+
+#### Scenario: Custom entity bar hidden toggleable from overlays
+- **WHEN** the user opens the chart Overlays menu
+- **THEN** an "Excess PV Sink" toggle SHALL appear
+- **AND** toggling it off SHALL hide the custom entity sink bars
+- **AND** toggling it on SHALL show them again
