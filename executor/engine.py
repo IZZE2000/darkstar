@@ -1206,8 +1206,6 @@ class ExecutorEngine:
                     config={
                         # min_soc_floor: triggers emergency charge when SoC drops BELOW this
                         "min_soc_floor": float(battery_cfg.get("min_soc_percent", 10.0)),
-                        # low_soc_threshold: prevents exports when SoC is at or below this
-                        "low_soc_threshold": float(override_cfg.get("low_soc_export_floor", 20.0)),
                         # excess_pv_threshold_kw: surplus PV needed to trigger water heating
                         "excess_pv_threshold_kw": float(
                             override_cfg.get("excess_pv_threshold_kw", 2.0)

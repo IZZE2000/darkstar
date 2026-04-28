@@ -97,43 +97,6 @@ class TestOverrideEvaluatorManualOverride:
         assert result.override_type != OverrideType.MANUAL_OVERRIDE
 
 
-class TestOverrideEvaluatorLowSocExportPrevention:
-    """Test Priority 8.5: Low SoC export prevention."""
-
-    def test_export_planned_low_soc_triggers(self):
-        """Plan wants to export but SoC is dangerously low - prevent."""
-        evaluator = OverrideEvaluator(min_soc_floor=10.0, low_soc_threshold=20.0)
-        state = SystemState(current_soc_percent=15.0)  # Above floor, below threshold
-        slot = SlotPlan(export_kw=5.0)  # Plan wants to export
-
-        result = evaluator.evaluate(state, slot)
-
-        assert result.override_needed is True
-        assert result.override_type == OverrideType.LOW_SOC_EXPORT_PREVENTION
-        assert result.priority == 8.5
-        assert result.actions["grid_charging"] is False
-
-    def test_export_planned_soc_ok_no_trigger(self):
-        """Plan wants to export and SoC is healthy - allow."""
-        evaluator = OverrideEvaluator(low_soc_threshold=20.0)
-        state = SystemState(current_soc_percent=50.0)  # Healthy
-        slot = SlotPlan(export_kw=5.0)
-
-        result = evaluator.evaluate(state, slot)
-
-        assert result.override_type != OverrideType.LOW_SOC_EXPORT_PREVENTION
-
-    def test_no_export_planned_low_soc_no_trigger(self):
-        """No export planned - no prevention needed even at low SoC."""
-        evaluator = OverrideEvaluator(low_soc_threshold=20.0)
-        state = SystemState(current_soc_percent=15.0)
-        slot = SlotPlan(export_kw=0.0)  # No export
-
-        result = evaluator.evaluate(state, slot)
-
-        assert result.override_type != OverrideType.LOW_SOC_EXPORT_PREVENTION
-
-
 class TestOverrideEvaluatorSlotFailure:
     """Test Priority 8: Slot failure fallback."""
 
@@ -334,31 +297,17 @@ class TestOverrideEvaluatorNoOverride:
 class TestOverridePriority:
     """Test that higher priority overrides take precedence."""
 
-    def test_manual_override_beats_low_soc_export_prevention(self):
-        """Manual override (10) should win over low SoC export prevention (8.5)."""
-        evaluator = OverrideEvaluator(low_soc_threshold=20.0)
+    def test_manual_override_beats_slot_failure(self):
+        """Manual override (10) should win over slot failure (8)."""
+        evaluator = OverrideEvaluator()
         state = SystemState(
-            current_soc_percent=15.0,  # Would trigger low SoC export prevention
+            slot_exists=False,  # Would trigger slot failure
             manual_override_active=True,  # But manual is higher priority
         )
-        slot = SlotPlan(export_kw=5.0)
 
-        result = evaluator.evaluate(state, slot)
+        result = evaluator.evaluate(state)
 
         assert result.override_type == OverrideType.MANUAL_OVERRIDE
-
-    def test_low_soc_export_prevention_beats_slot_failure(self):
-        """Low SoC export prevention (8.5) should win over slot failure (8)."""
-        evaluator = OverrideEvaluator(low_soc_threshold=20.0)
-        state = SystemState(
-            current_soc_percent=15.0,  # Low SoC
-            slot_exists=False,  # Also slot failure
-        )
-        slot = SlotPlan(export_kw=5.0)  # Trying to export
-
-        result = evaluator.evaluate(state, slot)
-
-        assert result.override_type == OverrideType.LOW_SOC_EXPORT_PREVENTION
 
 
 class TestEvaluateOverridesConvenienceFunction:
@@ -379,15 +328,15 @@ class TestEvaluateOverridesConvenienceFunction:
 
         result = evaluate_overrides(state, config=config)
 
-        # Emergency charge removed - low SoC does not trigger override
+        assert isinstance(result, OverrideResult)
         assert result.override_needed is False
 
     def test_with_slot_plan(self):
         """Works with slot plan provided."""
-        state = SystemState(current_soc_percent=15.0)
+        state = SystemState(current_soc_percent=50.0)
         slot = SlotPlan(export_kw=5.0)
-        config = {"low_soc_threshold": 20.0}
 
-        result = evaluate_overrides(state, slot, config)
+        result = evaluate_overrides(state, slot)
 
-        assert result.override_type == OverrideType.LOW_SOC_EXPORT_PREVENTION
+        assert isinstance(result, OverrideResult)
+        assert result.override_needed is False

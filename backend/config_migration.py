@@ -117,6 +117,9 @@ DEPRECATED_NESTED_KEYS = {
         "daily_consumption_entity",
         "max_price_per_kwh",
     ],
+    "executor.override": [
+        "low_soc_export_floor",  # Moved to export.export_floor_soc_percent
+    ],
 }
 
 
@@ -359,6 +362,51 @@ def _remove_energy_sensor_fields(config: dict[str, Any]) -> tuple[dict[str, Any]
                 del item["energy_sensor"]
                 logger.info(f"✂️  Removed deprecated key: '{array_key}[].energy_sensor'")
                 changed = True
+    return config, changed
+
+
+def _migrate_export_floor(config: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+    """Migrate executor.override.low_soc_export_floor to export.export_floor_soc_percent.
+
+    The export SoC floor moved from the executor override section to the export section,
+    since it is now enforced by the planner (Kepler MILP) rather than the executor.
+
+    Returns:
+        Tuple of (modified_config, changed_flag)
+    """
+    changed = False
+
+    executor_raw: Any = config.get("executor", {})
+    if not isinstance(executor_raw, dict):
+        return config, changed
+    executor = cast("dict[str, Any]", executor_raw)
+
+    override_raw: Any = executor.get("override", {})
+    if not isinstance(override_raw, dict):
+        return config, changed
+    override = cast("dict[str, Any]", override_raw)
+
+    old_value = override.get("low_soc_export_floor")
+    if old_value is None:
+        return config, changed
+
+    export_section = config.get("export", {})
+    if not isinstance(export_section, dict):
+        export_section = {}
+        config["export"] = export_section
+
+    if "export_floor_soc_percent" not in export_section:
+        export_section["export_floor_soc_percent"] = float(old_value)
+        logger.info(
+            f"🔄 Migrated executor.override.low_soc_export_floor -> export.export_floor_soc_percent: {old_value}"
+        )
+        changed = True
+
+    if "low_soc_export_floor" in override:
+        del override["low_soc_export_floor"]
+        logger.info("✂️  Removed deprecated key: 'executor.override.low_soc_export_floor'")
+        changed = True
+
     return config, changed
 
 
@@ -716,6 +764,11 @@ async def migrate_config(
     # 2.5 Migrate water heater fields (must run after remove_deprecated_keys, before template merge)
     user_config, migration_changes = _migrate_water_heater_fields(user_config)
     if migration_changes:
+        pre_merge_changes = True
+
+    # 2.7 Migrate export floor from executor.override to export section
+    user_config, export_floor_changes = _migrate_export_floor(user_config)
+    if export_floor_changes:
         pre_merge_changes = True
 
     # 2.6 Remove energy_sensor from ev_chargers[] and water_heaters[]

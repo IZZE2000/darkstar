@@ -33,6 +33,22 @@ This document contains ideas, improvements, and tasks that are not yet scheduled
 
 <!-- Add new bugs/requests here. AI should wipe the item after processing into a OpenSpec change. -->
 
+#### [Price Forecast / S-Index] Calibrate `RISK_PRICE_KW_FRACTION` Against Real Price Data
+
+**Goal:** Revisit the risk-fraction constants `{1: 0.15, 2: 0.12, 3: 0.10, 4: 0.05, 5: 0.02}` in `planner/strategy/s_index.py` after Module 3 (price-forecasting-module-3) has been live in production for 2–4 weeks and a meaningful sample of real positive-spread events has been observed. Determine whether the resulting floor adjustments match expected behavior or need tuning.
+
+**Notes:** Added 2026-04-25 as part of price-forecasting-module-3. The fractions were chosen by reasoning about reasonable behavior for Swedish price ranges, not measured against historical Nordpool data. Sample evaluation criteria: (a) does Risk 1 (Safety) actually hoard appropriately during real winter spikes? (b) is Risk 5 (Gambler) correctly under-reactive? (c) are mid-spread events (~1–2 SEK/kWh) producing floor changes the user intuitively agrees with? Use `s_index_debug` log entries and `strategy_log` events as the data source.
+
+---
+
+#### [Price Forecast / S-Index] Explore Top-2-Average vs Pure Peak for Upcoming Price Signal
+
+**Goal:** Investigate whether `calculate_price_floor_addon()` should use the top-2 daily average instead of the pure peak (`max`) across D+1–D+7 to compute `peak_upcoming_sek`. The pure-peak approach is sensitive to a single inaccurate D+5/D+6/D+7 forecast day; a top-2 average dampens that without losing strong-spike sensitivity.
+
+**Notes:** Added 2026-04-25 as part of price-forecasting-module-3. Module 3 ships with pure peak for KISS reasons (simpler, easier to debug). The 80% capacity cap and the trailing-14-day average already provide some protection against runaway addons from a single bad forecast day. Revisit only if real-world observation shows the pure peak is producing unwarranted floor increases on bad-forecast days. Trivial code change if needed.
+
+---
+
 #### [Planner] Multiple Heating Sources/Deferrable Loads
 
 **Goal:** Support control for multiple distinct heating sources (e.g., HVAC + Water Heater + Floor Heating) independently. A simple switch per each source to enable/disable it, and then the planner will decide when to turn them on/off based on the optimization problem. We need parameter for the kW consumption of each source and time/kWh goal.

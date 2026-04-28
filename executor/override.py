@@ -21,7 +21,6 @@ class OverrideType(Enum):
     """Types of overrides that can be activated."""
 
     NONE = "none"
-    LOW_SOC_EXPORT_PREVENTION = "low_soc_export_prevention"
     EXCESS_PV_HEATING = "excess_pv_heating"
     SLOT_FAILURE_FALLBACK = "slot_failure_fallback"
     MANUAL_OVERRIDE = "manual_override"
@@ -116,14 +115,12 @@ class OverrideEvaluator:
     def __init__(
         self,
         min_soc_floor: float = 10.0,
-        low_soc_threshold: float = 20.0,
         excess_pv_threshold_kw: float = 2.0,
         water_temp_boost: int = 70,
         water_temp_max: int = 85,
         water_temp_off: int = 40,
     ):
         self.min_soc_floor = min_soc_floor
-        self.low_soc_threshold = low_soc_threshold
         self.excess_pv_threshold_kw = excess_pv_threshold_kw
         self.water_temp_boost = water_temp_boost
         self.water_temp_max = water_temp_max
@@ -135,9 +132,8 @@ class OverrideEvaluator:
 
         Overrides are evaluated in priority order (highest first):
         1. Manual override (user explicitly took control) - Priority 10
-        2. Low SoC export prevention - Priority 8.5
-        3. Slot failure fallback - Priority 8
-        4. Excess PV heating - Priority 5
+        2. Slot failure fallback - Priority 8
+        3. Excess PV heating - Priority 5
         """
         # Priority 10: Manual override
         if state.manual_override_active:
@@ -147,21 +143,6 @@ class OverrideEvaluator:
                 priority=10.0,
                 reason="Manual override is active - executor will not change settings",
                 actions={},  # No actions, let user control
-            )
-
-        # Priority 8.5: Low SoC export prevention
-        # If plan wants to export but SoC is dangerously low
-        if slot and slot.export_kw > 0 and state.current_soc_percent <= self.low_soc_threshold:
-            return OverrideResult(
-                override_needed=True,
-                override_type=OverrideType.LOW_SOC_EXPORT_PREVENTION,
-                priority=8.5,
-                reason=f"Plan wants to export ({slot.export_kw:.1f} kW), but SoC is at "
-                f"floor ({state.current_soc_percent}%). Preventing export.",
-                actions={
-                    "grid_charging": False,
-                    "soc_target": int(self.min_soc_floor),
-                },
             )
 
         # Priority 8: Slot failure fallback
@@ -230,7 +211,6 @@ def evaluate_overrides(
     config = config or {}
     evaluator = OverrideEvaluator(
         min_soc_floor=config.get("min_soc_floor", 10.0),
-        low_soc_threshold=config.get("low_soc_threshold", 20.0),
         excess_pv_threshold_kw=config.get("excess_pv_threshold_kw", 2.0),
         water_temp_boost=config.get("water_temp_boost", 70),
         water_temp_max=config.get("water_temp_max", 85),

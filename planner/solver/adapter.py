@@ -491,6 +491,12 @@ def config_to_kepler_config(
         defer_up_to_hours=float(wh_cfg.get("defer_up_to_hours", 0.0)),
         # Rev E4: Export Toggle
         enable_export=bool(planner_config.get("export", {}).get("enable_export", True)),
+        # Export SoC Floor: minimum SoC required to allow grid export
+        export_floor_soc_percent=(
+            float(planner_config.get("export", {}).get("export_floor_soc_percent"))
+            if planner_config.get("export", {}).get("export_floor_soc_percent") is not None
+            else None
+        ),
         # Per-device EV charger inputs (multi-device support)
         ev_chargers=ev_inputs,
     )

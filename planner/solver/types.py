@@ -85,6 +85,9 @@ class KeplerConfig:
     # Rev E4: Export Toggle
     enable_export: bool = True  # If False, enforce 0 export
 
+    # Export SoC Floor: minimum SoC required to allow grid export
+    export_floor_soc_percent: float | None = None
+
     # EV Charging as deferrable load (per-device, multi-charger support)
     ev_chargers: list[EVChargerInput] = field(
         default_factory=lambda: []

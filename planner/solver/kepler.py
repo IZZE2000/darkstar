@@ -165,6 +165,24 @@ class KeplerSolver:
         ramp_up: dict[int, Any] = pulp.LpVariable.dicts("ramp_up_kwh", range(T), lowBound=0.0)  # type: ignore[reportUnknownMemberType]
         ramp_down: dict[int, Any] = pulp.LpVariable.dicts("ramp_down_kwh", range(T), lowBound=0.0)  # type: ignore[reportUnknownMemberType]
 
+        # Export floor SoC constraint (gated on enable_export and export_floor_soc_percent)
+        export_floor_active = config.enable_export and config.export_floor_soc_percent is not None
+        is_exporting: dict[int, Any]
+        export_floor_violation: dict[int, Any]
+        export_floor_kwh: float = 0.0
+        if export_floor_active:
+            assert config.export_floor_soc_percent is not None
+            export_floor_kwh = config.capacity_kwh * config.export_floor_soc_percent / 100.0
+            is_exporting = pulp.LpVariable.dicts(  # type: ignore[reportUnknownMemberType]
+                "is_exporting", range(T), cat="Binary"
+            )
+            export_floor_violation = pulp.LpVariable.dicts(  # type: ignore[reportUnknownMemberType]
+                "export_floor_violation_kwh", range(T), lowBound=0.0
+            )
+        else:
+            is_exporting = dict.fromkeys(range(T), 0)
+            export_floor_violation = dict.fromkeys(range(T), 0)
+
         # Discomfort variable removed.
         # Per-device "Block Overshoot" variables (soft penalty for massive blocks)
         block_overshoot: dict[str, dict[int, Any]] = {}
@@ -229,6 +247,7 @@ class KeplerSolver:
         # Penalty constants
         MIN_SOC_PENALTY = 1000.0  # Hard constraint - don't violate min_soc!
         MAX_SOC_PENALTY = 1000.0  # Soft constraint - prefer to stay below max_soc
+        EXPORT_FLOOR_PENALTY = 1000.0  # Soft constraint - don't export below floor
         # Target penalty comes from config (derived from risk_appetite in pipeline)
         target_soc_penalty = config.target_soc_penalty_sek
         curtailment_penalty = config.curtailment_penalty_sek
@@ -337,6 +356,20 @@ class KeplerSolver:
             # Rev E4: Strict Export Toggle
             if not config.enable_export:
                 prob += grid_export[t] == 0
+
+            # Export floor SoC constraint (big-M formulation)
+            if export_floor_active:
+                M_export = (
+                    config.max_export_power_kw
+                    if config.max_export_power_kw is not None
+                    else config.max_discharge_power_kw
+                ) * h
+                prob += grid_export[t] <= M_export * is_exporting[t]
+                prob += soc[t] >= (
+                    export_floor_kwh * is_exporting[t]
+                    + min_soc_kwh * (1 - is_exporting[t])
+                    - export_floor_violation[t]
+                )
 
             # Ramping Constraints
             if t > 0:
@@ -483,6 +516,11 @@ class KeplerSolver:
             pulp.lpSum(total_cost)
             + MIN_SOC_PENALTY * pulp.lpSum(soc_violation)
             + MAX_SOC_PENALTY * pulp.lpSum(soc_overshoot)
+            + (
+                EXPORT_FLOOR_PENALTY * pulp.lpSum(export_floor_violation[t] for t in range(T))
+                if export_floor_active
+                else 0.0
+            )
             + gap_violation_penalty  # Deprecated in K16 (0.0)
             + gap_violation_penalty  # Deprecated in K16 (0.0)
             # Per-device block overshoot penalty (task 2.9)

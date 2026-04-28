@@ -252,6 +252,8 @@ The Kepler MILP SHALL enforce `battery.max_soc_percent` as a soft constraint. Th
 
 The clipping of `initial_soc` to the physical range SHALL use `[0, capacity_kwh]` only; it SHALL NOT clip to `[min_soc_kwh, max_soc_kwh]`.
 
+The KeplerConfig SHALL include an `export_floor_soc_percent: float | None` field. When set and `enable_export` is True, the solver SHALL add a per-slot binary `is_exporting[t]` and enforce that grid export is only allowed when `soc[t] >= export_floor_kwh`, using a soft constraint with `EXPORT_FLOOR_PENALTY = 1000.0`.
+
 #### Scenario: Initial SoC above max produces a feasible plan
 - **GIVEN** `battery.max_soc_percent = 95` and `capacity_kwh = 19.2` (max_soc_kwh = 18.24)
 - **AND** measured initial SoC is 18.989 kWh (98.9%)
@@ -271,6 +273,12 @@ The clipping of `initial_soc` to the physical range SHALL use `[0, capacity_kwh]
 - **WHEN** the planner runs
 - **THEN** the existing `soc_violation` slack and `MIN_SOC_PENALTY` are applied
 - **AND** no change to the lower-bound enforcement is observed
+
+#### Scenario: Export floor config passed through adapter
+- **GIVEN** `export_floor_soc_percent = 20` is configured in the planner config
+- **WHEN** the adapter builds `KeplerConfig`
+- **THEN** `KeplerConfig.export_floor_soc_percent` SHALL be 20.0
+- **AND** the solver SHALL enforce the export-floor constraint
 
 ### Requirement: Pre-flight validator runs before solver
 The planner pipeline SHALL invoke a deterministic pre-flight validator before constructing the Kepler MILP. The validator SHALL perform an ordered sequence of checks and SHALL raise a typed `PlannerError` carrying a `PlannerErrorCode` and a structured diagnostic payload on the first failed check. The checks SHALL include at minimum:

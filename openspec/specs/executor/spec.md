@@ -218,7 +218,7 @@ The recorder SHALL NOT fetch EV charger power sensors when `system.has_ev_charge
 
 ### Requirement: Executor background loop cleans up async resources on exit
 
-The `_async_run_loop` method SHALL wrap its main loop in a `try/finally` block that cancels all tracked background tasks and closes the `HAClient` session on every exit path (normal stop, early return, exception).
+The `_async_run_loop` method SHALL wrap its main loop in a `try/finally` block that cancels all tracked background tasks and closes the `HAClient` session on every exit path (normal stop, early return, exception). The `OverrideEvaluator` SHALL no longer include `LOW_SOC_EXPORT_PREVENTION` in its evaluation. The `OverrideType` enum SHALL NOT include `LOW_SOC_EXPORT_PREVENTION`. The `low_soc_threshold` parameter SHALL be removed from `OverrideEvaluator.__init__`.
 
 #### Scenario: Normal shutdown closes session
 - **WHEN** the stop event is set and the while loop exits
@@ -236,6 +236,11 @@ The `_async_run_loop` method SHALL wrap its main loop in a `try/finally` block t
 - **AND THEN** the `finally` block raises while closing the session
 - **THEN** the close error is logged as a warning, not raised
 - **AND THEN** the original exception propagates to the caller
+
+#### Scenario: Override evaluator does not evaluate low SoC export prevention
+- **WHEN** a slot plan has `export_kw > 0` and current SoC is below the old threshold
+- **THEN** the override evaluator SHALL return `OverrideResult(override_needed=False)`
+- **AND** the planned export SHALL proceed as scheduled (the planner already ensured SoC is adequate)
 
 ### Requirement: Background tasks are cancelled before session close
 
