@@ -314,31 +314,26 @@ export function GridDomain({ netCost, importKwh, exportKwh }: GridCardProps) {
             <div className="mb-3 relative z-10">
                 <div className="text-[10px] text-muted uppercase tracking-wider mb-0.5">
                     {period === 'custom'
-                        ? 'Custom Period Cost'
+                        ? 'Custom Period'
                         : `Net ${
                               period === 'today'
-                                  ? 'Daily'
+                                  ? 'Today'
                                   : period === 'yesterday'
                                     ? 'Yesterday'
                                     : period === 'week'
-                                      ? '7 Day'
-                                      : '30 Day'
-                          } Cost`}
+                                      ? '7 Days'
+                                      : '30 Days'
+                          }`}
                 </div>
                 <div className="flex items-baseline gap-1">
                     <span
                         className={`text-2xl font-bold ${loading ? 'opacity-50' : ''} ${isPositive ? 'text-good' : 'text-bad'}`}
                     >
-                        {displayNetCost != null ? Math.abs(displayNetCost).toFixed(2) : '—'}
+                        {displayNetCost != null
+                            ? `${displayNetCost > 0 ? '-' : '+'}${Math.abs(displayNetCost).toFixed(2)}`
+                            : '—'}
                     </span>
                     <span className="text-xs text-muted">kr</span>
-                    {displayNetCost !== null && !loading && (
-                        <span
-                            className={`text-[10px] ml-2 px-1.5 py-0.5 rounded ${isPositive ? 'bg-good/10 text-good' : 'bg-bad/10 text-bad'}`}
-                        >
-                            {displayNetCost > 0 ? 'COST' : 'EARNING'}
-                        </span>
-                    )}
                 </div>
             </div>
 
@@ -346,16 +341,16 @@ export function GridDomain({ netCost, importKwh, exportKwh }: GridCardProps) {
             {rangeData && (
                 <div className="grid grid-cols-2 gap-1.5 mb-2 relative z-10 text-[10px]">
                     <div className="flex justify-between p-1.5 rounded bg-surface2/30">
-                        <span className="text-muted">Import Cost</span>
-                        <span className="text-bad font-medium">{rangeData.import_cost_sek.toFixed(1)} kr</span>
+                        <span className="text-muted">Grid Import</span>
+                        <span className="text-bad font-medium">-{rangeData.import_cost_sek.toFixed(1)} kr</span>
                     </div>
                     <div className="flex justify-between p-1.5 rounded bg-surface2/30">
                         <span className="text-muted">Export Rev</span>
-                        <span className="text-good font-medium">{rangeData.export_revenue_sek.toFixed(1)} kr</span>
+                        <span className="text-good font-medium">+{rangeData.export_revenue_sek.toFixed(1)} kr</span>
                     </div>
                     <div className="flex justify-between p-1.5 rounded bg-surface2/30">
-                        <span className="text-muted">Grid Charge</span>
-                        <span className="text-bad font-medium">{rangeData.grid_charge_cost_sek.toFixed(1)} kr</span>
+                        <span className="text-muted">Battery Charge</span>
+                        <span className="text-bad font-medium">-{rangeData.grid_charge_cost_sek.toFixed(1)} kr</span>
                     </div>
                     <div className="flex justify-between p-1.5 rounded bg-surface2/30">
                         <span className="text-muted">Self-Use Saved</span>
