@@ -455,6 +455,25 @@ async def get_d1_price_forecast_fallback(
             )
         valid_forecasts = deduped
 
+        # Filter out stale slots (date <= today)
+        today_local = datetime.now(pytz.timezone(config.get("timezone", "Europe/Stockholm"))).date()
+        future_forecasts: list[dict[str, Any]] = []
+        for f in valid_forecasts:
+            slot_dt = f["slot_start"]
+            if isinstance(slot_dt, str):
+                slot_dt = datetime.fromisoformat(slot_dt)
+            slot_date = slot_dt.date() if hasattr(slot_dt, "date") else None
+            if slot_date and slot_date > today_local:
+                future_forecasts.append(f)
+
+        stale_count = len(valid_forecasts) - len(future_forecasts)
+        if stale_count > 0:
+            logger.info(
+                "get_d1_price_forecast_fallback discarded %d stale slots (date <= today)",
+                stale_count,
+            )
+        valid_forecasts = future_forecasts
+
         if not valid_forecasts:
             return None
 
