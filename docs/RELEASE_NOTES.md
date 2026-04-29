@@ -1,3 +1,42 @@
+## [v2.6.3-beta] - Price Forecasting, Export Floor, Excess PV Dispatch & Planner Resilience
+
+> [!IMPORTANT]
+> **Nordpool Spot Price Forecasting**
+> This release introduces Aurora Price Forecasting. A built-in ML pipeline that predicts Nordpool spot prices up to 7 days ahead using LightGBM quantile regression. It is currently not connected to a feature but will be in the future.
+
+**✨ Major Features**
+
+- **Nordpool Spot Price Forecasting**
+    - **LightGBM Quantile Model**: Predicts D+1 through D+7 spot prices with p10/p50/p90 probability bands using calendar effects, price lags, regional weather inputs (SE1–SE4 wind speed indices), and Swedish holidays.
+    - **D+1 Fallback & Bootstrap**: Aurora serves ML-generated price estimates before the daily Nordpool auction publishes. Fresh installs self-start — no chicken-and-egg deadlock.
+    - **Forecast Dashboard**: Horizon chart with confidence bands, price cards (current price, cheapest hours, sparklines), weekly outlook with color-coded day pills, and a live d1_mae accuracy KPI.
+    - **Price Advisor**: Intelligent recommendations — cheapest day to charge, rising price alerts, and overnight window detection.
+
+- **Excess PV Dispatch**
+    - Replaces the old reactive `EXCESS_PV_HEATING` override with MILP-based proactive scheduling — the Kepler solver forecasts excess PV slots ahead of time and schedules sinks into them.
+    - **Battery-First**: Sink activates only when projected SoC exceeds a configurable threshold (default 95%).
+    - **Water Heater Boost** or **Custom HA Entity** (pool pump, floor heating, etc.) as the excess PV sink, with configurable `power_kw` and `boost_reward_sek_per_kwh` to control aggressiveness vs. grid export.
+    - Settings UI and distinct chart visualization (teal for water heater boost, amber for custom entity).
+
+- **Export Floor Constraint**
+    - New `min_export_kw` parameter guarantees minimum grid export per slot — ideal for feed-in tariff obligations or contractual commitments. Configured via `config.yaml`.
+
+- **Planner Diagnostics & Resilience**
+    - Structured error taxonomy, preflight validation (catches misconfiguration before solving), automatic retry for transient failures, and soft constraints to prevent infeasibility when PV exceeds inverter AC capacity.
+    - Persistent UI error drawer with full context for troubleshooting.
+
+**🐛 Bug Fixes**
+
+- **Price Forecast Deduplication**: Fixed midnight planner crash from duplicate forecasts. Filtered stale D+1 slots and deduplicated Nordpool data to prevent incorrect price signals.
+- **Deye Idle Mode PV Cutoff**: Inverter no longer cuts off PV when battery SoC reaches 100%. Max discharge current satisfies EN50549_1 requirements.
+- **Dashboard Labels**: "Import Cost" → "Grid Import", "Grid Charge" → "Battery Charge". Signs now carry cost/earning meaning.
+- **EV Departure Time Parsing**: Fixed YAML parsing of departure times that caused incorrect schedules.
+- **Water Heater Energy Units**: Wh detection and unit propagation for HA sensors missing a unit of measurement.
+- **Resource Lifecycle**: Proper async cleanup on executor/HA socket shutdown.
+- **Version Logging**: Planner logs app version on every run for beta-tester log identification.
+
+---
+
 ## [v2.6.2-beta] - DST Fixes, Performance & Power Limits - 2026-03-29
 
 > [!IMPORTANT]
