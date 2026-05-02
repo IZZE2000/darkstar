@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Sparkles, RefreshCw, Zap, SunMedium } from 'lucide-react'
-import { Api, type AnalystReport } from '../lib/api'
+import { Api, type AnalystReport, type AdviceItem } from '../lib/api'
 import Card from './Card'
 
 interface AdvisorRecommendation {
@@ -17,8 +17,13 @@ interface AdvisorRecommendation {
     }
 }
 
-export default function SmartAdvisor() {
-    const [advice, setAdvice] = useState<string | null>(null)
+interface SmartAdvisorProps {
+    priceAdvice?: AdviceItem[]
+    todaySummary?: string | null
+}
+
+export default function SmartAdvisor({ priceAdvice, todaySummary }: SmartAdvisorProps = {}) {
+    const [advice, setAdvice] = useState<AdviceItem[] | null>(null)
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState(false)
     const [llmEnabled, setLlmEnabled] = useState<boolean | null>(null)
@@ -88,7 +93,7 @@ export default function SmartAdvisor() {
         setAutoFetch(next)
         try {
             await Api.configSave({ advisor: { auto_fetch: next } })
-            if (next && llmEnabled && !advice) {
+            if (next && llmEnabled && !advice?.length) {
                 fetchAdvice()
             }
         } catch (err) {
@@ -133,81 +138,125 @@ export default function SmartAdvisor() {
                     )}
                 </div>
             </div>
-            <div className="text-[11px] text-text leading-relaxed">
-                {llmEnabled === false && (
-                    <>
-                        {loading && <span className="animate-pulse">Analyzing schedule (offline)…</span>}
-                        {!loading && error && (
-                            <span className="text-red-400">
-                                Unable to analyze schedule. Check backend logs for details.
+            <div className="flex-1 overflow-y-auto pr-1 flex flex-col gap-3 text-[9px] text-text leading-relaxed">
+                {/* Today's Summary */}
+                {todaySummary && (
+                    <div className="pb-2 border-b border-line/30">
+                        <div className="text-[10px] text-muted mb-1">
+                            <span className="inline-flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-accent inline-block" />
+                                Today&apos;s Plan
                             </span>
-                        )}
-                        {!loading && !error && analystReport && analystReport.recommendations && (
-                            <div className="space-y-2">
-                                {Object.entries(analystReport.recommendations)
-                                    .slice(0, 3)
-                                    .map(([key, value]) => {
-                                        const rec = (value as AdvisorRecommendation) ?? {}
-                                        const label = rec.label || key
-                                        const grid = rec.best_grid_window || {}
-                                        const solar = rec.best_solar_window || {}
-                                        const fmtTime = (iso?: string) =>
-                                            iso && iso.length >= 16 ? iso.slice(11, 16) : '—'
-                                        const gridText =
-                                            grid.start && grid.end
-                                                ? `${fmtTime(grid.start)}–${fmtTime(grid.end)} (${grid.avg_price?.toFixed?.(2) ?? '–'} SEK/kWh)`
-                                                : null
-                                        const solarText =
-                                            solar.start && solar.end
-                                                ? `${fmtTime(solar.start)}–${fmtTime(solar.end)} (${solar.avg_pv_surplus?.toFixed?.(2) ?? '–'} kW surplus)`
-                                                : null
-                                        return (
-                                            <div key={key} className="flex flex-col gap-1">
-                                                <div className="font-medium">{label}</div>
-                                                <div className="flex flex-wrap gap-3 text-[10px] text-muted">
-                                                    {gridText && (
-                                                        <span className="inline-flex items-center gap-1">
-                                                            <Zap className="h-3 w-3 text-accent" />
-                                                            <span>Grid: {gridText}</span>
-                                                        </span>
-                                                    )}
-                                                    {solarText && (
-                                                        <span className="inline-flex items-center gap-1">
-                                                            <SunMedium className="h-3 w-3 text-accent" />
-                                                            <span>Solar: {solarText}</span>
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        )
-                                    })}
+                        </div>
+                        <div className="text-muted leading-relaxed">{todaySummary}</div>
+                    </div>
+                )}
+
+                {/* Price Alerts Section */}
+                {priceAdvice && priceAdvice.length > 0 && (
+                    <div className="space-y-2 pb-2 border-b border-line/30">
+                        {priceAdvice.map((adviceItem, idx) => (
+                            <div key={idx} className="flex flex-col gap-0.5">
+                                <div className="font-medium text-accent">Price Alert</div>
+                                <div className="text-muted">{adviceItem.message}</div>
                             </div>
-                        )}
-                        {!loading && !error && (!analystReport || !analystReport.recommendations) && (
-                            <span className="text-muted">
-                                No appliance recommendations available. Configure appliances in Settings to see
-                                suggested run windows.
-                            </span>
-                        )}
-                    </>
+                        ))}
+                    </div>
                 )}
-                {llmEnabled === true && (
-                    <>
-                        {loading && <span className="animate-pulse">Analyzing schedule...</span>}
-                        {!loading && error && (
-                            <span className="text-red-400">
-                                Unable to fetch advice. Check AI settings or try again.
-                            </span>
-                        )}
-                        {!loading && !error && !advice && !autoFetch && (
-                            <span className="text-muted">Click the refresh icon to analyze your current schedule.</span>
-                        )}
-                        {!loading && !error && advice && <span>{advice}</span>}
-                    </>
-                )}
-                {llmEnabled === null && !loading && !error && (
-                    <span className="text-muted">Loading advisor settings…</span>
-                )}
+
+                {/* AI / Analyst Section */}
+                <div>
+                    {llmEnabled === false && (
+                        <>
+                            {loading && <span className="animate-pulse">Analyzing schedule (offline)…</span>}
+                            {!loading && error && (
+                                <span className="text-red-400">
+                                    Unable to analyze schedule. Check backend logs for details.
+                                </span>
+                            )}
+                            {!loading && !error && analystReport && analystReport.recommendations && (
+                                <div className="space-y-2">
+                                    {Object.entries(analystReport.recommendations)
+                                        .slice(0, 3)
+                                        .map(([key, value]) => {
+                                            const rec = (value as AdvisorRecommendation) ?? {}
+                                            const label = rec.label || key
+                                            const grid = rec.best_grid_window || {}
+                                            const solar = rec.best_solar_window || {}
+                                            const fmtTime = (iso?: string) =>
+                                                iso && iso.length >= 16 ? iso.slice(11, 16) : '—'
+                                            const gridText =
+                                                grid.start && grid.end
+                                                    ? `${fmtTime(grid.start)}–${fmtTime(grid.end)} (${grid.avg_price?.toFixed?.(2) ?? '–'} SEK/kWh)`
+                                                    : null
+                                            const solarText =
+                                                solar.start && solar.end
+                                                    ? `${fmtTime(solar.start)}–${fmtTime(solar.end)} (${solar.avg_pv_surplus?.toFixed?.(2) ?? '–'} kW surplus)`
+                                                    : null
+                                            return (
+                                                <div key={key} className="flex flex-col gap-1">
+                                                    <div className="font-medium">{label}</div>
+                                                    <div className="flex flex-wrap gap-3 text-[10px] text-muted">
+                                                        {gridText && (
+                                                            <span className="inline-flex items-center gap-1">
+                                                                <Zap className="h-3 w-3 text-accent" />
+                                                                <span>Grid: {gridText}</span>
+                                                            </span>
+                                                        )}
+                                                        {solarText && (
+                                                            <span className="inline-flex items-center gap-1">
+                                                                <SunMedium className="h-3 w-3 text-accent" />
+                                                                <span>Solar: {solarText}</span>
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            )
+                                        })}
+                                </div>
+                            )}
+                            {!loading &&
+                                !error &&
+                                (!analystReport || !analystReport.recommendations) &&
+                                (!priceAdvice || priceAdvice.length === 0) && (
+                                    <span className="text-muted">
+                                        No appliance recommendations available. Configure appliances in Settings to see
+                                        suggested run windows.
+                                    </span>
+                                )}
+                        </>
+                    )}
+                    {llmEnabled === true && (
+                        <>
+                            {loading && <span className="animate-pulse">Analyzing schedule...</span>}
+                            {!loading && error && (
+                                <span className="text-red-400">
+                                    Unable to fetch advice. Check AI settings or try again.
+                                </span>
+                            )}
+                            {!loading &&
+                                !error &&
+                                !advice &&
+                                !autoFetch &&
+                                (!priceAdvice || priceAdvice.length === 0) && (
+                                    <span className="text-muted">No price alerts this week.</span>
+                                )}
+                            {!loading && !error && advice && advice.length > 0 && (
+                                <div className="space-y-2">
+                                    {advice.map((item, idx) => (
+                                        <div key={idx} className="flex flex-col gap-0.5">
+                                            <div className="font-medium text-accent capitalize">{item.category}</div>
+                                            <div className="text-muted">{item.message}</div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </>
+                    )}
+                    {llmEnabled === null && !loading && !error && (
+                        <span className="text-muted">Loading advisor settings…</span>
+                    )}
+                </div>
             </div>
         </Card>
     )

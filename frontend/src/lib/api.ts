@@ -382,8 +382,10 @@ export type ThemeResponse = {
 }
 
 export type AdviceResponse = {
-    advice: string
-    report: unknown
+    advice: AdviceItem[]
+    count?: number
+    source?: string
+    report?: unknown
 }
 
 export type AnalystReport = {

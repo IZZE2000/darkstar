@@ -490,14 +490,14 @@ export default function PowerFlowCard({ data, systemConfig }: PowerFlowCardProps
     }, [pairs, topSlots, botSlots])
 
     return (
-        <svg viewBox={`0 0 ${W} ${H}`} className="w-full block">
+        <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-full block mx-auto" preserveAspectRatio="xMidYMid meet">
             <defs>
                 <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
                     <path d="M 20 0 L 0 0 0 20" fill="none" stroke="rgb(var(--color-line))" strokeWidth="1.5" />
                 </pattern>
             </defs>
-            <rect width="100%" height="100%" fill={SURFACE} />
-            <rect width="100%" height="100%" fill="url(#grid)" opacity="0.4" />
+            <rect x="-4000" y="-4000" width="10000" height="10000" fill={SURFACE} />
+            <rect x="-4000" y="-4000" width="10000" height="10000" fill="url(#grid)" opacity="0.6" />
             {pairPaths.map((p, i) => (
                 <path
                     key={`trace-${i}`}

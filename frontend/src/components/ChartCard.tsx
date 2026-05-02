@@ -639,7 +639,7 @@ const createChartData = (
     // Add no-data message if needed
     if (values.hasNoData) {
         // cast to ExtendedChartData here to avoid ChartData strictness while manipulating plugins
-        ; (baseData as ExtendedChartData).plugins = {
+        ;(baseData as ExtendedChartData).plugins = {
             tooltip: {
                 enabled: true,
                 external: true,
@@ -1204,7 +1204,16 @@ export default function ChartCard({
                 console.error('Failed to load schedule:', err)
                 setHasNoDataMessage(true)
             })
-    }, [currentDay, overlays, themeColors, refreshToken, slotsOverride, useHistoryForToday, pricingConfig, excessPvPowerKw])
+    }, [
+        currentDay,
+        overlays,
+        themeColors,
+        refreshToken,
+        slotsOverride,
+        useHistoryForToday,
+        pricingConfig,
+        excessPvPowerKw,
+    ])
 
     // Memoize theme colors to prevent unnecessary re-computations
     return (
@@ -1260,10 +1269,11 @@ export default function ChartCard({
                                     e.preventDefault()
                                     setOverlays((o) => ({ ...o, [key]: !o[key as keyof typeof o] }))
                                 }}
-                                className={`rounded-full px-2.5 py-0.5 border transition-all duration-150 font-medium ${overlays[key as keyof typeof overlays]
+                                className={`rounded-full px-2.5 py-0.5 border transition-all duration-150 font-medium ${
+                                    overlays[key as keyof typeof overlays]
                                         ? `${activeClass} shadow-sm`
                                         : 'border-line/40 text-muted/60 hover:border-line hover:text-muted'
-                                    }`}
+                                }`}
                             >
                                 {label}
                             </button>
@@ -1275,10 +1285,11 @@ export default function ChartCard({
                             e.preventDefault()
                             setOverlays((o) => ({ ...o, showActual: !o.showActual }))
                         }}
-                        className={`rounded-full px-3 py-1 border text-[10px] font-semibold transition-all duration-150 whitespace-nowrap ${overlays.showActual
+                        className={`rounded-full px-3 py-1 border text-[10px] font-semibold transition-all duration-150 whitespace-nowrap ${
+                            overlays.showActual
                                 ? 'bg-accent text-canvas border-accent shadow-md shadow-accent/30'
                                 : 'border-line/40 text-muted/60 hover:border-accent hover:text-accent'
-                            }`}
+                        }`}
                     >
                         📊 Actual
                     </button>

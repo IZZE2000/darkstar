@@ -2,14 +2,16 @@
 import { useEffect, useState, useCallback } from 'react'
 import Card from '../components/Card'
 import ChartCard from '../components/ChartCard'
-import QuickActions from '../components/QuickActions'
 import { Flame, BatteryCharging } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { Api, type PlannerSIndex, type ExecutorStatusResponse } from '../lib/api'
 import type { ScheduleSlot } from '../lib/types'
 import { isToday, isTomorrow } from '../lib/time'
-import AdvisorCard from '../components/AdvisorCard'
-import { GridDomain, ResourcesDomain, StrategyDomain, ControlParameters } from '../components/CommandDomains'
+import SmartAdvisor from '../components/SmartAdvisor'
+import PowerFlowCard from '../components/PowerFlowCard'
+import CommandBar from '../components/CommandBar'
+import BatteryStrategyCard from '../components/BatteryStrategyCard'
+import { GridDomain, ResourcesDomain } from '../components/CommandDomains'
 import { useSocket } from '../lib/hooks'
 import { useToast } from '../lib/useToast'
 
@@ -19,20 +21,8 @@ type PlannerMeta = {
     s_index?: PlannerSIndex
 } | null
 
-function formatLocalIso(d: Date | null): string {
-    if (!d) return '—'
-    const year = d.getFullYear()
-    const month = String(d.getMonth() + 1).padStart(2, '0')
-    const day = String(d.getDate()).padStart(2, '0')
-    const hours = String(d.getHours()).padStart(2, '0')
-    const minutes = String(d.getMinutes()).padStart(2, '0')
-    return `${year}-${month}-${day} ${hours}:${minutes}`
-}
-
 export default function Dashboard() {
     const [soc, setSoc] = useState<number | null>(null)
-    const [isRefreshing, setIsRefreshing] = useState(false)
-    const [lastRefresh, setLastRefresh] = useState<Date | null>(null)
     const [chartRefreshToken, setChartRefreshToken] = useState(0)
 
     const [automationConfig, setAutomationConfig] = useState<{
@@ -64,7 +54,6 @@ export default function Dashboard() {
         evCharging: number | null
         waterHeating: number | null
     } | null>(null)
-    // System configuration flags for conditional rendering
     const [systemFlags, setSystemFlags] = useState<{
         hasSolar: boolean
         hasBattery: boolean
@@ -76,7 +65,6 @@ export default function Dashboard() {
         expires_at?: string
     } | null>(null)
 
-    // --- Missing State Variables Restored ---
     const [plannerLocalMeta, setPlannerLocalMeta] = useState<PlannerMeta>(null)
     const [plannerMeta, setPlannerMeta] = useState<PlannerMeta>(null)
     const [batteryCapacity, setBatteryCapacity] = useState<number>(0)
@@ -88,7 +76,6 @@ export default function Dashboard() {
     const [vacationModeHA, setVacationModeHA] = useState<boolean>(false)
     const [vacationEntityId, setVacationEntityId] = useState<string>('')
     const [riskAppetite, setRiskAppetite] = useState<number>(1.0)
-    // Live power metrics for PowerFlowCard
     const [livePower, setLivePower] = useState<{
         pv_kw?: number
         load_kw?: number
@@ -96,30 +83,21 @@ export default function Dashboard() {
         grid_kw?: number
         water_kw?: number
         ev_kw?: number
-        ev_plugged_in?: boolean // Rev UI18
-        ev_soc?: number // Rev F50 Phase 5: EV battery SoC
-        ev_chargers?: Array<{ name: string; kw: number; soc: number | null; pluggedIn: boolean }> // Rev F64: Per-EV details
+        ev_plugged_in?: boolean
+        ev_soc?: number
+        ev_chargers?: Array<{ name: string; kw: number; soc: number | null; pluggedIn: boolean }>
     }>({})
 
-    // Phase 3: Executor health status
     const [executorHealth, setExecutorHealth] = useState<import('../lib/api').ExecutorHealthResponse | null>(null)
     const [config, setConfig] = useState<any>(null)
 
-    // Price Forecast Outlook
     const [priceOutlook, setPriceOutlook] = useState<import('../lib/api').PriceOutlookResponse | undefined>(undefined)
     const [priceAdvice, setPriceAdvice] = useState<import('../lib/api').AdviceItem[]>([])
-    const [priceForecastStatus, setPriceForecastStatus] = useState<{
-        training_samples_count: number
-        config: { min_training_samples: number }
-    } | null>(null)
 
     const { toast } = useToast()
 
-    // --- WebSocket Event Handlers (Rev E1) ---
     useSocket('live_metrics', (data: any) => {
-        console.log('📊 live_metrics received:', data)
         if (data.soc !== undefined) setSoc(data.soc)
-        // Capture all power metrics for PowerFlowCard
         setLivePower((prev) => ({
             ...prev,
             pv_kw: data.pv_kw ?? prev.pv_kw,
@@ -135,20 +113,16 @@ export default function Dashboard() {
                       ...ev,
                       pluggedIn: ev.plugged_in,
                   }))
-                : prev.ev_chargers, // Rev F64: Per-EV array (transform snake_case to camelCase)
+                : prev.ev_chargers,
         }))
     })
 
     useSocket('schedule_updated', (data: any) => {
-        console.log('📅 Schedule updated via push:', data)
-        // Show toast notification (Rev ARC8)
         toast({
             message: 'Schedule updated',
             description: `${data.slot_count ?? 0} slots generated`,
             variant: 'success',
         })
-        // FIX: Refresh BOTH schedule AND history to maintain data consistency
-        // Previously only fetched schedule, causing historySlots to become stale
         Promise.all([Api.schedule(), Api.scheduleTodayWithHistory()])
             .then(([scheduleData, historyData]) => {
                 if (scheduleData.schedule) setLocalSchedule(scheduleData.schedule)
@@ -159,7 +133,6 @@ export default function Dashboard() {
                         s_index: scheduleData.meta.s_index as PlannerSIndex | undefined,
                     })
                 }
-                // Update historySlots to maintain consistency
                 if (historyData.slots) setHistorySlots(historyData.slots)
             })
             .catch((err) => console.error('Failed to refresh after schedule update:', err))
@@ -169,12 +142,11 @@ export default function Dashboard() {
         setExecutorStatus({
             shadow_mode: data.shadow_mode ?? false,
             paused: data.paused ?? null,
+            quick_action: data.quick_action ?? null,
         })
     })
 
-    // WebSocket: Real-time executor errors
     useSocket('executor_error', (data: any) => {
-        // Show toast notification for real-time errors
         toast({
             message: `Executor Error: ${data.type}`,
             description: data.message,
@@ -182,16 +154,12 @@ export default function Dashboard() {
         })
     })
 
-    // WebSocket: HA entity state changes (instant vacation mode sync)
     useSocket('ha_entity_change', (data: any) => {
-        // If this is the vacation mode entity, update state instantly
         if (data.entity_id === vacationEntityId) {
-            const isActive = data.state === 'on'
-            setVacationModeHA(isActive)
+            setVacationModeHA(data.state === 'on')
         }
     })
 
-    // Listen for config updates from QuickActions
     useEffect(() => {
         const handleConfigUpdate = async () => {
             try {
@@ -205,17 +173,14 @@ export default function Dashboard() {
                 console.log('Failed to reload vacation mode:', error)
             }
         }
-
         window.addEventListener('config-updated', handleConfigUpdate)
         return () => window.removeEventListener('config-updated', handleConfigUpdate)
     }, [])
 
     const fetchCriticalData = useCallback(async () => {
-        setIsRefreshing(true)
         try {
             const bundle = await Api.dashboardBundle()
 
-            // Process critical data: Status
             if (bundle.status) {
                 const data = bundle.status
                 if (data.soc_percent != null) setSoc(data.soc_percent)
@@ -242,15 +207,12 @@ export default function Dashboard() {
                 }))
             }
 
-            // Process critical data: Config
             if (bundle.config) {
                 const data = bundle.config
                 setConfig(data)
-                // Risk appetite
                 const sIndex = (data as Record<string, unknown>).s_index as Record<string, unknown> | undefined
                 if (typeof sIndex?.risk_appetite === 'number') setRiskAppetite(sIndex.risk_appetite)
 
-                // System flags for conditional rendering
                 const systemConfig = data.system || {}
                 setSystemFlags({
                     hasSolar: systemConfig.has_solar ?? true,
@@ -259,12 +221,10 @@ export default function Dashboard() {
                     hasEvCharger: systemConfig.has_ev_charger ?? false,
                 })
 
-                // Battery capacity
                 if (data.battery?.capacity_kwh != null) setBatteryCapacity(data.battery.capacity_kwh)
                 else if (data.system?.battery?.capacity_kwh != null)
                     setBatteryCapacity(data.system.battery.capacity_kwh)
 
-                // Automation config
                 if (data.automation) {
                     setAutomationConfig({
                         enable_scheduler: data.automation.enable_scheduler,
@@ -272,7 +232,6 @@ export default function Dashboard() {
                     })
                 } else setAutomationConfig(null)
 
-                // Water/Vacation config
                 if (data.water_heating) {
                     if (typeof data.water_heating.comfort_level === 'number')
                         setComfortLevel(data.water_heating.comfort_level)
@@ -286,11 +245,8 @@ export default function Dashboard() {
                         .then((entityData) => setVacationModeHA(entityData.state === 'on'))
                         .catch(() => setVacationModeHA(false))
                 }
-            } else {
-                console.error('Failed to load critical config from bundle')
             }
 
-            // Schedule Data
             if (bundle.schedule) {
                 const data = bundle.schedule
                 setLocalSchedule(data.schedule ?? [])
@@ -320,7 +276,6 @@ export default function Dashboard() {
                 }
             }
 
-            // Executor & Scheduler Status
             if (bundle.executor_status) {
                 setExecutorStatus({
                     shadow_mode: bundle.executor_status.shadow_mode ?? false,
@@ -338,25 +293,18 @@ export default function Dashboard() {
                 })
             }
 
-            // Water Boost Status
             if (bundle.water_boost) {
                 setWaterBoostActive(bundle.water_boost)
             }
 
-            // FIX: Fetch historySlots immediately as part of critical path
-            // This prevents the race condition where chart renders before history arrives
             try {
                 const historyData = await Api.scheduleTodayWithHistory()
                 if (historyData.slots) setHistorySlots(historyData.slots)
             } catch (historyErr) {
                 console.warn('Failed to fetch history slots in critical path:', historyErr)
             }
-
-            setLastRefresh(new Date())
         } catch (error) {
             console.error('Error fetching dashboard bundle:', error)
-        } finally {
-            setIsRefreshing(false)
         }
     }, [])
 
@@ -367,37 +315,27 @@ export default function Dashboard() {
                 todayStatsData,
                 auroraData,
                 historyData,
-                executorHealthData, // Phase 3
-                priceOutlookData, // Price Forecast
-                adviceData, // Price advice
-                priceForecastStatusData,
+                executorHealthData,
+                priceOutlookData,
+                adviceData,
             ] = await Promise.allSettled([
-                Api.haAverage(), // Cached for 60s
+                Api.haAverage(),
                 Api.energyToday(),
                 Api.aurora.dashboard(),
                 Api.scheduleTodayWithHistory(),
-                Api.executor.health(), // Phase 3
-                Api.priceForecast.outlook(), // Price Forecast
-                Api.getAdvice(), // Price advice
-                Api.priceForecast.priceForecastStatus(),
+                Api.executor.health(),
+                Api.priceForecast.outlook(),
+                Api.getAdvice(),
             ])
 
-            // Phase 3: Update executor health status
             if (executorHealthData.status === 'fulfilled') {
                 setExecutorHealth(executorHealthData.value)
             }
 
-            // Price Forecast: Store outlook data
             if (priceOutlookData.status === 'fulfilled') {
                 setPriceOutlook(priceOutlookData.value)
             }
 
-            // Price Forecast Status
-            if (priceForecastStatusData.status === 'fulfilled') {
-                setPriceForecastStatus(priceForecastStatusData.value)
-            }
-
-            // Price advice: Filter for price category
             if (adviceData.status === 'fulfilled' && adviceData.value?.advice) {
                 const adviceList = Array.isArray(adviceData.value.advice) ? adviceData.value.advice : []
                 const filteredAdvice = adviceList.filter(
@@ -437,12 +375,8 @@ export default function Dashboard() {
                 })
             }
 
-            // REV 2.6.1-beta: Water data now comes from unified energy/today endpoint
-            // Old Api.haWaterToday() call removed - data is in todayStats.waterHeating
-
             if (historyData.status === 'fulfilled') {
                 setHistorySlots(historyData.value.slots ?? [])
-                // Fallback PV Total logic - only use if Aurora returned nothing
                 if (pvForecastTotal === 0 && historyData.value.slots) {
                     const todayStart = new Date()
                     todayStart.setHours(0, 0, 0, 0)
@@ -455,15 +389,9 @@ export default function Dashboard() {
                             dailyTotal += s.pv_forecast_kwh ?? 0
                         }
                     })
-
                     if (dailyTotal > 0) {
                         setTodayStats((prev) =>
-                            prev
-                                ? {
-                                      ...prev,
-                                      pvForecast: parseFloat(dailyTotal.toFixed(1)),
-                                  }
-                                : null,
+                            prev ? { ...prev, pvForecast: parseFloat(dailyTotal.toFixed(1)) } : null,
                         )
                     }
                 }
@@ -477,11 +405,9 @@ export default function Dashboard() {
 
     const fetchAllData = useCallback(async () => {
         await fetchCriticalData()
-        // 100ms delay for deferred data
         setTimeout(() => fetchDeferredData(), 100)
     }, [fetchCriticalData, fetchDeferredData])
 
-    // Keep displayed plannerMeta aligned with stored metadata.
     useEffect(() => {
         setPlannerMeta(plannerLocalMeta)
     }, [plannerLocalMeta])
@@ -496,34 +422,6 @@ export default function Dashboard() {
         await Api.configSave({ s_index: { risk_appetite: l } })
     }
 
-    const handleBatteryTopUp = async (targetSoc: number = 60) => {
-        try {
-            // Check if force_charge is already active
-            const activeQA = executorStatus?.quick_action
-            if (activeQA?.type === 'force_charge') {
-                await Api.executor.quickAction.clear()
-                await fetchAllData()
-                toast({
-                    message: 'Top-Up Stopped',
-                    description: 'Battery charging override cleared',
-                    variant: 'success',
-                })
-            } else {
-                await Api.executor.quickAction.set('force_charge', 60, { target_soc: targetSoc })
-                await fetchAllData()
-                toast({
-                    message: 'Charging Started',
-                    description: `Battery top-up to ${targetSoc}% initiated`,
-                    variant: 'success',
-                })
-            }
-        } catch (e) {
-            console.error('Top Up/Stop failed', e)
-            toast({ message: 'Action failed', variant: 'error' })
-        }
-    }
-
-    // Initial data fetch
     useEffect(() => {
         fetchAllData()
     }, [fetchAllData])
@@ -546,7 +444,6 @@ export default function Dashboard() {
         }
     }
 
-    // Build slotsOverride for the chart (and badge)
     let slotsOverride: ScheduleSlot[] | undefined
     if (localSchedule && localSchedule.length > 0) {
         const todayAndTomorrow = localSchedule.filter((slot) => isToday(slot.start_time) || isTomorrow(slot.start_time))
@@ -558,59 +455,66 @@ export default function Dashboard() {
         }
     }
 
-    // Badge Logic
-    const now = new Date()
-    let freshnessText = 'Local Plan'
-    if (plannerMeta?.planned_at) {
-        const planned = new Date(plannerMeta.planned_at)
-        const timeStr = planned.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-        freshnessText = `Generated ${timeStr}`
-    }
-
-    let nextActionText = ''
-    if (slotsOverride) {
-        const currentSlot = slotsOverride.find((s) => {
-            const start = new Date(s.start_time)
-            const end = new Date(start.getTime() + 30 * 60 * 1000)
-            return now >= start && now < end
+    const todaySummary = (() => {
+        if (!slotsOverride || slotsOverride.length === 0) return null
+        const todayStart = new Date()
+        todayStart.setHours(0, 0, 0, 0)
+        const tomorrowStart = new Date(todayStart)
+        tomorrowStart.setDate(tomorrowStart.getDate() + 1)
+        const todaySlots = slotsOverride.filter((s) => {
+            const t = new Date(s.start_time)
+            return t >= todayStart && t < tomorrowStart
         })
+        if (todaySlots.length === 0) return null
 
-        if (currentSlot) {
-            const end = new Date(new Date(currentSlot.start_time).getTime() + 30 * 60 * 1000)
-            const minutesLeft = Math.max(0, Math.floor((end.getTime() - now.getTime()) / 60000))
-
-            let action = 'Idle'
-            if ((currentSlot.charge_kw || 0) > 0.1) action = `Charge ${currentSlot.charge_kw?.toFixed(1)}kW`
-            else if ((currentSlot.discharge_kw || 0) > 0.1)
-                action = `Discharge ${currentSlot.discharge_kw?.toFixed(1)}kW`
-            else if ((currentSlot.export_kwh || 0) > 0.1) action = `Export ${currentSlot.export_kwh?.toFixed(1)}kWh`
-            else if ((currentSlot.water_heating_kw || 0) > 0.1) action = `Heat Water`
-
-            nextActionText = ` · Next: ${action} (${minutesLeft}m)`
+        interface Phase {
+            action: string
+            start: string
+            end: string
+            extra?: string
         }
-    }
-    const planBadge = `${freshnessText}${nextActionText}`
+        const phases: Phase[] = []
+        const fmt = (iso: string) => iso.slice(11, 16)
 
-    // Derive last/next planner runs for automation card
-    const lastRunIso = schedulerStatus?.last_run_at || plannerLocalMeta?.planned_at
-    const lastRunDate = lastRunIso ? new Date(lastRunIso) : null
-    const everyMinutes =
-        automationConfig?.every_minutes && automationConfig.every_minutes > 0 ? automationConfig.every_minutes : null
-    let nextRunDate: Date | null = null
-    if (schedulerStatus?.next_run_at) {
-        nextRunDate = new Date(schedulerStatus.next_run_at)
-    } else if (automationConfig?.enable_scheduler && lastRunDate && everyMinutes) {
-        nextRunDate = new Date(lastRunDate.getTime() + everyMinutes * 60 * 1000)
-    }
+        todaySlots.forEach((s) => {
+            const start = fmt(s.start_time)
+            const endTime = new Date(new Date(s.start_time).getTime() + 30 * 60 * 1000)
+            const end = endTime.toISOString().slice(11, 16)
+            if ((s.charge_kw || 0) > 0.1) {
+                const price = s.import_price_sek_kwh ? `${s.import_price_sek_kwh.toFixed(2)} kr` : null
+                phases.push({ action: 'Charge', start, end, extra: price ? price : undefined })
+            } else if ((s.discharge_kw || 0) > 0.1) {
+                const price = s.import_price_sek_kwh ? `${s.import_price_sek_kwh.toFixed(2)} kr` : null
+                phases.push({ action: 'Discharge', start, end, extra: price ? price : undefined })
+            } else if ((s.export_kwh || 0) > 0.1) {
+                const price = s.import_price_sek_kwh ? `${s.import_price_sek_kwh.toFixed(2)} kr` : null
+                phases.push({ action: 'Export', start, end, extra: price ? price : undefined })
+            }
+        })
+        if (phases.length === 0) return null
 
-    // Base display variables
-    // Rev DX1: Removed unused variables (socDisplay, pvDays, weatherDays, sIndexDisplay, termDisplay)
+        const merged: Phase[] = []
+        phases.forEach((p) => {
+            const last = merged[merged.length - 1]
+            if (last && last.action === p.action) {
+                last.end = p.end
+                if (p.extra) last.extra = p.extra
+            } else {
+                merged.push({ ...p })
+            }
+        })
+        return merged
+            .map((p) => {
+                let text = `${p.action} ${p.start}-${p.end}`
+                if (p.extra) text += ` (${p.extra})`
+                return text
+            })
+            .join(' → ')
+    })()
 
     return (
-        <main className="mx-auto max-w-7xl px-4 pb-24 pt-6 sm:px-6 lg:pt-10 space-y-6">
-            {/* Header Removed as per user request */}
-
-            {/* Critical Error Banner */}
+        <main className="mx-auto max-w-[1400px] px-4 pb-24 pt-6 sm:px-6 lg:pt-8 space-y-4">
+            {/* Banners */}
             {lastError && (
                 <motion.div
                     initial={{ opacity: 0, y: -10 }}
@@ -633,7 +537,6 @@ export default function Dashboard() {
                         <button
                             onClick={() => setLastError(null)}
                             className="opacity-60 hover:opacity-100 text-xs px-2 py-1"
-                            title="Dismiss"
                         >
                             ✕
                         </button>
@@ -641,7 +544,6 @@ export default function Dashboard() {
                 </motion.div>
             )}
 
-            {/* Shadow Mode Banner */}
             {executorStatus?.shadow_mode && (
                 <motion.div
                     initial={{ opacity: 0, y: -10 }}
@@ -654,7 +556,6 @@ export default function Dashboard() {
                 </motion.div>
             )}
 
-            {/* Executor Paused Banner */}
             {executorStatus?.paused && (
                 <motion.div
                     initial={{ opacity: 0, y: -10 }}
@@ -671,7 +572,6 @@ export default function Dashboard() {
                 </motion.div>
             )}
 
-            {/* Executor Critical Error Banner */}
             {executorHealth?.has_error && (
                 <motion.div
                     initial={{ opacity: 0, y: -10 }}
@@ -689,7 +589,6 @@ export default function Dashboard() {
                 </motion.div>
             )}
 
-            {/* Executor Warnings (Critical Entities Missing) */}
             {executorHealth?.warnings && executorHealth.warnings.length > 0 && (
                 <div className="space-y-2">
                     {executorHealth.warnings.map((warning, idx) => (
@@ -707,7 +606,6 @@ export default function Dashboard() {
                 </div>
             )}
 
-            {/* Vacation Mode Banner */}
             {(vacationMode || vacationModeHA) && (
                 <motion.div
                     initial={{ opacity: 0, y: -10 }}
@@ -720,7 +618,6 @@ export default function Dashboard() {
                 </motion.div>
             )}
 
-            {/* Water Boost Banner */}
             {waterBoostActive?.boost && (
                 <motion.div
                     initial={{ opacity: 0, y: -10 }}
@@ -745,11 +642,7 @@ export default function Dashboard() {
                             try {
                                 await Api.waterBoost.cancel()
                                 fetchAllData()
-                                toast({
-                                    message: 'Boost Cancelled',
-                                    description: 'Water heater boost has been stopped.',
-                                    variant: 'success',
-                                })
+                                toast({ message: 'Boost Cancelled', variant: 'success' })
                             } catch (e) {
                                 console.error('Failed to cancel boost', e)
                             }
@@ -761,7 +654,6 @@ export default function Dashboard() {
                 </motion.div>
             )}
 
-            {/* Top-Up Active Banner */}
             {executorStatus?.quick_action?.type === 'force_charge' && (
                 <motion.div
                     initial={{ opacity: 0, y: -10 }}
@@ -794,195 +686,112 @@ export default function Dashboard() {
                 </motion.div>
             )}
 
-            {/* Row 1: Schedule Overview (24h / 48h) */}
+            {/* Row 1: Chart */}
             <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
                 <ChartCard useHistoryForToday={true} refreshToken={chartRefreshToken} slotsOverride={slotsOverride} />
             </motion.div>
 
-            {/* Row 2: Controls & Advisor & Quick Actions */}
-            <div className="grid gap-6 lg:grid-cols-3 items-stretch">
-                {/* Col 1: Toolbar + Advisor */}
+            {/* Row 2: Unified Command Bar */}
+            <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
+                <CommandBar
+                    riskAppetite={riskAppetite}
+                    comfortLevel={comfortLevel}
+                    executorStatus={executorStatus}
+                    automationConfig={automationConfig}
+                    automationSaving={automationSaving}
+                    schedulerStatus={schedulerStatus}
+                    vacationMode={vacationMode}
+                    vacationModeHA={vacationModeHA}
+                    waterBoostActive={waterBoostActive}
+                    soc={soc}
+                    plannerMeta={plannerMeta}
+                    onSetRiskAppetite={handleSetRiskAppetite}
+                    onSetComfortLevel={handleSetComfortLevel}
+                    onToggleScheduler={toggleAutomationScheduler}
+                    onRefresh={fetchAllData}
+                />
+            </motion.div>
+
+            {/* Row 3: Bento Grid */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* Cell 1: SmartAdvisor (row 1, col 1) */}
+                <motion.div className="h-full" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
+                    <SmartAdvisor todaySummary={todaySummary} priceAdvice={priceAdvice} />
+                </motion.div>
+
+                {/* Cell 2: PowerFlowCard (row 1, col 2) */}
+                <motion.div className="h-full" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
+                    <Card className="h-full flex flex-col overflow-hidden">
+                        <div className="flex-1 flex items-center justify-center overflow-hidden">
+                            <PowerFlowCard
+                                systemConfig={config}
+                                data={{
+                                    solar: {
+                                        kw: livePower.pv_kw ?? 0,
+                                        todayKwh: todayStats?.pvProduction ?? undefined,
+                                    },
+                                    battery: { kw: livePower.battery_kw ?? 0, soc: soc ?? 50 },
+                                    grid: {
+                                        kw: livePower.grid_kw ?? 0,
+                                        importKwh: todayStats?.gridImport ?? undefined,
+                                        exportKwh: todayStats?.gridExport ?? undefined,
+                                    },
+                                    house: {
+                                        kw: livePower.load_kw ?? 0,
+                                        todayKwh: todayStats?.loadConsumption ?? undefined,
+                                    },
+                                    water: { kw: livePower.water_kw ?? 0, todayKwh: waterToday?.kwh },
+                                    ev: { kw: livePower.ev_kw ?? 0 },
+                                    evPluggedIn: livePower.ev_plugged_in,
+                                    evSoc: livePower.ev_soc,
+                                    evChargers: livePower.ev_chargers,
+                                }}
+                            />
+                        </div>
+                    </Card>
+                </motion.div>
+
+                {/* Cell 3: BatteryStrategyCard (rows 1-2, col 3) */}
                 <motion.div
-                    className="h-full flex flex-col gap-4"
+                    className="h-full lg:row-span-2"
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
                 >
-                    {/* Advisor with Power Flow toggle */}
-                    <div className="flex-1 min-h-0">
-                        <AdvisorCard
-                            isLoading={isRefreshing}
-                            systemConfig={config}
-                            powerFlowData={{
-                                solar: {
-                                    kw: livePower.pv_kw ?? 0,
-                                    todayKwh: todayStats?.pvProduction ?? undefined,
-                                },
-                                battery: {
-                                    kw: livePower.battery_kw ?? 0,
-                                    soc: soc ?? 50,
-                                },
-                                grid: {
-                                    kw: livePower.grid_kw ?? 0,
-                                    importKwh: todayStats?.gridImport ?? undefined,
-                                    exportKwh: todayStats?.gridExport ?? undefined,
-                                },
-                                house: {
-                                    kw: livePower.load_kw ?? 0,
-                                    todayKwh: todayStats?.loadConsumption ?? undefined,
-                                },
-                                water: {
-                                    kw: livePower.water_kw ?? 0,
-                                    todayKwh: waterToday?.kwh,
-                                },
-                                ev: {
-                                    kw: livePower.ev_kw ?? 0,
-                                },
-                                evPluggedIn: livePower.ev_plugged_in, // Rev UI18
-                                evSoc: livePower.ev_soc, // Rev F50 Phase 5: EV SoC
-                                evChargers: livePower.ev_chargers, // Rev F64: Per-EV details
-                            }}
-                        />
-                    </div>
-                </motion.div>
-
-                {/* Middle Column: Control Parameters (Comfort + Risk + Overrides) */}
-                <motion.div className="h-full" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-                    <ControlParameters
-                        comfortLevel={comfortLevel}
-                        setComfortLevel={handleSetComfortLevel}
-                        riskAppetite={riskAppetite}
-                        setRiskAppetite={handleSetRiskAppetite}
-                        vacationMode={vacationMode || vacationModeHA}
-                        boostActive={waterBoostActive?.boost}
-                        activeQuickAction={executorStatus?.quick_action}
-                        currentSoc={soc ?? 0}
-                        onBatteryTopUp={handleBatteryTopUp}
-                        onStatusRefresh={fetchAllData}
+                    <BatteryStrategyCard
+                        soc={soc}
+                        socTarget={currentSlotTarget}
+                        batteryCapacity={batteryCapacity}
+                        plannerMeta={plannerMeta}
+                        batteryCycles={todayStats?.batteryCycles ?? null}
+                        priceOutlook={priceOutlook}
                     />
                 </motion.div>
 
-                {/* Right Column: Quick Actions */}
+                {/* Cell 4: GridDomain (row 2, col 1) */}
                 <motion.div className="h-full" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-                    <div className="flex h-full flex-col gap-6">
-                        <Card className="flex-1 p-4 md:p-5">
-                            <QuickActions executorPaused={executorStatus?.paused != null} onRefresh={fetchAllData} />
-                        </Card>
-                        <Card className="flex-1 p-4 md:p-5">
-                            <div className="flex items-baseline justify-between mb-4">
-                                <div className="text-sm font-medium text-text">Planner Automation</div>
-                                <div className="flex items-center gap-2">
-                                    <div className="flex items-center gap-2 text-[10px] text-muted">
-                                        <span
-                                            className={`inline-flex h-2 w-2 rounded-full ${
-                                                automationConfig?.enable_scheduler
-                                                    ? 'bg-good shadow-[0_0_0_2px_rgba(var(--color-good),0.4)]'
-                                                    : 'bg-line'
-                                            }`}
-                                        />
-                                        <span>{automationConfig?.enable_scheduler ? 'Active' : 'Disabled'}</span>
-                                    </div>
-                                    <button
-                                        type="button"
-                                        onClick={toggleAutomationScheduler}
-                                        disabled={automationSaving}
-                                        className="rounded-pill px-2 py-0.5 text-[10px] font-semibold border border-line/60 text-muted hover:border-accent hover:text-accent disabled:opacity-50 transition"
-                                    >
-                                        {automationConfig?.enable_scheduler ? 'Disable' : 'Enable'}
-                                    </button>
-                                </div>
-                            </div>
-
-                            {/* Plan Info Badge & Refresh */}
-                            <div className="mb-4 p-2 rounded-lg bg-surface2/30 border border-line/30 flex items-center justify-between">
-                                <div className="text-[10px] font-medium text-text">{planBadge}</div>
-                                <button
-                                    onClick={() => fetchAllData()}
-                                    disabled={isRefreshing}
-                                    className={`rounded-full p-1 transition ${
-                                        isRefreshing ? 'bg-surface2 text-muted' : 'text-muted hover:text-accent'
-                                    }`}
-                                    title="Manual sync"
-                                >
-                                    <span className={`inline-block text-[10px] ${isRefreshing ? 'animate-spin' : ''}`}>
-                                        {isRefreshing ? '⟳' : '↻'}
-                                    </span>
-                                </button>
-                            </div>
-
-                            <div className="space-y-1 text-[10px] text-muted">
-                                <div className="flex justify-between">
-                                    <span>Last plan run:</span>
-                                    <span className="font-mono">{formatLocalIso(lastRunDate)}</span>
-                                </div>
-                                <div className="flex justify-between">
-                                    <span>Next expected run:</span>
-                                    <span className="font-mono">
-                                        {automationConfig?.enable_scheduler ? formatLocalIso(nextRunDate) : '—'}
-                                    </span>
-                                </div>
-                                <div className="flex justify-between pt-1 border-t border-line/30 mt-1">
-                                    <span>Dashboard Sync:</span>
-                                    <span>{lastRefresh ? lastRefresh.toLocaleTimeString() : '—'}</span>
-                                </div>
-                            </div>
-                        </Card>
-                    </div>
+                    <GridDomain
+                        netCost={todayStats?.netCost ?? null}
+                        importKwh={todayStats?.gridImport ?? null}
+                        exportKwh={todayStats?.gridExport ?? null}
+                    />
                 </motion.div>
-            </div>
 
-            {/* Row 3: Grid + Resources + Strategy */}
-            <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-                {/* Col 1: Grid Domain */}
-                <GridDomain
-                    netCost={todayStats?.netCost ?? null}
-                    importKwh={todayStats?.gridImport ?? null}
-                    exportKwh={todayStats?.gridExport ?? null}
-                />
-
-                {/* Col 2: Resources Domain */}
-                <ResourcesDomain
-                    pvActual={todayStats?.pvProduction ?? null}
-                    pvForecast={todayStats?.pvForecast ?? null}
-                    loadActual={todayStats?.loadConsumption ?? null}
-                    loadAvg={avgLoad?.dailyKwh ?? null}
-                    waterKwh={todayStats?.waterHeating ?? null}
-                    evChargingKwh={todayStats?.evCharging ?? null}
-                    hasSolar={systemFlags.hasSolar}
-                    hasBattery={systemFlags.hasBattery}
-                    hasWaterHeater={systemFlags.hasWaterHeater}
-                    hasEvCharger={systemFlags.hasEvCharger}
-                    batteryCapacity={batteryCapacity}
-                />
-
-                {/* Col 3: Strategy Domain (Moved here) */}
-                <StrategyDomain
-                    soc={soc}
-                    socTarget={currentSlotTarget}
-                    sIndex={
-                        plannerMeta?.s_index?.effective_load_margin ??
-                        plannerMeta?.s_index?.risk_factor ??
-                        plannerMeta?.s_index?.factor ??
-                        null
-                    }
-                    cycles={todayStats?.batteryCycles ?? null}
-                    riskLabel={
-                        (
-                            {
-                                1: 'Safety',
-                                2: 'Conservative',
-                                3: 'Neutral',
-                                4: 'Aggressive',
-                                5: 'Gambler',
-                            } as Record<number, string>
-                        )[riskAppetite] || 'Neutral'
-                    }
-                    safetyFloor={plannerMeta?.s_index?.safety_floor?.calculated_floor_kwh ?? null}
-                    deficitRatio={plannerMeta?.s_index?.safety_floor?.deficit_ratio ?? null}
-                    batteryCapacity={batteryCapacity}
-                    outlookData={priceOutlook}
-                    priceAdvice={priceAdvice}
-                    priceForecastStatus={priceForecastStatus ?? undefined}
-                />
+                {/* Cell 5: ResourcesDomain (row 2, col 2) */}
+                <motion.div className="h-full" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
+                    <ResourcesDomain
+                        pvActual={todayStats?.pvProduction ?? null}
+                        pvForecast={todayStats?.pvForecast ?? null}
+                        loadActual={todayStats?.loadConsumption ?? null}
+                        loadAvg={avgLoad?.dailyKwh ?? null}
+                        waterKwh={todayStats?.waterHeating ?? null}
+                        evChargingKwh={todayStats?.evCharging ?? null}
+                        hasSolar={systemFlags.hasSolar}
+                        hasBattery={systemFlags.hasBattery}
+                        hasWaterHeater={systemFlags.hasWaterHeater}
+                        hasEvCharger={systemFlags.hasEvCharger}
+                        batteryCapacity={batteryCapacity}
+                    />
+                </motion.div>
             </div>
         </main>
     )
