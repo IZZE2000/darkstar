@@ -255,6 +255,75 @@ export default function DesignSystem() {
                 </div>
             </section>
 
+            {/* Pixel Sparkline Showcase */}
+            <section>
+                <h2 className="text-2xl font-semibold text-text mb-4">Pixel Sparkline (Price Outlook)</h2>
+                <div className="grid md:grid-cols-2 gap-6">
+                    <div className="bg-surface p-4 rounded-ds-lg flex flex-col gap-4">
+                        <div className="text-sm text-muted">Varied Week (with reference line)</div>
+                        <div className="price-sparkline">
+                            {/* Ref line at 60% */}
+                            <div className="price-sparkline-ref" style={{ top: '60%' }} />
+                            {/* Squares: 7 columns, spread out */}
+                            <div className="flex justify-around items-end h-full px-2">
+                                {[
+                                    { t: '10%', c: 'bg-bad' },
+                                    { t: '30%', c: 'bg-bad' },
+                                    { t: '55%', c: 'bg-warn' },
+                                    { t: '80%', c: 'bg-good' },
+                                    { t: '70%', c: 'bg-good' },
+                                    { t: '40%', c: 'bg-warn' },
+                                    { t: '20%', c: 'bg-bad' },
+                                ].map((s, i) => (
+                                    <div key={i} className="relative w-full flex justify-center h-full">
+                                        <div className={`price-sparkline-block ${s.c}`} style={{ top: s.t }} />
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                        <div className="flex justify-around text-[9px] text-muted uppercase tracking-tighter">
+                            <span>Mon</span>
+                            <span>Tue</span>
+                            <span>Wed</span>
+                            <span>Thu</span>
+                            <span>Fri</span>
+                            <span>Sat</span>
+                            <span>Sun</span>
+                        </div>
+                    </div>
+
+                    <div className="bg-surface p-4 rounded-ds-lg flex flex-col gap-4">
+                        <div className="text-sm text-muted">Cheap Week (No reference line)</div>
+                        <div className="price-sparkline">
+                            <div className="flex justify-around items-end h-full px-2">
+                                {[
+                                    { t: '70%', c: 'bg-good' },
+                                    { t: '75%', c: 'bg-good' },
+                                    { t: '80%', c: 'bg-good' },
+                                    { t: '85%', c: 'bg-good' },
+                                    { t: '90%', c: 'bg-good' },
+                                    { t: '80%', c: 'bg-good' },
+                                    { t: '75%', c: 'bg-good' },
+                                ].map((s, i) => (
+                                    <div key={i} className="relative w-full flex justify-center h-full">
+                                        <div className={`price-sparkline-block ${s.c}`} style={{ top: s.t }} />
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                        <div className="flex justify-around text-[9px] text-muted uppercase tracking-tighter">
+                            <span>Mon</span>
+                            <span>Tue</span>
+                            <span>Wed</span>
+                            <span>Thu</span>
+                            <span>Fri</span>
+                            <span>Sat</span>
+                            <span>Sun</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
             {/* Live Chart.js Example */}
             <section>
                 <h2 className="text-2xl font-semibold text-text mb-4">📈 Chart.js — Live Example</h2>

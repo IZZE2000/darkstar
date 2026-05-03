@@ -70,6 +70,7 @@ export default function Dashboard() {
     const [batteryCapacity, setBatteryCapacity] = useState<number>(0)
     const [avgLoad, setAvgLoad] = useState<{ kw: number; dailyKwh: number } | null>(null)
     const [currentSlotTarget, setCurrentSlotTarget] = useState<number>(0)
+    const [currentAction, setCurrentAction] = useState<string | undefined>(undefined)
     const [waterToday] = useState<{ kwh: number; source: string } | null>(null)
     const [comfortLevel, setComfortLevel] = useState<number>(0)
     const [vacationMode, setVacationMode] = useState<boolean>(false)
@@ -273,6 +274,11 @@ export default function Dashboard() {
                 })
                 if (currentSlot?.soc_target_percent !== undefined) {
                     setCurrentSlotTarget(currentSlot.soc_target_percent)
+                    let action = 'Hold'
+                    if ((currentSlot.charge_kw || 0) > 0.1) action = 'Charge'
+                    else if ((currentSlot.discharge_kw || 0) > 0.1) action = 'Discharge'
+                    else if ((currentSlot.export_kwh || 0) > 0.1) action = 'Export'
+                    setCurrentAction(action)
                 }
             }
 
@@ -764,6 +770,7 @@ export default function Dashboard() {
                         plannerMeta={plannerMeta}
                         batteryCycles={todayStats?.batteryCycles ?? null}
                         priceOutlook={priceOutlook}
+                        currentAction={currentAction}
                     />
                 </motion.div>
 

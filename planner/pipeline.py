@@ -480,6 +480,9 @@ class PlannerPipeline:
                 "base_factor": base_factor,
                 "effective_load_margin": effective_load_margin,
                 "raw_factor": raw_factor,  # Kept for visibility of D1 margin
+                "avg_deficit": s_index_debug.get("avg_deficit"),
+                "temp_adjustment": s_index_debug.get("temp_adjustment"),
+                "mean_temperature_c": s_index_debug.get("mean_temperature_c"),
                 "safety_floor": soc_debug,
             }
 

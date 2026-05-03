@@ -23,4 +23,10 @@ echo "🎨 Formatting frontend..."
 echo "🔍 Linting frontend..."
 (cd frontend && pnpm lint)
 
+echo "📝 Type-checking frontend..."
+(cd frontend && npx tsc --noEmit)
+
+echo "🧪 Running frontend tests..."
+(cd frontend && pnpm test)
+
 echo "✅ All checks passed!"

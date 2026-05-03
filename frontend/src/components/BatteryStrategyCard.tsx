@@ -1,3 +1,4 @@
+import { useState, useCallback } from 'react'
 import { ArrowRight, Gauge } from 'lucide-react'
 import Card from './Card'
 import { type PlannerSIndex, type PriceOutlookResponse } from '../lib/api'
@@ -15,6 +16,13 @@ interface BatteryStrategyCardProps {
     plannerMeta: PlannerMeta
     batteryCycles: number | null
     priceOutlook: PriceOutlookResponse | undefined
+    currentAction?: string
+}
+
+interface TooltipState {
+    text: string
+    x: number
+    y: number
 }
 
 export default function BatteryStrategyCard({
@@ -24,21 +32,191 @@ export default function BatteryStrategyCard({
     plannerMeta,
     batteryCycles,
     priceOutlook,
+    currentAction,
 }: BatteryStrategyCardProps) {
-    const hasPriceData = priceOutlook && priceOutlook.days.length > 0
+    const sIndex = plannerMeta?.s_index
+    const safetyFloor = sIndex?.safety_floor
+    const [tooltip, setTooltip] = useState<TooltipState | null>(null)
+
+    const showTooltip = useCallback((e: React.MouseEvent, text: string) => {
+        const rect = e.currentTarget.getBoundingClientRect()
+        setTooltip({
+            text,
+            x: rect.left + rect.width / 2,
+            y: rect.top,
+        })
+    }, [])
+
+    const hideTooltip = useCallback(() => setTooltip(null), [])
+
+    // 3.1 Pixel sparkline logic
+    const renderSparkline = () => {
+        if (!priceOutlook || !priceOutlook.days || priceOutlook.days.length === 0) {
+            return (
+                <div className="flex-1 flex items-center justify-center text-[11px] text-muted h-[100px]">
+                    Price data loading...
+                </div>
+            )
+        }
+
+        const days = priceOutlook.days.slice(0, 7)
+        const prices = days.map((d) => d.avg_spot_p50 ?? 0)
+        const minPrice = Math.min(...prices)
+        const maxPrice = Math.max(...prices)
+        const range = maxPrice - minPrice || 1
+
+        // Container is 100px (from CSS), with py-1 (4px top + 4px bottom padding)
+        // Available for block top: 4px to 86px (100 - 8 - 10)
+        // As percentage: 86/100 * 100 = 86%
+        const containerHeight = 100
+        const paddingY = 4 // py-1
+        const blockHeight = 10
+        const maxTopPx = paddingY + (containerHeight - 2 * paddingY - blockHeight) // 86px
+        const maxTopPercent = (maxTopPx / containerHeight) * 100 // 86%
+
+        return (
+            <div className="flex flex-col gap-1">
+                <div className="price-sparkline py-2">
+                    {priceOutlook.reference_avg != null && (
+                        <div
+                            className="price-sparkline-ref"
+                            style={{
+                                top: `${Math.max(0, Math.min(maxTopPercent, (1 - (priceOutlook.reference_avg - minPrice) / range) * 100))}%`,
+                            }}
+                        />
+                    )}
+                    <div className="flex justify-around items-end h-full px-1">
+                        {days.map((day, i) => {
+                            const price = day.avg_spot_p50 ?? 0
+                            const normalized = (price - minPrice) / range
+                            const top = (1 - normalized) * 100
+                            const colorClass =
+                                {
+                                    cheap: 'bg-good',
+                                    normal: 'bg-warn',
+                                    expensive: 'bg-bad',
+                                    unknown: 'bg-muted',
+                                }[day.level] || 'bg-muted'
+
+                            // Build tooltip with each value on separate line
+                            const tooltipLines = [`${day.day_label}: ${price.toFixed(1)} öre`]
+                            if (day.avg_spot_p10 != null) tooltipLines.push(`Min: ${day.avg_spot_p10.toFixed(1)} öre`)
+                            if (day.avg_spot_p90 != null) tooltipLines.push(`Max: ${day.avg_spot_p90.toFixed(1)} öre`)
+                            const tooltipText = tooltipLines.join('\n')
+
+                            return (
+                                <div
+                                    key={i}
+                                    className="relative w-full flex justify-center h-full"
+                                    onMouseEnter={(e) => showTooltip(e, tooltipText)}
+                                    onMouseLeave={hideTooltip}
+                                >
+                                    <div
+                                        className={`price-sparkline-block ${colorClass}`}
+                                        style={{ top: `${Math.max(0, Math.min(maxTopPercent, top))}%` }}
+                                    />
+                                </div>
+                            )
+                        })}
+                    </div>
+                </div>
+                <div className="flex justify-around text-[8px] text-muted uppercase tracking-tighter">
+                    {days.map((day, i) => (
+                        <div key={i} className="flex flex-col items-center">
+                            <span>{day.day_label.slice(0, 2)}</span>
+                            <span className="tabular-nums">
+                                {day.avg_spot_p50?.toFixed(day.avg_spot_p50 < 10 ? 1 : 0) ?? '—'}
+                            </span>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        )
+    }
+
+    // 3.5 SOC context line logic - dynamic based on price outlook
+    const renderSocContext = () => {
+        if (!currentAction) return null
+
+        const action = currentAction.toLowerCase()
+        const isCharging = action.includes('charge')
+        const isDischarging = action.includes('discharge') || action.includes('export')
+
+        let message = ''
+
+        if (isCharging && soc !== null && soc < socTarget) {
+            // Find cheap windows in the outlook
+            if (priceOutlook?.days?.length) {
+                const cheapDays = priceOutlook.days
+                    .slice(0, 7)
+                    .map((d, i) => ({ ...d, index: i }))
+                    .filter((d) => d.level === 'cheap')
+                    .map((d) => d.index + 1)
+
+                if (cheapDays.length > 0) {
+                    const start = cheapDays[0]
+                    const end = cheapDays[cheapDays.length - 1]
+                    message =
+                        start === end
+                            ? `charging ahead of cheap D${start}`
+                            : `charging ahead of cheap D${start}→D${end}`
+                } else {
+                    message = 'charging ahead of cheap window'
+                }
+            } else {
+                message = 'charging'
+            }
+        } else if (isDischarging && soc !== null && soc > socTarget) {
+            if (action.includes('export')) {
+                // Find peak price days
+                if (priceOutlook?.days?.length) {
+                    const peakDays = priceOutlook.days
+                        .slice(0, 7)
+                        .map((d, i) => ({ ...d, index: i }))
+                        .filter((d) => d.level === 'expensive')
+                        .map((d) => d.index + 1)
+
+                    if (peakDays.length > 0) {
+                        message = `exporting into peak D${peakDays.join(', ')}`
+                    } else {
+                        message = 'exporting into evening peak'
+                    }
+                } else {
+                    message = 'exporting into price peak'
+                }
+            } else {
+                // Find next charge window
+                if (priceOutlook?.days?.length) {
+                    const nextCheap = priceOutlook.days.slice(0, 7).findIndex((d) => d.level === 'cheap')
+                    if (nextCheap >= 0) {
+                        message = `discharging — next charge D${nextCheap + 1}`
+                    } else {
+                        message = 'discharging — next charge D2'
+                    }
+                } else {
+                    message = 'discharging — next charge D2'
+                }
+            }
+        } else if (action.includes('hold')) {
+            message = 'holding — price neutral'
+        }
+
+        if (!message) return null
+        return <div className="text-[10px] text-muted mt-0.5">{message}</div>
+    }
 
     return (
-        <Card className="p-4 flex flex-col h-full bg-surface">
-            {/* Card Header */}
-            <div className="flex items-center gap-2 mb-4">
-                <div className="p-1.5 rounded-lg bg-ai/10 text-ai">
+        <Card className="p-ds-4 flex flex-col h-full bg-surface">
+            {/* Header */}
+            <div className="flex items-center gap-2 mb-ds-3">
+                <div className="p-1.5 rounded-ds-sm bg-ai/10 text-ai">
                     <Gauge className="h-4 w-4" />
                 </div>
                 <span className="text-sm font-medium text-text">Battery & Strategy</span>
             </div>
 
-            {/* Battery SoC + Target */}
-            <div className="mb-5 flex flex-col gap-1.5">
+            {/* SOC Section */}
+            <div className="mb-ds-4">
                 <div className="flex items-center gap-3 text-5xl font-bold leading-none">
                     <span className={`${(soc ?? 0) > 50 ? 'text-good' : (soc ?? 0) > 20 ? 'text-warn' : 'text-bad'}`}>
                         {soc?.toFixed(0) ?? '—'}%
@@ -46,92 +224,88 @@ export default function BatteryStrategyCard({
                     <ArrowRight className="w-10 h-10 text-muted" strokeWidth={3} />
                     <span className="text-text">{socTarget?.toFixed(0) ?? '—'}%</span>
                 </div>
-                {batteryCapacity > 0 && (
+                <div className="flex flex-col mt-1">
                     <div className="text-[11px] text-muted">
-                        {soc != null ? ((soc / 100) * batteryCapacity).toFixed(1) : '—'} of {batteryCapacity.toFixed(1)}{' '}
-                        kWh
+                        {soc != null && batteryCapacity != null ? ((soc / 100) * batteryCapacity).toFixed(1) : '—'} of{' '}
+                        {batteryCapacity?.toFixed(1) ?? '—'} kWh
                     </div>
-                )}
+                    {renderSocContext()}
+                </div>
             </div>
 
-            {/* Strategy Metrics — 2×2 relaxed grid */}
-            <div className="grid grid-cols-2 gap-y-4 gap-x-3 mb-5 pb-5 border-b border-line/30">
-                <div>
-                    <div className="text-[9px] text-muted uppercase tracking-wider mb-1">S-Index</div>
-                    <div className="text-base font-semibold text-text">
-                        {plannerMeta?.s_index?.effective_load_margin || plannerMeta?.s_index?.risk_factor
-                            ? `x${(plannerMeta.s_index.effective_load_margin ?? plannerMeta.s_index.risk_factor ?? 1).toFixed(2)}`
-                            : '—'}
+            {/* Metrics Stack */}
+            <div className="flex flex-col gap-ds-3 mb-ds-4 pb-ds-4 border-b border-line/30">
+                {/* S-Index */}
+                <div className="flex flex-col">
+                    <div className="flex justify-between items-baseline">
+                        <span className="text-[9px] text-muted uppercase tracking-wider">S-Index</span>
+                        <span className="text-base font-semibold text-text">
+                            {sIndex?.effective_load_margin != null || sIndex?.risk_factor != null
+                                ? `x${(sIndex?.effective_load_margin ?? sIndex?.risk_factor ?? 1).toFixed(2)}`
+                                : '—'}
+                        </span>
+                    </div>
+                    {sIndex?.avg_deficit != null && (
+                        <div className="text-[10px] text-muted mt-0.5">
+                            base {sIndex.base_factor?.toFixed(2) ?? '1.00'} · deficit +
+                            {sIndex.avg_deficit?.toFixed(2) ?? '0.00'} · cold +
+                            {sIndex.temp_adjustment?.toFixed(2) ?? '0.00'}
+                        </div>
+                    )}
+                </div>
+
+                {/* Safety Floor */}
+                <div className="flex flex-col">
+                    <div className="flex justify-between items-baseline">
+                        <span className="text-[9px] text-muted uppercase tracking-wider">Safety Floor</span>
+                        <span className="text-base font-semibold text-text">
+                            {safetyFloor?.calculated_floor_kwh != null
+                                ? `${safetyFloor.calculated_floor_kwh.toFixed(1)} kWh`
+                                : '—'}
+                        </span>
+                    </div>
+                    {safetyFloor?.min_soc_kwh != null && (
+                        <div className="text-[10px] text-muted mt-0.5">
+                            min {safetyFloor.min_soc_kwh?.toFixed(1) ?? '0.0'} · deficit{' '}
+                            {safetyFloor.base_reserve_kwh?.toFixed(1) ?? '0.0'} · weather{' '}
+                            {safetyFloor.weather_buffer_kwh?.toFixed(1) ?? '0.0'}
+                        </div>
+                    )}
+                </div>
+
+                {/* Cycles + Tradable */}
+                <div className="flex justify-between gap-4">
+                    <div className="flex flex-col">
+                        <span className="text-[9px] text-muted uppercase tracking-wider">Cycles</span>
+                        <span className="text-sm font-semibold text-text">{batteryCycles?.toFixed(1) ?? '—'}</span>
+                    </div>
+                    <div className="flex flex-col items-end">
+                        <span className="text-[9px] text-muted uppercase tracking-wider">Tradable</span>
+                        <span className="text-sm font-semibold text-text">
+                            {safetyFloor?.calculated_floor_kwh != null && batteryCapacity != null
+                                ? `${Math.max(0, batteryCapacity - safetyFloor.calculated_floor_kwh).toFixed(1)} kWh`
+                                : '—'}
+                        </span>
                     </div>
                 </div>
-                <div>
-                    <div className="text-[9px] text-muted uppercase tracking-wider mb-1">Cycles</div>
-                    <div className="text-base font-semibold text-text">{batteryCycles?.toFixed(1) ?? '—'}</div>
-                </div>
-                {(() => {
-                    const safetyFloor = plannerMeta?.s_index?.safety_floor?.calculated_floor_kwh
-                    const tradableKwh =
-                        safetyFloor != null && batteryCapacity && batteryCapacity > 0
-                            ? Math.max(0, batteryCapacity - safetyFloor)
-                            : null
-                    return (
-                        <>
-                            <div>
-                                <div className="text-[9px] text-muted uppercase tracking-wider mb-1">Safety Floor</div>
-                                <div className="text-base font-semibold text-text">
-                                    {safetyFloor != null ? `${safetyFloor.toFixed(1)} kWh` : '—'}
-                                </div>
-                            </div>
-                            <div>
-                                <div className="text-[9px] text-muted uppercase tracking-wider mb-1">Tradable</div>
-                                <div className="text-base font-semibold text-text">
-                                    {tradableKwh != null ? `${tradableKwh.toFixed(1)} kWh` : '—'}
-                                </div>
-                            </div>
-                        </>
-                    )
-                })()}
             </div>
 
-            {/* Price Outlook — full-width horizontal bars */}
-            {hasPriceData && (
-                <div className="mt-auto">
-                    <div className="text-[9px] text-muted uppercase tracking-wider mb-2">7-Day Price Outlook</div>
-                    <div className="space-y-1">
-                        {priceOutlook.days.slice(0, 7).map((day) => {
-                            const barColor =
-                                {
-                                    cheap: 'bg-green-500/80',
-                                    normal: 'bg-amber-500/80',
-                                    expensive: 'bg-red-500/80',
-                                    unknown: 'bg-gray-500/50',
-                                }[day.level] || 'bg-gray-500/50'
-                            const pct = Math.min(100, Math.max(5, (day.avg_spot_p50 / 2) * 100))
-                            const opacityMap = { high: 1, medium: 0.7, low: 0.4 }
-                            const opacity = opacityMap[day.confidence as keyof typeof opacityMap] || 0.5
-                            return (
-                                <div key={day.date} className="flex items-center gap-2 group">
-                                    <span className="text-[10px] text-text w-7 text-right font-medium">
-                                        {day.day_label.slice(0, 3)}
-                                    </span>
-                                    <div className="flex-1 h-4 bg-surface2 rounded-sm overflow-hidden relative">
-                                        <div
-                                            className={`h-full rounded-sm ${barColor} transition-all`}
-                                            style={{ width: `${pct}%`, opacity }}
-                                        />
-                                    </div>
-                                    <span className="text-[10px] text-muted w-14 text-right tabular-nums">
-                                        {day.avg_spot_p50.toFixed(2)}
-                                    </span>
-                                </div>
-                            )
-                        })}
-                    </div>
+            {/* Price Sparkline Section */}
+            <div className="mt-auto">
+                <div className="flex justify-between items-center mb-1">
+                    <span className="text-[9px] text-muted uppercase tracking-wider">7-Day Price Outlook</span>
+                    {/* Removed "ref X¢" text - user requested removal */}
                 </div>
-            )}
-            {!hasPriceData && (
-                <div className="flex-1 flex items-center justify-center text-[11px] text-muted">
-                    Price data loading...
+                {renderSparkline()}
+            </div>
+
+            {/* React-based Tooltip */}
+            {tooltip && (
+                <div
+                    className="fixed z-[9999] -translate-x-1/2 -translate-y-full px-2 py-1 bg-text text-canvas text-[10px] rounded-ds-sm whitespace-pre-line text-left"
+                    style={{ left: tooltip.x, top: tooltip.y }}
+                >
+                    {tooltip.text}
                 </div>
             )}
         </Card>
