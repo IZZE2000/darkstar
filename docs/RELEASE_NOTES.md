@@ -1,4 +1,4 @@
-## [v2.6.3-beta] - Price Forecasting, Export Floor, Excess PV Dispatch & Planner Resilience
+## !!! PENDING RELEASE: [v2.6.3-beta]  - Price Forecasting, Export Floor, Excess PV Dispatch & Planner Resilience
 
 > [!IMPORTANT]
 > **Nordpool Spot Price Forecasting**
@@ -20,6 +20,9 @@
 
 - **Export Floor Constraint**
     - New `min_export_kw` parameter guarantees minimum grid export per slot — ideal for feed-in tariff obligations or contractual commitments. Configured via `config.yaml`.
+
+- **Dashboard Improvements**
+    - Updated the dashboard layout to better organize information and improve overall readability.
 
 - **Planner Diagnostics & Resilience**
     - Structured error taxonomy, preflight validation (catches misconfiguration before solving), automatic retry for transient failures, and soft constraints to prevent infeasibility when PV exceeds inverter AC capacity.

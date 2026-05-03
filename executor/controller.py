@@ -250,6 +250,13 @@ class Controller:
         max_charge = self.config.max_charge_w if unit == "W" else self.config.max_charge_a
         max_discharge = self.config.max_discharge_w if unit == "W" else self.config.max_discharge_a
 
+        # Override for self_consumption default fallback
+        # When no charge is planned (charge_value <= 0) and we fall back to self_consumption,
+        # we should use max charge instead of 0 to allow PV to charge the battery.
+        if mode_intent == "self_consumption" and charge_value <= 0:
+            charge_value = max_charge
+            write_charge = True
+
         reason = self._generate_reason(slot, mode_intent)
 
         return ControllerDecision(

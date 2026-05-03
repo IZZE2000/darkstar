@@ -15,6 +15,7 @@ from executor.config import (
 )
 from executor.controller import Controller, ControllerDecision, make_decision
 from executor.override import OverrideResult, OverrideType, SlotPlan, SystemState
+from executor.profiles import InverterProfile, ProfileBehavior, ProfileMetadata
 
 
 class TestControllerDecision:
@@ -234,6 +235,60 @@ class TestControllerFollowPlan:
 
         assert decision.water_temp == 40  # Off/minimum
 
+    def test_self_consumption_fallback_uses_max_charge(self, controller):
+        """Verify default self_consumption fallback sets charge_value to max_charge_a (not 0)
+        when nothing is planned and SoC is above target.
+        """
+        # When charge_kw is 0 and soc > target, it falls back to self_consumption
+        slot = SlotPlan(charge_kw=0.0, soc_target=50)
+        state = SystemState(current_soc_percent=80)
+
+        decision = controller.decide(slot, state)
+
+        assert decision.mode_intent == "self_consumption"
+        assert decision.charge_value == controller.config.max_charge_a
+        assert decision.write_charge_current is True
+
+    def test_self_consumption_fallback_uses_max_charge_w(self):
+        """Verify default self_consumption fallback sets charge_value to max_charge_w
+        when control_unit is 'W'.
+        """
+        config = ControllerConfig()
+        profile = InverterProfile(
+            metadata=ProfileMetadata(name="test", version="1.0"),
+            behavior=ProfileBehavior(control_unit="W"),
+        )
+        controller = Controller(config, InverterConfig(), profile=profile)
+
+        slot = SlotPlan(charge_kw=0.0, soc_target=50, export_kw=0.0, discharge_kw=0.0)
+        state = SystemState(current_soc_percent=80)
+
+        decision = controller.decide(slot, state)
+
+        assert decision.mode_intent == "self_consumption"
+        assert decision.charge_value == config.max_charge_w
+        assert decision.control_unit == "W"
+        assert decision.write_charge_current is True
+
+    def test_pv_surplus_uses_planned_charge_limit(self, controller):
+        """Verify PV surplus path (charge_kw > 0) still uses the planned charge_value
+        and is NOT overridden to max.
+        """
+        # When charge_kw > 0 and export_kw > 0, it uses self_consumption mode
+        # but should keep the planned charge limit.
+        planned_kw = 2.0
+        slot = SlotPlan(charge_kw=planned_kw, export_kw=1.0, discharge_kw=0.0)
+        state = SystemState()
+
+        decision = controller.decide(slot, state)
+
+        # 2kW at default 46V ≈ 43.47A -> rounds to 45A with default 5A step
+        expected_amps = 45.0
+
+        assert decision.mode_intent == "self_consumption"
+        assert decision.charge_value == expected_amps
+        assert decision.charge_value < controller.config.max_charge_a
+
 
 class TestControllerApplyOverride:
     """Test Controller._apply_override behavior."""
@@ -320,7 +375,6 @@ class TestControllerApplyOverride:
 
         assert decision.source == "plan"
         assert decision.mode_intent == "export"
-
 
 class TestCalculateChargeCurrent:
     """Test Controller._calculate_charge_current."""
