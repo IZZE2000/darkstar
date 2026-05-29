@@ -158,6 +158,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Update config.yaml version for HA Supervisor
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          sed -i "s/^version: .*/version: \"$VERSION\"/" darkstar/config.yaml
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add darkstar/config.yaml
+          git diff --staged --quiet || git commit -m "chore(release): bump addon version to $VERSION [skip ci]"
+          git push origin HEAD:main
+
       - name: Extract Release Notes
         id: extract_notes
         run: |
