@@ -21,7 +21,7 @@ WORKDIR /app
 
 # Install pnpm and build frontend
 COPY frontend/package.json frontend/pnpm-lock.yaml ./frontend/
-RUN npm install -g pnpm && cd frontend && pnpm install --frozen-lockfile
+RUN npm install -g pnpm@9 && cd frontend && pnpm install --frozen-lockfile
 
 # Install Python dependencies
 COPY requirements.txt ./
