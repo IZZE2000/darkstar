@@ -97,43 +97,6 @@ class TestOverrideEvaluatorManualOverride:
         assert result.override_type != OverrideType.MANUAL_OVERRIDE
 
 
-class TestOverrideEvaluatorLowSocExportPrevention:
-    """Test Priority 8.5: Low SoC export prevention."""
-
-    def test_export_planned_low_soc_triggers(self):
-        """Plan wants to export but SoC is dangerously low - prevent."""
-        evaluator = OverrideEvaluator(min_soc_floor=10.0, low_soc_threshold=20.0)
-        state = SystemState(current_soc_percent=15.0)  # Above floor, below threshold
-        slot = SlotPlan(export_kw=5.0)  # Plan wants to export
-
-        result = evaluator.evaluate(state, slot)
-
-        assert result.override_needed is True
-        assert result.override_type == OverrideType.LOW_SOC_EXPORT_PREVENTION
-        assert result.priority == 8.5
-        assert result.actions["grid_charging"] is False
-
-    def test_export_planned_soc_ok_no_trigger(self):
-        """Plan wants to export and SoC is healthy - allow."""
-        evaluator = OverrideEvaluator(low_soc_threshold=20.0)
-        state = SystemState(current_soc_percent=50.0)  # Healthy
-        slot = SlotPlan(export_kw=5.0)
-
-        result = evaluator.evaluate(state, slot)
-
-        assert result.override_type != OverrideType.LOW_SOC_EXPORT_PREVENTION
-
-    def test_no_export_planned_low_soc_no_trigger(self):
-        """No export planned - no prevention needed even at low SoC."""
-        evaluator = OverrideEvaluator(low_soc_threshold=20.0)
-        state = SystemState(current_soc_percent=15.0)
-        slot = SlotPlan(export_kw=0.0)  # No export
-
-        result = evaluator.evaluate(state, slot)
-
-        assert result.override_type != OverrideType.LOW_SOC_EXPORT_PREVENTION
-
-
 class TestOverrideEvaluatorSlotFailure:
     """Test Priority 8: Slot failure fallback."""
 
@@ -202,112 +165,43 @@ class TestOverrideEvaluatorSlotFailure:
         assert result.actions["soc_target"] == 50
 
 
-class TestOverrideEvaluatorExcessPVHeating:
-    """Test Priority 5: Excess PV heating."""
+class TestOverrideEvaluatorExcessPVHeatingRemoved:
+    """Verify EXCESS_PV_HEATING override was removed (now handled by planner)."""
 
-    def test_excess_pv_healthy_battery_triggers_heating(self):
-        """Excess PV with healthy battery and cold water triggers heating."""
-        evaluator = OverrideEvaluator(
-            excess_pv_threshold_kw=2.0,
-            water_temp_boost=70,  # Configured boost
-            water_temp_max=85,  # Configured max
-        )
-        state = SystemState(
-            current_pv_kw=5.0,
-            current_load_kw=2.0,  # Excess = 3 kW
-            current_soc_percent=95.0,  # Healthy (>= 95%)
-            current_water_temp=55.0,  # Below boost temp
-        )
+    def test_override_type_removed(self):
+        """EXCESS_PV_HEATING should no longer exist in OverrideType enum."""
+        assert not hasattr(OverrideType, "EXCESS_PV_HEATING")
 
-        result = evaluator.evaluate(state)
+    def test_excess_pv_params_removed(self):
+        """OverrideEvaluator should not accept excess_pv_threshold_kw."""
+        evaluator = OverrideEvaluator()
+        assert not hasattr(evaluator, "excess_pv_threshold_kw")
 
-        assert result.override_needed is True
-        assert result.override_type == OverrideType.EXCESS_PV_HEATING
-        assert result.priority == 5.0
-        # Should heat to MAX (dump load), not just boost
-        assert result.actions["water_temp"] == 85
-
-    def test_excess_pv_low_battery_no_heating(self):
-        """Excess PV but low battery - preserve battery instead of heating."""
-        evaluator = OverrideEvaluator(excess_pv_threshold_kw=2.0)
-        state = SystemState(
-            current_pv_kw=5.0,
-            current_load_kw=2.0,  # Excess = 3 kW
-            current_soc_percent=40.0,  # Below 50% threshold
-            current_water_temp=55.0,
-        )
-
-        result = evaluator.evaluate(state)
-
-        assert result.override_type != OverrideType.EXCESS_PV_HEATING
-
-    def test_no_excess_pv_no_heating(self):
-        """Without excess PV, no heating override."""
-        evaluator = OverrideEvaluator(excess_pv_threshold_kw=2.0)
-        state = SystemState(
-            current_pv_kw=3.0,
-            current_load_kw=3.0,  # No excess
-            current_soc_percent=60.0,
-            current_water_temp=55.0,
-        )
-
-        result = evaluator.evaluate(state)
-
-        assert result.override_type != OverrideType.EXCESS_PV_HEATING
-
-    def test_water_already_hot_no_heating(self):
-        """Water already at MAX temp - no need to heat more."""
-        evaluator = OverrideEvaluator(
-            excess_pv_threshold_kw=2.0,
-            water_temp_boost=70,
-            water_temp_max=85,
-        )
+    def test_excess_pv_no_longer_triggers(self):
+        """Excess PV conditions should not trigger any override (handled by planner)."""
+        evaluator = OverrideEvaluator()
         state = SystemState(
             current_pv_kw=5.0,
             current_load_kw=2.0,
-            current_soc_percent=60.0,
-            current_water_temp=86.0,  # Already above MAX
+            current_soc_percent=95.0,
+            current_water_temp=55.0,
         )
 
         result = evaluator.evaluate(state)
 
-        assert result.override_type != OverrideType.EXCESS_PV_HEATING
+        assert result.override_needed is False
+        assert result.override_type == OverrideType.NONE
 
-    def test_no_water_heater_skips_heating(self):
-        """No water heater configured - skip PV heating override."""
-        evaluator = OverrideEvaluator(
-            excess_pv_threshold_kw=2.0,
-            water_temp_max=85,
-        )
+    def test_evaluate_overrides_no_excess_pv_param(self):
+        """evaluate_overrides should not require excess_pv_threshold_kw."""
         state = SystemState(
-            has_water_heater=False,
             current_pv_kw=5.0,
-            current_load_kw=2.0,  # Excess = 3 kW
-            current_soc_percent=95.0,  # Healthy
+            current_load_kw=2.0,
         )
 
-        result = evaluator.evaluate(state)
+        result = evaluate_overrides(state, config={"min_soc_floor": 10.0})
 
-        assert result.override_type != OverrideType.EXCESS_PV_HEATING
-
-    def test_water_heater_enabled_triggers_heating(self):
-        """Water heater configured - PV heating override can trigger."""
-        evaluator = OverrideEvaluator(
-            excess_pv_threshold_kw=2.0,
-            water_temp_max=85,
-        )
-        state = SystemState(
-            has_water_heater=True,
-            current_pv_kw=5.0,
-            current_load_kw=2.0,  # Excess = 3 kW
-            current_soc_percent=95.0,  # Healthy
-            current_water_temp=55.0,  # Below max
-        )
-
-        result = evaluator.evaluate(state)
-
-        assert result.override_type == OverrideType.EXCESS_PV_HEATING
-        assert result.actions["water_temp"] == 85
+        assert result.override_needed is False
 
 
 class TestOverrideEvaluatorNoOverride:
@@ -334,31 +228,17 @@ class TestOverrideEvaluatorNoOverride:
 class TestOverridePriority:
     """Test that higher priority overrides take precedence."""
 
-    def test_manual_override_beats_low_soc_export_prevention(self):
-        """Manual override (10) should win over low SoC export prevention (8.5)."""
-        evaluator = OverrideEvaluator(low_soc_threshold=20.0)
+    def test_manual_override_beats_slot_failure(self):
+        """Manual override (10) should win over slot failure (8)."""
+        evaluator = OverrideEvaluator()
         state = SystemState(
-            current_soc_percent=15.0,  # Would trigger low SoC export prevention
+            slot_exists=False,  # Would trigger slot failure
             manual_override_active=True,  # But manual is higher priority
         )
-        slot = SlotPlan(export_kw=5.0)
 
-        result = evaluator.evaluate(state, slot)
+        result = evaluator.evaluate(state)
 
         assert result.override_type == OverrideType.MANUAL_OVERRIDE
-
-    def test_low_soc_export_prevention_beats_slot_failure(self):
-        """Low SoC export prevention (8.5) should win over slot failure (8)."""
-        evaluator = OverrideEvaluator(low_soc_threshold=20.0)
-        state = SystemState(
-            current_soc_percent=15.0,  # Low SoC
-            slot_exists=False,  # Also slot failure
-        )
-        slot = SlotPlan(export_kw=5.0)  # Trying to export
-
-        result = evaluator.evaluate(state, slot)
-
-        assert result.override_type == OverrideType.LOW_SOC_EXPORT_PREVENTION
 
 
 class TestEvaluateOverridesConvenienceFunction:
@@ -379,15 +259,15 @@ class TestEvaluateOverridesConvenienceFunction:
 
         result = evaluate_overrides(state, config=config)
 
-        # Emergency charge removed - low SoC does not trigger override
+        assert isinstance(result, OverrideResult)
         assert result.override_needed is False
 
     def test_with_slot_plan(self):
         """Works with slot plan provided."""
-        state = SystemState(current_soc_percent=15.0)
+        state = SystemState(current_soc_percent=50.0)
         slot = SlotPlan(export_kw=5.0)
-        config = {"low_soc_threshold": 20.0}
 
-        result = evaluate_overrides(state, slot, config)
+        result = evaluate_overrides(state, slot)
 
-        assert result.override_type == OverrideType.LOW_SOC_EXPORT_PREVENTION
+        assert isinstance(result, OverrideResult)
+        assert result.override_needed is False

@@ -11,6 +11,7 @@ import {
     Target,
     BarChart3,
     AlertCircle,
+    DollarSign,
 } from 'lucide-react'
 import Card from '../components/Card'
 import DecompositionChart from '../components/DecompositionChart'
@@ -21,7 +22,13 @@ import SystemHealthCard from '../components/SystemHealthCard'
 import ModelTrainingCard from '../components/aurora/ModelTrainingCard'
 import { Bar } from 'react-chartjs-2'
 import { Api } from '../lib/api'
-import type { AuroraDashboardResponse, SchedulerStatusResponse, AuroraPerformanceData } from '../lib/api'
+import type {
+    AuroraDashboardResponse,
+    SchedulerStatusResponse,
+    AuroraPerformanceData,
+    PriceForecastSlot,
+    PriceAccuracyResponse,
+} from '../lib/api'
 
 // Import ChartJS components for the inline charts
 import {
@@ -45,11 +52,15 @@ export default function Aurora() {
     const [schedulerStatus, setSchedulerStatus] = useState<SchedulerStatusResponse | null>(null)
     const [loading, setLoading] = useState(false)
     const [riskAppetite, setRiskAppetite] = useState<number>(3)
-    const [chartMode, setChartMode] = useState<'load' | 'pv'>('pv')
+    const [chartMode, setChartMode] = useState<'load' | 'pv' | 'price'>('pv')
     const [reflexEnabled, setReflexEnabled] = useState<boolean>(false)
     const [togglingReflex, setTogglingReflex] = useState(false)
     const [probabilisticMode, setProbabilisticMode] = useState<boolean>(false)
     const [togglingProbabilistic, setTogglingProbabilistic] = useState(false)
+    const [priceForecastEnabled, setPriceForecastEnabled] = useState<boolean>(false)
+    const [priceForecastSlots, setPriceForecastSlots] = useState<PriceForecastSlot[]>([])
+    const [priceForecastLoading, setPriceForecastLoading] = useState(false)
+    const [priceAccuracy, setPriceAccuracy] = useState<PriceAccuracyResponse | undefined>(undefined)
 
     // Performance Data State
     const [perfData, setPerfData] = useState<AuroraPerformanceData | null>(null)
@@ -84,7 +95,38 @@ export default function Aurora() {
             }
         }
         fetchSchedulerStatus()
+
+        const fetchPriceForecastStatus = async () => {
+            try {
+                const res = await Api.priceForecast.priceForecastStatus()
+                setPriceForecastEnabled(res.enabled)
+            } catch {
+                setPriceForecastEnabled(false)
+            }
+        }
+        fetchPriceForecastStatus()
+
+        const fetchPriceAccuracy = async () => {
+            try {
+                const res = await Api.priceForecast.accuracy()
+                setPriceAccuracy(res)
+            } catch (err) {
+                console.error('Failed to load price accuracy:', err)
+            }
+        }
+        fetchPriceAccuracy()
     }, [])
+
+    useEffect(() => {
+        if (chartMode === 'price' && priceForecastSlots.length === 0) {
+            setPriceForecastLoading(true)
+            Api.priceForecast
+                .forecasts(true)
+                .then((res) => setPriceForecastSlots(res.forecasts ?? []))
+                .catch((err) => console.error('Failed to load price forecasts:', err))
+                .finally(() => setPriceForecastLoading(false))
+        }
+    }, [chartMode, priceForecastSlots.length])
 
     useEffect(() => {
         // Fetch Performance Data (merged from Performance.tsx)
@@ -287,7 +329,7 @@ export default function Aurora() {
             </div>
 
             {/* 1.5 KPI STRIP */}
-            <KPIStrip metrics={dashboard?.metrics} perfData={perfData} />
+            <KPIStrip metrics={dashboard?.metrics} perfData={perfData} priceAccuracy={priceAccuracy} />
 
             {/* 2. THE DASHBOARD (Middle Section) */}
             <div className="grid gap-4 lg:grid-cols-12 lg:h-[450px]">
@@ -497,11 +539,15 @@ export default function Aurora() {
                 <Card className="lg:col-span-12 p-4 flex flex-col h-[350px] overflow-hidden">
                     <div className="flex items-center justify-between mb-3 shrink-0">
                         <div>
-                            <div className="text-xs font-medium text-text">Forecast Horizon (3 Days)</div>
+                            <div className="text-xs font-medium text-text">
+                                {`Forecast Horizon (${chartMode === 'price' ? '7' : '3'} Days)`}
+                            </div>
                             <div className="text-[11px] text-muted">
-                                {probabilisticMode
-                                    ? `Probabilistic View (${chartMode.toUpperCase()})`
-                                    : `Decomposition View (${chartMode.toUpperCase()})`}
+                                {chartMode === 'price'
+                                    ? 'Price Forecast'
+                                    : probabilisticMode
+                                      ? `Probabilistic View (${chartMode.toUpperCase()})`
+                                      : `Decomposition View (${chartMode.toUpperCase()})`}
                                 {' • '}
                                 {new Date().toISOString().slice(0, 10)} -{' '}
                                 {new Date(originalHorizonEnd).toISOString().slice(0, 10)}
@@ -525,6 +571,15 @@ export default function Aurora() {
                                 >
                                     <SunMedium className="h-3 w-3" />
                                 </button>
+                                {priceForecastEnabled && (
+                                    <button
+                                        type="button"
+                                        className={`px-2 py-0.5 rounded-full ${chartMode === 'price' ? 'bg-accent text-[#0F1216]' : 'text-muted'}`}
+                                        onClick={() => setChartMode('price')}
+                                    >
+                                        <DollarSign className="h-3 w-3" />
+                                    </button>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -532,6 +587,30 @@ export default function Aurora() {
                     <div className="flex-1 min-h-0">
                         {loading ? (
                             <div className="text-[11px] text-muted">Loading...</div>
+                        ) : chartMode === 'price' ? (
+                            priceForecastLoading ? (
+                                <div className="text-[11px] text-muted">Loading price forecast...</div>
+                            ) : priceForecastSlots.length === 0 ? (
+                                <div className="text-[11px] text-muted">No price forecast data available</div>
+                            ) : (
+                                <div className="h-full w-full">
+                                    <ProbabilisticChart
+                                        title=""
+                                        color="#FFCE59"
+                                        showOpenMeteo={false}
+                                        dateAxisMode
+                                        allowNegativeY
+                                        slots={priceForecastSlots.map((s) => ({
+                                            time: s.slot_start,
+                                            p10: s.spot_p10,
+                                            p50: s.spot_p50,
+                                            p90: s.spot_p90,
+                                            actual: s.actual_spot ?? null,
+                                            open_meteo_kwh: null,
+                                        }))}
+                                    />
+                                </div>
+                            )
                         ) : probabilisticMode ? (
                             <div className="h-full w-full">
                                 <ProbabilisticChart

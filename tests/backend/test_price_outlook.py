@@ -44,10 +44,10 @@ class TestGetDailyOutlook(unittest.TestCase):
             )
         """)
 
-        # Insert test data for D+1 through D+7
+        # Insert test data for D+1 through D+7 using future dates relative to today
         from datetime import datetime, timedelta
 
-        base_date = datetime(2026, 3, 30)
+        base_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         for day_offset in range(1, 8):
             current_date = base_date + timedelta(days=day_offset)
             date = current_date.strftime("%Y-%m-%d")
@@ -73,21 +73,27 @@ class TestGetDailyOutlook(unittest.TestCase):
         """Test that daily aggregation calculates correct averages."""
         print("\n--- Testing Daily Aggregation ---")
 
+        from datetime import datetime, timedelta
+
         result = get_daily_outlook(self.db_path)
 
         self.assertEqual(len(result), 7)
 
-        # Check D+1 (2026-03-31)
+        # Check D+1
         day1 = result[0]
-        self.assertEqual(day1["date"], "2026-03-31")
+        expected_date_1 = (
+            datetime.now().replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+        ).strftime("%Y-%m-%d")
+        self.assertEqual(day1["date"], expected_date_1)
         self.assertEqual(day1["days_ahead"], 1)
         self.assertAlmostEqual(day1["avg_spot_p50"], 0.45, places=2)
 
-        # Check D+7 (2026-04-05) - base is 2026-03-30, +7 days = 2026-04-06 but since we use range(1,8) it's actually 2026-04-05
-        # Let me verify: base_date = 2026-03-30
-        # day_offset = 7: current_date = 2026-03-30 + 7 days = 2026-04-06
+        # Check D+7
         day7 = result[6]
-        self.assertEqual(day7["date"], "2026-04-06")
+        expected_date_7 = (
+            datetime.now().replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=7)
+        ).strftime("%Y-%m-%d")
+        self.assertEqual(day7["date"], expected_date_7)
         self.assertEqual(day7["days_ahead"], 7)
         self.assertAlmostEqual(day7["avg_spot_p50"], 0.75, places=2)
 

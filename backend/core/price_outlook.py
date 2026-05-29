@@ -9,6 +9,8 @@ import logging
 from datetime import datetime
 from typing import Any
 
+import pytz
+
 from backend.core.forecasts import get_forecast_db_path
 
 logger = logging.getLogger("darkstar.price_outlook")
@@ -100,10 +102,31 @@ def get_daily_outlook(db_path: str | None = None) -> list[dict[str, Any]]:
             if spot_p90 is not None:
                 daily_data[date_str]["p90_values"].append(spot_p90)
 
+        # Calculate today's date in configured timezone
+        tz_name = "Europe/Stockholm"
+        try:
+            from backend.core.secrets import load_yaml
+
+            config = load_yaml("config.yaml")
+            tz_name = config.get("timezone", "Europe/Stockholm")
+        except Exception:
+            pass
+        tz = pytz.timezone(tz_name)
+        today_str = datetime.now(tz).strftime("%Y-%m-%d")
+
         # Calculate aggregates for each day
         result: list[dict[str, Any]] = []
         for date_str in sorted(daily_data.keys()):
             day_data = daily_data[date_str]
+
+            # Filter out stale dates (before today)
+            if date_str < today_str:
+                continue
+
+            # Recalculate days_ahead from actual date difference
+            days_ahead = (
+                datetime.strptime(date_str, "%Y-%m-%d").date() - datetime.now(tz).date()
+            ).days
 
             p50_values = day_data["p50_values"]
             p10_values = day_data["p10_values"]
@@ -116,7 +139,7 @@ def get_daily_outlook(db_path: str | None = None) -> list[dict[str, Any]]:
                 {
                     "date": day_data["date"],
                     "day_label": day_data["day_label"],
-                    "days_ahead": day_data["days_ahead"],
+                    "days_ahead": days_ahead,
                     "avg_spot_p50": sum(p50_values) / len(p50_values),
                     "avg_spot_p10": sum(p10_values) / len(p10_values) if p10_values else None,
                     "avg_spot_p90": sum(p90_values) / len(p90_values) if p90_values else None,
@@ -125,8 +148,19 @@ def get_daily_outlook(db_path: str | None = None) -> list[dict[str, Any]]:
                 }
             )
 
-        # Limit to 7 days maximum, ensure sorted by days_ahead
-        result = sorted(result, key=lambda x: x["days_ahead"])[:7]
+        # Deduplicate by date, keep first occurrence (SQL ordered by slot_start DESC,
+        # so the last aggregate wins for duplicate dates from multiple forecast runs)
+        seen_dates: set[str] = set()
+        deduped: list[dict[str, Any]] = []
+        for entry in reversed(result):
+            if entry["date"] not in seen_dates:
+                seen_dates.add(entry["date"])
+                deduped.append(entry)
+        deduped.reverse()
+
+        # Sort by date and limit to 7 days
+        deduped.sort(key=lambda x: x["date"])
+        result = deduped[:7]
 
         return result
 

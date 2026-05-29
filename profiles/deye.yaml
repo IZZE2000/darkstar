@@ -108,7 +108,7 @@ modes:
       - entity: "grid_charging_enable"
         value: off
       - entity: "max_discharge_current"
-        value: 0
+        value: 15 #In order to satisfy grid profile EN50549_1., otherwise it cuts off PV when 100% SoC.
       - entity: "max_charge_current"
         value: "{{max_charge}}"
       - entity: "soc_target"

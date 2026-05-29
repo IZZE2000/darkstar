@@ -45,7 +45,7 @@ battery:
   max_charge_w: 5000.0                # Max charging power (W)
   max_discharge_w: 5000.0             # Max discharging power (W)
   min_soc_percent: 12
-  max_soc_percent: 100                # Planner target ceiling
+  max_soc_percent: 100                # Soft penalty ceiling — planner prefers to stay below, but overshoots are allowed with a discharge action rather than failure. BMS enforces the absolute limit.
   # NOTE: Used only in planner/simulation.py. Separate from charge_efficiency
   # which is used by the MILP solver. Derives one-way efficiency as sqrt(roundtrip).
   roundtrip_efficiency_percent: 95.0
@@ -160,6 +160,7 @@ s_index:
 
 export:
   enable_export: true              # Master switch for grid export (if false, planner enforces 0 export)
+  export_floor_soc_percent: 20     # Min SoC % required to allow grid export (planner constraint)
 
 # Manual Planning Defaults
 manual_planning:
@@ -344,17 +345,20 @@ executor:
   # Override Configuration (real-time safety triggers)
   # These settings control when the executor overrides the planned schedule
   # to protect the battery or utilize excess energy.
-  override:
-    # Export prevention floor: Stop exporting if SoC drops to this level.
-    # This is a safety buffer ABOVE your min_soc to prevent excessive discharge.
-    # Example: If min_soc=5% and low_soc_export_floor=15%, export stops at 15%
-    # but emergency charge only triggers if SoC drops BELOW 5%.
-    low_soc_export_floor: 20           # SoC % at which to prevent planned exports
+  override: {}
 
-    # Excess PV threshold: Minimum surplus PV power (kW) to trigger water heating.
-    # When PV production exceeds load by this amount AND battery is >95%,
-    # the executor will heat water to dump free solar energy.
-    excess_pv_threshold_kw: 2.0        # Surplus PV (kW) needed to trigger PV dump
+  # Excess PV Dispatch
+  # Configures how forecast excess PV energy is utilized.
+  # The planner proactively schedules excess PV into the chosen sink.
+  excess_pv:
+    sink: disabled                     # Sink type: water_heater_boost | custom_entity | disabled
+    boost_reward_sek_per_kwh: 0.5      # Reward for using excess PV at sink vs exporting (SEK/kWh)
+    soc_threshold_percent: 95          # Battery SoC % required before sink activates (default 95)
+    custom_entity:
+      entity: ""                       # Home Assistant entity ID (e.g., switch.pool_pump)
+      on_value: "1"                    # Value to set when excess PV is available
+      off_value: "0"                   # Value to set when excess PV is not available
+      power_kw: 1.0                    # Estimated power consumption (kW) — used by solver for reward sizing
 
 # =============================================================================
 # UI Settings

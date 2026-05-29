@@ -3,10 +3,15 @@ export type PlannerSIndex = {
     risk_factor?: number
     factor?: number
     adjusted_factor?: number
+    avg_deficit?: number
+    temp_adjustment?: number
+    mean_temperature_c?: number
+    base_factor?: number
     safety_floor?: {
         method?: string
         deficit_ratio?: number
         calculated_floor_kwh?: number
+        min_soc_kwh?: number
         base_reserve_kwh?: number
         weather_buffer_kwh?: number
         risk_multiplier?: number
@@ -61,8 +66,13 @@ export type ConfigResponse = {
         inverter_profile?: string
         battery?: { capacity_kwh?: number }
         solar_array?: { kwp?: number }
+        solar_arrays?: { kwp?: number; name?: string }[]
         grid?: { max_power_kw?: number }
         inverter?: { max_power_kw?: number }
+        has_solar?: boolean
+        has_battery?: boolean
+        has_water_heater?: boolean
+        has_ev_charger?: boolean
     }
     // Battery is also at root level in actual API response
     battery?: { capacity_kwh?: number; min_soc_percent?: number; max_soc_percent?: number }
@@ -377,8 +387,10 @@ export type ThemeResponse = {
 }
 
 export type AdviceResponse = {
-    advice: string
-    report: unknown
+    advice: AdviceItem[]
+    count?: number
+    source?: string
+    report?: unknown
 }
 
 export type AnalystReport = {
@@ -405,6 +417,9 @@ export type HealthIssue = {
     message: string
     guidance: string
     entity_id?: string | null
+    code?: string | null
+    details?: Record<string, unknown> | null
+    retry_in_s?: number | null
 }
 
 export type HealthResponse = {
@@ -454,6 +469,40 @@ export type PriceOutlookResponse = {
     days: PriceOutlookDay[]
     reference_avg: number | null
     status: string
+}
+
+export type PriceAccuracyResponse = {
+    enabled: boolean
+    d1_mae: number | null
+    d1_bias: number | null
+    sample_days: number
+    status: string
+}
+
+export type PriceForecastSlot = {
+    slot_start: string
+    days_ahead: number
+    spot_p10: number | null
+    spot_p50: number | null
+    spot_p90: number | null
+    import_p50: number | null
+    export_p50: number | null
+    actual_spot?: number | null
+}
+
+export type PriceForecastStatusResponse = {
+    enabled: boolean
+    config: {
+        min_training_samples: number
+        model_name: string
+    }
+    model_available: boolean
+    model_info: {
+        name: string
+        size_bytes: number
+        last_modified: string
+    } | null
+    training_samples_count: number
 }
 
 export type AdviceItem = {
@@ -702,6 +751,12 @@ export const Api = {
     // Price Forecast (Tasks 3.2)
     priceForecast: {
         outlook: () => getJSON<PriceOutlookResponse>('/api/price-forecast/outlook'),
+        accuracy: () => getJSON<PriceAccuracyResponse>('/api/price-forecast/accuracy'),
+        forecasts: (includeActuals?: boolean) =>
+            getJSON<{ status: string; message: string; forecasts: PriceForecastSlot[] }>(
+                '/api/price-forecast' + (includeActuals ? '?include_actuals=true' : ''),
+            ),
+        priceForecastStatus: () => getJSON<PriceForecastStatusResponse>('/api/price-forecast/status'),
     },
 }
 

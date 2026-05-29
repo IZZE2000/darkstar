@@ -22,8 +22,6 @@ import { SystemAlert } from './components/SystemAlert'
 import { ToastProvider } from './components/ui/Toast'
 import { StartupWizard } from './components/startup/StartupWizard'
 
-const isEmbedMode = new URLSearchParams(window.location.search).get('embed') === 'true'
-
 function RootLayout() {
     const [backendOffline, setBackendOffline] = useState(false)
     const [healthStatus, setHealthStatus] = useState<HealthResponse | null>(null)
@@ -102,10 +100,10 @@ function RootLayout() {
 
     return (
         <>
-            {!isEmbedMode && <Sidebar />}
-            <div className={isEmbedMode ? '' : 'lg:pl-[96px]'}>
-                {/* Show health alerts if not fully healthy */}
-                {healthStatus && !healthStatus.healthy && <SystemAlert health={healthStatus} />}
+            <Sidebar />
+            <div className="lg:pl-[96px]">
+                {/* Show health alerts whenever issues exist (critical or warning) */}
+                {healthStatus && healthStatus.issues.length > 0 && <SystemAlert health={healthStatus} />}
 
                 {/* REV UI23: Show config incomplete warning banner */}
                 {configWarnings?.warnings && configWarnings.warnings.length > 0 && (

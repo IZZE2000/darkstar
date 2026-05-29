@@ -11,6 +11,7 @@ This module generates 7-day price forecasts by:
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -19,13 +20,15 @@ import lightgbm as lgb
 import numpy as np
 import pandas as pd
 import pytz
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, func
 from sqlalchemy.orm import sessionmaker
 
 from backend.core.prices import calculate_import_export_prices
 from backend.learning.models import PriceForecast
 from ml.price_features import build_price_features_batch
 from ml.weather import compute_regional_wind_index, get_regional_weather
+
+logger = logging.getLogger(__name__)
 
 
 def derive_consumer_prices(
@@ -286,6 +289,48 @@ def _persist_forecasts(forecasts: list[dict[str, Any]], db_path: str) -> None:
         print(f"Error persisting forecasts: {exc}")
 
 
+def cleanup_price_forecast_duplicates(
+    db_path: str = "data/planner_learning.db",
+) -> int:
+    """
+    Delete all but the latest issue_timestamp row per (slot_start, days_ahead) pair.
+
+    Returns the number of rows deleted.
+    """
+    engine = create_engine(f"sqlite:///{db_path}")
+    SessionLocal = sessionmaker(bind=engine)
+    session = SessionLocal()
+
+    latest_per_slot = (
+        session.query(
+            PriceForecast.slot_start,
+            PriceForecast.days_ahead,
+            func.max(PriceForecast.issue_timestamp).label("latest_issue"),
+        )
+        .group_by(PriceForecast.slot_start, PriceForecast.days_ahead)
+        .subquery()
+    )
+
+    duplicates = (
+        session.query(PriceForecast)
+        .join(
+            latest_per_slot,
+            (PriceForecast.slot_start == latest_per_slot.c.slot_start)
+            & (PriceForecast.days_ahead == latest_per_slot.c.days_ahead),
+        )
+        .filter(PriceForecast.issue_timestamp != latest_per_slot.c.latest_issue)
+        .all()
+    )
+
+    count = len(duplicates)
+    for row in duplicates:
+        session.delete(row)
+
+    session.commit()
+    session.close()
+    return count
+
+
 async def get_price_forecasts_from_db(
     db_path: str = "data/planner_learning.db",
     days_ahead: int | None = None,
@@ -307,34 +352,67 @@ async def get_price_forecasts_from_db(
         SessionLocal = sessionmaker(bind=engine)
         session = SessionLocal()
 
-        query = session.query(PriceForecast)
-
         if days_ahead is not None:
-            query = query.filter(PriceForecast.days_ahead == days_ahead)
+            latest_per_slot = (
+                session.query(
+                    PriceForecast.slot_start,
+                    func.max(PriceForecast.issue_timestamp).label("latest_issue"),
+                )
+                .filter(PriceForecast.days_ahead == days_ahead)
+                .group_by(PriceForecast.slot_start)
+                .subquery()
+            )
+            query = (
+                session.query(PriceForecast)
+                .join(
+                    latest_per_slot,
+                    (PriceForecast.slot_start == latest_per_slot.c.slot_start)
+                    & (PriceForecast.issue_timestamp == latest_per_slot.c.latest_issue),
+                )
+                .filter(PriceForecast.days_ahead == days_ahead)
+            )
+        else:
+            latest_per_slot = (
+                session.query(
+                    PriceForecast.slot_start,
+                    PriceForecast.days_ahead,
+                    func.max(PriceForecast.issue_timestamp).label("latest_issue"),
+                )
+                .group_by(PriceForecast.slot_start, PriceForecast.days_ahead)
+                .subquery()
+            )
+            query = session.query(PriceForecast).join(
+                latest_per_slot,
+                (PriceForecast.slot_start == latest_per_slot.c.slot_start)
+                & (PriceForecast.days_ahead == latest_per_slot.c.days_ahead)
+                & (PriceForecast.issue_timestamp == latest_per_slot.c.latest_issue),
+            )
 
         query = query.order_by(PriceForecast.slot_start.desc()).limit(limit)
 
         results = query.all()
 
-        forecasts: list[dict[str, Any]] = []
+        best_by_slot: dict[str, dict[str, Any]] = {}
         for pf in results:
-            forecasts.append(
-                {
-                    "slot_start": pf.slot_start,
-                    "issue_timestamp": pf.issue_timestamp,
-                    "days_ahead": pf.days_ahead,
-                    "spot_p10": pf.spot_p10,
-                    "spot_p50": pf.spot_p50,
-                    "spot_p90": pf.spot_p90,
-                    "wind_index": pf.wind_index,
-                    "temperature_c": pf.temperature_c,
-                    "cloud_cover": pf.cloud_cover,
-                    "radiation_wm2": pf.radiation_wm2,
-                }
-            )
+            row = {
+                "slot_start": pf.slot_start,
+                "issue_timestamp": pf.issue_timestamp,
+                "days_ahead": pf.days_ahead,
+                "spot_p10": pf.spot_p10,
+                "spot_p50": pf.spot_p50,
+                "spot_p90": pf.spot_p90,
+                "wind_index": pf.wind_index,
+                "temperature_c": pf.temperature_c,
+                "cloud_cover": pf.cloud_cover,
+                "radiation_wm2": pf.radiation_wm2,
+            }
+            key = pf.slot_start
+            existing = best_by_slot.get(key)
+            if existing is None or pf.issue_timestamp > existing["issue_timestamp"]:
+                best_by_slot[key] = row
 
         session.close()
-        return forecasts
+        return list(best_by_slot.values())
 
     except Exception as exc:
         print(f"Error retrieving forecasts: {exc}")
@@ -361,6 +439,40 @@ async def get_d1_price_forecast_fallback(
 
         # Filter out weather-only rows (null-prediction rows)
         valid_forecasts = [f for f in forecasts if f.get("spot_p50") is not None]
+
+        # Deduplicate on slot_start (defence-in-depth against DB duplicates leaking through)
+        seen: set[str] = set()
+        deduped: list[dict[str, Any]] = []
+        for f in valid_forecasts:
+            slot = f["slot_start"]
+            if slot not in seen:
+                seen.add(slot)
+                deduped.append(f)
+        if len(deduped) < len(valid_forecasts):
+            logger.warning(
+                "get_d1_price_forecast_fallback dropped %d duplicate slot_start entries",
+                len(valid_forecasts) - len(deduped),
+            )
+        valid_forecasts = deduped
+
+        # Filter out stale slots (date <= today)
+        today_local = datetime.now(pytz.timezone(config.get("timezone", "Europe/Stockholm"))).date()
+        future_forecasts: list[dict[str, Any]] = []
+        for f in valid_forecasts:
+            slot_dt = f["slot_start"]
+            if isinstance(slot_dt, str):
+                slot_dt = datetime.fromisoformat(slot_dt)
+            slot_date = slot_dt.date() if hasattr(slot_dt, "date") else None
+            if slot_date and slot_date > today_local:
+                future_forecasts.append(f)
+
+        stale_count = len(valid_forecasts) - len(future_forecasts)
+        if stale_count > 0:
+            logger.info(
+                "get_d1_price_forecast_fallback discarded %d stale slots (date <= today)",
+                stale_count,
+            )
+        valid_forecasts = future_forecasts
 
         if not valid_forecasts:
             return None

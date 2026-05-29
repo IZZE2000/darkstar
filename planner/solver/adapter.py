@@ -119,6 +119,9 @@ def build_ev_charger_inputs(
     """
     enabled_ev: list[dict[str, Any]] = [ev for ev in ev_chargers_config if ev.get("enabled", True)]
 
+    # Filter out chargers registered as disabled (missing/zero max_power_kw)
+    enabled_ev = [ev for ev in enabled_ev if not ev.get("disabled_reason")]
+
     # Build state lookup by charger ID
     state_by_id: dict[str, dict[str, Any]] = {}
     if ev_charger_states:
@@ -153,7 +156,7 @@ def build_ev_charger_inputs(
         result.append(
             EVChargerInput(
                 id=charger_id,
-                max_power_kw=float(ev.get("max_power_kw", 0.0)),
+                max_power_kw=float(ev.get("max_power_kw") or 0.0),
                 battery_capacity_kwh=float(ev.get("battery_capacity_kwh", 0.0)),
                 current_soc_percent=soc_percent,
                 plugged_in=plugged_in,
@@ -399,27 +402,11 @@ def config_to_kepler_config(
     if control_unit == "W":
         max_charge_kw = float(battery.get("max_charge_w", 0.0)) / 1000.0
         max_discharge_kw = float(battery.get("max_discharge_w", 0.0)) / 1000.0
-        print(
-            f"[DEBUG] W mode: battery.max_charge_w={battery.get('max_charge_w')} -> {max_charge_kw} kW"
-        )
-        print(
-            f"[DEBUG] W mode: battery.max_discharge_w={battery.get('max_discharge_w')} -> {max_discharge_kw} kW"
-        )
     else:
         # Amps mode - use nominal voltage for planning
         voltage = float(battery.get("nominal_voltage_v", battery.get("system_voltage_v", 48.0)))
         max_charge_kw = (float(battery.get("max_charge_a", 0.0)) * voltage) / 1000.0
         max_discharge_kw = (float(battery.get("max_discharge_a", 0.0)) * voltage) / 1000.0
-        print(
-            f"[DEBUG] A mode: battery.max_charge_a={battery.get('max_charge_a')}, voltage={voltage} -> {max_charge_kw} kW"
-        )
-        print(
-            f"[DEBUG] A mode: battery.max_discharge_a={battery.get('max_discharge_a')}, voltage={voltage} -> {max_discharge_kw} kW"
-        )
-
-    print(f"[DEBUG] control_unit={control_unit}")
-    print(f"[DEBUG] battery section keys: {list(battery.keys())}")
-    print(f"[DEBUG] Final: max_charge_kw={max_charge_kw}, max_discharge_kw={max_discharge_kw}")
 
     kepler_cfg = KeplerConfig(
         capacity_kwh=capacity,
@@ -488,8 +475,35 @@ def config_to_kepler_config(
         defer_up_to_hours=float(wh_cfg.get("defer_up_to_hours", 0.0)),
         # Rev E4: Export Toggle
         enable_export=bool(planner_config.get("export", {}).get("enable_export", True)),
+        # Export SoC Floor: minimum SoC required to allow grid export
+        export_floor_soc_percent=(
+            float(planner_config.get("export", {}).get("export_floor_soc_percent"))
+            if planner_config.get("export", {}).get("export_floor_soc_percent") is not None
+            else None
+        ),
         # Per-device EV charger inputs (multi-device support)
         ev_chargers=ev_inputs,
+        # Excess PV dispatch
+        excess_pv_slots=[],  # Populated by pipeline after forecast analysis
+        excess_pv_sink=str(
+            planner_config.get("executor", {}).get("excess_pv", {}).get("sink", "disabled")
+        ),
+        excess_pv_reward_sek_per_kwh=float(
+            planner_config.get("executor", {})
+            .get("excess_pv", {})
+            .get("boost_reward_sek_per_kwh", 0.5)
+        ),
+        excess_pv_soc_threshold_percent=float(
+            planner_config.get("executor", {})
+            .get("excess_pv", {})
+            .get("soc_threshold_percent", 95.0)
+        ),
+        excess_pv_custom_entity_power_kw=float(
+            planner_config.get("executor", {})
+            .get("excess_pv", {})
+            .get("custom_entity", {})
+            .get("power_kw", 1.0)
+        ),
     )
 
     return kepler_cfg
@@ -551,6 +565,8 @@ def kepler_result_to_dataframe(
                 "export_kwh": s.grid_export_kwh,
                 "water_heating_kw": s.water_heat_kw,  # Aggregate (backward compat)
                 "water_heaters": s.water_heater_results,  # Per-device: heater_id -> kW
+                "water_heating_boost": s.water_heating_boost,  # Per-device: heater_id -> bool
+                "custom_entity_active": s.custom_entity_active,  # Whether custom entity should be on
                 "water_from_grid_kwh": 0.0,
                 "water_from_pv_kwh": 0.0,
                 "water_from_battery_kwh": 0.0,

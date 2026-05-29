@@ -163,7 +163,6 @@ class ExecutorEngine:
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
         self._lock = threading.Lock()
-        self._config_mtime: float = 0.0  # last seen config file modification time
 
         # Quick action storage (user-initiated time-limited overrides)
         self._quick_action: dict[str, Any] | None = None  # {type, expires_at, reason}
@@ -262,7 +261,6 @@ class ExecutorEngine:
             self.status.enabled = self.config.enabled
             self.status.shadow_mode = self.config.shadow_mode
             if self.dispatcher:
-                self.dispatcher.config = self.config  # propagate updated entities/settings
                 self.dispatcher.shadow_mode = self.config.shadow_mode
 
             system_cfg = self._full_config.get("system", {})
@@ -885,108 +883,116 @@ class ExecutorEngine:
             logger.error("Failed to initialize HA client, executor shutting down")
             return
 
-        while not self._stop_event.is_set():
-            # Reload config only when config file has changed on disk
-            try:
-                mtime = Path(self.config_path).stat().st_mtime
-                if mtime != self._config_mtime:
-                    self.reload_config()
-                    self._config_mtime = mtime
-            except OSError:
-                pass  # file temporarily unavailable, keep existing config
+        try:
+            while not self._stop_event.is_set():
+                # Reload config to get latest settings
+                self.reload_config()
 
-            # Check if enabled
-            if not self.config.enabled:
-                logger.debug("Executor disabled in config, sleeping")
-                self.status.last_skip_reason = "disabled_in_config"
-                await asyncio.sleep(10)  # Check every 10s
-                continue
+                # Check if enabled
+                if not self.config.enabled:
+                    logger.debug("Executor disabled in config, sleeping")
+                    self.status.last_skip_reason = "disabled_in_config"
+                    await asyncio.sleep(10)  # Check every 10s
+                    continue
 
-            # Check if paused
-            if self.is_paused:
-                logger.debug("Executor paused, sleeping")
-                self.status.last_skip_reason = "paused_by_user"
-                await asyncio.sleep(10)
-                continue
+                # Check if paused
+                if self.is_paused:
+                    logger.debug("Executor paused, sleeping")
+                    self.status.last_skip_reason = "paused_by_user"
+                    await asyncio.sleep(10)
+                    continue
 
-            # Calculate next run time
-            now = datetime.now(tz)
-            next_run = self._compute_next_run(now)
-            self.status.next_run_at = next_run
-
-            # Wait until next run time
-            wait_seconds = (next_run - now).total_seconds()
-            if wait_seconds > 1:  # Only wait if more than 1s
-                logger.debug(
-                    "Waiting %.1fs until next run at %s",
-                    wait_seconds,
-                    next_run.isoformat(),
-                )
-                # Async wait with check for stop event
-                # We can't easily "wait on event" in async without an async event
-                # So we sleep in chunks or just sleep.
-                # Since _stop_event is threading.Event, we can't await it directly.
-                # We'll just sleep. If stop event is set, loop checks at top.
-                # To be more responsive, we could sleep in small increments, but
-                # strictly sticking to asyncio.sleep is fine for now.
-
-                # Correction: We should check stop_event periodically if wait is long
-                # But since we are inside asyncio.run(), the threading event set from outside
-                # is the signaling mechanism.
-
-                # Let's use a small loop for responsiveness
-                end_wait = time.time() + wait_seconds
-                while time.time() < end_wait:
-                    if self._stop_event.is_set():
-                        return
-                    sleep_time = min(1.0, end_wait - time.time())
-                    await asyncio.sleep(sleep_time)
-
-                # Re-check current time after waiting
+                # Calculate next run time
                 now = datetime.now(tz)
+                next_run = self._compute_next_run(now)
+                self.status.next_run_at = next_run
 
-            # Prevent double execution - check if we ran recently
-            if self.status.last_run_at:
+                # Wait until next run time
+                wait_seconds = (next_run - now).total_seconds()
+                if wait_seconds > 1:  # Only wait if more than 1s
+                    logger.debug(
+                        "Waiting %.1fs until next run at %s",
+                        wait_seconds,
+                        next_run.isoformat(),
+                    )
+                    # Async wait with check for stop event
+                    # We can't easily "wait on event" in async without an async event
+                    # So we sleep in chunks or just sleep.
+                    # Since _stop_event is threading.Event, we can't await it directly.
+                    # We'll just sleep. If stop event is set, loop checks at top.
+                    # To be more responsive, we could sleep in small increments, but
+                    # strictly sticking to asyncio.sleep is fine for now.
+
+                    # Correction: We should check stop_event periodically if wait is long
+                    # But since we are inside asyncio.run(), the threading event set from outside
+                    # is the signaling mechanism.
+
+                    # Let's use a small loop for responsiveness
+                    end_wait = time.time() + wait_seconds
+                    while time.time() < end_wait:
+                        if self._stop_event.is_set():
+                            return
+                        sleep_time = min(1.0, end_wait - time.time())
+                        await asyncio.sleep(sleep_time)
+
+                    # Re-check current time after waiting
+                    now = datetime.now(tz)
+
+                # Prevent double execution - check if we ran recently
+                if self.status.last_run_at:
+                    try:
+                        last_run = self.status.last_run_at
+                        # Skip if we ran within the last interval minus a buffer
+                        min_interval = self.config.interval_seconds - 30  # 30s buffer
+                        seconds_since_last = (now - last_run).total_seconds()
+                        if seconds_since_last < min_interval:
+                            logger.debug(
+                                "Skipping - already ran %.0fs ago (min interval: %ds)",
+                                seconds_since_last,
+                                min_interval,
+                            )
+                            self.status.last_run_status = "skipped"
+                            self.status.last_skip_reason = "already_ran_recently"
+                            # Don't tight-loop - wait until next boundary
+                            continue  # Will recalculate next_run on next iteration
+                    except Exception as e:
+                        logger.debug("Could not parse last_run_at: %s", e)
+
+                # Execute tick
                 try:
-                    last_run = self.status.last_run_at
-                    # Skip if we ran within the last interval minus a buffer
-                    min_interval = self.config.interval_seconds - 30  # 30s buffer
-                    seconds_since_last = (now - last_run).total_seconds()
-                    if seconds_since_last < min_interval:
-                        logger.debug(
-                            "Skipping - already ran %.0fs ago (min interval: %ds)",
-                            seconds_since_last,
-                            min_interval,
+                    tick_start = datetime.now(tz)
+                    logger.info("Executing scheduled tick at %s", tick_start.isoformat())
+
+                    # The Core Fix: await the async tick
+                    await self._tick()
+
+                    tick_duration = (datetime.now(tz) - tick_start).total_seconds()
+
+                    # Rev PERF2: Performance Logging
+                    if tick_duration > 1.0:
+                        logger.warning(
+                            "\u26a0\ufe0f SLOW TICK: %.2fs (Threshold: 1.0s)", tick_duration
                         )
-                        self.status.last_run_status = "skipped"
-                        self.status.last_skip_reason = "already_ran_recently"
-                        # Don't tight-loop - wait until next boundary
-                        continue  # Will recalculate next_run on next iteration
+                    else:
+                        logger.info("Tick completed in %.2fs", tick_duration)
                 except Exception as e:
-                    logger.debug("Could not parse last_run_at: %s", e)
+                    logger.exception("Executor tick failed: %s", e)
+                    self.status.last_run_status = "error"
+                    self.status.last_error = str(e)
 
-            # Execute tick
-            try:
-                tick_start = datetime.now(tz)
-                logger.info("Executing scheduled tick at %s", tick_start.isoformat())
-
-                # The Core Fix: await the async tick
-                await self._tick()
-
-                tick_duration = (datetime.now(tz) - tick_start).total_seconds()
-
-                # Rev PERF2: Performance Logging
-                if tick_duration > 1.0:
-                    logger.warning("\u26a0\ufe0f SLOW TICK: %.2fs (Threshold: 1.0s)", tick_duration)
-                else:
-                    logger.info("Tick completed in %.2fs", tick_duration)
-            except Exception as e:
-                logger.exception("Executor tick failed: %s", e)
-                self.status.last_run_status = "error"
-                self.status.last_error = str(e)
-
-            # No fixed sleep - next iteration will calculate proper wait time
-            # This eliminates drift and ensures alignment to interval boundaries
+                # No fixed sleep - next iteration will calculate proper wait time
+                # This eliminates drift and ensures alignment to interval boundaries
+        finally:
+            for task in list(self._background_tasks):
+                task.cancel()
+            if self._background_tasks:
+                await asyncio.gather(*self._background_tasks, return_exceptions=True)
+            if self.ha_client:
+                try:
+                    await self.ha_client.close()
+                    logger.info("HA client session closed")
+                except Exception:
+                    logger.warning("Failed to close HA client session", exc_info=True)
 
         logger.info("Executor background loop stopped")
 
@@ -1192,7 +1198,6 @@ class ExecutorEngine:
                 # Normal override evaluation
                 # Read override thresholds from config (with sensible defaults)
                 battery_cfg = self._full_config.get("battery", {})
-                override_cfg = self._full_config.get("executor", {}).get("override", {})
 
                 override = evaluate_overrides(
                     state,
@@ -1200,12 +1205,6 @@ class ExecutorEngine:
                     config={
                         # min_soc_floor: triggers emergency charge when SoC drops BELOW this
                         "min_soc_floor": float(battery_cfg.get("min_soc_percent", 10.0)),
-                        # low_soc_threshold: prevents exports when SoC is at or below this
-                        "low_soc_threshold": float(override_cfg.get("low_soc_export_floor", 20.0)),
-                        # excess_pv_threshold_kw: surplus PV needed to trigger water heating
-                        "excess_pv_threshold_kw": float(
-                            override_cfg.get("excess_pv_threshold_kw", 2.0)
-                        ),
                         "water_temp_boost": self.config.water_heater.temp_boost,
                         "water_temp_max": self.config.water_heater.temp_max,
                         "water_temp_off": self.config.water_heater.temp_off,
@@ -1392,6 +1391,25 @@ class ExecutorEngine:
                             # Legacy fallback: old-format schedule or single heater
                             water_result = await self.dispatcher.set_water_temp(decision.water_temp)
                             action_results.append(water_result)
+
+                    # Control Excess PV Custom Entity (7.2-7.4)
+                    from executor.config import ExcessPVSinkType
+
+                    if self.config.excess_pv.sink == ExcessPVSinkType.CUSTOM_ENTITY:
+                        is_fallback = (
+                            override.override_needed
+                            and override.override_type.value == "slot_failure_fallback"
+                        )
+                        if is_fallback:
+                            custom_value = self.config.excess_pv.custom_entity.off_value
+                        else:
+                            custom_value = (
+                                self.config.excess_pv.custom_entity.on_value
+                                if original_slot.custom_entity_active
+                                else self.config.excess_pv.custom_entity.off_value
+                            )
+                        custom_result = await self.dispatcher.set_custom_entity(custom_value)
+                        action_results.append(custom_result)
 
                     # Fix Issue 0: Await expected coroutine properly
                     profile_results = await self.dispatcher.execute(decision)
@@ -1616,6 +1634,16 @@ class ExecutorEngine:
                 else:
                     water_heater_plans[str(k)] = float(v)  # type: ignore[arg-type]
 
+        # Parse water heating boost flags
+        raw_boost = slot_data.get("water_heating_boost")
+        water_heating_boost: dict[str, bool] = {}
+        if isinstance(raw_boost, dict):
+            for k, v in raw_boost.items():  # type: ignore[union-attr]
+                water_heating_boost[str(k)] = bool(v)  # type: ignore[arg-type]
+
+        # Parse custom entity active flag
+        custom_entity_active = bool(slot_data.get("custom_entity_active", False))
+
         return SlotPlan(
             charge_kw=charge_kw,
             discharge_kw=discharge_kw,
@@ -1627,6 +1655,8 @@ class ExecutorEngine:
             soc_projected=soc_projected,
             ev_charger_plans=ev_charger_plans,
             water_heater_plans=water_heater_plans,
+            water_heating_boost=water_heating_boost,
+            custom_entity_active=custom_entity_active,
         )
 
     async def _gather_system_state(self) -> SystemState:

@@ -215,3 +215,71 @@ The recorder SHALL NOT fetch EV charger power sensors when `system.has_ev_charge
 - **WHEN** the recorder gathers power sensor readings
 - **AND** `system.has_ev_charger` is `true`
 - **THEN** enabled EV charger sensors from `ev_chargers[]` are fetched as before
+
+### Requirement: Executor background loop cleans up async resources on exit
+
+The `_async_run_loop` method SHALL wrap its main loop in a `try/finally` block that cancels all tracked background tasks and closes the `HAClient` session on every exit path (normal stop, early return, exception). The `OverrideEvaluator` SHALL no longer include `LOW_SOC_EXPORT_PREVENTION` in its evaluation. The `OverrideType` enum SHALL NOT include `LOW_SOC_EXPORT_PREVENTION`. The `low_soc_threshold` parameter SHALL be removed from `OverrideEvaluator.__init__`.
+
+#### Scenario: Normal shutdown closes session
+- **WHEN** the stop event is set and the while loop exits
+- **THEN** all in-flight background tasks are cancelled
+- **AND THEN** `ha_client.close()` is called
+- **AND THEN** no `Unclosed client session` warning is logged
+
+#### Scenario: Early return during wait closes session
+- **WHEN** the stop event is set during the wait-sleep loop and an early `return` is executed
+- **THEN** the `finally` block still executes
+- **AND THEN** `ha_client.close()` is called
+
+#### Scenario: Uncaught exception does not mask original error
+- **WHEN** an uncaught exception escapes the while loop
+- **AND THEN** the `finally` block raises while closing the session
+- **THEN** the close error is logged as a warning, not raised
+- **AND THEN** the original exception propagates to the caller
+
+#### Scenario: Override evaluator does not evaluate low SoC export prevention
+- **WHEN** a slot plan has `export_kw > 0` and current SoC is below the old threshold
+- **THEN** the override evaluator SHALL return `OverrideResult(override_needed=False)`
+- **AND** the planned export SHALL proceed as scheduled (the planner already ensured SoC is adequate)
+
+### Requirement: Background tasks are cancelled before session close
+
+The `finally` block SHALL cancel all tasks in `_background_tasks` and await their completion (with `return_exceptions=True`) before calling `ha_client.close()`.
+
+#### Scenario: In-flight water boost task cancelled on shutdown
+- **WHEN** a water boost task is running when the stop event is set
+- **THEN** the task is cancelled before the session is closed
+- **AND THEN** no `RuntimeError: Session is closed` occurs
+
+#### Scenario: Empty task set is a no-op
+- **WHEN** no background tasks are running
+- **THEN** the cancellation step is skipped
+- **AND THEN** `ha_client.close()` proceeds normally
+
+### Requirement: Default self_consumption fallback allows PV charging
+
+When the controller selects `self_consumption` mode as the default fallback (no charge, export, or discharge planned), the `charge_value` in the resulting `ControllerDecision` SHALL use the user's configured maximum charge current (`max_charge_a` or `max_charge_w` depending on `control_unit`), not 0.
+
+This ensures that even when the planner schedules no explicit charging action, PV power can still charge the battery. The intentional PV surplus export path (where `charge_kw > 0` results in `charge_value = planned`) SHALL NOT be affected.
+
+#### Scenario: Default self_consumption with no planned charge
+
+- **WHEN** the controller evaluates a slot where `charge_kw = 0`, `export_kw = 0`, `discharge_kw = 0`
+- **AND** the battery SoC is above the plan target
+- **AND** no EV charging is active
+- **THEN** the mode intent SHALL be `"self_consumption"`
+- **AND** `charge_value` SHALL equal the user's configured `max_charge_a` (or `max_charge_w` for watt-based control)
+- **AND** `write_charge_current` SHALL be `True`
+
+#### Scenario: Planned PV surplus still uses planned charge value
+
+- **WHEN** the controller evaluates a slot where `charge_kw > 0` and `export_kw > 0` and `discharge_kw = 0`
+- **THEN** the mode intent SHALL be `"self_consumption"`
+- **AND** `charge_value` SHALL be the computed planned charge value from `_calculate_charge_limit`
+- **AND** `charge_value` SHALL NOT be overridden to the user's max
+
+#### Scenario: Default self_consumption with watt-based control unit
+
+- **WHEN** the controller evaluates a slot with the default self_consumption fallback
+- **AND** the profile's `control_unit` is `"W"`
+- **THEN** `charge_value` SHALL equal the user's configured `max_charge_w`

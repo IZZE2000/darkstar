@@ -18,7 +18,6 @@ export const UITab: React.FC<{ advancedMode?: boolean }> = ({ advancedMode }) =>
     const { form, fieldErrors, loading, saving, statusMessage, handleChange, save, isDirty } = useSettingsForm(
         uiFieldList,
         [],
-        'ui',
     )
 
     const blocker = useUnsavedChangesGuard(isDirty)

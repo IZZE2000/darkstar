@@ -111,6 +111,14 @@ class LoadDisaggregator:
                 logger.warning(f"No sensor configured for EV charger '{load_id}', skipping.")
                 continue
 
+            disabled_reason = None
+            if not nominal_power or float(nominal_power) <= 0:
+                disabled_reason = "missing_power_kw"
+                logger.warning(
+                    f"EV charger '{load_id}' has missing or zero max_power_kw "
+                    f"({nominal_power}). Registering as disabled."
+                )
+
             # Map type string to enum
             try:
                 l_type = LoadType(l_type_str)
@@ -125,7 +133,8 @@ class LoadDisaggregator:
                 name=name,
                 sensor_key=entity_id,
                 load_type=l_type,
-                nominal_power_kw=nominal_power,
+                nominal_power_kw=float(nominal_power) if nominal_power else 0.0,
+                disabled_reason=disabled_reason,
             )
             self.register_load(load)
             self._ev_charger_ids.add(load_id)  # REV F76: Track EV charger IDs
@@ -173,12 +182,13 @@ class LoadDisaggregator:
                     )
                     continue
 
+            # Ensure entity_id is a string for the constructor (Task 8)
             load = DeferrableLoad(
                 load_id=load_id,
                 name=name,
                 sensor_key=str(entity_id),
                 load_type=l_type,
-                nominal_power_kw=nominal_power,
+                nominal_power_kw=float(nominal_power) if nominal_power else 0.0,
             )
             self.register_load(load)
             logger.debug(f"Registered deferrable load from legacy config: {load_id}")

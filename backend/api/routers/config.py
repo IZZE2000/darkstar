@@ -311,6 +311,15 @@ async def save_config(
             # Log but don't fail the save if executor reload fails
             logger.warning("Failed to reload executor config after save: %s", e)
 
+        # Clear planner retry suspension so planning resumes after config fix
+        try:
+            from backend.services.planner_service import planner_service
+
+            planner_service.clear_retry_suspension()
+            logger.info("Planner retry suspension cleared after config save")
+        except Exception as e:
+            logger.warning("Failed to clear planner retry suspension: %s", e)
+
         # Return success with any warnings
         if warnings:
             return {"status": "success", "warnings": warnings}  # type: ignore[return-value]
@@ -802,47 +811,26 @@ def _validate_config_for_save(
                 }
             )
 
-    # Override Thresholds (WARNING)
-    override_cfg = executor_cfg.get("override", {})
-    low_soc_floor = override_cfg.get("low_soc_export_floor")
-    if low_soc_floor is not None:
+    # Export floor validation (0-100 range)
+    export_cfg = config.get("export", {})
+    export_floor = export_cfg.get("export_floor_soc_percent")
+    if export_floor is not None:
         try:
-            val = float(low_soc_floor)
+            val = float(export_floor)
             if val < 0 or val > 100:
                 issues.append(
                     {
                         "severity": "warning",
-                        "message": "Export Prevention Floor should be between 0 and 100%.",
-                        "guidance": "Check executor.override.low_soc_export_floor.",
+                        "message": "Export floor SoC should be between 0 and 100%.",
+                        "guidance": "Check export.export_floor_soc_percent.",
                     }
                 )
         except (ValueError, TypeError):
             issues.append(
                 {
                     "severity": "error",
-                    "message": "Export Prevention Floor must be a number.",
-                    "guidance": "Set executor.override.low_soc_export_floor to a valid percentage.",
-                }
-            )
-
-    excess_pv = override_cfg.get("excess_pv_threshold_kw")
-    if excess_pv is not None:
-        try:
-            val = float(excess_pv)
-            if val < 0:
-                issues.append(
-                    {
-                        "severity": "warning",
-                        "message": "Excess PV threshold cannot be negative.",
-                        "guidance": "Check executor.override.excess_pv_threshold_kw.",
-                    }
-                )
-        except (ValueError, TypeError):
-            issues.append(
-                {
-                    "severity": "error",
-                    "message": "Excess PV threshold must be a number.",
-                    "guidance": "Set executor.override.excess_pv_threshold_kw to a valid kW value.",
+                    "message": "Export floor SoC must be a number.",
+                    "guidance": "Set export.export_floor_soc_percent to a valid percentage.",
                 }
             )
 

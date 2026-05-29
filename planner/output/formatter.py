@@ -151,6 +151,21 @@ def dataframe_to_json_response(
                 for k, v in water_heaters_val.items()  # type: ignore[union-attr]
             }
 
+        # Normalize water_heating_boost: ensure it's always a dict, not NaN
+        boost_val = record.get("water_heating_boost")
+        if not isinstance(boost_val, dict):
+            record["water_heating_boost"] = {}
+        else:
+            record["water_heating_boost"] = {
+                k: (bool(v))  # type: ignore[misc]
+                for k, v in boost_val.items()  # type: ignore[union-attr]
+                if isinstance(v, bool | int | float)
+            }
+
+        # Normalize custom_entity_active: ensure it's always a bool
+        custom_val = record.get("custom_entity_active")
+        record["custom_entity_active"] = bool(custom_val) if custom_val is not None else False
+
         # Normalize ev_chargers: ensure it's always a dict, not NaN for non-solver rows
         ev_chargers_val = record.get("ev_chargers")
         if not isinstance(ev_chargers_val, dict):

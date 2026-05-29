@@ -42,7 +42,7 @@ export function useSettingsForm(baseFields: BaseField[], profiles: InverterProfi
         }
 
         // Get profile name from config
-        const profileName = (config as unknown as Record<string, unknown>).system?.inverter_profile
+        const profileName = config.system?.inverter_profile
         const selectedProfile = profiles.find((p) => p.name === profileName)
 
         if (!selectedProfile || !selectedProfile.entities) {

@@ -128,15 +128,29 @@ class HealthIssue:
     message: str  # User-friendly message
     guidance: str  # How to fix
     entity_id: str | None = None  # Specific entity involved (if applicable)
+    code: str | None = None  # Machine-readable error code
+    details: dict[str, Any] | None = None  # Structured diagnostic data
+    retry_in_s: int | None = None  # Seconds until next planner retry
+    config_blocking: bool = False  # True when the error requires a config change to resolve
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        d: dict[str, Any] = {
             "category": self.category,
             "severity": self.severity,
             "message": self.message,
             "guidance": self.guidance,
-            "entity_id": self.entity_id,
         }
+        if self.entity_id is not None:
+            d["entity_id"] = self.entity_id
+        if self.code is not None:
+            d["code"] = self.code
+        if self.details is not None:
+            d["details"] = self.details
+        if self.retry_in_s is not None:
+            d["retry_in_s"] = self.retry_in_s
+        if self.config_blocking:
+            d["config_blocking"] = True
+        return d
 
 
 @dataclass
@@ -176,6 +190,38 @@ class HealthChecker:
         self._config: dict[str, Any] = {}
         self._secrets: dict[str, Any] = {}
 
+    def check_planner(self) -> list[HealthIssue]:
+        """Check planner service health from last error state."""
+        issues: list[HealthIssue] = []
+
+        try:
+            from backend.services.planner_service import planner_service
+            from planner.errors import fix_hints, is_config_blocking, user_message
+
+            if planner_service.last_error_code is None:
+                return issues
+
+            code = planner_service.last_error_code
+            severity = "critical" if is_config_blocking(code) else "warning"
+            hints = fix_hints(code)
+
+            issues.append(
+                HealthIssue(
+                    category="planner",
+                    severity=severity,
+                    message=user_message(code),
+                    guidance=hints[0] if hints else "",
+                    code=code.value,
+                    details=planner_service.last_error_details,
+                    retry_in_s=planner_service.retry_in_s,
+                    config_blocking=is_config_blocking(code),
+                )
+            )
+        except Exception as e:
+            logger.debug("Could not check planner health: %s", e)
+
+        return issues
+
     async def check_all(self) -> HealthStatus:
         """Run all health checks and return combined status."""
         issues: list[HealthIssue] = []
@@ -203,6 +249,9 @@ class HealthChecker:
 
         # Check load forecast health (REV F65 Phase 5c)
         issues.extend(self.check_load_forecast())
+
+        # Check planner health (error codes + retry policy)
+        issues.extend(self.check_planner())
 
         # Determine overall health
         has_critical = any(i.severity == "critical" for i in issues)
@@ -327,7 +376,6 @@ class HealthChecker:
 
         # REV LCL01: Validate system profile toggle consistency
         system_cfg = self._config.get("system", {})
-        water_cfg = self._config.get("water_heating", {})
         battery_cfg = self._config.get("battery", {})
 
         # Battery misconfiguration = critical (breaks MILP solver)
@@ -352,37 +400,33 @@ class HealthChecker:
 
         # Water heater misconfiguration = warning (feature disabled, not broken)
         if system_cfg.get("has_water_heater", True):
-            power_kw = water_cfg.get("power_kw", 0)
-            try:
-                power_kw = float(power_kw) if power_kw else 0.0
-            except (ValueError, TypeError):
-                power_kw = 0.0
-            if power_kw <= 0:
+            water_heaters = self._config.get("water_heaters", [])
+            has_power = any(
+                h.get("enabled", True) and float(h.get("power_kw", 0) or 0) > 0
+                for h in water_heaters
+            )
+            if not has_power:
                 issues.append(
                     HealthIssue(
                         category="config",
                         severity="warning",
                         message="Water heater enabled but power not configured",
-                        guidance="Set water_heating.power_kw to your heater's power (e.g., 3.0), "
+                        guidance="Set water_heaters[].power_kw to your heater's power (e.g., 3.0), "
                         "or set system.has_water_heater to false.",
                     )
                 )
 
         # Solar misconfiguration = warning (PV forecasts will be zero)
         if system_cfg.get("has_solar", True):
-            solar_cfg = system_cfg.get("solar_array", {})
-            kwp = solar_cfg.get("kwp", 0)
-            try:
-                kwp = float(kwp) if kwp else 0.0
-            except (ValueError, TypeError):
-                kwp = 0.0
-            if kwp <= 0:
+            solar_arrays = system_cfg.get("solar_arrays", [])
+            has_kwp = any(float(a.get("kwp", 0) or 0) > 0 for a in solar_arrays)
+            if not has_kwp:
                 issues.append(
                     HealthIssue(
                         category="config",
                         severity="warning",
                         message="Solar enabled but panel size not configured",
-                        guidance="Set system.solar_array.kwp to your PV capacity (e.g., 10.0), "
+                        guidance="Set system.solar_arrays[].kwp to your PV capacity (e.g., 10.0), "
                         "or set system.has_solar to false.",
                     )
                 )

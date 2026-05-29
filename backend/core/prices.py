@@ -219,7 +219,22 @@ def _process_nordpool_data(
     # Sort by start time to ensure chronological order
     result.sort(key=lambda x: x["start_time"])
 
-    return result
+    # Deduplicate by start_time, keeping first occurrence (Nordpool wins over fallback)
+    seen: set[Any] = set()
+    deduped: list[dict[str, Any]] = []
+    for entry in result:
+        key = entry["start_time"]
+        if key not in seen:
+            seen.add(key)
+            deduped.append(entry)
+    dup_count = len(result) - len(deduped)
+    if dup_count > 0:
+        logger.info(
+            "_process_nordpool_data dropped %d duplicate start_time entries (kept first occurrence)",
+            dup_count,
+        )
+
+    return deduped
 
 
 async def get_current_slot_prices(config: dict[str, Any]) -> dict[str, float] | None:

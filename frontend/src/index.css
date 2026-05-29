@@ -258,6 +258,33 @@ body::before {
         color: var(--btn-text, #100f0e);
     }
 
+    /* ========== PRICE SPARKLINE ========== */
+    .price-sparkline {
+        position: relative;
+        height: 100px;
+        background-color: rgb(var(--color-surface2));
+        border-radius: var(--radius-sm);
+        width: 100%;
+        overflow: hidden;
+    }
+
+    .price-sparkline-block {
+        position: absolute;
+        width: 10px;
+        height: 10px;
+        border-radius: var(--radius-sm);
+        transition: top 0.3s ease-in-out;
+    }
+
+    .price-sparkline-ref {
+        position: absolute;
+        left: 0;
+        right: 0;
+        border-top: 1px dashed rgba(var(--color-line), 0.4);
+        pointer-events: none;
+        z-index: 5;
+    }
+
     /* ========== BANNERS / ALERTS ========== */
     .banner {
         display: flex;

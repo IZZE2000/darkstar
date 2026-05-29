@@ -219,6 +219,78 @@ async def test_health_status_timeout_returns_critical_issue():
     assert "15" in issue.message
 
 
+def _make_checker(config: dict):
+    from backend.health import HealthChecker
+
+    checker = HealthChecker.__new__(HealthChecker)
+    checker._config = config
+    checker._secrets = {}
+    return checker
+
+
+# --- Solar health check ---
+
+def test_solar_warning_when_arrays_empty():
+    checker = _make_checker({"system": {"has_solar": True, "solar_arrays": []}})
+    issues = checker._validate_config_structure()
+    messages = [i.message for i in issues]
+    assert "Solar enabled but panel size not configured" in messages
+
+
+def test_solar_no_warning_when_kwp_configured():
+    checker = _make_checker(
+        {"system": {"has_solar": True, "solar_arrays": [{"kwp": 5.0}, {"kwp": 3.0}]}}
+    )
+    issues = checker._validate_config_structure()
+    messages = [i.message for i in issues]
+    assert "Solar enabled but panel size not configured" not in messages
+
+
+def test_solar_legacy_singular_key_ignored():
+    checker = _make_checker(
+        {"system": {"has_solar": True, "solar_array": {"kwp": 10.0}}}
+    )
+    issues = checker._validate_config_structure()
+    messages = [i.message for i in issues]
+    assert "Solar enabled but panel size not configured" in messages
+
+
+# --- Water heater health check ---
+
+def test_water_heater_warning_when_list_empty():
+    checker = _make_checker(
+        {"system": {"has_water_heater": True}, "water_heaters": []}
+    )
+    issues = checker._validate_config_structure()
+    messages = [i.message for i in issues]
+    assert "Water heater enabled but power not configured" in messages
+
+
+def test_water_heater_no_warning_when_configured():
+    checker = _make_checker(
+        {
+            "system": {"has_water_heater": True},
+            "water_heaters": [{"enabled": True, "power_kw": 3.0}],
+        }
+    )
+    issues = checker._validate_config_structure()
+    messages = [i.message for i in issues]
+    assert "Water heater enabled but power not configured" not in messages
+
+
+def test_water_heater_legacy_flat_field_ignored():
+    checker = _make_checker(
+        {
+            "system": {"has_water_heater": True},
+            "water_heating": {"power_kw": 3.0},
+            "water_heaters": [],
+        }
+    )
+    issues = checker._validate_config_structure()
+    messages = [i.message for i in issues]
+    assert "Water heater enabled but power not configured" in messages
+
+
 def test_health_no_energy_sensor_warnings():
     """No energy-sensor warnings are emitted — energy is now measured via History API."""
     from backend.health import HealthChecker

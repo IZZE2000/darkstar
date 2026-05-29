@@ -19,12 +19,15 @@ import pytz
 if TYPE_CHECKING:
     from datetime import datetime
 
+from backend.core.version import get_version
 from backend.learning.store import LearningStore
+from planner.errors import PlannerError, PlannerErrorCode
 from planner.inputs.data_prep import apply_safety_margins, prepare_df
 from planner.inputs.learning import load_learning_overlays
 from planner.inputs.weather import fetch_temperature_forecast
 from planner.output.schedule import save_schedule_to_json
 from planner.output.soc_target import apply_soc_target_percent
+from planner.preflight import run_preflight
 from planner.solver.adapter import (
     config_to_kepler_config,
     kepler_result_to_dataframe,
@@ -40,6 +43,53 @@ from planner.strategy.s_index import (
 from planner.vacation_state import load_last_anti_legionella, save_last_anti_legionella
 
 logger = logging.getLogger("darkstar.planner")
+
+
+def _calculate_excess_pv_flags(
+    kepler_slots: list[Any],
+    water_heaters: list[Any],
+    ev_chargers: list[Any],
+    df: pd.DataFrame,
+) -> list[bool]:
+    """Pre-calculate per-slot excess PV flags from raw forecasts.
+
+    excess[t] = max(0, pv_forecast[t] - load_forecast[t] - min_water_heat_forecast[t] - min_ev_forecast[t]) > 0
+
+    Returns list of booleans, one per slot.
+    """
+
+    T = len(kepler_slots)
+    if T == 0:
+        return []
+
+    slot_hours_list: list[float] = []
+    for s in kepler_slots:
+        duration = (s.end_time - s.start_time).total_seconds() / 3600.0
+        slot_hours_list.append(duration)
+
+    avg_slot_hours = sum(slot_hours_list) / len(slot_hours_list) if slot_hours_list else 0.25
+
+    # Minimum water heating per slot (sum across all heaters, min_kwh_per_day spread evenly)
+    min_water_heat_per_slot = 0.0
+    for wh in water_heaters:
+        kwh_per_slot = wh.power_kw * avg_slot_hours
+        if kwh_per_slot > 0:
+            min_water_heat_per_slot += wh.min_kwh_per_day / (24.0 / avg_slot_hours)
+
+    # Minimum EV charging per slot
+    min_ev_per_slot = 0.0
+    for ev in ev_chargers:
+        if ev.plugged_in and ev.max_power_kw > 0:
+            min_ev_per_slot += ev.max_power_kw * avg_slot_hours
+
+    flags: list[bool] = []
+    for t in range(T):
+        pv_kwh = kepler_slots[t].pv_kwh
+        load_kwh = kepler_slots[t].load_kwh
+        excess = pv_kwh - load_kwh - min_water_heat_per_slot - min_ev_per_slot
+        flags.append(excess > 0)
+
+    return flags
 
 
 def calculate_ev_deadline(departure_time: str, now: datetime, timezone: str) -> datetime | None:
@@ -223,7 +273,7 @@ class PlannerPipeline:
         Returns:
             DataFrame with the complete schedule
         """
-        logger.info("PlannerPipeline.generate_schedule(mode=%s)", mode)
+        logger.info("Darkstar %s — PlannerPipeline.generate_schedule(mode=%s)", get_version(), mode)
 
         # 1. Configuration & Overrides
         active_config = self.config
@@ -430,6 +480,9 @@ class PlannerPipeline:
                 "base_factor": base_factor,
                 "effective_load_margin": effective_load_margin,
                 "raw_factor": raw_factor,  # Kept for visibility of D1 margin
+                "avg_deficit": s_index_debug.get("avg_deficit"),
+                "temp_adjustment": s_index_debug.get("temp_adjustment"),
+                "mean_temperature_c": s_index_debug.get("mean_temperature_c"),
                 "safety_floor": soc_debug,
             }
 
@@ -521,6 +574,23 @@ class PlannerPipeline:
             kepler_input.slots,
             water_heater_states=water_heater_states,  # task 3.3
         )
+
+        # Pre-calculate excess PV slot flags from raw forecasts (task 3.1)
+        excess_pv_sink = kepler_config.excess_pv_sink
+        if excess_pv_sink != "disabled" and len(kepler_input.slots) > 0:
+            excess_pv_flags = _calculate_excess_pv_flags(
+                kepler_input.slots,
+                kepler_config.water_heaters,
+                kepler_config.ev_chargers,
+                future_df,
+            )
+            kepler_config.excess_pv_slots = excess_pv_flags
+            logger.info(
+                "Excess PV: %d/%d slots have excess PV (sink=%s)",
+                sum(excess_pv_flags),
+                len(excess_pv_flags),
+                excess_pv_sink,
+            )
 
         # Rev O1: Disable water heating in Kepler if no water heater (task 3.4)
         if not has_water_heater:
@@ -689,6 +759,8 @@ class PlannerPipeline:
             risk_appetite = int(s_index_cfg.get("risk_appetite", 3))
             kepler_config.target_soc_penalty_sek = RISK_PENALTY_MAP.get(risk_appetite, 8.0)
 
+        run_preflight(input_data, active_config)
+
         solver = KeplerSolver()
         result = await asyncio.to_thread(solver.solve, kepler_input, kepler_config)
 
@@ -727,9 +799,18 @@ class PlannerPipeline:
         # Kepler only planned future slots, so result_df matches future_df indices
         final_df = future_df.join(result_df, rsuffix="_kepler")
 
+        if len(result_df) != len(future_df):
+            logger.error(
+                "Result merge length mismatch: result_df=%d, future_df=%d — "
+                "possible duplicate timestamps in price input",
+                len(result_df),
+                len(future_df),
+            )
+
         # Copy ALL columns from result_df to final_df (overwrite existing, add new)
+        # Use index-aligned assignment (not .values) to avoid ValueError on length mismatch
         for col in result_df.columns:
-            final_df[col] = result_df[col].values
+            final_df[col] = result_df[col]
 
         # Restore water_heating_kw (it was set in schedule_water_heating but overwritten above)
         if water_heating_series is not None:
@@ -749,8 +830,17 @@ class PlannerPipeline:
             logger.error(
                 "Planner generated invalid schedule (empty or missing columns). Aborting save to prevent data loss."
             )
-            # This will bubble up to SchedulerService as an error, triggering the smart retry loop
-            raise ValueError("Planner generated invalid schedule (safety guard)")
+            raise PlannerError(
+                code=PlannerErrorCode.INVALID_SCHEDULE,
+                details={
+                    "solver_status": result.status_msg if result else "unknown",
+                    "initial_soc_kwh": initial_soc_kwh,
+                    "max_soc_kwh": kepler_config.capacity_kwh
+                    * kepler_config.max_soc_percent
+                    / 100.0,
+                    "capacity_kwh": kepler_config.capacity_kwh,
+                },
+            )
 
         if save_to_file:
             # Prepare window responsibilities (placeholder, Kepler doesn't return windows yet)

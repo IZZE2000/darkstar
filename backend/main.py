@@ -146,6 +146,12 @@ async def lifespan(app: FastAPI):
         store = LearningStore(db_path, pytz.timezone(tz_name))
         app.state.learning_store = store
         logger.info(f"✅ LearningStore initialized (Async) at {db_path}")
+
+        from ml.price_forecast import cleanup_price_forecast_duplicates
+
+        deleted = cleanup_price_forecast_duplicates(db_path)
+        if deleted > 0:
+            logger.info(f"🧹 Cleaned up {deleted} duplicate price forecast rows")
     except Exception as e:
         logger.error(f"❌ Failed to initialize LearningStore: {e}")
         # We can't easily fail here without breaking the app, but partial functionality might work?
@@ -175,6 +181,10 @@ async def lifespan(app: FastAPI):
     from backend.services.recorder_service import recorder_service
 
     await recorder_service.stop()
+
+    from backend.ha_socket import stop_ha_socket_client
+
+    stop_ha_socket_client()
 
 
 def get_base_path(request: Request) -> str:

@@ -6,6 +6,7 @@ Loads and validates the executor configuration from config.yaml.
 
 import logging
 from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
 from typing import Any, cast
 
@@ -90,6 +91,34 @@ class WaterHeaterGlobalConfig:
 
 # Backward compatibility alias
 WaterHeaterConfig = WaterHeaterGlobalConfig
+
+
+class ExcessPVSinkType(Enum):
+    """Type of excess PV sink."""
+
+    WATER_HEATER_BOOST = "water_heater_boost"
+    CUSTOM_ENTITY = "custom_entity"
+    DISABLED = "disabled"
+
+
+@dataclass
+class ExcessPVCustomEntityConfig:
+    """Custom HA entity configuration for excess PV sink."""
+
+    entity: str | None = None
+    on_value: str = "1"
+    off_value: str = "0"
+    power_kw: float = 1.0
+
+
+@dataclass
+class ExcessPVConfig:
+    """Excess PV dispatch configuration."""
+
+    sink: ExcessPVSinkType = ExcessPVSinkType.DISABLED
+    boost_reward_sek_per_kwh: float = 0.5
+    soc_threshold_percent: float = 95.0
+    custom_entity: ExcessPVCustomEntityConfig = field(default_factory=ExcessPVCustomEntityConfig)
 
 
 @dataclass
@@ -189,6 +218,7 @@ class ExecutorConfig:
     ev_chargers: list[EVChargerDeviceConfig] = field(default_factory=lambda: [])
     notifications: NotificationConfig = field(default_factory=NotificationConfig)
     controller: ControllerConfig = field(default_factory=ControllerConfig)
+    excess_pv: ExcessPVConfig = field(default_factory=ExcessPVConfig)
 
     history_retention_days: int = 30
     schedule_path: str = "data/schedule.json"
@@ -387,7 +417,9 @@ def load_executor_config(config_path: str = "config.yaml") -> ExecutorConfig:
             EVChargerDeviceConfig(
                 id=charger_id,
                 switch_entity=_str_or_none(charger.get("switch_entity")),
-                max_power_kw=float(charger.get("max_power_kw", EVChargerDeviceConfig.max_power_kw)),
+                max_power_kw=float(
+                    charger.get("max_power_kw") or EVChargerDeviceConfig.max_power_kw
+                ),
                 battery_capacity_kwh=charger.get("battery_capacity_kwh"),
                 replan_on_plugin=bool(
                     charger.get("replan_on_plugin", EVChargerDeviceConfig.replan_on_plugin)
@@ -496,6 +528,35 @@ def load_executor_config(config_path: str = "config.yaml") -> ExecutorConfig:
         ),
     )
 
+    excess_pv_data: dict[str, Any] = (
+        executor_data.get("excess_pv", {})
+        if isinstance(executor_data.get("excess_pv"), dict)
+        else {}
+    )
+    sink_raw = str(excess_pv_data.get("sink", "disabled")).lower()
+    try:
+        sink_type = ExcessPVSinkType(sink_raw)
+    except ValueError:
+        sink_type = ExcessPVSinkType.DISABLED
+
+    custom_entity_data: dict[str, Any] = (
+        excess_pv_data.get("custom_entity", {})
+        if isinstance(excess_pv_data.get("custom_entity"), dict)
+        else {}
+    )
+    custom_entity = ExcessPVCustomEntityConfig(
+        entity=_str_or_none(custom_entity_data.get("entity")),
+        on_value=str(custom_entity_data.get("on_value", "1")),
+        off_value=str(custom_entity_data.get("off_value", "0")),
+        power_kw=float(custom_entity_data.get("power_kw", 1.0)),
+    )
+    excess_pv = ExcessPVConfig(
+        sink=sink_type,
+        boost_reward_sek_per_kwh=float(excess_pv_data.get("boost_reward_sek_per_kwh", 0.5)),
+        soc_threshold_percent=float(excess_pv_data.get("soc_threshold_percent", 95.0)),
+        custom_entity=custom_entity,
+    )
+
     return ExecutorConfig(
         enabled=bool(executor_data.get("enabled", False)),
         shadow_mode=bool(executor_data.get("shadow_mode", False)),
@@ -509,6 +570,7 @@ def load_executor_config(config_path: str = "config.yaml") -> ExecutorConfig:
         ev_chargers=ev_chargers_list,
         notifications=notifications,
         controller=controller,
+        excess_pv=excess_pv,
         history_retention_days=int(executor_data.get("history_retention_days", 30)),
         schedule_path=str(executor_data.get("schedule_path", "data/schedule.json")),
         timezone=timezone,

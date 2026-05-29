@@ -1,13 +1,11 @@
 import asyncio
 import json
 import logging
-import subprocess
 from collections.abc import Coroutine  # noqa: TC003
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-import yaml
 from fastapi import APIRouter, HTTPException
 
 from backend.api.models.system import (
@@ -18,6 +16,7 @@ from backend.api.models.system import (
 )
 from backend.core.ha_client import get_ha_bool, get_ha_sensor_float, get_ha_sensor_kw_normalized
 from backend.core.secrets import load_yaml
+from backend.core.version import get_version as _get_git_version
 
 logger = logging.getLogger("darkstar.api.system")
 router = APIRouter(tags=["system"])
@@ -28,61 +27,6 @@ def _get_learning_engine() -> Any:
     from backend.learning import get_learning_engine
 
     return get_learning_engine()
-
-
-def _get_git_version() -> str:
-    """Get version from environment, VERSION file, git tags, or config.yaml."""
-    import os
-    from pathlib import Path
-
-    def clean_v(s: str) -> str:
-        s = s.strip()
-        if s.lower().startswith("v"):
-            return s[1:]
-        return s
-
-    # 1. Check environment variable (set by Docker/CI)
-    env_version = os.getenv("DARKSTAR_VERSION")
-    if env_version:
-        return clean_v(env_version)
-
-    # 2. Read from VERSION file (works reliably in Docker - no git required)
-    try:
-        version_file = Path("VERSION")
-        if version_file.exists():
-            return clean_v(version_file.read_text())
-    except Exception:
-        pass
-
-    # 3. Try Git - for development/LXC environments
-    #    Use __file__ to determine project root, ensuring correct cwd
-    try:
-        # Get project root from this file's location: backend/api/routers/system.py -> ../../../
-        project_root = Path(__file__).resolve().parent.parent.parent.parent
-        git_ver = (
-            subprocess.check_output(
-                ["git", "describe", "--tags", "--abbrev=0"],
-                stderr=subprocess.DEVNULL,
-                cwd=str(project_root),  # Run git from project root
-            )
-            .decode()
-            .strip()
-        )
-        if git_ver:
-            return clean_v(git_ver)
-    except Exception:
-        pass
-
-    # 4. Fallback: read from darkstar/config.yaml (add-on version)
-    try:
-        with Path("darkstar/config.yaml").open() as f:
-            addon_config = yaml.safe_load(f)
-        if addon_config and addon_config.get("version"):
-            return clean_v(addon_config["version"])
-    except Exception:
-        pass
-
-    return "unknown"  # Should never reach here if VERSION file exists
 
 
 @router.get(

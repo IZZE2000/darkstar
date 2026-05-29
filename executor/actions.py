@@ -890,6 +890,97 @@ class ActionDispatcher:
             error_details=error_details,
         )
 
+    async def set_custom_entity(self, value: str) -> ActionResult:
+        """Toggle the excess PV custom entity sink on/off.
+
+        Args:
+            value: The value to set (on_value or off_value from config).
+
+        Returns:
+            ActionResult indicating success or failure.
+        """
+        from .config import ExcessPVSinkType
+
+        start = time.time()
+        excess_pv = self.config.excess_pv
+
+        if excess_pv.sink != ExcessPVSinkType.CUSTOM_ENTITY or not excess_pv.custom_entity.entity:
+            return ActionResult(
+                action_type="custom_entity",
+                success=True,
+                message="Custom entity sink not configured",
+                skipped=True,
+                duration_ms=int((time.time() - start) * 1000),
+            )
+
+        entity = excess_pv.custom_entity.entity
+        current = await self.ha.get_state_value(entity)
+
+        if self._values_match(current, value):
+            return ActionResult(
+                action_type="custom_entity",
+                success=True,
+                message=f"Already at {value}",
+                previous_value=current,
+                new_value=value,
+                entity_id=entity,
+                skipped=True,
+                duration_ms=int((time.time() - start) * 1000),
+            )
+
+        if self.shadow_mode:
+            logger.info(
+                "[SHADOW] Would set custom entity %s to %s (current: %s)",
+                entity,
+                value,
+                current,
+            )
+            return ActionResult(
+                action_type="custom_entity",
+                success=True,
+                message=f"[SHADOW] Would change {current} → {value}",
+                previous_value=current,
+                new_value=value,
+                entity_id=entity,
+                skipped=True,
+                duration_ms=int((time.time() - start) * 1000),
+            )
+
+        error_details = None
+        try:
+            domain = entity.split(".", 1)[0] if "." in entity else "switch"
+            success = await self._write_entity(entity, value, domain)
+        except HACallError as e:
+            success = False
+            error_details = str(e)
+            logger.error("Failed to set custom entity %s: %s", entity, error_details)
+
+        verified_value = None
+        verification_success = None
+        if success:
+            verified_value, verification_success = await self._verify_action(entity, value)
+
+        duration = int((time.time() - start) * 1000)
+
+        return ActionResult(
+            action_type="custom_entity",
+            success=success,
+            message=(
+                f"Changed {current} → {value}"
+                if success
+                else f"Failed: {error_details}"
+                if error_details
+                else "Failed to set custom entity"
+            ),
+            previous_value=current,
+            new_value=value,
+            entity_id=entity,
+            verified_value=verified_value,
+            verification_success=verification_success,
+            duration_ms=duration,
+            error_details=error_details,
+        )
+
     async def _set_max_export_power(self, watts: float) -> ActionResult | None:
         """Set max grid export power."""
         start = time.time()

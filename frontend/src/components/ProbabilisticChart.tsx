@@ -32,6 +32,8 @@ type Props = {
     slots: SlotData[]
     color: string
     showOpenMeteo?: boolean
+    dateAxisMode?: boolean
+    allowNegativeY?: boolean
 }
 
 function getAmberColor(): string {
@@ -46,16 +48,25 @@ function getAmberColor(): string {
     return '#F59E0B'
 }
 
-export default function ProbabilisticChart({ title, slots, color, showOpenMeteo = false }: Props) {
-    const labels = slots.map((s) => {
-        const d = new Date(s.time)
-        return d.toLocaleString([], {
-            weekday: 'short',
-            hour: '2-digit',
-            minute: '2-digit',
-            hour12: false,
-        })
-    })
+export default function ProbabilisticChart({
+    title,
+    slots,
+    color,
+    showOpenMeteo = false,
+    dateAxisMode = false,
+    allowNegativeY = false,
+}: Props) {
+    const labels = dateAxisMode
+        ? slots.map(() => '')
+        : slots.map((s) => {
+              const d = new Date(s.time)
+              return d.toLocaleString([], {
+                  weekday: 'short',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  hour12: false,
+              })
+          })
 
     const amberColor = getAmberColor()
 
@@ -181,19 +192,58 @@ export default function ProbabilisticChart({ title, slots, color, showOpenMeteo 
                 bodyColor: '#cbd5e1',
                 borderColor: '#334155',
                 borderWidth: 1,
+                callbacks: {
+                    title: function (tooltipItems: { dataIndex?: number }[]) {
+                        const idx = tooltipItems[0]?.dataIndex
+                        if (idx == null || !slots[idx]) return ''
+                        const d = new Date(slots[idx].time)
+                        return (
+                            d.toLocaleDateString('en-GB', {
+                                weekday: 'short',
+                                day: '2-digit',
+                                month: 'short',
+                                year: 'numeric',
+                            }) +
+                            ' ' +
+                            d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+                        )
+                    },
+                },
             },
         },
         scales: {
             x: {
                 grid: {
-                    color: '#334155',
+                    color: dateAxisMode ? 'transparent' : '#334155',
                     drawBorder: false,
                 },
                 ticks: {
                     color: '#94a3b8',
                     maxRotation: 0,
-                    autoSkip: true,
-                    maxTicksLimit: 8,
+                    ...(dateAxisMode
+                        ? {
+                              autoSkip: false,
+                              major: { enabled: false },
+                              callback: function (_value: unknown, index: number) {
+                                  const slot = slots[index]
+                                  if (!slot) return null
+                                  const d = new Date(slot.time)
+                                  if (d.getHours() !== 12 || d.getMinutes() !== 0) return null
+                                  const dateStr = d.toLocaleDateString('en-GB', {
+                                      day: '2-digit',
+                                      month: 'short',
+                                  })
+                                  const todayStr = new Date().toLocaleDateString('en-GB', {
+                                      day: '2-digit',
+                                      month: 'short',
+                                  })
+                                  return dateStr === todayStr ? [dateStr, 'Today'] : dateStr
+                              },
+                          }
+                        : {
+                              autoSkip: true,
+                              maxTicksLimit: 8,
+                          }),
                 },
             },
             y: {
@@ -204,7 +254,7 @@ export default function ProbabilisticChart({ title, slots, color, showOpenMeteo 
                 ticks: {
                     color: '#94a3b8',
                 },
-                min: 0,
+                min: allowNegativeY ? undefined : 0,
             },
         },
         interaction: {

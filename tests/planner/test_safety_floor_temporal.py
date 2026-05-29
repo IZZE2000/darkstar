@@ -272,12 +272,12 @@ class TestCalculateSafetyFloor:
         """
         tz = pytz.timezone("Europe/Stockholm")
         today = datetime.now(tz).date()
+        tomorrow = today + timedelta(days=1)
 
         # Simulate midday planning (13:00) with prices to tomorrow midnight
         # Price horizon: today 13:00 to tomorrow 23:45
         price_start = tz.localize(datetime(today.year, today.month, today.day, 13, 0))
-        price_end = tz.localize(datetime(today.year, today.month, today.day + 1, 23, 45))
-
+        price_end = tz.localize(datetime(tomorrow.year, tomorrow.month, tomorrow.day, 23, 45))
         price_index = pd.date_range(start=price_start, end=price_end, freq="15min")
         price_df = pd.DataFrame(
             {
