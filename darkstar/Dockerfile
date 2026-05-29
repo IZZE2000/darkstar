@@ -4,18 +4,14 @@
 
 FROM python:3.12-slim
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    # Node.js and npm for frontend build
+# Install Node.js 22.x via NodeSource (node:sqlite requires >=22.5.0; Debian packages vary)
+RUN apt-get update && apt-get install -y --no-install-recommends curl && \
+    curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
+    apt-get install -y --no-install-recommends \
     nodejs \
-    npm \
-    # Utilities
-    curl \
     jq \
     bash \
-    # Required for LightGBM (prevents segfaults/hangs)
     libgomp1 \
-    # Build dependencies for any packages that need compilation
     gcc \
     g++ \
     make \
