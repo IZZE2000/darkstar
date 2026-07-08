@@ -231,6 +231,9 @@ class Controller:
             step = self.profile.behavior.round_step_w if self.profile else 100.0
             raw_export_with_load = export_power_w + (slot.load_kw * 1000.0)
             export_with_load_w = round(raw_export_with_load / step) * step
+            # Battery cannot physically discharge above its configured limit, even
+            # if load pushes the raw sum higher (guards against HA helper range rejects)
+            export_with_load_w = min(export_with_load_w, self.config.max_discharge_w)
         else:
             export_with_load_w = 0.0
 

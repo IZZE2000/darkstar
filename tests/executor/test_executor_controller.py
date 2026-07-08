@@ -576,6 +576,26 @@ class TestExportWithLoadCalculation:
         assert decision.export_power_w == 3000.0
         assert decision.export_with_load_w == 3000.0
 
+    def test_export_with_load_clamped_to_max_discharge_w(self):
+        """export_with_load_w is capped at max_discharge_w even if export+load exceeds it.
+
+        Regression test: an uncapped sum could exceed the HA input_number helper's
+        configured range and get rejected with HTTP 400, silently freezing the
+        battery's discharge command (observed 2026-07-08 06:45-09:14).
+        """
+        config = ControllerConfig(max_discharge_w=5000.0)
+        inverter_config = InverterConfig()
+        controller = Controller(config, inverter_config)
+
+        # Export at the max (5kW) plus a load spike (2kW) would raw-sum to 7000W
+        slot = SlotPlan(export_kw=5.0, load_kw=2.0)
+        state = SystemState()
+
+        decision = controller._follow_plan(slot, state)
+
+        assert decision.export_power_w == 5000.0
+        assert decision.export_with_load_w == 5000.0
+
 
 class TestMakeDecisionConvenience:
     """Test the make_decision convenience function."""
