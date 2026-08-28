@@ -72,7 +72,13 @@ export function parseFieldInput(field: BaseField, raw: string): unknown {
                 return Number.isNaN(num) ? value : num
             })
     }
-    if (field.type === 'solar_arrays' || field.type === 'penalty_levels' || field.type === 'entity_array') {
+    if (
+        field.type === 'solar_arrays' ||
+        field.type === 'entity_array' ||
+        field.type === 'balanced_loads' ||
+        field.type === 'give_way_list' ||
+        field.type === 'excess_pv_priority'
+    ) {
         try {
             return JSON.parse(raw)
         } catch {
@@ -101,7 +107,13 @@ export function buildFormState(config: Record<string, unknown> | null, fields: B
             state[field.key] = value === true ? 'true' : 'false'
         } else if (field.type === 'array' && Array.isArray(value)) {
             state[field.key] = value.join(', ')
-        } else if (field.type === 'solar_arrays' || field.type === 'penalty_levels' || field.type === 'entity_array') {
+        } else if (
+            field.type === 'solar_arrays' ||
+            field.type === 'entity_array' ||
+            field.type === 'balanced_loads' ||
+            field.type === 'give_way_list' ||
+            field.type === 'excess_pv_priority'
+        ) {
             // Handle complex array/object types - stringify if array/object, default to empty array
             if (Array.isArray(value) || (value !== null && typeof value === 'object')) {
                 state[field.key] = JSON.stringify(value)
@@ -129,13 +141,7 @@ export function areEqual(a: unknown, b: unknown, type: string): boolean {
     // This fixes the bug where adding new entity fields shows "No changes detected"
     if ((a === null || a === undefined) && b !== null && b !== undefined) {
         // For text/entity fields, also check if the new value is non-empty
-        if (
-            type !== 'boolean' &&
-            type !== 'number' &&
-            type !== 'array' &&
-            type !== 'solar_arrays' &&
-            type !== 'penalty_levels'
-        ) {
+        if (type !== 'boolean' && type !== 'number' && type !== 'array' && type !== 'solar_arrays') {
             const strB = String(b).trim()
             if (strB !== '') return false // Adding a new non-empty value is a change
         } else {
@@ -149,8 +155,10 @@ export function areEqual(a: unknown, b: unknown, type: string): boolean {
         type !== 'number' &&
         type !== 'array' &&
         type !== 'solar_arrays' &&
-        type !== 'penalty_levels' &&
-        type !== 'entity_array'
+        type !== 'entity_array' &&
+        type !== 'balanced_loads' &&
+        type !== 'give_way_list' &&
+        type !== 'excess_pv_priority'
     ) {
         const strA = a !== null && a !== undefined ? String(a).trim() : ''
         const strB = b !== null && b !== undefined ? String(b).trim() : ''
@@ -167,7 +175,13 @@ export function areEqual(a: unknown, b: unknown, type: string): boolean {
         return arrA.every((val, i) => val === arrB[i])
     }
 
-    if (type === 'solar_arrays' || type === 'penalty_levels' || type === 'entity_array') {
+    if (
+        type === 'solar_arrays' ||
+        type === 'entity_array' ||
+        type === 'balanced_loads' ||
+        type === 'give_way_list' ||
+        type === 'excess_pv_priority'
+    ) {
         // Treat undefined as equivalent to empty array for array/object types
         const normalize = (v: unknown) => {
             if (v === undefined || v === null) return '[]'
@@ -178,6 +192,85 @@ export function areEqual(a: unknown, b: unknown, type: string): boolean {
 
     // Strict equality for others (handles numbers correctly)
     return a === b
+}
+
+export type ChangedField = {
+    key: string
+    label: string
+    oldValue: string
+    newValue: string
+}
+
+/**
+ * Stringifies a value for display in the changed-fields list.
+ */
+function displayValue(value: unknown, type: string): string {
+    if (value === null || value === undefined || value === '') return '—'
+    if (type === 'boolean') return value === true || value === 'true' ? 'on' : 'off'
+    if (Array.isArray(value)) return value.length ? value.join(', ') : '—'
+    if (typeof value === 'object') return JSON.stringify(value)
+    return String(value)
+}
+
+/**
+ * Lists human-readable changed fields by comparing form state with original config.
+ * Mirrors buildPatch's comparison semantics but returns a flat display list
+ * (label + old/new values) instead of a nested config patch.
+ */
+export function listChangedFields(
+    original: Record<string, unknown>,
+    form: Record<string, string>,
+    fields: BaseField[],
+): ChangedField[] {
+    const changes: ChangedField[] = []
+
+    fields.forEach((field) => {
+        // Skip virtual/UI-only fields that don't correspond to actual config paths
+        if (field.path.length === 0) return
+
+        if (field.companionKey) {
+            const rawCompanion = form[field.companionKey]
+            if (rawCompanion !== undefined) {
+                const parsedCompanion = rawCompanion === 'true'
+                const companionPath = field.companionKey.split('.')
+                const currentCompanion = getDeepValue<unknown>(original, companionPath)
+
+                if (parsedCompanion !== currentCompanion) {
+                    changes.push({
+                        key: field.companionKey,
+                        label: field.label,
+                        oldValue: displayValue(currentCompanion, 'boolean'),
+                        newValue: displayValue(parsedCompanion, 'boolean'),
+                    })
+                }
+            }
+        }
+
+        const raw = form[field.key]
+        if (raw === undefined) return
+
+        const parsed = parseFieldInput(field, raw)
+        if (parsed === undefined) return
+
+        // Specialized number/null handling
+        if (field.type === 'number' && parsed === null) {
+            const current = getDeepValue<unknown>(original, field.path)
+            if (current === null || current === undefined) return
+        }
+
+        const currentValue = getDeepValue<unknown>(original, field.path)
+
+        if (areEqual(parsed, currentValue, field.type)) return
+
+        changes.push({
+            key: field.key,
+            label: field.label,
+            oldValue: displayValue(currentValue, field.type),
+            newValue: displayValue(parsed, field.type),
+        })
+    })
+
+    return changes
 }
 
 /**

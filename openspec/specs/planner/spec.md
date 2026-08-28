@@ -42,7 +42,7 @@ The solver SHALL enforce the end-of-horizon `target_soc` constraint solely as a 
 
 The safety floor calculation SHALL use **temporal (per-slot) deficit** instead of aggregate deficit ratio. For each forecast slot, the system SHALL compute `max(0, load_forecast - pv_forecast)` and sum these values to determine the total energy the battery must provide when PV is unavailable. This temporal deficit SHALL replace the previous `(total_load - total_pv) / total_load` aggregate ratio.
 
-The safety floor calculation SHALL look **beyond the price horizon** by using extended load/PV forecast data for a 24h window starting from where the price data ends. When extended forecast data is unavailable, the system SHALL fall back to using only the available horizon and log a warning.
+The safety floor calculation SHALL look **beyond the price horizon** by using extended load/PV forecast data for a 24h window starting from where the price data ends. The forecast-data pipeline that feeds the planner SHALL supply **slot-level** load/PV forecasts covering at least 24h beyond the price horizon whenever such slots exist in the forecast store; this extended slot-level data SHALL NOT be reduced to daily aggregates before reaching the safety floor calculation, and SHALL be provided independently of the price-bounded planning horizon used by the solver. When extended forecast data is **genuinely absent** from the forecast store for the look-ahead window, the system SHALL fall back to using only the available horizon and log a warning. The fallback-and-warn path SHALL NOT be reached merely because available extended forecast slots were not loaded or were truncated to the price horizon.
 
 The safety floor SHALL incorporate two risk-based mechanisms:
 1. A **risk margin** applied to the temporal deficit (higher risk appetite = lower margin, trusting the forecast more)
@@ -70,6 +70,12 @@ The existing `max_safety_buffer_pct` cap SHALL still apply to prevent the floor 
 - **THEN** the safety floor look-ahead window SHALL shift to cover the 24h beyond tomorrow midnight
 - **AND** the MILP can now directly optimize the previously-blind overnight period
 
+#### Scenario: Extended forecast slots present in store are loaded and used
+- **GIVEN** the forecast store (`slot_forecasts`) contains slot-level PV/load forecasts extending at least 24h beyond the price horizon
+- **WHEN** the safety floor is calculated
+- **THEN** the calculation SHALL receive those extended slots as slot-level data and compute the temporal deficit over the 24h look-ahead window beyond the price horizon
+- **AND** the system SHALL NOT log the "extended forecast data unavailable or insufficient" warning
+
 #### Scenario: Risk level 3 neutral user in spring
 - **GIVEN** risk_appetite = 3, min_soc = 12%, battery capacity = 34.2 kWh
 - **WHEN** the temporal deficit beyond the price horizon is approximately 15 kWh (overnight load)
@@ -81,7 +87,7 @@ The existing `max_safety_buffer_pct` cap SHALL still apply to prevent the floor 
 - **THEN** the safety floor SHALL equal min_soc (0% margin, 0% minimum floor)
 
 #### Scenario: Extended forecast data unavailable
-- **WHEN** load/PV forecast data does not extend beyond the price horizon
+- **WHEN** load/PV forecast data does not extend beyond the price horizon **in the forecast store** (genuinely absent, e.g. a forecast outage or early deployment)
 - **THEN** the system SHALL log a warning
 - **AND** the safety floor SHALL use only the available horizon data with the minimum floor per risk level as baseline
 
@@ -101,8 +107,7 @@ The StrategyEngine SHALL calculate `export_threshold_sek_per_kwh` dynamically ba
 
 **Formula:**
 ```python
-# Risk appetite shifts the minimum threshold floor
-RISK_BASELINE_SHIFTS = {
+RISK_BASELINE_SHIFTS = {  # Risk appetite shifts the minimum threshold floor
     1: 0.15,   # Safe: Never below 0.15 SEK
     2: 0.10,   # Conservative: Floor at 0.10
     3: 0.05,   # Neutral: Floor at 0.05
@@ -110,12 +115,10 @@ RISK_BASELINE_SHIFTS = {
     5: 0.00,   # Gambler: Can go to 0.00 on high spread days
 }
 
-# Normalize spread: 0.0 at 0.3 SEK, 1.0 at 2.0 SEK
-spread_norm = max(0.0, min(1.0, (spread - 0.3) / 1.7))
+spread_norm = max(0.0, min(1.0, (spread - 0.3) / 1.7))  # Normalize spread: 0.0 at 0.3 SEK, 1.0 at 2.0 SEK
 
-# Threshold scales from 0.50 (low spread) down to risk-based baseline (high spread)
 baseline = RISK_BASELINE_SHIFTS[risk_appetite]
-threshold = 0.50 - (0.50 - baseline) * spread_norm
+threshold = 0.50 - (0.50 - baseline) * spread_norm  # Scales from 0.50 (low spread) down to risk-based baseline (high spread)
 ```
 
 **Behavior:**
@@ -173,18 +176,6 @@ The planner adapter SHALL build a list of `EVChargerInput` objects from the `ev_
 #### Scenario: Disabled charger excluded
 - **WHEN** charger A is enabled and charger B has `enabled: false`
 - **THEN** only charger A SHALL be passed to the solver
-
-### Requirement: Per-device deadline calculation
-The pipeline SHALL calculate `ev_deadline` independently for each charger using that charger's `departure_time` field. Chargers without a departure time SHALL have `deadline: None`.
-
-#### Scenario: Two chargers with different departure times
-- **WHEN** charger A has `departure_time: "07:00"` and charger B has `departure_time: "09:00"`
-- **AND** current time is 22:00
-- **THEN** charger A's deadline SHALL be tomorrow 07:00 and charger B's deadline SHALL be tomorrow 09:00
-
-#### Scenario: Charger with no departure time
-- **WHEN** a charger has `departure_time: ""`
-- **THEN** its deadline SHALL be `None` (no deadline constraint in solver)
 
 ### Requirement: Per-device initial state fetching
 The `get_initial_state()` function SHALL fetch SoC and plug state for ALL enabled chargers from Home Assistant, returning per-device state instead of scalar values.
@@ -335,23 +326,38 @@ The 30-minute SoC staleness threshold SHALL be hardcoded; no configuration surfa
 - **AND** the error details identify the offending field and slot
 
 ### Requirement: Inverter AC constraint permits zero discharge when PV forecast exceeds inverter capacity
-The Kepler MILP SHALL enforce the `max_inverter_ac_kw` constraint as `discharge[t] <= max(0.0, inverter_ac_kwh - s.pv_kwh)` where `inverter_ac_kwh = max_inverter_ac_kw * slot_hours[t]`. When `pv_forecast[t] >= inverter_ac_kwh` the upper bound SHALL be `0.0` (discharge forced to zero). The previous formulation `discharge[t] + s.pv_kwh <= inverter_ac_kwh` SHALL be replaced; it is mathematically equivalent when `pv < inverter_ac` but produces an infeasible negative upper bound when `pv >= inverter_ac`.
+The Kepler MILP SHALL apply the `max_inverter_ac_kw` limit only to power that crosses the AC inverter. It SHALL split forecast PV per slot into `pv_to_battery[t] >= 0` (DC-coupled charge that bypasses the AC stage) and `pv_to_ac[t] >= 0` (PV feeding load/export through the inverter), with the balance `pv_to_battery[t] + pv_to_ac[t] + curtailment[t] == s.pv_kwh` where `s.pv_kwh = pv_forecast[t]`. The AC limit SHALL be enforced as `pv_to_ac[t] + discharge[t] <= inverter_ac_kwh` where `inverter_ac_kwh = max_inverter_ac_kw * slot_hours[t]`.
 
-#### Scenario: PV forecast within inverter limit — normal discharge bound
-- **WHEN** `pv_forecast[t] = 1.5 kWh` and `inverter_ac_kwh = 2.0 kWh`
-- **THEN** `discharge[t] <= 0.5 kWh`
+For `dc_coupled` topology (the default), `pv_to_battery[t]` SHALL NOT count against the AC limit and SHALL be bounded only by available battery charge headroom and the battery charge-power limit. For `ac_coupled` topology, battery charging also crosses the AC inverter and the limit SHALL include it (equivalent to the previous `pv_forecast[t] + discharge[t] <= inverter_ac_kwh`).
+
+The model SHALL remain feasible for every `pv_forecast[t]`, including `pv_forecast[t] >= inverter_ac_kwh`: surplus PV that cannot cross the AC side SHALL be absorbable by `pv_to_battery[t]` (subject to battery headroom) or `curtailment[t]`, never forcing infeasibility. When `max_inverter_ac_kw` is unset, no AC-limit constraint SHALL be added (unchanged default).
+
+#### Scenario: PV forecast within inverter limit — normal discharge bound (dc_coupled)
+- **WHEN** `pv_forecast[t] = 1.5 kWh`, `inverter_ac_kwh = 2.0 kWh`, topology `dc_coupled`, and no PV is routed to battery (`pv_to_battery[t] = 0`)
+- **THEN** `pv_to_ac[t] = 1.5 kWh` and `discharge[t] <= 0.5 kWh`
 - **AND** the LP is feasible for this slot
 
-#### Scenario: PV forecast equals inverter limit — discharge forced to zero
-- **WHEN** `pv_forecast[t] = 2.0 kWh` and `inverter_ac_kwh = 2.0 kWh`
-- **THEN** `discharge[t] <= 0.0`
-- **AND** the LP is feasible (discharge = 0 satisfies the constraint)
-
-#### Scenario: PV forecast exceeds inverter limit — discharge still zero, no infeasibility
-- **WHEN** `pv_forecast[t] = 2.1177 kWh` and `inverter_ac_kwh = 2.0 kWh`
-- **THEN** the effective upper bound is `max(0.0, 2.0 - 2.1177) = 0.0`
-- **AND** `discharge[t] <= 0.0` is satisfiable (discharge = 0)
+#### Scenario: PV forecast exceeds inverter limit — surplus routes to battery, no infeasibility (dc_coupled)
+- **WHEN** `pv_forecast[t] = 2.1177 kWh`, `inverter_ac_kwh = 2.0 kWh`, topology `dc_coupled`, and battery charge headroom is available
+- **THEN** the surplus above `inverter_ac_kwh` SHALL be absorbable by `pv_to_battery[t]` (here `pv_to_battery[t] >= 0.1177 kWh`) rather than forced to curtailment
+- **AND** `pv_to_ac[t] + discharge[t] <= 2.0 kWh` holds
 - **AND** the solver returns `Optimal`, not `Infeasible`
+
+#### Scenario: PV-to-AC export is independently capped (dc_coupled)
+- **WHEN** `pv_forecast[t] = 3.0 kWh`, `inverter_ac_kwh = 2.0 kWh`, topology `dc_coupled`, and battery headroom can absorb 1.0 kWh
+- **THEN** `pv_to_ac[t] <= 2.0 kWh` (so PV feeding load + export never exceeds the AC rating)
+- **AND** the remaining `>= 1.0 kWh` is routed to `pv_to_battery[t]` and/or `curtailment[t]`
+- **AND** the plan SHALL NOT assume grid export of PV beyond `inverter_ac_kwh` in this slot
+
+#### Scenario: AC-coupled topology retains the stricter combined limit
+- **WHEN** `pv_forecast[t] = 1.5 kWh`, `inverter_ac_kwh = 2.0 kWh`, and topology `ac_coupled`
+- **THEN** battery charging counts against the AC limit, enforcing `pv_forecast[t] + discharge[t] <= inverter_ac_kwh` (i.e. `discharge[t] <= 0.5 kWh`)
+- **AND** when `pv_forecast[t] >= inverter_ac_kwh` the effective discharge upper bound is `0.0` and the LP remains feasible
+
+#### Scenario: Inverter limit unset — no AC constraint added
+- **WHEN** `max_inverter_ac_kw` is unset (default)
+- **THEN** no inverter-AC constraint SHALL be added to the MILP
+- **AND** PV routing variables MAY be omitted (no AC cap to enforce)
 
 ### Requirement: Kepler result merge is index-aligned and crash-safe
 After the Kepler solver runs, the pipeline merges `result_df` columns back into `final_df` using index-aligned pandas assignment. The merge SHALL NOT use positional `.values` assignment. If `len(result_df) != len(future_df)`, the pipeline SHALL log an error at `ERROR` level describing the mismatch (including both lengths) and continue with index-aligned assignment so that matching slots are correctly populated.
@@ -372,3 +378,39 @@ After the Kepler solver runs, the pipeline merges `result_df` columns back into 
 - **WHEN** the pipeline writes Kepler result columns into `final_df`
 - **THEN** each assignment uses `final_df[col] = result_df[col]` (index-aligned Series assignment)
 - **AND** `result_df[col].values` (positional numpy array assignment) is never used
+
+### Requirement: Reported plan cost uses the effective export price
+
+The reported plan cost (`total_cost_sek` and per-slot `cost_sek`) SHALL be recomputed using the same effective export price the solver objective minimized — `export_price − export_threshold` per exported kWh — so the displayed cost matches the optimized quantity. This is a reporting correction only; planning decisions are unchanged.
+
+#### Scenario: Reported cost matches the optimized export price
+
+- **WHEN** a plan exports energy in slots with a non-zero export threshold
+- **THEN** the reported cost values the exported energy at `export_price − export_threshold` per kWh
+- **AND** the reported total equals the cost the solver actually minimized
+
+#### Scenario: No double-subtraction and no decision change
+
+- **WHEN** the export threshold is zero
+- **THEN** the reported cost is identical to today's value
+- **AND** the chosen schedule is unchanged in all cases
+
+### Requirement: Configured battery cycle cost is a hard floor on solver wear cost
+The wear cost the solver uses (`wear_cost_sek_per_kwh`) SHALL never be lower than the configured battery cycle cost (`battery_economics.battery_cycle_cost_kwh`). This floor SHALL be enforced at the single solver-adapter resolution point where the wear cost is finalized, so it holds regardless of which source set the value (StrategyEngine override, root-level config, or default). The effective value SHALL be `max(battery_cycle_cost_kwh, resolved_wear_cost)`.
+
+The configured cycle cost represents a fixed physical cost of using the battery; the StrategyEngine MAY raise the effective wear cost above the floor to demand more caution, but MUST NOT push it below the floor. The battery SHALL never be modelled as free to cycle.
+
+#### Scenario: High-volatility override is clamped to the floor
+- **GIVEN** `battery_economics.battery_cycle_cost_kwh = 0.2` and the StrategyEngine sets a wear-cost override of `0.0` (aggressive, high price spread)
+- **WHEN** the adapter resolves the solver wear cost
+- **THEN** the solver receives `0.2` (the configured floor), not `0.0`
+
+#### Scenario: Conservative override above the floor is preserved
+- **GIVEN** `battery_economics.battery_cycle_cost_kwh = 0.2` and the StrategyEngine sets a wear-cost override of `1.0` (conservative, flat market)
+- **WHEN** the adapter resolves the solver wear cost
+- **THEN** the solver receives `1.0` (override is above the floor, so it is kept)
+
+#### Scenario: Floor enforced at a single resolution point
+- **WHEN** the wear cost reaches the solver from any source
+- **THEN** the `max(cycle_cost, …)` clamp has been applied exactly once at the adapter resolution point
+- **AND** no code path can deliver a solver wear cost below the configured cycle cost

@@ -23,7 +23,9 @@ class LearningEngine:
     """
 
     def __init__(self, config_path: str = "config.yaml"):
+        self._config_path: str = config_path
         self.config: dict[str, Any] = self._load_config(config_path)
+        self._config_mtime: float = self._get_config_mtime()
         self.learning_config: dict[str, Any] = self.config.get("learning", {})
         self.db_path = self.learning_config.get("sqlite_path", "data/planner_learning.db")
         self.timezone = pytz.timezone(self.config.get("timezone", "Europe/Stockholm"))
@@ -45,25 +47,56 @@ class LearningEngine:
             "grid": input_sensors.get("grid_power_inverted", False),
         }
 
+    def _get_config_mtime(self) -> float:
+        try:
+            return Path(self._config_path).stat().st_mtime
+        except OSError:
+            return 0.0
+
     def _load_config(self, config_path: str) -> dict[str, Any]:
         """Load configuration from YAML file"""
         try:
             with Path(config_path).open(encoding="utf-8") as f:
                 return yaml.safe_load(f)
         except FileNotFoundError:
-            # Fallback to default config
-            with Path("config.default.yaml").open(encoding="utf-8") as f:
+            self._config_path = "config.default.yaml"
+            with Path(self._config_path).open(encoding="utf-8") as f:
                 return yaml.safe_load(f)
+
+    def reload_config_if_changed(self) -> None:
+        """Re-parse config only when its mtime has changed; no-op otherwise."""
+        try:
+            current_mtime = Path(self._config_path).stat().st_mtime
+        except OSError:
+            return
+        if current_mtime == self._config_mtime:
+            return
+        self.config = self._load_config(self._config_path)
+        self._config_mtime = self._get_config_mtime()
+        logger.info("Config reloaded (mtime changed): %s", self._config_path)
+
+    def refresh_config(self) -> None:
+        """Force re-read of config (called after a config save)."""
+        self.config = self._load_config(self._config_path)
+        self._config_mtime = self._get_config_mtime()
+        logger.info("Config refreshed: %s", self._config_path)
 
     # Delegate storage methods to store (Async)
     async def store_slot_prices(self, price_rows: Any) -> None:
         await self.store.store_slot_prices(price_rows)
 
-    async def store_slot_observations(self, observations_df: pd.DataFrame) -> None:
-        await self.store.store_slot_observations(observations_df)
+    async def store_slot_observations(
+        self, observations_df: pd.DataFrame, authoritative: bool = True
+    ) -> None:
+        await self.store.store_slot_observations(observations_df, authoritative=authoritative)
 
     async def store_forecasts(self, forecasts: list[dict[str, Any]], forecast_version: str) -> None:
         await self.store.store_forecasts(forecasts, forecast_version)
+
+    async def store_openmeteo_pv_baselines(
+        self, baselines: list[dict[str, Any]], forecast_version: str = "aurora"
+    ) -> None:
+        await self.store.store_openmeteo_pv_baselines(baselines, forecast_version)
 
     async def log_training_episode(
         self,
@@ -113,6 +146,7 @@ class LearningEngine:
             "cumulative_",
             "_kw",
             "_kwh",
+            "_power",
             "_current",
             "_production",
             "_consumption",
@@ -132,7 +166,7 @@ class LearningEngine:
         # REV F55: Handle battery_power and grid_power sensors
         if stripped in ("battery_power", "battery"):
             return "battery"
-        if stripped in ("grid_power",):
+        if stripped in ("grid_power", "grid"):
             return "grid"
 
         aliases = {
@@ -141,6 +175,7 @@ class LearningEngine:
             "pv": {"pv", "solar", "pvproduction", "production", "yield", "solar_yield"},
             "load": {"load", "consumption", "house", "usage", "load_consumption", "house_load"},
             "water": {"water", "vvb", "waterheater", "heater"},
+            "ev_charging": {"ev", "evcharging", "evcharger", "charger"},
             "soc": {"soc", "battery_soc", "socpercent"},
             "battery": {"battery"},  # REV F55: battery power sensors (not SoC)
         }
@@ -152,6 +187,7 @@ class LearningEngine:
     def etl_cumulative_to_slots(
         self,
         cumulative_data: dict[str, list[tuple[datetime, float]]],
+        controllable_power_data: dict[str, list[tuple[datetime, float]]] | None = None,
         resolution_minutes: int = 15,
     ) -> pd.DataFrame:
         """
@@ -238,6 +274,44 @@ class LearningEngine:
             # deltas.iloc[1:] corresponds to the slots [slots[0]:slots[1]], [slots[1]:slots[2]], etc.
             slot_df[col_name] = slot_df[col_name] + deltas.iloc[1:].values
 
+        if controllable_power_data:
+            power_df = self.etl_power_to_slots(controllable_power_data, resolution_minutes)
+            if not power_df.empty:
+                merge_cols = [
+                    col
+                    for col in ("slot_start", "water_kwh", "ev_charging_kwh")
+                    if col in power_df.columns
+                ]
+                if len(merge_cols) > 1:
+                    slot_df = slot_df.merge(power_df[merge_cols], on="slot_start", how="left")
+                    for col in ("water_kwh", "ev_charging_kwh"):
+                        if col not in slot_df.columns:
+                            slot_df[col] = 0.0
+                        elif f"{col}_x" in slot_df.columns or f"{col}_y" in slot_df.columns:
+                            left = (
+                                slot_df[f"{col}_x"].fillna(0.0)
+                                if f"{col}_x" in slot_df.columns
+                                else 0.0
+                            )
+                            right = (
+                                slot_df[f"{col}_y"].fillna(0.0)
+                                if f"{col}_y" in slot_df.columns
+                                else 0.0
+                            )
+                            slot_df[col] = left + right
+                            slot_df = slot_df.drop(
+                                columns=[
+                                    c for c in (f"{col}_x", f"{col}_y") if c in slot_df.columns
+                                ]
+                            )
+
+        if "load_kwh" in slot_df.columns:
+            controllable_kwh = 0.0
+            for col in ("ev_charging_kwh", "water_kwh"):
+                if col in slot_df.columns:
+                    controllable_kwh = controllable_kwh + slot_df[col].fillna(0.0)
+            slot_df["load_kwh"] = (slot_df["load_kwh"] - controllable_kwh).clip(lower=0.0)
+
         if any(self._canonical_sensor_name(name) == "soc" for name in slot_records):
             soc_name = next(
                 name for name in slot_records if self._canonical_sensor_name(name) == "soc"
@@ -268,6 +342,10 @@ class LearningEngine:
         """Get current status of the learning engine."""
         last_obs = await self.store.get_last_observation_time()
         episodes = await self.store.get_episodes_count()
+        forecasting_cfg: dict[str, Any] = self.config.get("forecasting", {}) or {}
+        ramp_days = float(forecasting_cfg.get("pv_personalization_ramp_days", 14) or 14)
+        pv_days = await self.store.count_paired_openmeteo_pv_days(days_back=max(90, int(ramp_days)))
+        pv_weight = min(1.0, max(0.0, pv_days / max(ramp_days, 1.0)))
 
         return {
             "status": "active",
@@ -275,6 +353,13 @@ class LearningEngine:
             "training_episodes": episodes,
             "db_path": self.db_path,
             "timezone": str(self.timezone),
+            "pv_personalization": {
+                "source": "openmeteo",
+                "paired_days": pv_days,
+                "ramp_days": ramp_days,
+                "weight": pv_weight,
+                "mode": "personalized" if pv_weight > 0 else "baseline",
+            },
         }
 
     def etl_power_to_slots(

@@ -38,6 +38,7 @@ class SlotForecast(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     slot_start: Mapped[str] = mapped_column(String)
     pv_forecast_kwh: Mapped[float] = mapped_column(Float, default=0.0, server_default=text("0"))
+    openmeteo_pv_forecast_kwh: Mapped[float | None] = mapped_column(Float)
     load_forecast_kwh: Mapped[float] = mapped_column(Float, default=0.0, server_default=text("0"))
     pv_p10: Mapped[float | None] = mapped_column(Float)
     pv_p90: Mapped[float | None] = mapped_column(Float)
@@ -155,15 +156,6 @@ class TrainingEpisode(Base):
     config_overrides_json: Mapped[str | None] = mapped_column(Text)
 
 
-class SchedulePlanned(Base):
-    __tablename__ = "schedule_planned"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    date: Mapped[str] = mapped_column(String, index=True)
-    planned_kwh: Mapped[float] = mapped_column(Float)
-    created_at: Mapped[str] = mapped_column(String)
-
-
 class RealizedEnergy(Base):
     __tablename__ = "realized_energy"
 
@@ -188,6 +180,14 @@ class PlannerDebug(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     created_at: Mapped[str] = mapped_column(String)
+    payload: Mapped[str] = mapped_column(Text)
+
+
+class SIndexHistory(Base):
+    __tablename__ = "s_index_history"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    created_at: Mapped[str] = mapped_column(String, index=True)
     payload: Mapped[str] = mapped_column(Text)
 
 
@@ -277,21 +277,6 @@ class SystemState(Base):
     key: Mapped[str] = mapped_column(String, primary_key=True)
     value: Mapped[str | None] = mapped_column(Text)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime, default=func.now())
-
-
-class DataQualityDaily(Base):
-    __tablename__ = "data_quality_daily"
-
-    date: Mapped[str] = mapped_column(String, primary_key=True)
-    status: Mapped[str] = mapped_column(String)
-    bad_hours_load: Mapped[int] = mapped_column(Integer, default=0)
-    bad_hours_pv: Mapped[int] = mapped_column(Integer, default=0)
-    bad_hours_import: Mapped[int] = mapped_column(Integer, default=0)
-    bad_hours_export: Mapped[int] = mapped_column(Integer, default=0)
-    bad_hours_batt: Mapped[int] = mapped_column(Integer, default=0)
-    missing_slots: Mapped[int] = mapped_column(Integer, default=0)
-    soc_issues: Mapped[int] = mapped_column(Integer, default=0)
-    metadata_json: Mapped[str | None] = mapped_column(Text)
 
 
 class ExecutionLog(Base):

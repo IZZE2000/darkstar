@@ -1,18 +1,19 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Api, ConfigResponse } from '../../../lib/api'
 import { useToast } from '../../../lib/useToast'
-import { BaseField, InverterProfile, standardInverterKeys } from '../types'
+import { BaseField, HaEntity, InverterProfile, standardInverterKeys } from '../types'
 import { buildFormState, buildPatch } from '../utils'
 
 export interface UseSettingsFormReturn {
     config: ConfigResponse | null
     form: Record<string, string>
+    fields: BaseField[]
     fieldErrors: Record<string, string>
     loading: boolean
     saving: boolean
     statusMessage: string | null
     isDirty: boolean
-    haEntities: { entity_id: string; friendly_name: string; domain: string }[]
+    haEntities: HaEntity[]
     haLoading: boolean
     handleChange: (key: string, value: string) => void
     save: (extraPatch?: Record<string, unknown>) => Promise<boolean>
@@ -30,7 +31,7 @@ export function useSettingsForm(baseFields: BaseField[], profiles: InverterProfi
     const [formInitialized, setFormInitialized] = useState(false)
     const [saving, setSaving] = useState(false)
     const [statusMessage, setStatusMessage] = useState<string | null>(null)
-    const [haEntities, setHaEntities] = useState<{ entity_id: string; friendly_name: string; domain: string }[]>([])
+    const [haEntities, setHaEntities] = useState<HaEntity[]>([])
     const [haLoading, setHaLoading] = useState(false)
 
     // Compute dynamic field list including profile-specific entity fields.
@@ -107,6 +108,7 @@ export function useSettingsForm(baseFields: BaseField[], profiles: InverterProfi
     }, [])
 
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- mount IO fetch, not derivable
         reload()
         reloadEntities()
     }, [reload, reloadEntities])
@@ -114,6 +116,7 @@ export function useSettingsForm(baseFields: BaseField[], profiles: InverterProfi
     // Rebuild form state when fields change (for dynamic profile fields)
     useEffect(() => {
         if (config && fields.length > 0) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect -- guards against wiping in-progress edits on rebuild; render-derivation would lose them
             setForm(buildFormState(config as unknown as Record<string, unknown>, fields))
             setFieldErrors({})
             setFormInitialized(true)
@@ -326,6 +329,7 @@ export function useSettingsForm(baseFields: BaseField[], profiles: InverterProfi
     return {
         config,
         form,
+        fields,
         fieldErrors,
         loading,
         saving,

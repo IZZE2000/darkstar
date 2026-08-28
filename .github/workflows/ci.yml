@@ -8,6 +8,10 @@ on:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  # Deps are managed via requirements*.txt (uv pip install), not `uv sync`/uv.lock
+  # (see pyproject.toml [tool.uv] package = false). Without this, `uv run` treats
+  # the repo as a uv project and regenerates a meaningless uv.lock stub.
+  UV_NO_SYNC: "1"
 
 jobs:
   lint-backend:
@@ -21,11 +25,17 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install Ruff
-        run: pip install ruff
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: 'requirements*.txt'
+
+      - name: Install dependencies
+        run: uv venv && uv pip install -r requirements.txt -r requirements-dev.txt
 
       - name: Run Ruff
-        run: ruff check backend/ --output-format=github
+        run: uv run ruff check backend/ planner/ ml/ executor/ --output-format=github
 
   lint-frontend:
     name: Lint Frontend (ESLint)
@@ -39,12 +49,12 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 10
 
       - name: Setup Node
         uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'pnpm'
           cache-dependency-path: frontend/pnpm-lock.yaml
 
@@ -54,8 +64,8 @@ jobs:
       - name: Run ESLint
         run: pnpm lint
 
-  test-api:
-    name: API Tests
+  test-python:
+    name: Python Tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -65,13 +75,40 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install dependencies
-        run: |
-          pip install -r requirements.txt
-          pip install pytest httpx
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: 'requirements*.txt'
 
-      - name: Run API tests
-        run: PYTHONPATH=. pytest tests/api/test_api_routes.py -v
+      - name: Install dependencies
+        run: uv venv && uv pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Run Python tests
+        run: uv run python -m pytest
+
+  pyright:
+    name: Pyright
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: 'requirements*.txt'
+
+      - name: Install dependencies
+        run: uv venv && uv pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Run Pyright
+        run: uv run pyright
 
   validate-openapi:
     name: Validate OpenAPI Schema
@@ -84,12 +121,18 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: 'requirements*.txt'
+
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: uv venv && uv pip install -r requirements.txt
 
       - name: Export and validate OpenAPI schema
         run: |
-          python -c "
+          uv run python -c "
           import json
           import sys
           sys.path.insert(0, '.')

@@ -3,7 +3,7 @@
 
 name: "Darkstar Energy Manager (Solinteg)"
 description: "AI-powered home battery optimization with MILP scheduling"
-version: "2.6.4-beta"
+version: "2.7.0-beta"
 slug: "darkstar"
 url: "https://github.com/ergetie/darkstar"
 
@@ -13,7 +13,7 @@ arch:
   - aarch64
 
 # Fork image — built by GitHub Actions, pushed to IZZE2000 GHCR
-# Includes Solinteg profile + scale support not in upstream
+# Fork delta vs upstream: export_with_load_w clamped to max_discharge_w
 image: ghcr.io/izze2000/darkstar-{arch}
 
 # Startup configuration

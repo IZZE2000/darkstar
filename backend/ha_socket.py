@@ -30,6 +30,7 @@ class HAWebSocketClient:
         self.main_loop: asyncio.AbstractEventLoop | None = (
             None  # Rev EVFIX: Store main event loop for cross-thread dispatch
         )
+        self.background_tasks: set[asyncio.Task[Any]] = set()
 
         # Runtime Statistics (Production Observability)
         self.stats: dict[str, Any] = {
@@ -45,9 +46,9 @@ class HAWebSocketClient:
 
         # Early validation with logging
         if not self.token:
-            logger.warning("⚠️ No HA token configured - WebSocket will not connect")
+            logger.warning("No HA token configured - WebSocket will not connect")
         if not self.url or self.url == "/api/websocket":
-            logger.warning("⚠️ No HA URL configured - WebSocket will not connect")
+            logger.warning("No HA URL configured - WebSocket will not connect")
         else:
             logger.debug(f"HA WebSocket URL: {self.url}")
 
@@ -58,7 +59,7 @@ class HAWebSocketClient:
             base_url = self.config.get("url", "")
 
             if not base_url:
-                logger.error("❌ No HA URL found in secrets.yaml - WebSocket cannot connect")
+                logger.error("No HA URL found in secrets.yaml - WebSocket cannot connect")
                 self.url = "/api/websocket"  # Invalid URL to prevent connection
                 self.token = None
                 return
@@ -71,13 +72,13 @@ class HAWebSocketClient:
             self.token = self.config.get("token")
 
             if not self.token:
-                logger.error("❌ No HA token found in secrets.yaml - WebSocket cannot authenticate")
+                logger.error("No HA token found in secrets.yaml - WebSocket cannot authenticate")
             else:
                 # Log token length for verification without exposing the actual token
                 logger.info(f"✅ HA config loaded: URL={base_url}, token_len={len(self.token)}")
 
         except Exception as e:
-            logger.error(f"❌ Failed to load HA configuration: {e}", exc_info=True)
+            logger.error(f"Failed to load HA configuration: {e}", exc_info=True)
             self.url = "/api/websocket"
             self.token = None
 
@@ -134,6 +135,8 @@ class HAWebSocketClient:
                 used_power_sensors: set[str] = set()
                 used_soc_sensors: set[str] = set()
                 used_plug_sensors: set[str] = set()
+                used_ready_by_entities: set[str] = set()
+                used_target_soc_entities: set[str] = set()
                 for idx, ev in enumerate(ev_chargers):
                     if ev.get("enabled", True):
                         ev_name = ev.get("name", f"EV {idx + 1}")
@@ -154,6 +157,18 @@ class HAWebSocketClient:
                         if ev.get("plug_sensor") and ev["plug_sensor"] not in used_plug_sensors:
                             mapping[ev["plug_sensor"]] = f"ev_plug_{active_idx}"
                             used_plug_sensors.add(ev["plug_sensor"])
+                        if (
+                            ev.get("ha_ready_by_entity")
+                            and ev["ha_ready_by_entity"] not in used_ready_by_entities
+                        ):
+                            mapping[ev["ha_ready_by_entity"]] = f"ev_ready_by_{active_idx}"
+                            used_ready_by_entities.add(ev["ha_ready_by_entity"])
+                        if (
+                            ev.get("ha_target_soc_entity")
+                            and ev["ha_target_soc_entity"] not in used_target_soc_entities
+                        ):
+                            mapping[ev["ha_target_soc_entity"]] = f"ev_target_soc_{active_idx}"
+                            used_target_soc_entities.add(ev["ha_target_soc_entity"])
 
                 # Initialize ev_chargers array upfront with configured EVs
                 self.latest_values["ev_chargers"] = [
@@ -188,7 +203,7 @@ class HAWebSocketClient:
                 )
             return mapping
         except Exception as e:
-            logger.error(f"❌ Failed to load monitored entities: {e}", exc_info=True)
+            logger.error(f"Failed to load monitored entities: {e}", exc_info=True)
             return {}
 
     async def connect(self):
@@ -260,6 +275,9 @@ class HAWebSocketClient:
                                 if entity_id in self.monitored_entities:
                                     self._handle_state_change(entity_id, state)
 
+                            # Run startup synchronization for EV schedules
+                            self._sync_ev_schedules_on_startup(results)
+
                             # Rev F64: Emit initial ev_chargers array after all states processed
                             if self.ev_charger_configs:
                                 from backend.events import emit_live_metrics
@@ -311,6 +329,152 @@ class HAWebSocketClient:
             except Exception as e:
                 logger.error(f"HA WebSocket error: {e}")
                 await asyncio.sleep(5)
+
+    def _sync_ev_schedules_on_startup(self, results: list[dict[str, Any]]) -> None:
+        """Reconnect sync between HA and the state file for EV goals: HA wins.
+
+        For each goal field (target SoC, ready-by datetime), adopt the HA
+        value when it passes a sanity check (SoC in 1-100; datetime
+        parseable and strictly in the future — a past/stale HA datetime is
+        never adopted). Fields where HA is missing/insane keep the
+        state-file value and get pushed back to HA once. Never blanket-
+        overwrites either side, and never invents a goal that doesn't
+        already exist on one side.
+        """
+        try:
+            from datetime import datetime
+
+            import pytz
+
+            from backend.api.routers.ev import sync_goal_to_ha
+            from backend.core.ev_goal import resolve_next_ready_by
+            from backend.core.ev_state import update_ev_state
+            from backend.core.ha_client import parse_ha_datetime_state
+
+            # Map entity_id -> state dict from the get_states results
+            ha_states = {s.get("entity_id"): s for s in results if s.get("entity_id")}
+
+            cfg = load_yaml("config.yaml")
+            timezone_name = cfg.get("timezone", "Europe/Stockholm")
+            tz = pytz.timezone(timezone_name)
+            now = datetime.now(tz)
+
+            ev_chargers: list[dict[str, Any]] = cfg.get("ev_chargers") or []
+            if not any(
+                ev.get("ha_ready_by_entity") or ev.get("ha_target_soc_entity") for ev in ev_chargers
+            ):
+                # Nothing to sync — skip the locked state read-modify-write entirely.
+                return
+
+            to_push: list[tuple[str, int | None, datetime | None, str | None, str | None]] = []
+
+            def _mutate(state_data: dict[str, dict[str, Any]]) -> None:
+                for ev in ev_chargers:
+                    if not ev.get("enabled", True):
+                        continue
+                    charger_id = str(ev.get("id"))
+
+                    ha_ready_by_entity: str | None = ev.get("ha_ready_by_entity")
+                    ha_target_soc_entity: str | None = ev.get("ha_target_soc_entity")
+                    if not ha_ready_by_entity and not ha_target_soc_entity:
+                        continue
+
+                    charger_state = state_data.get(charger_id, {})
+
+                    # Target SoC: sane HA value is 1-100.
+                    ha_soc_val: int | None = None
+                    if ha_target_soc_entity and ha_target_soc_entity in ha_states:
+                        try:
+                            val = ha_states[ha_target_soc_entity].get("state")
+                            if val not in (None, "unknown", "unavailable", ""):
+                                candidate = int(float(val))
+                                if 1 <= candidate <= 100:
+                                    ha_soc_val = candidate
+                        except (TypeError, ValueError):
+                            pass
+
+                    # Ready-by: sane HA value parses and is strictly in the future.
+                    ha_ready_by_dt: datetime | None = None
+                    if ha_ready_by_entity and ha_ready_by_entity in ha_states:
+                        raw_val = ha_states[ha_ready_by_entity].get("state")
+                        parsed = parse_ha_datetime_state(raw_val, tz)
+                        if parsed is not None and parsed > now:
+                            ha_ready_by_dt = parsed
+
+                    changed = False
+                    if (
+                        ha_soc_val is not None
+                        and charger_state.get("target_soc_percent") != ha_soc_val
+                    ):
+                        charger_state["target_soc_percent"] = ha_soc_val
+                        changed = True
+
+                    if ha_ready_by_dt is not None:
+                        ready_by_val = f"{ha_ready_by_dt.hour:02d}:{ha_ready_by_dt.minute:02d}"
+                        date_val = ha_ready_by_dt.date().isoformat()
+                        if (
+                            charger_state.get("ready_by") != ready_by_val
+                            or charger_state.get("repeat") != "none"
+                            or charger_state.get("ready_by_date") != date_val
+                        ):
+                            charger_state["ready_by"] = ready_by_val
+                            charger_state["repeat"] = "none"
+                            charger_state["ready_by_date"] = date_val
+                            changed = True
+
+                    if not charger_state:
+                        # No goal on either side — nothing to adopt or push.
+                        continue
+
+                    if changed:
+                        charger_state.setdefault("keep_on_after_target", False)
+                        charger_state["source"] = "ha"
+                        charger_state["last_updated"] = now.isoformat()
+                        state_data[charger_id] = charger_state
+                        logger.info(
+                            "Reconnect sync: adopted HA goal values for EV %s "
+                            "(target=%s, ready_by=%s)",
+                            charger_id,
+                            charger_state.get("target_soc_percent"),
+                            charger_state.get("ready_by"),
+                        )
+
+                    soc_needs_push = bool(ha_target_soc_entity) and ha_soc_val is None
+                    ready_by_needs_push = bool(ha_ready_by_entity) and ha_ready_by_dt is None
+                    if (soc_needs_push or ready_by_needs_push) and charger_state.get(
+                        "target_soc_percent"
+                    ) is not None:
+                        ready_by_dt = resolve_next_ready_by(charger_state, now, tz)
+                        to_push.append(
+                            (
+                                charger_id,
+                                charger_state.get("target_soc_percent"),
+                                ready_by_dt,
+                                ha_target_soc_entity,
+                                ha_ready_by_entity,
+                            )
+                        )
+
+            update_ev_state(_mutate)
+
+            for charger_id, target_soc, ready_by_dt, target_soc_entity, ready_by_entity in to_push:
+                task = asyncio.create_task(
+                    sync_goal_to_ha(
+                        charger_id,
+                        target_soc,
+                        ready_by_dt,
+                        target_soc_entity,
+                        ready_by_entity,
+                    )
+                )
+                self.background_tasks.add(task)
+                task.add_done_callback(self.background_tasks.discard)
+                logger.info(
+                    "Reconnect sync: pushing state goal for EV %s to HA (HA missing/insane)",
+                    charger_id,
+                )
+        except Exception as e:
+            logger.error("Error in EV schedule startup sync: %s", e, exc_info=True)
 
     def _handle_state_change(self, entity_id: str, new_state: dict[str, Any] | None) -> None:
         if not new_state:
@@ -413,6 +577,109 @@ class HAWebSocketClient:
                 )
             except Exception as e:
                 logger.error(f"Failed to handle EV plug change: {e}")
+            return
+
+        # Handle EV ready-by and target-SoC changes from HA (HA wins)
+        if key and (key.startswith("ev_ready_by_") or key.startswith("ev_target_soc_")):
+            try:
+                ev_idx = int(key.split("_")[-1])
+                charger_id = (
+                    self.ev_charger_configs[ev_idx].get("id")
+                    if ev_idx < len(self.ev_charger_configs)
+                    else None
+                )
+                if not charger_id:
+                    return
+
+                # Debounce check: skip if within 5s of a Darkstar write
+                import time
+
+                import pytz
+
+                from backend.core.ev_state import last_darkstar_write, update_ev_state
+                from backend.core.ha_client import parse_ha_datetime_state
+
+                last_write = last_darkstar_write.get(charger_id, 0.0)
+                if time.time() - last_write < 5.0:
+                    logger.debug(
+                        "Debounce: skipping HA change event for EV %s within 5s of Darkstar write",
+                        charger_id,
+                    )
+                    return
+
+                state_val = new_state.get("state")
+                if state_val in (None, "unknown", "unavailable", "", "None"):
+                    return
+
+                tz_name = load_yaml("config.yaml").get("timezone", "Europe/Stockholm")
+                tz = pytz.timezone(tz_name)
+
+                outcome: dict[str, Any] = {"changed": False, "charger_state": {}}
+
+                def _mutate(state_data: dict[str, dict[str, Any]]) -> None:
+                    charger_state = state_data.get(charger_id, {})
+                    changed = False
+                    if key.startswith("ev_ready_by_"):
+                        dt = parse_ha_datetime_state(state_val, tz)
+                        if dt is None:
+                            logger.warning(
+                                "Could not parse HA ready-by value %r for EV %s",
+                                state_val,
+                                charger_id,
+                            )
+                        else:
+                            ready_by_val = f"{dt.hour:02d}:{dt.minute:02d}"
+                            if charger_state.get("ready_by") != ready_by_val:
+                                charger_state["ready_by"] = ready_by_val
+                                changed = True
+
+                            # If repeat is "none" or not set, update ready_by_date
+                            if charger_state.get("repeat") == "none":
+                                date_val = dt.date().isoformat()
+                                if charger_state.get("ready_by_date") != date_val:
+                                    charger_state["ready_by_date"] = date_val
+                                    changed = True
+                    elif key.startswith("ev_target_soc_"):
+                        try:
+                            target_soc = int(float(state_val))
+                            if (
+                                0 <= target_soc <= 100
+                                and charger_state.get("target_soc_percent") != target_soc
+                            ):
+                                charger_state["target_soc_percent"] = target_soc
+                                changed = True
+                        except (TypeError, ValueError) as e:
+                            logger.error("Error parsing target SoC from HA: %s", e)
+
+                    if changed:
+                        # Update source and last_updated
+                        charger_state["source"] = "ha"
+                        charger_state["last_updated"] = datetime.now(UTC).isoformat()
+                        # Make sure other required keys are set
+                        charger_state.setdefault("repeat", "daily")
+                        charger_state.setdefault("keep_on_after_target", False)
+                        state_data[charger_id] = charger_state
+
+                    outcome["changed"] = changed
+                    outcome["charger_state"] = charger_state
+
+                update_ev_state(_mutate)
+
+                if outcome["changed"]:
+                    logger.info(
+                        "HA state changed - Updated state goal for EV %s: %s",
+                        charger_id,
+                        outcome["charger_state"],
+                    )
+
+                    # Emit ev_schedule_changed Socket.IO event
+                    from backend.core.websockets import ws_manager
+
+                    ws_manager.emit_sync(
+                        "ev_schedule_changed", {"charger_id": charger_id, "id": charger_id}
+                    )
+            except Exception as e:
+                logger.error(f"Failed to handle HA EV schedule change: {e}", exc_info=True)
             return
 
         # Rev F64: Handle EV SoC changes - indexed per EV
@@ -684,7 +951,6 @@ class HAWebSocketClient:
             # Keep only last 5
             if len(self.stats["errors"]) > 5:
                 self.stats["errors"].pop(0)
-            pass
 
         finally:
             self.stats["events_processed"] += 1
@@ -702,7 +968,7 @@ class HAWebSocketClient:
             try:
                 asyncio.run(self.connect())
             except Exception as e:
-                logger.error(f"❌ HA WebSocket thread crashed: {e}", exc_info=True)
+                logger.error(f"HA WebSocket thread crashed: {e}", exc_info=True)
 
         logger.info(f"🔗 Connecting to HA WebSocket: {self.url}")
         threading.Thread(target=_run_ws, daemon=True, name="HA-WebSocket").start()
@@ -820,7 +1086,7 @@ def start_ha_socket_client():
             _ha_client.start()
             logger.info("✅ HA WebSocket client initialized")
         except Exception as e:
-            logger.error(f"❌ Failed to start HA WebSocket client: {e}", exc_info=True)
+            logger.error(f"Failed to start HA WebSocket client: {e}", exc_info=True)
 
 
 def reload_ha_socket_client():

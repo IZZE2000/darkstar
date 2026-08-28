@@ -4,24 +4,35 @@
 
 FROM python:3.12-slim
 
-# Install Node.js 22.x via NodeSource (node:sqlite requires >=22.5.0; Debian packages vary)
-RUN apt-get update && apt-get install -y --no-install-recommends curl && \
-    curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
-    apt-get install -y --no-install-recommends \
-    nodejs \
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # Utilities
+    curl \
+    ca-certificates \
+    gnupg \
     jq \
     bash \
+    # Required for LightGBM (prevents segfaults/hangs)
     libgomp1 \
+    # Build dependencies for any packages that need compilation
     gcc \
     g++ \
     make \
     && rm -rf /var/lib/apt/lists/*
 
+# Install Node 22 from NodeSource (Debian's apt `nodejs` is too old for pnpm 10's
+# `node:sqlite` requirement).
+RUN mkdir -p /etc/apt/keyrings \
+    && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg \
+    && echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main" > /etc/apt/sources.list.d/nodesource.list \
+    && apt-get update && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
-# Install pnpm and build frontend
+# Install pnpm and build frontend. pnpm pinned to v10 to match CI and the lockfile.
 COPY frontend/package.json frontend/pnpm-lock.yaml ./frontend/
-RUN npm install -g pnpm@9 && cd frontend && pnpm install --frozen-lockfile
+RUN npm install -g pnpm@10 && cd frontend && pnpm install --frozen-lockfile
 
 # Install Python dependencies
 COPY requirements.txt ./

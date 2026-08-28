@@ -10,6 +10,7 @@ conditions require immediate action (e.g., low SoC protection).
 
 import logging
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import Enum
 from typing import Any
 
@@ -24,7 +25,6 @@ class OverrideType(Enum):
     MANUAL_OVERRIDE = "manual_override"
     # User-initiated quick actions
     FORCE_CHARGE = "force_charge"
-    FORCE_EXPORT = "force_export"
     FORCE_STOP = "force_stop"
     FORCE_HEAT = "force_heat"
 
@@ -82,6 +82,11 @@ class SystemState:
     # Manual override toggle
     manual_override_active: bool = False
 
+    # Per-phase grid current (A, magnitude), phase number -> amps. None when
+    # load balancing sensors are unconfigured. universal-load-balancing
+    grid_current_a: dict[int, float] | None = None
+    grid_current_updated_at: dict[int, datetime] | None = None
+
 
 @dataclass
 class SlotPlan:
@@ -98,7 +103,12 @@ class SlotPlan:
     ev_charger_plans: dict[str, float] = field(default_factory=lambda: {})
     water_heater_plans: dict[str, float] = field(default_factory=lambda: {})
     water_heating_boost: dict[str, bool] = field(default_factory=lambda: {})
-    custom_entity_active: bool = False
+    # Per-entry: str(excess_pv.priority[] rank) -> whether that custom entity sink should be on
+    custom_entity_active: dict[str, bool] = field(default_factory=lambda: {})
+    # Per-charger: charger_id -> surplus-eligible kW this slot (eligibility only, not a hard target)
+    ev_surplus_kw: dict[str, float] = field(default_factory=lambda: {})
+    # Per-charger: charger_id -> switch held on past target, no planned energy
+    ev_keep_on: dict[str, bool] = field(default_factory=lambda: {})
 
 
 class OverrideEvaluator:
@@ -114,12 +124,10 @@ class OverrideEvaluator:
 
     def __init__(
         self,
-        min_soc_floor: float = 10.0,
         water_temp_boost: int = 70,
         water_temp_max: int = 85,
         water_temp_off: int = 40,
     ):
-        self.min_soc_floor = min_soc_floor
         self.water_temp_boost = water_temp_boost
         self.water_temp_max = water_temp_max
         self.water_temp_off = water_temp_off
@@ -187,7 +195,6 @@ def evaluate_overrides(
     """
     config = config or {}
     evaluator = OverrideEvaluator(
-        min_soc_floor=config.get("min_soc_floor", 10.0),
         water_temp_boost=config.get("water_temp_boost", 70),
         water_temp_max=config.get("water_temp_max", 85),
         water_temp_off=config.get("water_temp_off", 40),

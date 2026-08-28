@@ -13,11 +13,11 @@ Key Features:
 """
 
 import asyncio
-import contextlib
 import logging
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 import aiohttp
@@ -137,6 +137,21 @@ async def _retry_with_backoff(
     ) from last_exception
 
 
+def _parse_bool_value(value: Any) -> bool:
+    """Interpret a switch/input_boolean write value against the on/off string
+    convention used throughout config (on_value/off_value, e.g. "1"/"0"),
+    rather than Python truthiness (bool("0") is True, which would always turn
+    the entity on).
+    """
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int | float):
+        return value != 0
+    if isinstance(value, str):
+        return value.strip().lower() in ("1", "true", "on", "yes")
+    return bool(value)
+
+
 def _is_entity_configured(entity: str | None) -> bool:
     """Check if an entity ID is properly configured.
 
@@ -223,41 +238,35 @@ class HAClient:
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
         }
-        self._session: aiohttp.ClientSession | None = None
+        self._sessions: dict[asyncio.AbstractEventLoop, aiohttp.ClientSession] = {}
 
     async def _get_session(self) -> aiohttp.ClientSession:
-        """Get or create the aiohttp session."""
-        import asyncio
+        """Get or create the aiohttp session for the CURRENT running event loop.
 
+        One session per event loop — a session is never closed from a
+        different loop than the one that created it (closing cross-loop
+        raises "Future attached to a different loop"). A stale/foreign-loop
+        session is simply left alone in ``_sessions``; only the current
+        loop's session is touched here.
+        """
         current_loop = asyncio.get_running_loop()
 
-        # Check if we need a new session (closed, None, or different event loop)
-        need_new_session = (
-            self._session is None
-            or self._session.closed
-            or getattr(self, "_session_loop", None) != current_loop
-        )
-
-        if need_new_session:
-            # Close old session if it exists and belongs to a different loop
-            if self._session and not self._session.closed:
-                with contextlib.suppress(Exception):
-                    await self._session.close()
-
-            self._session = aiohttp.ClientSession(
+        session = self._sessions.get(current_loop)
+        if session is None or session.closed:
+            session = aiohttp.ClientSession(
                 headers=self._headers,
                 timeout=self.timeout,
             )
-            self._session_loop = current_loop
+            self._sessions[current_loop] = session
 
-        assert self._session is not None
-        return self._session
+        return session
 
     async def close(self) -> None:
-        """Close the aiohttp session."""
-        if self._session and not self._session.closed:
-            await self._session.close()
-            self._session = None
+        """Close the aiohttp session belonging to the CURRENT running event loop."""
+        current_loop = asyncio.get_running_loop()
+        session = self._sessions.pop(current_loop, None)
+        if session and not session.closed:
+            await session.close()
 
     async def get_state(self, entity_id: str) -> dict[str, Any] | None:
         """Get the current state of an entity with retry logic."""
@@ -423,6 +432,17 @@ class HAClient:
         # Alias to set_number which now handles both
         return await self.set_number(entity_id, value)
 
+    async def set_input_datetime(self, entity_id: str, dt: datetime) -> bool:
+        """Set an input_datetime entity to a specific datetime."""
+        domain = self._get_safe_domain(entity_id, {"input_datetime"})
+        if not domain:
+            raise HACallError(
+                message=f"Invalid domain for input_datetime entity {entity_id}",
+                exception_type="DomainValidationError",
+            )
+        dt_str = dt.strftime("%Y-%m-%d %H:%M:%S")
+        return await self.call_service(domain, "set_datetime", entity_id, {"datetime": dt_str})
+
     async def send_notification(
         self,
         service: str | None,
@@ -513,35 +533,20 @@ class ActionDispatcher:
 
         return entity_def.default_entity
 
-    def _resolve_value(
-        self,
-        value: str | int | float | bool,
-        decision: ControllerDecision,
-        scale: float | None = None,
-    ) -> Any:
+    def _resolve_value(self, value: str | int | float | bool, decision: ControllerDecision) -> Any:
         """
         Resolve dynamic template values from ControllerDecision.
 
         Templates are strings in the form {{field_name}} where field_name
         is a property on ControllerDecision.
-
-        If scale is provided and the resolved value is numeric, it is multiplied
-        by scale before returning. Use negative scale to flip sign (e.g., discharge
-        inverters that use a single bidirectional register).
         """
         if isinstance(value, str) and value.startswith("{{") and value.endswith("}}"):
             field_name = value[2:-2]
             if not hasattr(decision, field_name):
                 logger.error("Unknown template variable: %s", field_name)
                 return value
-            resolved = getattr(decision, field_name)
-        else:
-            resolved = value
-
-        if scale is not None and isinstance(resolved, (int, float)):
-            resolved = int(resolved * scale)
-
-        return resolved
+            return getattr(decision, field_name)
+        return value
 
     async def _write_entity(
         self,
@@ -566,7 +571,10 @@ class ActionDispatcher:
             elif domain == "select":
                 return await self.ha.set_select_option(entity_id, str(value))
             elif domain in ("switch", "input_boolean"):
-                return await self.ha.set_switch(entity_id, bool(value))
+                # bool("0") is True in Python — on_value/off_value are configured
+                # as "1"/"0" strings, so a naive bool(value) would always turn
+                # the switch on. Interpret the on/off convention explicitly.
+                return await self.ha.set_switch(entity_id, _parse_bool_value(value))
             else:
                 logger.error("Unknown entity domain: %s", domain)
                 return False
@@ -583,11 +591,15 @@ class ActionDispatcher:
             target_float = float(target)
             return abs(current_float - target_float) < 0.01
         except (ValueError, TypeError):
-            if isinstance(target, bool):
+            if isinstance(target, bool) or (
+                isinstance(target, str)
+                and target.strip().lower() in ("0", "1", "true", "false", "on", "off", "yes", "no")
+            ):
+                target_bool = _parse_bool_value(target)
                 current_lower = str(current).strip().lower()
-                if target and current_lower == "on":
+                if target_bool and current_lower == "on":
                     return True
-                if not target and current_lower == "off":
+                if not target_bool and current_lower == "off":
                     return True
             return str(current).strip().lower() == str(target).strip().lower()
 
@@ -704,7 +716,7 @@ class ActionDispatcher:
                 duration_ms=int((time.time() - start_time) * 1000),
             )
 
-        resolved_value = self._resolve_value(action.value, decision, action.scale)
+        resolved_value = self._resolve_value(action.value, decision)
 
         previous_value = await self.ha.get_state_value(entity_id)
 
@@ -799,16 +811,7 @@ class ActionDispatcher:
                 error_details=None,
             )
 
-        if entity is None:
-            return ActionResult(
-                action_type="water_temp",
-                success=False,
-                message="Entity is None after validation",
-                skipped=True,
-                duration_ms=int((time.time() - start) * 1000),
-                error_details=None,
-            )
-
+        assert entity is not None  # guaranteed by _is_entity_configured guard above
         current = await self.ha.get_state_value(entity)
         try:
             current_val = int(float(current)) if current else None
@@ -890,93 +893,69 @@ class ActionDispatcher:
             error_details=error_details,
         )
 
-    async def set_custom_entity(self, value: str) -> ActionResult:
-        """Toggle the excess PV custom entity sink on/off.
-
-        Args:
-            value: The value to set (on_value or off_value from config).
-
-        Returns:
-            ActionResult indicating success or failure.
+    async def set_balanced_entity(self, entity_id: str, value: str) -> ActionResult:
+        """Write an on/off value to a custom HA entity (excess-PV custom_entity
+        sinks and load-balancing custom-entity loads both use this generic,
+        entity_id-parametrized helper — see engine.py's iteration over
+        `excess_pv.priority[]` custom_entity entries and `load_balancing.loads[]`).
         """
-        from .config import ExcessPVSinkType
-
         start = time.time()
-        excess_pv = self.config.excess_pv
-
-        if excess_pv.sink != ExcessPVSinkType.CUSTOM_ENTITY or not excess_pv.custom_entity.entity:
-            return ActionResult(
-                action_type="custom_entity",
-                success=True,
-                message="Custom entity sink not configured",
-                skipped=True,
-                duration_ms=int((time.time() - start) * 1000),
-            )
-
-        entity = excess_pv.custom_entity.entity
-        current = await self.ha.get_state_value(entity)
+        current = await self.ha.get_state_value(entity_id)
 
         if self._values_match(current, value):
             return ActionResult(
-                action_type="custom_entity",
+                action_type="balanced_load_entity",
                 success=True,
                 message=f"Already at {value}",
                 previous_value=current,
                 new_value=value,
-                entity_id=entity,
+                entity_id=entity_id,
                 skipped=True,
                 duration_ms=int((time.time() - start) * 1000),
             )
 
         if self.shadow_mode:
             logger.info(
-                "[SHADOW] Would set custom entity %s to %s (current: %s)",
-                entity,
+                "[SHADOW] Would set balanced load entity %s to %s (current: %s)",
+                entity_id,
                 value,
                 current,
             )
             return ActionResult(
-                action_type="custom_entity",
+                action_type="balanced_load_entity",
                 success=True,
-                message=f"[SHADOW] Would change {current} → {value}",
+                message=f"[SHADOW] Would change {current} -> {value}",
                 previous_value=current,
                 new_value=value,
-                entity_id=entity,
+                entity_id=entity_id,
                 skipped=True,
                 duration_ms=int((time.time() - start) * 1000),
             )
 
         error_details = None
         try:
-            domain = entity.split(".", 1)[0] if "." in entity else "switch"
-            success = await self._write_entity(entity, value, domain)
+            domain = entity_id.split(".", 1)[0] if "." in entity_id else "switch"
+            success = await self._write_entity(entity_id, value, domain)
         except HACallError as e:
             success = False
             error_details = str(e)
-            logger.error("Failed to set custom entity %s: %s", entity, error_details)
-
-        verified_value = None
-        verification_success = None
-        if success:
-            verified_value, verification_success = await self._verify_action(entity, value)
+            logger.error("Failed to set balanced load entity %s: %s", entity_id, error_details)
 
         duration = int((time.time() - start) * 1000)
 
         return ActionResult(
-            action_type="custom_entity",
+            action_type="balanced_load_entity",
             success=success,
             message=(
-                f"Changed {current} → {value}"
+                f"Set {entity_id} to {value}"
                 if success
                 else f"Failed: {error_details}"
                 if error_details
-                else "Failed to set custom entity"
+                else "Failed to set balanced load entity"
             ),
             previous_value=current,
             new_value=value,
-            entity_id=entity,
-            verified_value=verified_value,
-            verification_success=verification_success,
+            entity_id=entity_id,
             duration_ms=duration,
             error_details=error_details,
         )
@@ -1207,6 +1186,173 @@ class ActionDispatcher:
             error_details=error_details,
         )
 
+    async def set_ev_charger_current(self, entity_id: str, amps: int) -> ActionResult:
+        """
+        Set an EV charger's ampere setpoint (variable-current control).
+
+        Args:
+            entity_id: HA number entity controlling charge current (A)
+            amps: Target ampere setpoint
+
+        Returns:
+            ActionResult with details of the action
+        """
+        start = time.time()
+
+        current_state = await self.ha.get_state_value(entity_id)
+
+        # Idempotent skip
+        if self._values_match(current_state, amps):
+            return ActionResult(
+                action_type="ev_charge_current",
+                success=True,
+                message=f"EV charger current already {amps}A",
+                previous_value=current_state,
+                new_value=amps,
+                entity_id=entity_id,
+                skipped=True,
+                duration_ms=int((time.time() - start) * 1000),
+                error_details=None,
+            )
+
+        if self.shadow_mode:
+            logger.info(
+                "[SHADOW] EV Charger: Would set current to %sA (current: %s)",
+                amps,
+                current_state,
+            )
+            return ActionResult(
+                action_type="ev_charge_current",
+                success=True,
+                message=f"[SHADOW] Would change {current_state} -> {amps}A",
+                previous_value=current_state,
+                new_value=amps,
+                entity_id=entity_id,
+                skipped=True,
+                duration_ms=int((time.time() - start) * 1000),
+                error_details=None,
+            )
+
+        error_details = None
+        try:
+            await self.ha.set_number(entity_id, float(amps))
+            success = True
+        except HACallError as e:
+            success = False
+            error_details = str(e)
+            logger.error("Failed to set EV charger current %s: %s", entity_id, error_details)
+
+        # Verification
+        verified_value = None
+        verification_success = None
+        if success:
+            verified_value, verification_success = await self._verify_action(entity_id, amps)
+
+        duration = int((time.time() - start) * 1000)
+
+        return ActionResult(
+            action_type="ev_charge_current",
+            success=success,
+            message=(
+                f"EV charger current set to {amps}A"
+                if success
+                else f"Failed: {error_details}"
+                if error_details
+                else "Failed to set EV charger current"
+            ),
+            previous_value=current_state,
+            new_value=amps,
+            entity_id=entity_id,
+            verified_value=verified_value,
+            verification_success=verification_success,
+            duration_ms=duration,
+            error_details=error_details,
+        )
+
+    async def set_ev_phase_mode(self, entity_id: str, mode: int) -> ActionResult:
+        """
+        Command an EV charger's phase mode (1 or 3-phase) via its HA select entity.
+
+        Args:
+            entity_id: HA select entity controlling commanded phase mode
+            mode: 1 or 3 (phase count)
+
+        Returns:
+            ActionResult with details of the action
+        """
+        start = time.time()
+        option = str(mode)
+
+        current_state = await self.ha.get_state_value(entity_id)
+
+        # Idempotent skip
+        if self._values_match(current_state, option):
+            return ActionResult(
+                action_type="ev_phase_mode",
+                success=True,
+                message=f"EV charger phase mode already {option}",
+                previous_value=current_state,
+                new_value=option,
+                entity_id=entity_id,
+                skipped=True,
+                duration_ms=int((time.time() - start) * 1000),
+                error_details=None,
+            )
+
+        if self.shadow_mode:
+            logger.info(
+                "[SHADOW] EV Charger: Would set phase mode to %s (current: %s)",
+                option,
+                current_state,
+            )
+            return ActionResult(
+                action_type="ev_phase_mode",
+                success=True,
+                message=f"[SHADOW] Would change {current_state} -> {option}",
+                previous_value=current_state,
+                new_value=option,
+                entity_id=entity_id,
+                skipped=True,
+                duration_ms=int((time.time() - start) * 1000),
+                error_details=None,
+            )
+
+        error_details = None
+        try:
+            await self.ha.set_select_option(entity_id, option)
+            success = True
+        except HACallError as e:
+            success = False
+            error_details = str(e)
+            logger.error("Failed to set EV charger phase mode %s: %s", entity_id, error_details)
+
+        # Read-back verification
+        verified_value = None
+        verification_success = None
+        if success:
+            verified_value, verification_success = await self._verify_action(entity_id, option)
+
+        duration = int((time.time() - start) * 1000)
+
+        return ActionResult(
+            action_type="ev_phase_mode",
+            success=success,
+            message=(
+                f"EV charger phase mode set to {option}"
+                if success
+                else f"Failed: {error_details}"
+                if error_details
+                else "Failed to set EV charger phase mode"
+            ),
+            previous_value=current_state,
+            new_value=option,
+            entity_id=entity_id,
+            verified_value=verified_value,
+            verification_success=verification_success,
+            duration_ms=duration,
+            error_details=error_details,
+        )
+
     async def _maybe_notify(self, action_type: str, message: str) -> None:
         """Send notification if enabled for this action type."""
         notif = self.config.notifications
@@ -1241,6 +1387,48 @@ class ActionDispatcher:
             )
         except Exception as e:
             logger.warning("Failed to send notification: %s", e)
+
+    async def notify_balancer_intervention(self, message: str) -> None:
+        """Balancer intervention notification (load-balancing-completion 5.1).
+
+        HA notify via the configured service first; falls back to the Discord
+        webhook from secrets.yaml when HA delivery fails or no service is set.
+        Gating (notify_interventions, once per transition) is the engine's job.
+        """
+        title = "Darkstar Load Balancer"
+        if self.shadow_mode:
+            logger.info("[SHADOW] Would send balancer notification: %s", message)
+            return
+
+        sent = False
+        try:
+            sent = await self.ha.send_notification(
+                self.config.notifications.service, title, message
+            )
+        except Exception as e:
+            logger.warning("Balancer HA notification failed: %s", e)
+
+        if not sent:
+            try:
+                from backend.core.secrets import load_notifications_config
+                from backend.notify import send_critical_notification
+
+                webhook = load_notifications_config().get("discord_webhook_url")
+                if webhook:
+                    await asyncio.to_thread(
+                        send_critical_notification,
+                        title,
+                        message,
+                        discord_webhook_url=webhook,
+                    )
+                else:
+                    logger.warning(
+                        "Balancer notification undeliverable (no HA service, "
+                        "no Discord webhook): %s",
+                        message,
+                    )
+            except Exception as e:
+                logger.warning("Balancer Discord fallback failed: %s", e)
 
     async def notify_override(self, override_type: str, reason: str) -> None:
         """Send notification about an override activation."""

@@ -15,7 +15,7 @@ from typing import Any
 
 import pandas as pd
 
-from planner.observability.logging import record_debug_payload
+from planner.observability.logging import record_debug_payload, record_s_index_history
 from planner.output.debug import generate_debug_payload
 from planner.output.formatter import dataframe_to_json_response
 
@@ -77,11 +77,15 @@ async def save_schedule_to_json(
     final_forecast_meta = forecast_meta.copy()
 
     version = get_git_version()
+    planned_at = datetime.now().isoformat()
 
     output = {
         "schedule": merged_schedule,
         "meta": {
-            "planned_at": datetime.now().isoformat(),
+            # generated_at is the executor's freshness check (engine.py _load_current_slot);
+            # it must always be stamped so the executor never rejects its own output as stale.
+            "generated_at": planned_at,
+            "planned_at": planned_at,
             "planner_version": version,
             "forecast": final_forecast_meta,
             "s_index": s_index_debug or {},
@@ -98,6 +102,9 @@ async def save_schedule_to_json(
 
         learning_config = config.get("learning", {})
         await record_debug_payload(debug_payload, learning_config)
+
+    if s_index_debug:
+        await record_s_index_history(s_index_debug)
 
     class DateTimeEncoder(json.JSONEncoder):
         def default(self, o: Any) -> Any:

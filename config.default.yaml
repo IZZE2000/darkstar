@@ -22,9 +22,11 @@ system:
   grid_meter_type: net    # Meter type: net (single +/- sensor) | dual (separate import/export)
 
   grid:
-    max_power_kw: 8                    # HARD limit: max grid import (cannot be exceeded)
+    max_power_kw: 8                    # HARD limit: total grid import (kW) — the planner's import budget. Independent of main_fuse_a below: a balanced total can still overload a single phase.
+    # main_fuse_a: 20                  # Per-phase main fuse rating (A), physical hardware limit. Required (and must be user-set) for load_balancing to be enabled. Not a substitute for max_power_kw, and vice versa — they protect different things.
   inverter:
     max_ac_power_kw: 10.0              # Maximum inverter AC power output (PV + battery discharge)
+    topology: dc_coupled               # Inverter topology: dc_coupled | ac_coupled
     max_dc_input_kw: 12.0              # Maximum DC power from PV strings (clips PV forecast)
   location:
     latitude: 55.123                # Decimal degrees, positive north (for PV forecasting)
@@ -59,9 +61,7 @@ battery_economics:
 # Per-device settings (power, min_kwh_per_day, spacing) are now in water_heaters[] array below
 water_heating:
   defer_up_to_hours: 6             # Allow deferring "today's" heating into early tomorrow morning (up to N hours) if cheaper
-  block_start_penalty_sek: 3.0     # Penalty per heating start (higher = more consolidated bulk heating)
-  comfort_level: 3                 # 1-5 (Economy→Maximum) - controls gap penalty
-  spacing_penalty_sek: 0.20        # Soft penalty for frequent starts
+  comfort_level: 3                 # 1-5 (Economy→Maximum) - controls water heating comfort incl. gap penalty
   enable_top_ups: true             # Enable spaced top-up heating blocks (vs bulk heating only)
 
 
@@ -72,11 +72,6 @@ water_heating:
     anti_legionella_interval_days: 7  # Run cycle every N days
     anti_legionella_duration_hours: 3.0  # Duration at power_kw (e.g., 3h * 3kW = 9kWh)
     end_date: ""                      # Vacation mode end date (set by UI/Automation)
-
-  # Advanced Water Heating Tuning (Rev K17)
-  # Controls how the solver prioritizes water heating comfort and blocking.
-  reliability_penalty_sek: 1000.0   # "Must Have" penalty (missing daily min_kwh)
-  block_penalty_sek: 0.50           # "Block Breaker" penalty (discouragues long continuous runs)
 
 # =============================================================================
 # Entity-Centric Device Configuration (ARC15)
@@ -112,8 +107,6 @@ water_heaters:
 
 # EV Chargers (Array for multiple electric vehicles)
 # ARC15: Replaces deferrable_loads entry for EV charging
-# Note: penalty_levels are configured per-EV in the UI (Settings > Parameters)
-# They define willingness to pay for charging at different battery levels
 ev_chargers:
   - id: ev_charger_1                 # Unique identifier (slug format)
     name: "EV-01"                    # Display name in UI
@@ -123,12 +116,28 @@ ev_chargers:
     sensor: ""                       # Home Assistant entity for power reading
     soc_sensor: ""                   # EV battery state of charge (%) - Required for smart charging
     plug_sensor: ""                  # EV plug status sensor - Required for smart charging
-    type: binary                     # Load type: binary (ON/OFF) only. Variable power control not yet implemented
+    type: binary                     # Control type: binary (ON/OFF switch) or current (variable ampere setpoint)
     nominal_power_kw: 11.0           # Nominal power for load calculations
-    departure_time: ""               # Daily departure time "HH:MM" (24-hour). Car must be ready by this time.
-    switch_entity: ""                # HA entity to enable/disable smart charging (e.g. switch.ev_charger)
+    # Charging goals (target SoC, ready-by, repeat, n_days, keep-on-after-target) are
+    # set in the dashboard, not here — they live in data/ev_multi_day_state.json and
+    # are the sole source of truth for the planner. A charger with no goal set in the
+    # dashboard simply has no charging goal until one is set.
+    # ha_ready_by_entity: "input_datetime.ev_ready_by"
+    # ha_target_soc_entity: "input_number.ev_target_soc"
+    switch_entity: ""                # HA entity to enable/disable smart charging (e.g. switch.ev_charger). Used when type=binary
+    current_entity: ""               # HA number entity for the ampere setpoint. Required when type=current
+    min_current_a: 6                 # Minimum charging current (A) — below this, charging pauses instead. Used when type=current
+    max_current_a: 16                # Maximum charging current (A). Required when type=current
+    phases: [1, 2, 3]                # Phases this charger is wired to (used for kW->A math and load balancing until actual per-phase draw is measured)
+    phase_sensor_l1: ""              # Optional: charger's own L1 power/current sensor, for measuring actual active phases (1/2/3-phase cars on a 3-phase charger)
+    phase_sensor_l2: ""              # Optional: charger's own L2 power/current sensor
+    phase_sensor_l3: ""              # Optional: charger's own L3 power/current sensor
     replan_on_plugin: true           # Re-run planner immediately when this EV plugs in
     replan_on_unplug: false          # Re-run planner immediately when this EV unplugs
+    phase_mode_entity: ""            # HA select entity for commanded phase mode (1/3-phase)
+    phase_switching_enabled: false   # Master toggle for commanded phase switching
+    phase_switch_hysteresis_kw: 0.5  # Deadband around the 3-phase minimum before switching
+    phase_switch_min_dwell_s: 600    # Minimum time between phase switches (contactor protection)
 
   # Example: Second EV (disabled by default)
   # - id: ev_charger_2
@@ -139,7 +148,6 @@ ev_chargers:
   #   sensor: sensor.fiat_power
   #   type: variable
   #   nominal_power_kw: 7.4
-  #   departure_time: ""
   #   switch_entity: ""
   #   replan_on_plugin: true
   #   replan_on_unplug: false
@@ -156,7 +164,7 @@ s_index:
   temp_cold_c: -10.0               # Temperature where adjustment reaches 100%
   s_index_horizon_days: 4          # Number of days ahead to evaluate (integer)
   risk_appetite: 3                 # 1-5 scale (1=safe, 3=neutral, 5=gambler)
-  max_safety_buffer_percent: 20    # Max reserve capacity to hold at 100% deficit (default 40%)
+  max_safety_buffer_percent: 20    # Max reserve capacity to hold at 100% deficit; Risk 3 (Neutral) baseline, scaled per risk level (see RISK_CONFIG cap_scale)
 
 export:
   enable_export: true              # Master switch for grid export (if false, planner enforces 0 export)
@@ -183,17 +191,23 @@ automation:
     run_days: [1, 4]                   # Days of week to train (0=Mon, 6=Sun)
     run_time: "03:00"                  # Time of day to run training (HH:MM)
 
+# Recorder (slot_observations meter reading)
+recorder:
+  # reject cumulative-meter deltas above this per-slot ceiling (~200 kW sustained);
+  # physically impossible spikes are dropped, not recorded.
+  max_meter_delta_kwh: 50.0
+
 # Learning Engine (Aurora Reflex)
 # Learning Engine Configuration
 # The learning system has two main components:
 # 1. Telemetry: Records planner decisions, forecasts, and actual outcomes to SQLite
-# 2. Reflex: Tunes physical/policy parameters (S-Index, PV confidence, battery cost) based on safety/ROI analysis
+# 2. Reflex: Tunes physical/policy parameters (S-Index, PV confidence, capacity) based on safety/confidence/capacity analysis
 learning:
   enable: true                         # Master switch: enables telemetry storage and learning features
   sqlite_path: "data/planner_learning.db"  # Database path for storing planner telemetry (observations, forecasts, plans, metrics)
   horizon_days: 3                      # Number of days of Aurora ML forecasts to generate (2-7 days, affects CPU usage)
   min_improvement_threshold: 0.015     # Minimum improvement (0-1 scale) required before applying learned adjustments (prevents noise)
-  reflex_enabled: true                 # Enable Reflex: tunes physical/policy parameters (S-Index, PV confidence, battery cost, capacity) based on safety/confidence/ROI/capacity analysis
+  reflex_enabled: true                 # Enable Reflex: tunes physical/policy parameters (S-Index, PV confidence, capacity) based on safety/confidence/capacity analysis
   min_sample_threshold: 2              # Minimum data points required before applying learned adjustments (prevents premature tuning with insufficient data)
 
   # Rate Limits for Aurora Reflex Parameter Tuning
@@ -230,8 +244,13 @@ price_forecast:
 # Forecasting Adjustments (Aurora ML tuning)
 forecasting:
   active_forecast_version: "aurora"
+  aurora_load_enabled: true                 # Enable Aurora ML load forecasting; false uses HA load profile
+  aurora_pv_enabled: true                   # Enable Aurora PV personal tuning; false uses Open-Meteo baseline only
   pv_confidence_percent: 83.0          # PV forecast scaling (100 = trust forecast fully)
   load_safety_margin_percent: 117.0    # Load forecast scaling (>100 = expect more load)
+  pv_residual_bound_fraction: 0.25     # Max ML PV nudge as fraction of Open-Meteo baseline
+  pv_ceiling_efficiency: 0.95          # Physical max slot yield: kWp * slot_hours * efficiency
+  pv_personalization_ramp_days: 14     # Days of paired data before full bounded PV nudge
 
 # Grid Limits (Soft Constraint)
 # This is a SOFT limit with penalty - planner prefers to stay under but can breach if needed.
@@ -241,10 +260,56 @@ forecasting:
 grid:
   import_limit_kw: 11.0                # Soft limit for effekttariff (breached with high penalty)
 
+# Load Balancing (real-time per-phase main fuse protection)
+# Requires system.grid.main_fuse_a and input_sensors.grid_current_l1/l2/l3 to be set,
+# plus at least one entry in loads[] or one ev_chargers[] entry with type: current.
+# Each grid_current_l* sensor may report current (A) or power (W/kW) — auto-detected
+# from the entity's unit, no toggle needed; power-mode phases are converted to current
+# via the matching grid_voltage_l* entity if configured, else nominal_voltage_v below.
+# Give-way ordering is one flat list (give_way_order below) mixing dynamically-throttled
+# chargers and on/off shed loads — the top entry gives way first. EV chargers with
+# ev_chargers[].type=current appear in that list automatically (no loads[] entry needed,
+# and they may not be listed there); loads[] holds the on/off shed definitions
+# (water heaters, custom entities, and any binary-type EV charger).
+#
+# SAFETY: this is a software, best-effort control loop, not a certified protection
+# device — it reacts on the next executor tick (governed by executor.interval_seconds),
+# so a fast transient can still trip your fuse before Darkstar catches it. Keep
+# executor.interval_seconds at 15 s or less (5 s typical) when this is enabled. If your
+# charger has its own load-management/fallback setting (e.g. go-e's dynamic load
+# balancing / current fallback), configure that too as the last-resort hardware
+# protection; Darkstar's balancer keeps day-to-day charging fast without needing it,
+# it does not replace it.
+load_balancing:
+  enabled: false                       # Master switch — feature is opt-in and a no-op until true
+  resume_delay_s: 120                  # Seconds a recovered phase must stay healthy before resuming/restoring a throttled or shed load (anti-flap)
+  resume_margin_percent: 90            # Only resume/increase when phase current is below this % of main_fuse_a
+  increase_step_a: 1                   # Max ampere increase per tick when ramping EV charging back up
+  sensor_stale_after_s: 30             # Treat phase current sensors as stale after this many seconds without an update
+  nominal_voltage_v: 220                # Fallback voltage (V) used to convert a power-mode phase to current when that phase has no configured grid_voltage_l* entity. Deliberately biased low vs. 230V nominal so a fixed value never under-reports current during a sag.
+  notify_interventions: false          # Send a notification (HA notify, Discord fallback) when a load is shed, a charger is paused, or the stale-sensor fail-safe engages. Routine throttle adjustments never notify.
+  replan_after_throttled_s: 600        # Trigger one early replan after a charger has been held below its planner target (or paused) this long, continuously; at most one balancer-triggered replan per planner interval
+  loads: []                            # On/off shed load definitions (ordering lives in give_way_order), e.g.:
+    # - device_type: water_heater          # water_heater | custom_entity | ev_charger (type: binary only — type: current chargers are never listed here, they join give_way_order automatically)
+    #   device_id: main_tank                # matches an id in water_heaters[]/ev_chargers[], or a free-form label for custom_entity
+    #   phases: [2]                         # phase(s) this load is physically wired to
+    #   entity: ""                          # custom_entity only: HA entity to write on/off values to
+    #   on_value: "1"                       # custom_entity only
+    #   off_value: "0"                      # custom_entity only
+  give_way_order: []                   # Unified give-way order — TOP GIVES WAY FIRST; restore happens in exact reverse order. Self-heals on startup (missing chargers/loads are appended, dangling entries dropped), e.g.:
+    # - kind: charger                       # a type: current EV charger — throttles toward its floor, then pauses
+    #   id: main_ev                         # matches an id in ev_chargers[]
+    # - kind: shed                          # an on/off load from loads[] — switches off
+    #   id: main_tank                       # matches a loads[].device_id
+
 # Kepler Solver (MILP optimizer settings)
 kepler:
   ramping_cost_sek_per_kw: 0.01        # Penalty for power changes between slots (reduces sawtooth)
   curtailment_penalty_sek: 0.1         # Penalty for wasting available solar power
+  # EV shortfall penalty (advanced): how strongly the solver prefers meeting the
+  # target SoC by ready_by. Default 50 SEK/kWh is high enough to treat the goal
+  # as near-mandatory without making an unreachable target infeasible.
+  ev_shortfall_penalty_sek_per_kwh: 50.0
 
 # =============================================================================
 # Home Assistant Integration
@@ -264,6 +329,12 @@ input_sensors:
   grid_power: ""         # Current grid power (+ import, - export) (Used if meter_type=net)
   grid_import_power: ""    # Current grid import power (W/kW) (Used if meter_type=dual)
   grid_export_power: ""    # Current grid export power (W/kW) (Used if meter_type=dual)
+  grid_current_l1: ""       # Per-phase grid current OR power, phase L1 (A or W/kW, auto-detected) — required for load_balancing
+  grid_current_l2: ""       # Per-phase grid current OR power, phase L2 (A or W/kW, auto-detected) — required for load_balancing
+  grid_current_l3: ""       # Per-phase grid current OR power, phase L3 (A or W/kW, auto-detected) — required for load_balancing
+  # grid_voltage_l1: ""     # Optional per-phase grid voltage, phase L1 (V) — only used when the L1 sensor above resolves to power-mode; falls back to load_balancing.nominal_voltage_v if unset
+  # grid_voltage_l2: ""     # Optional per-phase grid voltage, phase L2 (V) — see grid_voltage_l1
+  # grid_voltage_l3: ""     # Optional per-phase grid voltage, phase L3 (V) — see grid_voltage_l1
 
   # Cumulative energy sensors (totals)
   total_battery_charge: ""      # Cumulative battery charge (kWh)
@@ -280,6 +351,7 @@ executor:
   interval_seconds: 60                           # How often to run (default: 1 minute)
   pause_reminder_minutes: 30                     # Notify if paused longer than this
   history_retention_days: 30                     # Keep execution history for N days
+  max_schedule_age_hours: 2                      # Reject stale schedules older than this (hold + alert)
   # HTTP Timeout: All Home Assistant API calls use a 5-second timeout with automatic
   # retry (3 attempts) for transient network failures. This prevents the executor from
   # freezing when HA becomes unresponsive (e.g., Fronius inverter via Modbus issues).
@@ -349,16 +421,28 @@ executor:
 
   # Excess PV Dispatch
   # Configures how forecast excess PV energy is utilized.
-  # The planner proactively schedules excess PV into the chosen sink.
+  # The planner proactively schedules excess PV into an ordered priority list
+  # of sinks. List order = priority order (index 0 = fed first); the house
+  # battery is always implicitly first (soc_threshold_percent gates it and
+  # every sink below it). An empty list behaves exactly like the old
+  # `sink: disabled`. Multiple sinks may be active in the same slot when
+  # surplus is large enough.
   excess_pv:
-    sink: disabled                     # Sink type: water_heater_boost | custom_entity | disabled
-    boost_reward_sek_per_kwh: 0.5      # Reward for using excess PV at sink vs exporting (SEK/kWh)
-    soc_threshold_percent: 95          # Battery SoC % required before sink activates (default 95)
-    custom_entity:
-      entity: ""                       # Home Assistant entity ID (e.g., switch.pool_pump)
-      on_value: "1"                    # Value to set when excess PV is available
-      off_value: "0"                   # Value to set when excess PV is not available
-      power_kw: 1.0                    # Estimated power consumption (kW) — used by solver for reward sizing
+    priority: []
+    # Example showing all three entry types (uncomment/adapt as needed):
+    # priority:
+    #   - type: ev                       # Send surplus to an EV charger (requires a type: current charger)
+    #     charger_id: ev_charger_1        # Must match an ev_chargers[].id with type: current
+    #     surplus_deadband_kw: 0.2        # Deadband for the real-time surplus feedback loop
+    #     # reward_sek_per_kwh: 0.5       # Optional: override the rank-scaled reward for this entry
+    #   - type: water_heater_boost       # Boost water heating above its normal schedule
+    #   - type: custom_entity            # Toggle an arbitrary HA entity
+    #     entity: switch.pool_pump
+    #     on_value: "1"
+    #     off_value: "0"
+    #     power_kw: 1.0                  # Estimated power consumption (kW) — used by solver for reward sizing
+    boost_reward_sek_per_kwh: 0.5      # Base reward for using excess PV at a sink vs exporting (SEK/kWh); each sink's effective reward scales down by rank (15% per priority position)
+    soc_threshold_percent: 95          # Battery SoC % required before any sink activates (default 95)
 
 # =============================================================================
 # UI Settings
@@ -372,3 +456,12 @@ dashboard:
 ui:
   theme: "Material Design Colors"      # Color theme name
   theme_accent_index: 3                # Accent color index (0-based)
+
+# =============================================================================
+# Runtime Invariant Monitors
+# =============================================================================
+# Read-only monitors that continuously verify system invariants (slot
+# continuity, energy balance, SoC bounds, plan freshness, command success,
+# forecast sanity, data quality) and raise a system alert on violation.
+monitoring:
+  interval_minutes: 15                 # Evaluation cadence (min 1; default = recorder cadence)

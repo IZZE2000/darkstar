@@ -7,8 +7,8 @@ Migrated from backend/kepler/solver.py during Rev K13 modularization.
 
 import logging
 from collections import defaultdict
-from datetime import timedelta  # Rev WH2
-from typing import Any
+from datetime import date, timedelta  # Rev WH2
+from typing import Any, cast
 
 import pulp  # type: ignore[import,no-redef]
 
@@ -24,6 +24,32 @@ from .types import (
 )
 
 logger = logging.getLogger("darkstar.kepler")
+
+EV_SHORTFALL_PENALTY_DEFAULT = 50.0  # SEK/kWh — soft target-by-time penalty
+
+
+def _ev_day_energy_terms(
+    day: date,
+    charger_id: str,
+    ev_energy: dict[str, dict[int, Any]],
+    surplus_kw: dict[int, Any] | None,
+    slots: list[Any],
+    slot_hours: list[float],
+    T: int,
+) -> list[Any]:
+    """Energy terms (scheduled + surplus) for one charger on one calendar day.
+
+    Surplus charging counts against the day's quota too (task 4.4) — it isn't
+    a free bonus on top of the scheduled allocation.
+    """
+    terms: list[Any] = [
+        ev_energy[charger_id][t] for t in range(T) if slots[t].start_time.date() == day
+    ]
+    if surplus_kw is not None:
+        terms.extend(
+            surplus_kw[t] * slot_hours[t] for t in range(T) if slots[t].start_time.date() == day
+        )
+    return terms
 
 
 class KeplerSolver:
@@ -80,7 +106,13 @@ class KeplerSolver:
         water_start: dict[str, dict[int, Any]] = {}
         # Per-device boost variables: water_boost[device_id][t]
         water_boost: dict[str, dict[int, Any]] = {}
-        boost_enabled = config.excess_pv_sink == "water_heater_boost"
+        boost_entry = next(
+            (e for e in config.excess_pv_priority if e.type == "water_heater_boost"), None
+        )
+        boost_enabled = boost_entry is not None
+        # Per-device gap-comfort variables: discomfort[device_id][t], gap_over[device_id][t]
+        discomfort: dict[str, dict[int, Any]] = {}
+        gap_over: dict[str, dict[int, Any]] = {}
         if water_enabled:
             for heater in water_heaters:
                 d = heater.id
@@ -99,6 +131,12 @@ class KeplerSolver:
                     water_start[d] = pulp.LpVariable.dicts(  # type: ignore[reportUnknownMemberType]
                         f"water_start_{safe_d}", range(T), cat="Binary"
                     )
+                discomfort[d] = pulp.LpVariable.dicts(  # type: ignore[reportUnknownMemberType]
+                    f"discomfort_{safe_d}", range(T), lowBound=0.0
+                )
+                gap_over[d] = pulp.LpVariable.dicts(  # type: ignore[reportUnknownMemberType]
+                    f"gap_over_{safe_d}", range(T), lowBound=0.0
+                )
 
         # EV Charging as deferrable load (per-device, multi-charger support)
         # Only create variables for plugged-in chargers
@@ -109,12 +147,13 @@ class KeplerSolver:
         # dict[charger_id -> dict[t -> lp_var]]
         ev_charge: dict[str, dict[int, Any]] = {}
         ev_energy: dict[str, dict[int, Any]] = {}
-        # Per-device incentive bucket variables: ev_bucket_charged[device_id][bucket_idx]
-        ev_bucket_charged: dict[str, dict[int, Any]] = {}
+        # Per-device shortfall variable for soft target-by-time requirement
+        ev_shortfall: dict[str, Any] = {}
 
         for charger in plugged_chargers:
             d = charger.id
             safe_d = d.replace("-", "_").replace(".", "_")
+            effective_deadline = charger.deadline or (slots[-1].end_time if slots else None)
             if charger.deadline:
                 logger.info(
                     "EV %s: deadline constraint active at %s",
@@ -122,7 +161,7 @@ class KeplerSolver:
                     charger.deadline.strftime("%Y-%m-%d %H:%M"),
                 )
             else:
-                logger.info("EV %s: no deadline constraint", d)
+                logger.info("EV %s: no explicit deadline, using end of horizon", d)
 
             ev_charge[d] = pulp.LpVariable.dicts(  # type: ignore[reportUnknownMemberType]
                 f"ev_charge_{safe_d}", range(T), cat="Binary"
@@ -130,11 +169,8 @@ class KeplerSolver:
             ev_energy[d] = pulp.LpVariable.dicts(  # type: ignore[reportUnknownMemberType]
                 f"ev_energy_{safe_d}_kwh", range(T), lowBound=0.0
             )
-            buckets = charger.incentive_buckets or []
-            num_buckets = len(buckets)
-            ev_bucket_charged[d] = pulp.LpVariable.dicts(  # type: ignore[reportUnknownMemberType]
-                f"ev_bucket_{safe_d}", range(num_buckets), lowBound=0.0
-            )
+            if charger.required_kwh is not None and effective_deadline is not None:
+                ev_shortfall[d] = pulp.LpVariable(f"ev_shortfall_{safe_d}_kwh", lowBound=0.0)
 
         # any_ev_charging[t]: auxiliary binary - 1 if ANY charger is active in slot t
         any_ev_charging: dict[int, Any]
@@ -189,6 +225,24 @@ class KeplerSolver:
             is_exporting = dict.fromkeys(range(T), 0)
             export_floor_violation = dict.fromkeys(range(T), 0)
 
+        # PV routing variables — only created when an AC limit is configured
+        pv_routing_active: bool = config.max_inverter_ac_kw is not None
+        pv_to_battery: dict[int, Any] = {}
+        pv_to_ac: dict[int, Any] = {}
+        if pv_routing_active:
+            pv_to_battery = cast(
+                "dict[int, Any]",
+                pulp.LpVariable.dicts(  # type: ignore[reportUnknownMemberType]
+                    "pv_to_battery_kwh", range(T), lowBound=0.0
+                ),
+            )
+            pv_to_ac = cast(
+                "dict[int, Any]",
+                pulp.LpVariable.dicts(  # type: ignore[reportUnknownMemberType]
+                    "pv_to_ac_kwh", range(T), lowBound=0.0
+                ),
+            )
+
         # Discomfort variable removed.
         # Per-device "Block Overshoot" variables (soft penalty for massive blocks)
         block_overshoot: dict[str, dict[int, Any]] = {}
@@ -199,39 +253,6 @@ class KeplerSolver:
                 block_overshoot[d] = pulp.LpVariable.dicts(  # type: ignore[reportUnknownMemberType]
                     f"block_overshoot_{safe_d}", range(T), lowBound=0.0
                 )
-
-        # Per-device incentive bucket setup
-        for charger in plugged_chargers:
-            d = charger.id
-            buckets = charger.incentive_buckets or []
-            num_buckets = len(buckets)
-            if num_buckets == 0:
-                continue
-
-            ev_capacity: float = charger.battery_capacity_kwh
-            ev_current_kwh: float = ev_capacity * (charger.current_soc_percent / 100.0)
-
-            prev_threshold_soc: float = 0.0
-            accum_energy_cap: float = 0.0
-
-            for i, b in enumerate(buckets):
-                bucket_soc_range: float = b.threshold_soc - prev_threshold_soc
-                bucket_capacity_kwh: float = max(0.0, ev_capacity * (bucket_soc_range / 100.0))
-
-                already_full: float = max(
-                    0.0, min(bucket_capacity_kwh, ev_current_kwh - accum_energy_cap)
-                )
-                remaining_cap: float = max(0.0, bucket_capacity_kwh - already_full)
-
-                prob += ev_bucket_charged[d][i] <= remaining_cap
-
-                prev_threshold_soc = b.threshold_soc
-                accum_energy_cap += bucket_capacity_kwh
-
-            # Total energy for this device must equal sum of its buckets
-            prob += pulp.lpSum(ev_energy[d][t] for t in range(T)) == pulp.lpSum(
-                ev_bucket_charged[d][i] for i in range(num_buckets)
-            )
 
         # Per-device slack variables for daily minimum soft constraints
         water_min_kwh_violation: dict[str, dict[int, Any]] = {}
@@ -257,12 +278,39 @@ class KeplerSolver:
         if not excess_pv_flags:
             excess_pv_flags = [False] * T
 
-        custom_entity_enabled = config.excess_pv_sink == "custom_entity"
+        # Custom-entity sinks: one variable family per priority-list entry, keyed
+        # by str(rank) so the id is stable across a single solve (task 2.4).
+        custom_entity_items: list[tuple[str, Any]] = [
+            (str(rank), entry)
+            for rank, entry in enumerate(config.excess_pv_priority)
+            if entry.type == "custom_entity"
+        ]
+        custom_entity_enabled = len(custom_entity_items) > 0
+
+        # EV surplus sinks: one continuous variable per `ev` priority entry whose
+        # charger is plugged in and current-controlled (task 2.5).
+        ev_surplus_items: list[tuple[str, EVChargerInput, float]] = []
+        for entry in config.excess_pv_priority:
+            if entry.type != "ev" or not entry.charger_id:
+                continue
+            matched_charger = next(
+                (
+                    c
+                    for c in plugged_chargers
+                    if c.id == entry.charger_id and c.control_type == "current"
+                ),
+                None,
+            )
+            if matched_charger is None:
+                continue
+            ev_surplus_items.append(
+                (entry.charger_id, matched_charger, entry.effective_reward_sek_per_kwh)
+            )
+        ev_surplus_enabled = len(ev_surplus_items) > 0
 
         # SoC threshold binary: 1 when battery SoC >= threshold% (gates all sink activation)
-        any_sink_active = boost_enabled or custom_entity_enabled
+        any_sink_active = boost_enabled or custom_entity_enabled or ev_surplus_enabled
         soc_above_threshold: dict[int, Any]
-        custom_entity_active: dict[int, Any]
         if any_sink_active:
             soc_above_threshold = pulp.LpVariable.dicts(  # type: ignore[reportUnknownMemberType]
                 "soc_above_threshold", range(T), cat="Binary"
@@ -270,12 +318,18 @@ class KeplerSolver:
         else:
             soc_above_threshold = dict.fromkeys(range(T), 0)
 
-        if custom_entity_enabled:
-            custom_entity_active = pulp.LpVariable.dicts(  # type: ignore[reportUnknownMemberType]
-                "custom_entity_active", range(T), cat="Binary"
+        custom_entity_active: dict[str, dict[int, Any]] = {}
+        for rank_str, _entry in custom_entity_items:
+            custom_entity_active[rank_str] = pulp.LpVariable.dicts(  # type: ignore[reportUnknownMemberType]
+                f"custom_entity_active_{rank_str}", range(T), cat="Binary"
             )
-        else:
-            custom_entity_active = dict.fromkeys(range(T), 0)
+
+        ev_surplus_kw: dict[str, dict[int, Any]] = {}
+        for charger_id, charger, _reward in ev_surplus_items:
+            safe_id = charger_id.replace("-", "_").replace(".", "_")
+            ev_surplus_kw[charger_id] = pulp.LpVariable.dicts(  # type: ignore[reportUnknownMemberType]
+                f"ev_surplus_kw_{safe_id}", range(T), lowBound=0.0, upBound=charger.max_power_kw
+            )
 
         # Objective Function Terms
         total_cost: list[Any] = []
@@ -284,7 +338,7 @@ class KeplerSolver:
         MIN_SOC_PENALTY = 1000.0  # Hard constraint - don't violate min_soc!
         MAX_SOC_PENALTY = 1000.0  # Soft constraint - prefer to stay below max_soc
         EXPORT_FLOOR_PENALTY = 1000.0  # Soft constraint - don't export below floor
-        BOOST_REWARD_SEK = config.excess_pv_reward_sek_per_kwh
+        BOOST_REWARD_SEK = boost_entry.effective_reward_sek_per_kwh if boost_entry else 0.0
         # Target penalty comes from config (derived from risk_appetite in pipeline)
         target_soc_penalty = config.target_soc_penalty_sek
         curtailment_penalty = config.curtailment_penalty_sek
@@ -324,18 +378,30 @@ class KeplerSolver:
                             -BOOST_REWARD_SEK * water_boost[heater.id][t] * heater.power_kw * h
                         )
 
-            # Custom entity: MILP variable gated by excess PV flag and SoC threshold
+            # Custom entity: one MILP variable per priority-list entry (task 2.4),
+            # each gated by excess PV flag and SoC threshold with its own reward/power_kw.
             if custom_entity_enabled:
-                if not excess_pv_flags[t]:
-                    prob += custom_entity_active[t] == 0
-                else:
-                    prob += custom_entity_active[t] <= soc_above_threshold[t]
-                    total_cost.append(
-                        -BOOST_REWARD_SEK
-                        * custom_entity_active[t]
-                        * config.excess_pv_custom_entity_power_kw
-                        * h
-                    )
+                for rank_str, entry in custom_entity_items:
+                    var_t = custom_entity_active[rank_str][t]
+                    if not excess_pv_flags[t]:
+                        prob += var_t == 0
+                    else:
+                        prob += var_t <= soc_above_threshold[t]
+                        total_cost.append(
+                            -entry.effective_reward_sek_per_kwh * var_t * entry.power_kw * h
+                        )
+
+            # EV surplus: continuous kW per `ev` priority entry (task 2.5), mutually
+            # exclusive with scheduled (price-based) charging on the same charger (task 2.6).
+            if ev_surplus_enabled:
+                for charger_id, charger, reward in ev_surplus_items:
+                    var_t = ev_surplus_kw[charger_id][t]
+                    prob += var_t <= charger.max_power_kw * (1 - ev_charge[charger_id][t])
+                    if not excess_pv_flags[t]:
+                        prob += var_t == 0
+                    else:
+                        prob += var_t <= charger.max_power_kw * soc_above_threshold[t]
+                        total_cost.append(-reward * var_t * h)
 
             # SoC threshold big-M constraint (after soc[t] is defined via battery dynamics)
             # Placed here so soc[t] is available, then linked to boost/custom_entity above.
@@ -349,8 +415,15 @@ class KeplerSolver:
             # Per-device EV constraints
             for charger in plugged_chargers:
                 d = charger.id
-                # Energy coupling: binary ON/OFF at max power
-                prob += ev_energy[d][t] == ev_charge[d][t] * charger.max_power_kw * h
+                if charger.control_type == "current":
+                    # Semi-continuous: off => 0, on => any power in
+                    # [min_power_kw, max_power_kw]. min_power_kw is derived
+                    # by the adapter from min_current_a x phases (design D1/D2).
+                    prob += ev_energy[d][t] >= charger.min_power_kw * h * ev_charge[d][t]
+                    prob += ev_energy[d][t] <= charger.max_power_kw * h * ev_charge[d][t]
+                else:
+                    # Binary ON/OFF at max power (unchanged)
+                    prob += ev_energy[d][t] == ev_charge[d][t] * charger.max_power_kw * h
 
                 # Deadline constraint: zero charging after deadline
                 if charger.deadline is not None and s.end_time > charger.deadline:
@@ -374,17 +447,51 @@ class KeplerSolver:
                 pulp.lpSum(ev_energy[d][t] for d in ev_energy) if ev_any_enabled else 0.0
             )
 
-            # Energy Balance Constraint (water, EV, and custom entity loads added to demand side)
+            # Energy Balance Constraint (water, EV, custom entity, and EV surplus loads
+            # added to demand side)
             custom_entity_load_kwh: Any = (
-                custom_entity_active[t] * config.excess_pv_custom_entity_power_kw * h
+                pulp.lpSum(
+                    custom_entity_active[rank_str][t] * entry.power_kw * h
+                    for rank_str, entry in custom_entity_items
+                )
                 if custom_entity_enabled
                 else 0.0
             )
+            ev_surplus_load_kwh: Any = (
+                pulp.lpSum(
+                    ev_surplus_kw[charger_id][t] * h for charger_id, _, _ in ev_surplus_items
+                )
+                if ev_surplus_enabled
+                else 0.0
+            )
+
+            # Limit total excess PV priority sink energy to net excess PV (PV minus
+            # house load minus planned battery charging) to prevent grid imports
+            # from powering these sinks while appearing to be "free" surplus, and
+            # to stop sinks from collecting the surplus reward while grid power
+            # covers the battery (economic loophole).
+            if excess_pv_flags[t]:
+                net_excess_kwh = max(0.0, s.pv_kwh - s.load_kwh)
+                sink_terms: list[Any] = []
+                if water_enabled:
+                    for heater in water_heaters:
+                        if heater.id in water_boost:
+                            sink_terms.append(water_boost[heater.id][t] * heater.power_kw * h)
+                if custom_entity_enabled:
+                    for rank_str, entry in custom_entity_items:
+                        sink_terms.append(custom_entity_active[rank_str][t] * entry.power_kw * h)
+                if ev_surplus_enabled:
+                    for charger_id, _, _ in ev_surplus_items:
+                        sink_terms.append(ev_surplus_kw[charger_id][t] * h)
+
+                if sink_terms:
+                    prob += pulp.lpSum(sink_terms) + charge[t] <= net_excess_kwh
             prob += (
                 s.load_kwh
                 + water_load_kwh
                 + total_ev_energy_t
                 + custom_entity_load_kwh
+                + ev_surplus_load_kwh
                 + charge[t]
                 + grid_export[t]
                 + curtailment[t]
@@ -428,10 +535,19 @@ class KeplerSolver:
             if config.max_import_power_kw is not None:
                 prob += grid_import[t] <= config.max_import_power_kw * h
 
-            # Inverter AC output limit (PV + battery discharge combined)
-            if config.max_inverter_ac_kw is not None:
-                inverter_ac_kwh = config.max_inverter_ac_kw * h
-                prob += discharge[t] <= max(0.0, inverter_ac_kwh - s.pv_kwh)
+            # Inverter AC output limit with PV routing (dc_coupled / ac_coupled)
+            if pv_routing_active:
+                inverter_ac_kwh: float = cast("float", config.max_inverter_ac_kw) * h
+                # PV balance: all forecast PV routes to battery (DC), AC, or curtailment
+                prob += pv_to_battery[t] + pv_to_ac[t] + curtailment[t] == s.pv_kwh
+                # pv_to_battery is a sub-flow of total charge (can't exceed what the battery accepts)
+                prob += pv_to_battery[t] <= charge[t]
+                if config.inverter_topology == "ac_coupled":
+                    # Battery charging also crosses the AC inverter
+                    prob += pv_to_ac[t] + pv_to_battery[t] + discharge[t] <= inverter_ac_kwh
+                else:
+                    # DC-coupled (default): PV-to-battery bypasses the AC stage
+                    prob += pv_to_ac[t] + discharge[t] <= inverter_ac_kwh
 
             # Soft Grid Import Limit
             if config.grid_import_limit_kw is not None:
@@ -450,7 +566,7 @@ class KeplerSolver:
                     else config.max_discharge_power_kw
                 ) * h
                 prob += grid_export[t] <= M_export * is_exporting[t]
-                prob += soc[t] >= (
+                prob += soc[t + 1] >= (
                     export_floor_kwh * is_exporting[t]
                     + min_soc_kwh * (1 - is_exporting[t])
                     - export_floor_violation[t]
@@ -477,13 +593,22 @@ class KeplerSolver:
             slot_ramping_cost: Any = (
                 (ramp_up[t] + ramp_down[t]) / h
             ) * config.ramping_cost_sek_per_kw
-            slot_curtailment_cost: Any = curtailment[t] * curtailment_penalty
+            # Decision 6 (#16): prefer curtailment over loss-making export — when
+            # exporting would cost money (effective_export_price <= 0), curtailing
+            # is free so the solver never pays the grid to export. Only relevant
+            # when export is actually possible; otherwise curtailment cost keeps
+            # steering surplus PV toward battery/EV/water use as before.
+            slot_curtailment_cost: Any = (
+                curtailment[t] * curtailment_penalty
+                if not config.enable_export or effective_export_price > 0
+                else 0.0
+            )
             slot_shedding_cost: Any = load_shedding[t] * LOAD_SHEDDING_PENALTY
             slot_import_breach_cost: Any = import_breach[t] * IMPORT_BREACH_PENALTY
 
             # NOTE: Rev K20 stored_energy_cost was removed - it incorrectly made
             # charging unprofitable by adding cost on discharge without offsetting
-            # credit on charge. The terminal_value and wear_cost are sufficient
+            # credit on charge. wear_cost and the SoC target penalty are sufficient
             # for arbitrage decisions.
 
             slot_ev_cost: float = 0.0  # EV incentive handled in aggregate objective below
@@ -513,10 +638,6 @@ class KeplerSolver:
             config.target_soc_kwh if config.target_soc_kwh is not None else min_soc_kwh
         )
 
-        # Terminal SoC Target (BIDIRECTIONAL soft constraint)
-        # Penalize both being UNDER target (risk) AND OVER target (missed discharge opportunity)
-        target_soc_kwh = config.target_soc_kwh if config.target_soc_kwh is not None else min_soc_kwh
-
         if config.target_soc_kwh is not None:
             # Under target: soc[T] >= target - under_violation
             prob += soc[T] >= target_soc_kwh - target_under_violation
@@ -527,12 +648,63 @@ class KeplerSolver:
             # If no target, we don't care where we end up (within min_soc limits)
             pass
 
-        # Rev // F51: Removed legacy EV target SoC constraint.
-        # Replaced by Incentive Buckets in the objective function.
+        # EV goal constraints: soft target-by-time requirement and optional
+        # per-in-horizon-day quota (multi-day spreading).
+        in_horizon_days: set[date] = {slots[t].start_time.date() for t in range(T)}
+        ev_shortfall_penalty = getattr(
+            config, "ev_shortfall_penalty_sek_per_kwh", EV_SHORTFALL_PENALTY_DEFAULT
+        )
+        for charger in plugged_chargers:
+            d = charger.id
+            effective_deadline = charger.deadline or (slots[-1].end_time if slots else None)
+            if charger.required_kwh is None or effective_deadline is None:
+                continue
+            if charger.required_kwh <= 0:
+                continue
+
+            surplus_kw_for_charger = ev_surplus_kw.get(d)
+
+            if charger.quota_by_day:
+                # One cap per in-horizon day (replaces the old today-only cap).
+                for day, quota in charger.quota_by_day.items():
+                    if day not in in_horizon_days:
+                        continue
+                    day_terms = _ev_day_energy_terms(
+                        day, d, ev_energy, surplus_kw_for_charger, slots, slot_hours, T
+                    )
+                    prob += pulp.lpSum(day_terms) <= quota
+
+                # Cap the soft requirement at what's actually allocatable
+                # in-horizon, so the shortfall term can't force tomorrow's
+                # slots to deliver the whole multi-day requirement.
+                effective_required = min(
+                    charger.required_kwh,
+                    sum(
+                        quota
+                        for day, quota in charger.quota_by_day.items()
+                        if day in in_horizon_days
+                    ),
+                )
+            else:
+                effective_required = charger.required_kwh
+
+            # Slots that end on or before the deadline (scheduled energy only —
+            # surplus charging is a bonus on top, not counted against the
+            # shortfall requirement; it IS counted against the per-day quota
+            # above so a spread-out plan can't be blown by a surplus windfall).
+            eligible_energy = pulp.lpSum(
+                ev_energy[d][t] for t in range(T) if slots[t].end_time <= effective_deadline
+            )
+
+            # Soft requirement: delivered + shortfall >= required
+            prob += eligible_energy + ev_shortfall[d] >= effective_required
+            total_cost.append(ev_shortfall_penalty * ev_shortfall[d])
 
         # Water Heating Constraints — per-device (tasks 2.4-2.6)
-        gap_violation_penalty: float = 0.0
         sorted_days: list[Any] = []  # Initialize to avoid unbound error
+        gap_penalty_active: bool = (
+            config.water_heating_max_gap_hours > 0 and config.water_gap_penalty_sek > 0
+        )
         if water_enabled:
             avg_slot_hours: float = sum(slot_hours) / len(slot_hours) if slot_hours else 0.25
 
@@ -591,6 +763,24 @@ class KeplerSolver:
                             <= M
                         )
 
+                # Constraint 4: Per-device gap-comfort deadband (Decision 1)
+                if gap_penalty_active:
+                    gap_m: float = 100.0
+                    for t in range(T):
+                        duration: float = slot_hours[t]
+                        if t == 0:
+                            prob += (  # type: ignore[operator]
+                                discomfort[d][t] >= duration - water_heat[d][t] * gap_m
+                            )
+                        else:
+                            prob += (  # type: ignore[operator]
+                                discomfort[d][t]
+                                >= discomfort[d][t - 1] + duration - water_heat[d][t] * gap_m
+                            )
+                        prob += (  # type: ignore[operator]
+                            gap_over[d][t] >= discomfort[d][t] - config.water_heating_max_gap_hours
+                        )
+
         # Terminal SoC Target (BIDIRECTIONAL soft constraint)
         # - min_soc violation: HARD penalty (1000 SEK/kWh)
         # - target violation: SOFT penalty (from config, derived from risk_appetite)
@@ -606,8 +796,13 @@ class KeplerSolver:
                 if export_floor_active
                 else 0.0
             )
-            + gap_violation_penalty  # Deprecated in K16 (0.0)
-            + gap_violation_penalty  # Deprecated in K16 (0.0)
+            # Per-device gap-comfort penalty (Decision 1)
+            + (
+                pulp.lpSum(gap_over[d][t] for d in gap_over for t in range(T))
+                * config.water_gap_penalty_sek
+                if water_enabled and gap_penalty_active
+                else 0.0
+            )
             # Per-device block overshoot penalty (task 2.9)
             + (
                 pulp.lpSum(block_overshoot[d][t] for d in block_overshoot for t in range(T))
@@ -637,16 +832,6 @@ class KeplerSolver:
                 )
                 * config.water_reliability_penalty_sek
                 if water_enabled
-                else 0.0
-            )
-            # Per-device incentive bucket values: subtract from objective (negative cost = gain)
-            - (
-                pulp.lpSum(
-                    ev_bucket_charged[charger.id][i] * charger.incentive_buckets[i].value_sek
-                    for charger in plugged_chargers
-                    for i in range(len(charger.incentive_buckets or []))
-                )
-                if ev_any_enabled
                 else 0.0
             )
         )
@@ -682,7 +867,7 @@ class KeplerSolver:
 
         if not is_optimal:
             prob.writeLP("kepler_debug.lp")  # type: ignore[reportUnknownMemberType]
-            print(f"Solver failed: {status}. LP written to kepler_debug.lp")
+            logger.warning("Solver failed: %s. LP written to kepler_debug.lp", status)
 
             # Map PuLP status to structured PlannerError
             details = {"solver_status": status, "solve_duration_s": round(solve_duration, 3)}
@@ -697,6 +882,14 @@ class KeplerSolver:
         final_total_cost: float = 0.0
 
         if is_optimal:
+            # Per-charger shortfall vs required_kwh (reported on every slot)
+            ev_shortfall_by_charger: dict[str, float] = {}
+            for charger in plugged_chargers:
+                d = charger.id
+                if charger.required_kwh is not None and d in ev_shortfall:
+                    shortfall_val: float | None = pulp.value(ev_shortfall[d])  # type: ignore[assignment]
+                    ev_shortfall_by_charger[d] = shortfall_val if shortfall_val is not None else 0.0
+
             for t in range(T):
                 s: Any = slots[t]
                 h: float = slot_hours[t]
@@ -743,13 +936,30 @@ class KeplerSolver:
                     total_ev_kw += device_kw
                 ev_kw = total_ev_kw
 
+                # Per-entry custom-entity results, keyed by priority-list rank (task 2.7)
+                custom_entity_active_result: dict[str, bool] = {}
+                for rank_str, _entry in custom_entity_items:
+                    cev_val: float | None = pulp.value(custom_entity_active[rank_str][t])  # type: ignore[assignment]
+                    custom_entity_active_result[rank_str] = cev_val is not None and cev_val > 0.5
+
+                # Per-charger EV surplus results (task 2.7)
+                ev_surplus_result: dict[str, float] = {}
+                for charger_id, _charger, _reward in ev_surplus_items:
+                    surplus_val: float | None = pulp.value(ev_surplus_kw[charger_id][t])  # type: ignore[assignment]
+                    ev_surplus_result[charger_id] = surplus_val if surplus_val is not None else 0.0
+
                 wear: float = (
                     (c_val + d_val) * config.wear_cost_sek_per_kwh * 0.5
                     if c_val is not None and d_val is not None
                     else 0.0
                 )
+                effective_export_price_result: float = (
+                    s.export_price_sek_kwh - config.export_threshold_sek_per_kwh
+                )
                 cost: float = (
-                    (i_val * s.import_price_sek_kwh) - (e_val * s.export_price_sek_kwh) + wear
+                    (i_val * s.import_price_sek_kwh)
+                    - (e_val * effective_export_price_result)
+                    + wear
                     if i_val is not None and e_val is not None
                     else 0.0
                 )
@@ -770,11 +980,11 @@ class KeplerSolver:
                         water_heat_kw=w_kw,
                         water_heater_results=water_heater_results,
                         water_heating_boost=water_heating_boost,
-                        custom_entity_active=custom_entity_enabled
-                        and (_cev := pulp.value(custom_entity_active[t])) is not None
-                        and _cev > 0.5,
+                        custom_entity_active=custom_entity_active_result,
                         ev_charge_kw=ev_kw,
                         ev_charger_results=ev_charger_results,
+                        ev_surplus_kw=ev_surplus_result,
+                        ev_shortfall_kwh=ev_shortfall_by_charger,
                         is_optimal=True,
                     )
                 )

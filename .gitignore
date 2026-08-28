@@ -5,7 +5,12 @@ __pycache__/
 *.pyo
 .pytest_cache/
 .ruff_cache/
-typings/
+# uv regenerates this stub on any `uv run` without UV_NO_SYNC=1 (see
+# pyproject.toml [tool.uv] package = false); deps are pinned via requirements*.txt instead.
+uv.lock
+# NOTE: typings/ holds hand-written .pyi stubs for untyped deps (nordpool, pulp,
+# socketio). They are committed on purpose — pyright's stubPath points here, and
+# without them CI strict-mode pyright fails on imports that pass locally.
 
 
 # Secrets and user config (DO NOT COMMIT)
@@ -119,3 +124,8 @@ config.yaml.bak_test
 .claude/skills/openspec-onboard/SKILL.md
 .claude/skills/openspec-sync-specs/SKILL.md
 .claude/skills/openspec-verify-change/SKILL.md
+data/test_planner.db-shm
+.gitignore
+data/test_planner.db-wal
+data/ev_multi_day_state.json
+data/ev_multi_day_state.json.lock

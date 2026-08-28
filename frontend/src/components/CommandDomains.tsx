@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import {
     ArrowDownToLine,
     ArrowUpFromLine,
@@ -8,9 +8,12 @@ import {
     DollarSign,
     Droplets,
     BatteryCharging,
+    Loader2,
 } from 'lucide-react'
 import Card from './Card'
-import { Api } from '../lib/api'
+import { Api, type EVChargerState, type ConfigResponse, type LoadBalancerStatusResponse } from '../lib/api'
+import { useSocket } from '../lib/hooks'
+import EVChargerCard from './EVChargingCard'
 
 // --- Types ---
 interface GridCardProps {
@@ -22,6 +25,8 @@ interface GridCardProps {
 interface ResourcesCardProps {
     pvActual: number | null
     pvForecast: number | null
+    pvSourceLabel?: string | null
+    pvSourceActive?: boolean
     loadActual: number | null
     loadAvg: number | null
     waterKwh: number | null
@@ -31,6 +36,7 @@ interface ResourcesCardProps {
     hasWaterHeater?: boolean
     hasEvCharger?: boolean
     batteryCapacity?: number | null
+    config?: ConfigResponse | null
 }
 
 // --- Helper Components ---
@@ -44,6 +50,73 @@ const ProgressBar = ({ value, total, colorClass }: { value: number; total: numbe
             />
         </div>
     )
+}
+
+type PeriodSel = 'today' | 'yesterday' | 'week' | 'month' | 'custom'
+
+/** Computes the default {start, end} date-picker values for a given period, relative to `now`. */
+// eslint-disable-next-line react-refresh/only-export-components -- pure helper, tested directly
+export function getDefaultDatesForPeriod(
+    prevPeriod: PeriodSel,
+    now: Date = new Date(),
+): { start: string; end: string } {
+    const today = now
+    const todayStr = today.toISOString().split('T')[0]
+
+    switch (prevPeriod) {
+        case 'today': {
+            // Use yesterday to today
+            const yesterday = new Date(today)
+            yesterday.setDate(yesterday.getDate() - 1)
+            return {
+                start: yesterday.toISOString().split('T')[0],
+                end: todayStr,
+            }
+        }
+        case 'yesterday': {
+            // Single day - yesterday
+            const yesterdayOnly = new Date(today)
+            yesterdayOnly.setDate(yesterdayOnly.getDate() - 1)
+            return {
+                start: yesterdayOnly.toISOString().split('T')[0],
+                end: yesterdayOnly.toISOString().split('T')[0],
+            }
+        }
+        case 'week': {
+            // 7 days ago to today
+            const weekAgo = new Date(today)
+            weekAgo.setDate(weekAgo.getDate() - 7)
+            return {
+                start: weekAgo.toISOString().split('T')[0],
+                end: todayStr,
+            }
+        }
+        case 'month': {
+            // 30 days ago to today
+            const monthAgo = new Date(today)
+            monthAgo.setDate(monthAgo.getDate() - 30)
+            return {
+                start: monthAgo.toISOString().split('T')[0],
+                end: todayStr,
+            }
+        }
+        default: {
+            // Default to 7 days
+            const defaultStart = new Date(today)
+            defaultStart.setDate(defaultStart.getDate() - 7)
+            return {
+                start: defaultStart.toISOString().split('T')[0],
+                end: todayStr,
+            }
+        }
+    }
+}
+
+/** Pure predicate for a custom date range: both dates present and end >= start. */
+// eslint-disable-next-line react-refresh/only-export-components -- pure helper, tested directly
+export function isValidDateRange(start: string, end: string): boolean {
+    if (!start || !end) return false
+    return new Date(end) >= new Date(start)
 }
 
 // --- Domain Cards ---
@@ -61,77 +134,21 @@ export function GridDomain({ netCost, importKwh, exportKwh }: GridCardProps) {
         grid_charge_cost_sek: number
         self_consumption_savings_sek: number
         net_cost_sek: number
+        battery_wear_cost_sek: number
+        net_cost_incl_wear_sek: number
         grid_import_kwh: number
         grid_export_kwh: number
         slot_count: number
     } | null>(null)
     const [loading, setLoading] = useState(true)
 
-    // Helper to calculate default dates based on previous period
-    const getDefaultDatesForPeriod = (prevPeriod: typeof previousPeriod) => {
-        const today = new Date()
-        const todayStr = today.toISOString().split('T')[0]
-
-        switch (prevPeriod) {
-            case 'today': {
-                // Use yesterday to today
-                const yesterday = new Date(today)
-                yesterday.setDate(yesterday.getDate() - 1)
-                return {
-                    start: yesterday.toISOString().split('T')[0],
-                    end: todayStr,
-                }
-            }
-            case 'yesterday': {
-                // Single day - yesterday
-                const yesterdayOnly = new Date(today)
-                yesterdayOnly.setDate(yesterdayOnly.getDate() - 1)
-                return {
-                    start: yesterdayOnly.toISOString().split('T')[0],
-                    end: yesterdayOnly.toISOString().split('T')[0],
-                }
-            }
-            case 'week': {
-                // 7 days ago to today
-                const weekAgo = new Date(today)
-                weekAgo.setDate(weekAgo.getDate() - 7)
-                return {
-                    start: weekAgo.toISOString().split('T')[0],
-                    end: todayStr,
-                }
-            }
-            case 'month': {
-                // 30 days ago to today
-                const monthAgo = new Date(today)
-                monthAgo.setDate(monthAgo.getDate() - 30)
-                return {
-                    start: monthAgo.toISOString().split('T')[0],
-                    end: todayStr,
-                }
-            }
-            default: {
-                // Default to 7 days
-                const defaultStart = new Date(today)
-                defaultStart.setDate(defaultStart.getDate() - 7)
-                return {
-                    start: defaultStart.toISOString().split('T')[0],
-                    end: todayStr,
-                }
-            }
-        }
-    }
-
-    // Validation helper for custom date range
+    // Validation helper for custom date range: pure predicate lives in isValidDateRange,
+    // this wrapper only adds the setDateError side effect.
     const validateDateRange = (start: string, end: string): boolean => {
         if (!start || !end) return false
-        const startDate = new Date(start)
-        const endDate = new Date(end)
-        if (endDate < startDate) {
-            setDateError('End date must be after start date')
-            return false
-        }
-        setDateError(null)
-        return true
+        const valid = isValidDateRange(start, end)
+        setDateError(valid ? null : 'End date must be after start date')
+        return valid
     }
 
     // Fetch data when period changes
@@ -160,6 +177,8 @@ export function GridDomain({ netCost, importKwh, exportKwh }: GridCardProps) {
                         grid_charge_cost_sek: data.grid_charge_cost_sek,
                         self_consumption_savings_sek: data.self_consumption_savings_sek,
                         net_cost_sek: data.net_cost_sek,
+                        battery_wear_cost_sek: data.battery_wear_cost_sek,
+                        net_cost_incl_wear_sek: data.net_cost_incl_wear_sek,
                         grid_import_kwh: data.grid_import_kwh,
                         grid_export_kwh: data.grid_export_kwh,
                         slot_count: data.slot_count,
@@ -294,6 +313,17 @@ export function GridDomain({ netCost, importKwh, exportKwh }: GridCardProps) {
                     </span>
                     <span className="text-xs text-muted">kr</span>
                 </div>
+                {rangeData != null && (
+                    <div className="flex items-baseline gap-1 mt-0.5">
+                        <span
+                            className={`text-sm font-medium ${rangeData.net_cost_incl_wear_sek <= 0 ? 'text-good' : 'text-bad'} opacity-70`}
+                        >
+                            {rangeData.net_cost_incl_wear_sek > 0 ? '-' : '+'}
+                            {Math.abs(rangeData.net_cost_incl_wear_sek).toFixed(2)}
+                        </span>
+                        <span className="text-[9px] text-muted">kr incl. battery wear</span>
+                    </div>
+                )}
             </div>
 
             {/* Financial Breakdown */}
@@ -316,6 +346,10 @@ export function GridDomain({ netCost, importKwh, exportKwh }: GridCardProps) {
                         <span className="text-accent font-medium">
                             {rangeData.self_consumption_savings_sek.toFixed(1)} kr
                         </span>
+                    </div>
+                    <div className="flex justify-between p-1.5 rounded bg-surface2/30">
+                        <span className="text-muted">Battery Wear</span>
+                        <span className="text-bad font-medium">-{rangeData.battery_wear_cost_sek.toFixed(1)} kr</span>
                     </div>
                 </div>
             )}
@@ -350,6 +384,8 @@ export function GridDomain({ netCost, importKwh, exportKwh }: GridCardProps) {
 export function ResourcesDomain({
     pvActual,
     pvForecast,
+    pvSourceLabel,
+    pvSourceActive = false,
     loadActual,
     loadAvg,
     waterKwh,
@@ -359,87 +395,262 @@ export function ResourcesDomain({
     hasWaterHeater = true,
     hasEvCharger = false,
     batteryCapacity,
+    config,
 }: ResourcesCardProps) {
+    const [activeTab, setActiveTab] = useState<'metrics' | 'ev'>(() => {
+        try {
+            const val = localStorage.getItem('darkstar-resources-tab')
+            if (val === 'ev' || val === 'metrics') return val
+        } catch (e) {
+            console.error('Failed to read active tab from localStorage', e)
+        }
+        return 'metrics'
+    })
+
+    const handleTabChange = (tab: 'metrics' | 'ev') => {
+        setActiveTab(tab)
+        try {
+            localStorage.setItem('darkstar-resources-tab', tab)
+        } catch (e) {
+            console.error('Failed to save active tab to localStorage', e)
+        }
+    }
+
+    // A persisted 'ev' tab must never render when there's no EV charger to
+    // show — guard at render time, not just by hiding the toggle button.
+    const effectiveTab = hasEvCharger ? activeTab : 'metrics'
+
     return (
         <Card className="p-4 flex flex-col h-full relative overflow-hidden">
             <div className="absolute inset-0 bg-amber-500/[0.01]" />
 
             {/* Header */}
-            <div className="flex items-center gap-2 mb-4 relative z-10">
-                <div className="p-1.5 rounded-lg bg-accent/10 text-accent">
-                    <Zap className="h-4 w-4" />
+            <div className="flex items-center justify-between mb-4 relative z-10">
+                <div className="flex items-center gap-2">
+                    <div className="p-1.5 rounded-lg bg-accent/10 text-accent">
+                        <Zap className="h-4 w-4" />
+                    </div>
+                    <span className="text-sm font-medium text-text">Energy Resources</span>
+                    {hasBattery && batteryCapacity != null && batteryCapacity > 0 && (
+                        <span className="text-[9px] text-muted opacity-60 ml-2">({batteryCapacity} kWh Cap)</span>
+                    )}
                 </div>
-                <span className="text-sm font-medium text-text">Energy Resources</span>
-                {hasBattery && batteryCapacity != null && batteryCapacity > 0 && (
-                    <span className="ml-auto text-[9px] text-muted opacity-60">{batteryCapacity} kWh Cap</span>
+                {hasEvCharger && (
+                    <div className="flex items-center bg-surface-elevated rounded-lg p-0.5 text-[10px] font-medium border border-line/20">
+                        <button
+                            onClick={() => handleTabChange('metrics')}
+                            className={`px-2 py-1 rounded-md transition-all ${
+                                activeTab === 'metrics'
+                                    ? 'bg-accent text-surface-elevated font-semibold'
+                                    : 'text-muted hover:text-text'
+                            }`}
+                        >
+                            Metrics
+                        </button>
+                        <button
+                            onClick={() => handleTabChange('ev')}
+                            className={`px-2 py-1 rounded-md transition-all ${
+                                activeTab === 'ev'
+                                    ? 'bg-accent text-surface-elevated font-semibold'
+                                    : 'text-muted hover:text-text'
+                            }`}
+                        >
+                            EV
+                        </button>
+                    </div>
                 )}
             </div>
 
-            <div className="space-y-4 relative z-10">
-                {/* PV Section - conditional on hasSolar */}
-                {hasSolar && (
+            {effectiveTab === 'metrics' ? (
+                <div className="space-y-4 relative z-10">
+                    {/* PV Section - conditional on hasSolar */}
+                    {hasSolar && (
+                        <div>
+                            <div className="flex items-center justify-between mb-1">
+                                <div className="flex items-center gap-1.5 text-[11px] text-accent">
+                                    <Sun className="h-3 w-3" />
+                                    <span>Solar Production</span>
+                                </div>
+                                <div className="text-[10px] text-muted">
+                                    <span className="text-text font-medium">{pvActual?.toFixed(1) ?? '—'}</span>
+                                    <span className="mx-1">/</span>
+                                    {pvForecast?.toFixed(1) ?? '—'} kWh
+                                </div>
+                            </div>
+                            {pvSourceLabel && (
+                                <div className="mb-1 flex justify-end">
+                                    <span
+                                        className={`rounded-full border px-2 py-0.5 text-[9px] ${
+                                            pvSourceActive
+                                                ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300'
+                                                : 'border-sky-400/30 bg-sky-400/10 text-sky-300'
+                                        }`}
+                                    >
+                                        {pvSourceLabel}
+                                    </span>
+                                </div>
+                            )}
+                            <ProgressBar value={pvActual ?? 0} total={pvForecast ?? 1} colorClass="bg-accent" />
+                        </div>
+                    )}
+
+                    {/* Load Section - always displayed */}
                     <div>
                         <div className="flex items-center justify-between mb-1">
-                            <div className="flex items-center gap-1.5 text-[11px] text-accent">
-                                <Sun className="h-3 w-3" />
-                                <span>Solar Production</span>
+                            <div className="flex items-center gap-1.5 text-[11px] text-house">
+                                <Activity className="h-3 w-3" />
+                                <span>House Load</span>
                             </div>
                             <div className="text-[10px] text-muted">
-                                <span className="text-text font-medium">{pvActual?.toFixed(1) ?? '—'}</span>
+                                <span className="text-text font-medium">{loadActual?.toFixed(1) ?? '—'}</span>
                                 <span className="mx-1">/</span>
-                                {pvForecast?.toFixed(1) ?? '—'} kWh
+                                {loadAvg?.toFixed(1) ?? '—'} kWh
                             </div>
                         </div>
-                        <ProgressBar value={pvActual ?? 0} total={pvForecast ?? 1} colorClass="bg-accent" />
+                        <ProgressBar value={loadActual ?? 0} total={loadAvg ?? 1} colorClass="bg-house" />
                     </div>
-                )}
 
-                {/* Load Section - always displayed */}
-                <div>
-                    <div className="flex items-center justify-between mb-1">
-                        <div className="flex items-center gap-1.5 text-[11px] text-house">
-                            <Activity className="h-3 w-3" />
-                            <span>House Load</span>
+                    {/* EV Charging Section - conditional on hasEvCharger */}
+                    {hasEvCharger && (
+                        <div className="flex items-center justify-between pt-2 border-t border-line/30">
+                            <div className="flex items-center gap-1.5 text-[11px] text-ev">
+                                <BatteryCharging className="h-3 w-3" />
+                                <span>EV Charging</span>
+                            </div>
+                            <div className="text-sm font-medium text-text">
+                                {evChargingKwh?.toFixed(1) ?? '0.0'}{' '}
+                                <span className="text-[10px] text-muted font-normal">kWh</span>
+                            </div>
                         </div>
-                        <div className="text-[10px] text-muted">
-                            <span className="text-text font-medium">{loadActual?.toFixed(1) ?? '—'}</span>
-                            <span className="mx-1">/</span>
-                            {loadAvg?.toFixed(1) ?? '—'} kWh
+                    )}
+
+                    {/* Water Section - conditional on hasWaterHeater */}
+                    {hasWaterHeater && (
+                        <div
+                            className={`flex items-center justify-between pt-2${hasEvCharger ? '' : ' border-t border-line/30'}`}
+                        >
+                            <div className="flex items-center gap-1.5 text-[11px] text-water">
+                                <Droplets className="h-3 w-3" />
+                                <span>Water Heating</span>
+                            </div>
+                            <div className="text-sm font-medium text-text">
+                                {waterKwh?.toFixed(1) ?? '—'}{' '}
+                                <span className="text-[10px] text-muted font-normal">kWh</span>
+                            </div>
                         </div>
-                    </div>
-                    <ProgressBar value={loadActual ?? 0} total={loadAvg ?? 1} colorClass="bg-house" />
+                    )}
                 </div>
-
-                {/* EV Charging Section - conditional on hasEvCharger */}
-                {hasEvCharger && (
-                    <div className="flex items-center justify-between pt-2 border-t border-line/30">
-                        <div className="flex items-center gap-1.5 text-[11px] text-ev">
-                            <BatteryCharging className="h-3 w-3" />
-                            <span>EV Charging</span>
-                        </div>
-                        <div className="text-sm font-medium text-text">
-                            {evChargingKwh?.toFixed(1) ?? '0.0'}{' '}
-                            <span className="text-[10px] text-muted font-normal">kWh</span>
-                        </div>
-                    </div>
-                )}
-
-                {/* Water Section - conditional on hasWaterHeater */}
-                {hasWaterHeater && (
-                    <div
-                        className={`flex items-center justify-between pt-2${hasEvCharger ? '' : ' border-t border-line/30'}`}
-                    >
-                        <div className="flex items-center gap-1.5 text-[11px] text-water">
-                            <Droplets className="h-3 w-3" />
-                            <span>Water Heating</span>
-                        </div>
-                        <div className="text-sm font-medium text-text">
-                            {waterKwh?.toFixed(1) ?? '—'}{' '}
-                            <span className="text-[10px] text-muted font-normal">kWh</span>
-                        </div>
-                    </div>
-                )}
-            </div>
+            ) : (
+                <EVTabContent config={config ?? null} />
+            )}
         </Card>
+    )
+}
+
+function EVTabContent({ config }: { config: ConfigResponse | null }) {
+    const [chargers, setChargers] = useState<EVChargerState[]>([])
+    const [loading, setLoading] = useState(false)
+    const [error, setError] = useState<string | null>(null)
+    const fetchSeqRef = React.useRef(0)
+
+    const fetchChargers = useCallback(async () => {
+        const seq = ++fetchSeqRef.current
+        setLoading(true)
+        try {
+            const data = await Api.ev.chargers()
+            if (seq !== fetchSeqRef.current) return // a newer request has since started/resolved
+            setChargers(data)
+            setError(null)
+        } catch (err) {
+            if (seq !== fetchSeqRef.current) return
+            console.error('Failed to fetch EV chargers', err)
+            setError('Failed to load chargers')
+        } finally {
+            if (seq === fetchSeqRef.current) setLoading(false)
+        }
+    }, [])
+
+    useEffect(() => {
+        let active = true
+        const run = async () => {
+            await Promise.resolve()
+            if (active) {
+                fetchChargers()
+            }
+        }
+        run()
+        return () => {
+            active = false
+        }
+    }, [fetchChargers])
+
+    useSocket('ev_schedule_changed', () => {
+        fetchChargers()
+    })
+
+    useSocket('schedule_updated', () => {
+        fetchChargers()
+    })
+
+    const [loadBalancing, setLoadBalancing] = useState<LoadBalancerStatusResponse | null>(null)
+
+    useEffect(() => {
+        let active = true
+        const run = async () => {
+            await Promise.resolve()
+            if (!active) return
+            try {
+                const s = await Api.executor.loadBalancerStatus()
+                if (active) setLoadBalancing(s)
+            } catch (err) {
+                console.error('Failed to fetch load balancer status', err)
+            }
+        }
+        run()
+        return () => {
+            active = false
+        }
+    }, [])
+
+    useSocket('live_metrics', (data: unknown) => {
+        const payload = data as { load_balancing?: LoadBalancerStatusResponse }
+        setLoadBalancing(payload.load_balancing ?? null)
+    })
+
+    if (loading && chargers.length === 0) {
+        return (
+            <div className="flex flex-col items-center justify-center py-12 text-muted text-xs relative z-10">
+                <Loader2 className="h-6 w-6 animate-spin mb-2 text-accent" />
+                <span>Loading chargers…</span>
+            </div>
+        )
+    }
+
+    const visibleChargers = chargers.filter((c) => !c.externally_controlled)
+
+    if (error && visibleChargers.length === 0) {
+        return <div className="text-center py-12 text-bad text-xs relative z-10">{error}</div>
+    }
+
+    if (visibleChargers.length === 0) {
+        return (
+            <div className="text-center py-12 text-muted text-xs relative z-10">
+                No EV chargers enabled or configured.
+            </div>
+        )
+    }
+
+    return (
+        <div className="space-y-4 overflow-y-auto max-h-[360px] pr-1 relative z-10 custom-scrollbar">
+            {visibleChargers.map((charger) => (
+                <EVChargerCard
+                    key={charger.id}
+                    charger={charger}
+                    config={config}
+                    loadBalancing={loadBalancing}
+                    onRefresh={fetchChargers}
+                />
+            ))}
+        </div>
     )
 }

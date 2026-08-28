@@ -8,17 +8,25 @@ This document contains ideas, improvements, and tasks that are not yet scheduled
 
 1.  **Naming:** Use generic names (e.g., `Settings Cleanup`, `Chart Improvements`) until the item is promoted.
 
-2.  **Categories:**
-    - **Backlog** — Concrete tasks ready for implementation
-    - **On Hold** — Paused work with existing code/design
-    - **Future Ideas** — Brainstorming, needs design before implementation
+2.  **Sections:**
+    - **📥 Inbox** — New bugs/requests added by the user, unsorted. AI sorts items into the sections below when processing them.
+    - **🐛 Fixes** — Broken or incorrect behavior in existing functionality.
+    - **🔧 Improvements** — Existing functionality made better, faster, more honest, or more maintainable (incl. tech debt, tooling, tests).
+    - **✨ New Features** — Net-new capability, including UI additions.
+    - **💡 Future Ideas / Deferred** — Brainstorming, or explicitly considered-and-deferred items with revisit triggers.
 
-3.  **Format:** Use the template below for new items.
+3.  **Workflow rules:**
+    - When an item is processed into an OpenSpec change, DELETE it from this file immediately at change-creation time (the change tracks it from then on).
+    - Investigations happen BEFORE a change is created — changes contain only atomic, clear, pre-decided implementation tasks, never "investigate X" tasks.
+    - Items tagged **(needs production data)** cannot be implemented cold — they require a data-review session with the user first.
+    - Change verification MUST visually check every page whose SHARED code was touched (e.g. `lib/api.ts`, chart helpers), not just the pages the change is "about" — other users run different configs than the maintainer.
+
+4.  **Format:** Use the template below for new items.
 
 ### Backlog Item Template
 
 ```
-### [Category] Item Title
+#### [Category] Item Title
 
 **Goal:** What we want to achieve.
 
@@ -27,127 +35,30 @@ This document contains ideas, improvements, and tasks that are not yet scheduled
 
 ---
 
-## 📋 Backlog
+## 📥 Inbox (User Added / Unsorted)
 
-### 📥 Inbox (User Added / Unsorted)
-
-<!-- Add new bugs/requests here. AI should wipe the item after processing into a OpenSpec change. -->
-
-#### [Price Forecast / S-Index] Calibrate `RISK_PRICE_KW_FRACTION` Against Real Price Data
-
-**Goal:** Revisit the risk-fraction constants `{1: 0.15, 2: 0.12, 3: 0.10, 4: 0.05, 5: 0.02}` in `planner/strategy/s_index.py` after Module 3 (price-forecasting-module-3) has been live in production for 2–4 weeks and a meaningful sample of real positive-spread events has been observed. Determine whether the resulting floor adjustments match expected behavior or need tuning.
-
-**Notes:** Added 2026-04-25 as part of price-forecasting-module-3. The fractions were chosen by reasoning about reasonable behavior for Swedish price ranges, not measured against historical Nordpool data. Sample evaluation criteria: (a) does Risk 1 (Safety) actually hoard appropriately during real winter spikes? (b) is Risk 5 (Gambler) correctly under-reactive? (c) are mid-spread events (~1–2 SEK/kWh) producing floor changes the user intuitively agrees with? Use `s_index_debug` log entries and `strategy_log` events as the data source.
+<!-- Add new bugs/requests here. AI sorts them into a section (or wipes them into an OpenSpec change) when processing. -->
 
 ---
 
-#### [Price Forecast / S-Index] Explore Top-2-Average vs Pure Peak for Upcoming Price Signal
+## 🐛 Fixes
 
-**Goal:** Investigate whether `calculate_price_floor_addon()` should use the top-2 daily average instead of the pure peak (`max`) across D+1–D+7 to compute `peak_upcoming_sek`. The pure-peak approach is sensitive to a single inaccurate D+5/D+6/D+7 forecast day; a top-2 average dampens that without losing strong-spike sensitivity.
-
-**Notes:** Added 2026-04-25 as part of price-forecasting-module-3. Module 3 ships with pure peak for KISS reasons (simpler, easier to debug). The 80% capacity cap and the trailing-14-day average already provide some protection against runaway addons from a single bad forecast day. Revisit only if real-world observation shows the pure peak is producing unwarranted floor increases on bad-forecast days. Trivial code change if needed.
+<!-- Empty -->
 
 ---
 
-#### [Planner] Multiple Heating Sources/Deferrable Loads
+## 🔧 Improvements
 
-**Goal:** Support control for multiple distinct heating sources (e.g., HVAC + Water Heater + Floor Heating) independently. A simple switch per each source to enable/disable it, and then the planner will decide when to turn them on/off based on the optimization problem. We need parameter for the kW consumption of each source and time/kWh goal.
-
-**Notes:** Currently limited to a single water heater channel.
+<!-- Empty -->
 
 ---
 
-#### [Learning] Per-Device Load Forecasting
+## ✨ New Features
 
-**Goal:** Train per-device load models (EV, water heater) instead of aggregated forecasts. Enables the planner to predict per-device consumption patterns (e.g., Tesla charges faster than Leaf, upstairs heater runs more at night).
-
-**Notes:** Currently `ev_charging_kwh` and `water_kwh` in `slot_observations` are aggregated across all devices. Per-device energy recording (added in multi-device-ev-chargers change) provides the data foundation. Requires extending Aurora/Reflex models to accept device ID as a feature, and per-device forecast output in the pipeline. Not blocking for multi-device scheduling — the planner uses real-time sensor state, not forecasts, for per-device decisions.
+<!-- Empty -->
 
 ---
 
-#### [Price Forecast] Mock Script Inserts Timezone-Naive Timestamps
+## 💡 Future Ideas / Deferred
 
-**Goal:** Fix `scripts/insert_mock_price_forecasts.py` line 52 to include timezone offset in `slot_start`. Currently uses `strftime("%Y-%m-%dT%H:%M:%S")` which produces `2026-03-30T00:00:00` (no timezone), while production code produces `2026-03-30T00:00:00+02:00`. This causes join mismatches with `slot_observations` (which always includes timezone).
-
-**Notes:** Discovered during price-forecast-ui-enhancements verification (2026-04-08). Not a production bug — only affects dev/test data. Fix: use `.isoformat()` on a timezone-aware datetime instead of `strftime`. Also consider adding the same fix to `issue_timestamp` on the same line.
-
----
-
-#### [Price Forecast] Discontinuity Between Actual and Forecasted Prices at Midnight
-
-**Goal:** Investigate and fix the large price spike at the boundary between historical actuals and forecasted prices (e.g., actual 0.16 at 23:45 jumping to forecast 0.70 at 00:00). The forecast should be continuous with recent actuals, especially for the D+1 boundary.
-
-**Notes:** Discovered during price-forecast-ui-enhancements verification (2026-04-08). The LightGBM price model doesn't use the most recent actual spot price as an input feature — it relies on lagged averages (`price_lag_1d`, `price_lag_7d`, `price_lag_24h_avg`) which smooth out the current price level. Possible improvements: (a) add a `price_last_known` feature using the most recent `slot_observations.export_price_sek_kwh` value, (b) apply a blending/stitching function at the actual-to-forecast boundary that smoothly transitions from the last known actual to the model's prediction over a few hours, (c) bias-correct the forecast series to anchor to the last known actual.
-
----
-
-#### [Price Forecast] Sawtooth Pattern in Price Chart
-
-**Goal:** Investigate and fix the sawtooth/zigzag pattern visible in the Aurora Forecast Horizon price chart before certain timestamps (e.g., "Tue 00:15"). Determine whether this is a data artifact from mock/seed data or a model interpolation issue with overlapping forecast runs producing different values for the same slots.
-
-**Notes:** Observed during price-forecast-ui-enhancements verification (2026-04-08). Could be caused by: (a) mock data inserted via `scripts/insert_mock_price_forecasts.py`, (b) overlapping forecast runs with slightly different predictions for the same 15-min slots, (c) model interpolation artifacts from sparse training data. Check raw DB data first before assuming code bug.
-
----
-
-#### [Price Forecast] Improve Price Alert Accuracy
-
-**Goal:** Review and improve the rule-based price alert thresholds in `backend/api/routers/analyst.py` (`_get_price_advice()`). Current alerts ("cheapest day ahead" at 30% threshold, "prices rising", "cheap overnight" at 25% threshold) may fire on noise or stale forecast data, producing alerts that don't match observed reality.
-
-**Notes:** Observed during price-forecast-ui-enhancements verification (2026-04-08). The alerts are dynamically generated from real forecast data (not hardcoded), but the simple percentage thresholds may need tuning. Consider: (a) requiring minimum absolute price difference, not just percentage, (b) filtering out stale forecast data before computing alerts, (c) confidence-weighting alerts based on model accuracy (d1_mae).
-
----
-
-#### [Dashboard] Reorganize and Declutter Dashboard Layout
-
-**Goal:** Audit all dashboard cards for redundancy, oversized elements, and poor information hierarchy. Redesign the layout so the most actionable information is prominent and secondary data is accessible but not dominant.
-
-**Notes:** Raised after adding EV multi-day charging card to the Energy Resources section. The dashboard has grown organically and likely has cards that overlap in purpose or consume too much space relative to their value. Should be tackled as a standalone UX pass after the EV multi-day feature ships, so the final card set is known before optimizing layout.
-
----
-
-#### [Planner] Inverter AC Limit Constraint Overcounts PV-to-Battery Path
-
-**Goal:** Refine the inverter AC limit constraint in `planner/solver/kepler.py:324` to reflect the physical reality that PV is DC and can route to the battery (DC-to-DC) without crossing the AC inverter boundary. The current constraint `discharge[t] + s.pv_kwh <= inverter_ac_kwh` assumes 100% of PV passes through the AC inverter, which is not true for hybrid inverters with DC-coupled batteries.
-
-**Notes:** Discovered during investigation of planner infeasibility issues (2026-04-23, log `ace75461_darkstar-dev_2026-04-22T13-53-37.260Z.log`). Flagged as out of scope for the `planner-resilience-and-diagnostics` change because fixing it is a physical-model refactor, not a resilience/diagnostic concern.
-
-Correct model should distinguish between:
-- `pv_to_battery_kwh` — DC-coupled, bypasses AC inverter, limited by battery charge power and PV availability
-- `pv_to_ac_kwh` — passes through inverter to feed load / export
-- `battery_to_ac_kwh` (current `discharge[t]`) — passes through inverter to feed load / export
-
-The AC limit should apply to `pv_to_ac_kwh + battery_to_ac_kwh`, not `s.pv_kwh + discharge[t]`.
-
-Impact:
-- The current constraint is conservative (over-restrictive), so it does not cause infeasibility in typical configurations (PV rarely exceeds inverter AC limit in a 15-min slot alone), but it can suppress legitimate plans where PV > AC limit and the excess should route to the battery.
-- For users with inverters where the AC output is smaller than the peak PV production (e.g., 8 kW AC inverter with 12 kWp PV array), the planner may falsely mark slots as needing curtailment or refuse solutions that are physically valid.
-
-Design considerations:
-- Requires new variables `pv_to_battery[t]` and `pv_to_ac[t]` with `pv_to_battery[t] + pv_to_ac[t] + curtailment[t] == s.pv_kwh`.
-- `charge[t]` must be sourced from `pv_to_battery[t] + grid_import_to_battery[t]` (if grid charging is allowed) — need to decide whether to preserve simple `charge[t]` variable or split.
-- AC constraint becomes `pv_to_ac[t] + discharge[t] <= inverter_ac_kwh`.
-- DC charge path may have its own power limit distinct from AC inverter (check inverter specs: some hybrid inverters have separate DC charge power and AC output ratings).
-- Existing tests in `tests/planner/` will need updates to reflect the new decision variables.
-- Ramping, wear, and efficiency constraints should continue to operate on total charge/discharge, not per path.
-
-Pre-requisites:
-- Confirm the set of inverter topologies supported (DC-coupled hybrid vs AC-coupled with separate battery inverter). AC-coupled systems have different physics — battery charging from PV also crosses AC.
-- May warrant a per-inverter topology config flag (`inverter.topology: "dc_coupled" | "ac_coupled"`) to switch constraint behavior.
-
----
-
-### 💡 Future Ideas (Brainstorming)
-
-#### [S-Index] `max_safety_buffer_pct` Cap Suppresses Risk-Level Differentiation
-
-**Goal:** Make `max_safety_buffer_pct` risk-level-aware so that Risk 1 (Safety) users genuinely get a higher safety floor ceiling than Risk 3 (Neutral) users during high-deficit periods.
-
-**Notes:** Currently `max_safety_buffer_pct` defaults to 20% of battery capacity and does NOT vary by risk level. On days with moderate-to-high temporal deficit, most users hit the 20% cap regardless of risk level — meaning the floor is effectively identical for Risk 1 and Risk 3 users. The risk differentiation via `RISK_CONFIG` margins and `min_buffer_pct` in `s_index.py` only activates on easy/sunny days when the deficit is small enough to stay below the cap. Potential fix: make the cap a per-risk-level value (e.g., Risk 1: 30%, Risk 3: 20%, Risk 5: 15%). Discovered during Module 3 (S-Index Price Awareness) design — the Module 3 price addon deliberately bypasses this 20% cap by being additive on top of the already-capped base floor, bounded separately at 80% of capacity.
-
----
-
-#### ~~[EV] Multi-Day EV Charging Planning~~ → PROMOTED
-
-Promoted to active changes: `price-forecasting-module-4` (backend) and `price-forecasting-module-5` (UI + HA integration).
-
----
+<!-- Empty -->

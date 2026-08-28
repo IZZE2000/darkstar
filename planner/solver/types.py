@@ -6,15 +6,7 @@ Migrated from backend/kepler/types.py for the new planner package.
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime
-
-
-@dataclass
-class IncentiveBucket:
-    """EV incentive bucket based on SoC threshold."""
-
-    threshold_soc: float
-    value_sek: float
+from datetime import date, datetime
 
 
 @dataclass
@@ -40,7 +32,35 @@ class EVChargerInput:
     current_soc_percent: float
     plugged_in: bool
     deadline: datetime | None
-    incentive_buckets: list[IncentiveBucket] = field(default_factory=lambda: [])
+    required_kwh: float | None = None
+    # Minimum plannable power when charging is on. Only meaningful for
+    # control_type "current" (semi-continuous); derived by the adapter from
+    # min_current_a x phases. Defaults to 0.0 for "binary" callers that don't
+    # set it explicitly (kepler treats "binary" via the equality energy link
+    # regardless of this value).
+    min_power_kw: float = 0.0
+    # Per-in-horizon-day energy cap (calendar date -> kWh) from multi-day
+    # spreading. None when spreading isn't active (single-day goal).
+    quota_by_day: dict[date, float] | None = None
+    keep_on_after_target: bool = False
+    # "binary" (ON/OFF switch) or "current" (variable ampere setpoint). Only
+    # "current" chargers are eligible for excess-PV surplus charging — surplus
+    # is inherently fractional and a binary charger can't modulate to match it.
+    control_type: str = "binary"
+
+
+@dataclass
+class ExcessPVSinkEntry:
+    """One priority-ordered excess-PV sink entry, with its rank-scaled effective reward.
+
+    Mirrors executor.config.ExcessPVSinkEntry; built by the adapter from the
+    executor's `excess_pv.priority[]` config plus the shared base reward.
+    """
+
+    type: str  # "ev" | "water_heater_boost" | "custom_entity"
+    effective_reward_sek_per_kwh: float
+    charger_id: str | None = None  # type == "ev"
+    power_kw: float = 1.0  # type == "custom_entity": estimated power draw
 
 
 @dataclass
@@ -58,12 +78,12 @@ class KeplerConfig:
     # Optional export limits (if any)
     max_export_power_kw: float | None = None
     max_import_power_kw: float | None = None
-    max_inverter_ac_kw: float | None = (
-        None  # Inverter AC output limit (PV + battery discharge combined)
-    )
+    max_inverter_ac_kw: float | None = None  # Inverter AC output limit
+    inverter_topology: str = "dc_coupled"  # "dc_coupled" | "ac_coupled"
     target_soc_kwh: float | None = None  # Minimum SoC at end of horizon
     target_soc_penalty_sek: float = 0.0  # Set by pipeline (Safety Floor penalty)
     curtailment_penalty_sek: float = 0.0  # Penalty for wasting available solar power
+    ev_shortfall_penalty_sek_per_kwh: float = 50.0  # Soft penalty for missing EV target by ready-by
     ramping_cost_sek_per_kw: float = 0.0  # Penalty for power changes
     export_threshold_sek_per_kwh: float = 0.0  # Min spread to export
     grid_import_limit_kw: float | None = None  # Soft constraint
@@ -72,7 +92,7 @@ class KeplerConfig:
 
     # Global water heating settings (apply to all heaters)
     water_heating_max_gap_hours: float = 0.0  # Threshold for gap penalty (0 = disabled)
-    water_comfort_penalty_sek: float = 0.50  # Penalty per hour beyond gap threshold (deprecated)
+    water_gap_penalty_sek: float = 0.0  # Penalty per hour of gap beyond water_heating_max_gap_hours (0 = disabled); scaled by comfort_level
     water_block_penalty_sek: float = 0.0  # Penalty per slot for overshooting block window
     water_reliability_penalty_sek: float = 0.0  # Penalty per day for missing daily minimum
     max_block_hours: float = 2.0  # Rev K24: Dynamic window size per comfort level (global)
@@ -97,10 +117,9 @@ class KeplerConfig:
     excess_pv_slots: list[bool] = field(
         default_factory=lambda: []
     )  # Per-slot flags: True if excess PV available
-    excess_pv_sink: str = "disabled"  # water_heater_boost | custom_entity | disabled
-    excess_pv_reward_sek_per_kwh: float = 0.5  # Reward for using excess PV at sink vs exporting
+    # Priority-ordered sink list (index 0 = highest priority); empty = disabled.
+    excess_pv_priority: list[ExcessPVSinkEntry] = field(default_factory=lambda: [])
     excess_pv_soc_threshold_percent: float = 95.0  # Battery SoC % required before sink activates
-    excess_pv_custom_entity_power_kw: float = 1.0  # Estimated power of custom entity (kW)
 
     def __post_init__(self):
         """Validate configuration after initialization."""
@@ -169,7 +188,18 @@ class KeplerResultSlot:
     water_heating_boost: dict[str, bool] = field(
         default_factory=lambda: {}
     )  # Per-device: heater_id -> boost active
-    custom_entity_active: bool = False  # Whether custom entity sink should be on
+    custom_entity_active: dict[str, bool] = field(
+        default_factory=lambda: {}
+    )  # Per-entry: str(priority-list rank) -> whether that custom entity sink is on
+    ev_surplus_kw: dict[str, float] = field(
+        default_factory=lambda: {}
+    )  # Per-charger: charger_id -> surplus-eligible kW this slot
+    ev_shortfall_kwh: dict[str, float] = field(
+        default_factory=lambda: {}
+    )  # Per-charger: shortfall vs required_kwh by deadline
+    ev_keep_on: dict[str, bool] = field(
+        default_factory=lambda: {}
+    )  # Per-charger: charger_id -> switch held on past target (no planned energy)
     is_optimal: bool = True
 
 

@@ -16,7 +16,7 @@ import yaml
 
 logger = logging.getLogger(__name__)
 
-VALID_DOMAINS = frozenset(["select", "number", "switch", "input_number"])
+VALID_DOMAINS = frozenset(["select", "number", "switch", "input_number", "input_datetime"])
 VALID_CATEGORIES = frozenset(["system", "battery"])
 VALID_TEMPLATES = frozenset(
     [
@@ -56,12 +56,6 @@ class ModeAction:
     entity: str
     value: str | int | float | bool
     settle_ms: int | None = None
-    scale: float | None = None
-    """Optional multiplier applied to resolved template values before writing.
-    Use to convert Darkstar's internal Watt values to inverter register units.
-    Negative scale flips the sign (e.g., scale: -0.1 converts 5000W → -500 for discharge).
-    Only applied when value is a template ({{...}}); ignored for static values.
-    """
 
 
 @dataclass
@@ -277,7 +271,6 @@ def _parse_mode_action(data: dict[str, Any]) -> ModeAction:
         entity=data.get("entity", ""),
         value=value,
         settle_ms=data.get("settle_ms"),
-        scale=data.get("scale"),
     )
 
 
@@ -411,7 +404,14 @@ def get_profile_from_config(
         InverterProfile instance
     """
     system_config = config.get("system", {})
-    profile_name = system_config.get("inverter_profile", "generic")
+    raw_profile_name = system_config.get("inverter_profile")
+    profile_name = raw_profile_name or "generic"
+
+    if not raw_profile_name:
+        # Shipped default (config.default.yaml ships inverter_profile: null) —
+        # go straight to generic, no profiles/None.yaml attempt, no ERROR log.
+        logger.info("No inverter_profile configured; using 'generic' profile")
+        return load_profile("generic", profiles_dir)
 
     logger.info("Loading inverter profile from config: %s", profile_name)
 

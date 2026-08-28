@@ -133,3 +133,47 @@ The ChartCard SHALL render a new bar dataset for the custom entity sink, visible
 - **THEN** an "Excess PV Sink" toggle SHALL appear
 - **AND** toggling it off SHALL hide the custom entity sink bars
 - **AND** toggling it on SHALL show them again
+
+### Requirement: All main-chart power series share one power axis scale
+
+The main ChartCard SHALL render all power series — every power bar (load, charge, discharge, export, water heating, water-heating boost, EV charging, excess-PV sink) AND the PV forecast line — against a single shared power axis maximum, so that an identical power value is drawn at an identical height regardless of which series it belongs to.
+
+The shared power axis maximum SHALL be `max(gridMaxKw, inverterMaxKw, solarKwp)` and SHALL be applied consistently both when the chart is first created and when the scaling configuration changes at runtime.
+
+#### Scenario: Bar and PV line at equal power render at equal height
+- **WHEN** a power bar and the PV forecast line both represent the same power value (e.g. 4 kW) in the same chart
+- **THEN** both SHALL be drawn at the same height, because both axes use the same maximum
+
+#### Scenario: PV peak above grid/inverter limit does not clip
+- **WHEN** the PV forecast for a slot exceeds `max(gridMaxKw, inverterMaxKw)` but is at or below `solarKwp`
+- **THEN** the PV forecast line SHALL remain fully visible within the chart area, because the shared maximum includes `solarKwp`
+
+#### Scenario: Shared maximum tracks the largest capacity
+- **WHEN** the scaling configuration provides `gridMaxKw`, `inverterMaxKw`, and `solarKwp`
+- **THEN** the power axes for bars and the PV line SHALL all use a maximum equal to the largest of those three values
+
+#### Scenario: Runtime scaling change keeps all power axes in sync
+- **WHEN** the scaling configuration changes after the chart has loaded real data
+- **THEN** the bar axes and the PV line axis SHALL all be updated to the same recomputed `max(gridMaxKw, inverterMaxKw, solarKwp)` value
+
+### Requirement: Keep-on slots render as an EV standby band
+
+The main schedule chart SHALL render slots whose `ev_keep_on` dict contains any true flag — and whose planned `ev_charging_kw` is 0 — as a thin fixed-height "EV standby" band along the bottom of the chart, visually distinct from the EV charging bars. The band SHALL NOT encode any power value (keep-on plans no energy). It SHALL have its own legend entry, and its tooltip SHALL explain the semantics (charger switch held on after target; the vehicle draws only what it needs). Slots with genuinely planned EV power SHALL continue to render as normal EV charging bars regardless of keep-on flags.
+
+#### Scenario: Keep-on slot renders standby band, no charging bar
+- **WHEN** a schedule slot has `ev_keep_on = {"ev1": true}` and `ev_charging_kw` = 0
+- **THEN** the chart SHALL render the EV standby band for that slot
+- **AND** no EV charging bar SHALL be drawn for that slot
+
+#### Scenario: Standby band carries explanation
+- **WHEN** the user hovers/taps the EV standby band or reads the legend
+- **THEN** a legend entry "EV standby" SHALL be present
+- **AND** the tooltip SHALL state that the charger switch is held on after target and the car draws only what it needs
+
+#### Scenario: Planned charging takes precedence over the band
+- **WHEN** a slot has both planned EV power (`ev_charging_kw > 0`) and a keep-on flag
+- **THEN** the normal EV charging bar SHALL be rendered for that slot
+
+#### Scenario: Schedules without keep-on data render unchanged
+- **WHEN** a schedule slot has no `ev_keep_on` field
+- **THEN** the chart SHALL render exactly as before this change, with no standby band

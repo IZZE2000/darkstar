@@ -10,8 +10,12 @@ from backend.api.routers.executor import get_executor_instance
 from backend.config_migration import (
     remove_deprecated_keys,
     template_aware_merge,
+    write_config,
 )
+from backend.core.ha_client import get_ha_entity_state
 from backend.core.secrets import load_home_assistant_config, load_notifications_config, load_yaml
+from backend.loads.base import EV_CHARGER_LOAD_TYPES, WATER_HEATER_LOAD_TYPES
+from executor.load_balancer import classify_phase_sensor_unit
 from executor.profiles import get_profile_from_config
 
 logger = logging.getLogger("darkstar.api.config")
@@ -65,7 +69,8 @@ async def validate_config() -> dict[str, Any]:
     """Validate current config and return warnings (no save)."""
     try:
         conf: dict[str, Any] = load_yaml("config.yaml") or {}
-        validation_issues = _validate_config_for_save(conf)
+        phase_sensor_units = await _phase_sensor_units_for_config(conf)
+        validation_issues = _validate_config_for_save(conf, phase_sensor_units)
         warnings = [i for i in validation_issues if i["severity"] == "warning"]
         return {"status": "success", "warnings": warnings}
     except Exception as e:
@@ -282,7 +287,8 @@ async def save_config(
         data = template_config
 
         # REV LCL01: Validate config before saving and collect warnings/errors
-        validation_issues = _validate_config_for_save(data)
+        phase_sensor_units = await _phase_sensor_units_for_config(data)
+        validation_issues = _validate_config_for_save(data, phase_sensor_units)
         errors = [i for i in validation_issues if i["severity"] == "error"]
         warnings = [i for i in validation_issues if i["severity"] == "warning"]
 
@@ -297,9 +303,14 @@ async def save_config(
                 },
             )
 
-        # Save the config (even if warnings exist)
-        with config_path.open("w", encoding="utf-8") as f:
-            yaml_handler.dump(data, f)  # type: ignore
+        # Save the config through the atomic writer (even if warnings exist).
+        # write_config writes to a .tmp sibling then atomically replaces the target,
+        # creating a timestamped backup first. Returns False if aborted or failed.
+        if not write_config(config_path, data, yaml_handler):
+            raise HTTPException(
+                500,
+                detail={"message": "Config save aborted - post-write validation failed"},
+            )
 
         # REV F53: Notify executor to reload config after successful save
         try:
@@ -310,6 +321,15 @@ async def save_config(
         except Exception as e:
             # Log but don't fail the save if executor reload fails
             logger.warning("Failed to reload executor config after save: %s", e)
+
+        # Refresh LearningEngine singleton so next forecast uses saved values
+        try:
+            from backend.learning import get_learning_engine
+
+            get_learning_engine().refresh_config()
+            logger.info("LearningEngine config refreshed after config save")
+        except Exception as e:
+            logger.warning("Failed to refresh LearningEngine config after save: %s", e)
 
         # Clear planner retry suspension so planning resumes after config fix
         try:
@@ -330,8 +350,50 @@ async def save_config(
         raise HTTPException(500, str(e)) from e
 
 
+async def _fetch_phase_sensor_units(entity_ids: list[str]) -> dict[str, dict[str, str]]:
+    """Best-effort fetch of unit_of_measurement/device_class for the given
+    phase sensor entity ids, for unit-recognition validation.
+
+    Never raises — if Home Assistant isn't configured or unreachable, the
+    unit-recognition check is simply skipped for this validation pass rather
+    than blocking a config save on a network hiccup.
+    """
+    if not entity_ids:
+        return {}
+    ha_config = load_home_assistant_config()
+    if not ha_config.get("url") or not ha_config.get("token"):
+        return {}
+
+    result: dict[str, dict[str, str]] = {}
+    for entity_id in entity_ids:
+        state = await get_ha_entity_state(entity_id)
+        if state is None:
+            continue
+        attrs = cast("dict[str, Any]", state.get("attributes") or {})
+        result[entity_id] = {
+            "unit_of_measurement": str(attrs.get("unit_of_measurement") or ""),
+            "device_class": str(attrs.get("device_class") or ""),
+        }
+    return result
+
+
+async def _phase_sensor_units_for_config(config: dict[str, Any]) -> dict[str, dict[str, str]]:
+    """Resolve unit metadata for the configured grid_current_l* entities, if
+    load balancing is enabled (skipped otherwise since it's not needed)."""
+    if not config.get("load_balancing", {}).get("enabled", False):
+        return {}
+    input_sensors = config.get("input_sensors", {})
+    entity_ids = [
+        input_sensors[k]
+        for k in ("grid_current_l1", "grid_current_l2", "grid_current_l3")
+        if input_sensors.get(k)
+    ]
+    return await _fetch_phase_sensor_units(entity_ids)
+
+
 def _validate_config_for_save(
     config: dict[str, Any],
+    phase_sensor_units: dict[str, dict[str, str]] | None = None,
 ) -> list[dict[str, str]]:
     """Validate config and return list of issues.
 
@@ -447,6 +509,17 @@ def _validate_config_for_save(
                         }
                     )
 
+                # Validate water heater type
+                wh_type = wh.get("type", "binary") or "binary"
+                if wh_type not in WATER_HEATER_LOAD_TYPES:
+                    issues.append(
+                        {
+                            "severity": "warning",
+                            "message": f"Water heater '{wh.get('id', i + 1)}' uses unsupported type: '{wh_type}'",
+                            "guidance": "type must be 'binary' (ON/OFF switch) or 'modulating' (variable power output).",
+                        }
+                    )
+
             # Check if at least one water heater is enabled
             if not any(wh.get("enabled", True) for wh in water_heaters):
                 issues.append(
@@ -532,9 +605,6 @@ def _validate_config_for_save(
                         }
                     )
 
-                # REV K25 Phase 1: Legacy min_soc_percent and target_soc_percent fields removed
-                # EV charging is now controlled via penalty_levels only
-
                 # Validate sensor format
                 sensor = ev.get("sensor", "")
                 if sensor and not sensor.startswith("sensor."):
@@ -546,27 +616,55 @@ def _validate_config_for_save(
                         }
                     )
 
-                # REV F77: Validate EV charger type
-                ev_type = ev.get("type", "")
-                if ev_type and ev_type != "binary":
+                # REV F77 / universal-load-balancing 1.6: Validate EV charger type
+                ev_type = ev.get("type", "binary") or "binary"
+                if ev_type not in EV_CHARGER_LOAD_TYPES:
                     issues.append(
                         {
                             "severity": "warning",
                             "message": f"EV charger '{ev.get('id', i + 1)}' uses unsupported type: '{ev_type}'",
-                            "guidance": "Variable power control is not yet implemented. Current implementation uses binary ON/OFF control at max_power_kw. Change type to 'binary' to suppress this warning.",
+                            "guidance": "type must be 'binary' (ON/OFF switch) or 'current' (variable ampere setpoint).",
                         }
                     )
+                elif ev_type == "current":
+                    if not ev.get("current_entity"):
+                        issues.append(
+                            {
+                                "severity": "error",
+                                "message": f"EV charger '{ev.get('id', i + 1)}' has type 'current' but no current_entity",
+                                "guidance": "Set ev_chargers[].current_entity to the HA number entity that controls charge current (A).",
+                            }
+                        )
+                    max_current = ev.get("max_current_a")
+                    if (
+                        max_current is None
+                        or not isinstance(max_current, int | float)
+                        or max_current <= 0
+                    ):
+                        issues.append(
+                            {
+                                "severity": "error",
+                                "message": f"EV charger '{ev.get('id', i + 1)}' has type 'current' but invalid max_current_a: {max_current}",
+                                "guidance": "Set ev_chargers[].max_current_a to your charger's maximum current (e.g., 16).",
+                            }
+                        )
+                    min_current = ev.get("min_current_a", 6)
+                    if not isinstance(min_current, int | float) or min_current <= 0:
+                        issues.append(
+                            {
+                                "severity": "error",
+                                "message": f"EV charger '{ev.get('id', i + 1)}' has invalid min_current_a: {min_current}",
+                                "guidance": "min_current_a must be a positive number (e.g., 6).",
+                            }
+                        )
 
-                # Validate per-device departure_time format
-                dev_departure = str(ev.get("departure_time", "") or "")
-                if dev_departure and not re.match(
-                    r"^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$", dev_departure
-                ):
+                # excess-pv-priority-dispatch 1.5: phase switching requires a phase-mode entity
+                if ev.get("phase_switching_enabled") and not ev.get("phase_mode_entity"):
                     issues.append(
                         {
                             "severity": "error",
-                            "message": f"EV charger '{ev.get('id', i + 1)}' has invalid departure_time format: '{dev_departure}'",
-                            "guidance": "departure_time must be in 24-hour HH:MM format (e.g., '07:00' or '23:30').",
+                            "message": f"EV charger '{ev.get('id', i + 1)}' has phase_switching_enabled but no phase_mode_entity",
+                            "guidance": "Set ev_chargers[].phase_mode_entity to the HA entity that commands 1/3-phase mode, or disable phase_switching_enabled.",
                         }
                     )
 
@@ -591,19 +689,6 @@ def _validate_config_for_save(
                         "severity": "warning",
                         "message": "All EV chargers are disabled",
                         "guidance": "Enable at least one EV charger or set system.has_ev_charger to false.",
-                    }
-                )
-
-            # REV K25 Phase 2: Validate departure time format
-            departure_time = config.get("ev_departure_time", "")
-            if departure_time and not re.match(
-                r"^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$", departure_time
-            ):
-                issues.append(
-                    {
-                        "severity": "error",
-                        "message": f"Invalid departure time format: '{departure_time}'",
-                        "guidance": "ev_departure_time must be in 24-hour HH:MM format (e.g., '07:00' or '23:30').",
                     }
                 )
 
@@ -774,12 +859,8 @@ def _validate_config_for_save(
             missing_entities = active_profile.get_missing_entities(config)
 
             for missing_key in missing_entities:
-                entity_def = active_profile.entities.get(missing_key, {})
-                entity_category = (
-                    entity_def.get("category", "system")
-                    if isinstance(entity_def, dict)
-                    else "system"
-                )
+                entity_def = active_profile.entities.get(missing_key)
+                entity_category = entity_def.category if entity_def is not None else "system"
                 recommended_tab = "Battery" if entity_category == "battery" else "System"
 
                 issues.append(
@@ -833,6 +914,291 @@ def _validate_config_for_save(
                     "guidance": "Set export.export_floor_soc_percent to a valid percentage.",
                 }
             )
+
+    # Load balancing: ERROR on any missing prerequisite when enabled (universal-load-balancing 1.5)
+    lb_cfg = config.get("load_balancing", {})
+    if lb_cfg.get("enabled", False):
+        grid_cfg = system_cfg.get("grid", {})
+        main_fuse_a = grid_cfg.get("main_fuse_a")
+        if main_fuse_a is None or not isinstance(main_fuse_a, int | float) or main_fuse_a <= 0:
+            issues.append(
+                {
+                    "severity": "error",
+                    "message": f"load_balancing.enabled but system.grid.main_fuse_a is missing or invalid: {main_fuse_a}",
+                    "guidance": "Set system.grid.main_fuse_a to your per-phase main fuse rating in ampere (e.g., 20).",
+                }
+            )
+        elif main_fuse_a > 125:
+            issues.append(
+                {
+                    "severity": "error",
+                    "message": f"system.grid.main_fuse_a is implausibly large: {main_fuse_a}",
+                    "guidance": "system.grid.main_fuse_a must be 125 A or less.",
+                }
+            )
+
+        lb_input_sensors = config.get("input_sensors", {})
+        for phase_key in ("grid_current_l1", "grid_current_l2", "grid_current_l3"):
+            entity_id = lb_input_sensors.get(phase_key)
+            if not entity_id:
+                issues.append(
+                    {
+                        "severity": "error",
+                        "message": f"load_balancing.enabled but input_sensors.{phase_key} is not configured",
+                        "guidance": f"Set input_sensors.{phase_key} to the HA entity reporting that phase's grid current or power.",
+                    }
+                )
+                continue
+
+            entity_attrs = (phase_sensor_units or {}).get(entity_id)
+            if entity_attrs is not None:
+                kind = classify_phase_sensor_unit(
+                    entity_attrs.get("unit_of_measurement"), entity_attrs.get("device_class")
+                )
+                if kind == "unrecognized":
+                    issues.append(
+                        {
+                            "severity": "error",
+                            "message": (
+                                f"input_sensors.{phase_key} ('{entity_id}') has an unrecognized "
+                                f"unit: '{entity_attrs.get('unit_of_measurement', '')}'"
+                            ),
+                            "guidance": (
+                                "This sensor must report current (A) or power (W/kW) to be "
+                                "used for load balancing."
+                            ),
+                        }
+                    )
+
+        known_ev_chargers = {ev.get("id"): ev for ev in config.get("ev_chargers", [])}
+        current_type_ev_ids = {
+            ev_id for ev_id, ev in known_ev_chargers.items() if ev.get("type") == "current"
+        }
+
+        lb_loads = lb_cfg.get("loads", [])
+        if not lb_loads and not current_type_ev_ids:
+            issues.append(
+                {
+                    "severity": "error",
+                    "message": "load_balancing.enabled but load_balancing.loads is empty",
+                    "guidance": "Add at least one entry to load_balancing.loads, or an ev_chargers[] device with type: current.",
+                }
+            )
+        else:
+            known_wh_ids = {wh.get("id") for wh in config.get("water_heaters", [])}
+            for i, load in enumerate(lb_loads):
+                device_type = load.get("device_type", "")
+                device_id = load.get("device_id", "")
+                if device_type == "ev_charger" and device_id in current_type_ev_ids:
+                    issues.append(
+                        {
+                            "severity": "error",
+                            "message": (
+                                f"load_balancing.loads[{i}] references EV charger '{device_id}', "
+                                "which has type: current"
+                            ),
+                            "guidance": (
+                                "type: current chargers appear in the give-way list "
+                                "(load_balancing.give_way_order) automatically and must not "
+                                "be listed in load_balancing.loads — remove this entry."
+                            ),
+                        }
+                    )
+                elif device_type == "ev_charger" and device_id not in known_ev_chargers:
+                    issues.append(
+                        {
+                            "severity": "error",
+                            "message": f"load_balancing.loads[{i}] references unknown EV charger id: '{device_id}'",
+                            "guidance": "device_id must match an id in ev_chargers[].",
+                        }
+                    )
+                elif device_type == "water_heater" and device_id not in known_wh_ids:
+                    issues.append(
+                        {
+                            "severity": "error",
+                            "message": f"load_balancing.loads[{i}] references unknown water heater id: '{device_id}'",
+                            "guidance": "device_id must match an id in water_heaters[].",
+                        }
+                    )
+                if not load.get("phases"):
+                    issues.append(
+                        {
+                            "severity": "error",
+                            "message": f"load_balancing.loads[{i}] ('{device_id}') has an empty phases list",
+                            "guidance": "Set load_balancing.loads[].phases to the phase number(s) this load is wired to, e.g. [1] or [1, 2, 3].",
+                        }
+                    )
+
+        # give_way_order reference validation (load-balancing-completion 2.1):
+        # dangling entries are self-healed away at load time, so these are
+        # warnings, not errors.
+        give_way_order = lb_cfg.get("give_way_order", [])
+        known_load_ids = {
+            str(cast("dict[str, Any]", load).get("device_id", ""))
+            for load in cast("list[Any]", lb_loads)
+            if isinstance(load, dict)
+        }
+        if isinstance(give_way_order, list):
+            for i, entry_raw in enumerate(cast("list[Any]", give_way_order)):
+                if not isinstance(entry_raw, dict):
+                    continue
+                entry = cast("dict[str, Any]", entry_raw)
+                kind = str(entry.get("kind", ""))
+                entry_id = str(entry.get("id", ""))
+                if kind == "charger" and entry_id not in current_type_ev_ids:
+                    issues.append(
+                        {
+                            "severity": "warning",
+                            "message": (
+                                f"load_balancing.give_way_order[{i}] references charger "
+                                f"'{entry_id}', which is not a type: current EV charger"
+                            ),
+                            "guidance": (
+                                "The entry will be dropped automatically — it likely refers "
+                                "to a charger that was removed or changed type."
+                            ),
+                        }
+                    )
+                elif kind == "shed" and entry_id not in known_load_ids:
+                    issues.append(
+                        {
+                            "severity": "warning",
+                            "message": (
+                                f"load_balancing.give_way_order[{i}] references shed load "
+                                f"'{entry_id}', which has no matching load_balancing.loads entry"
+                            ),
+                            "guidance": (
+                                "The entry will be dropped automatically — add a matching "
+                                "loads[] entry or remove it from the give-way list."
+                            ),
+                        }
+                    )
+
+        # Slow executor tick makes fuse protection nearly useless (2.2) —
+        # non-blocking: shadow-mode/test setups legitimately run slow.
+        interval_seconds = executor_cfg.get("interval_seconds", 300)
+        try:
+            interval_seconds = int(interval_seconds)
+        except (TypeError, ValueError):
+            interval_seconds = 300
+        if interval_seconds > 15:
+            issues.append(
+                {
+                    "severity": "warning",
+                    "message": (
+                        f"load_balancing.enabled but executor.interval_seconds is "
+                        f"{interval_seconds} s — the balancer reacts and reports only once "
+                        "per tick"
+                    ),
+                    "guidance": (
+                        "Set executor.interval_seconds to 15 or less (5 s typical) so the "
+                        "load balancer can protect the main fuse in time."
+                    ),
+                }
+            )
+
+    # type: current charger without a SoC sensor (2.3) — plan-time SoC silently
+    # assumes 0%, so charging progress and throttling shortfall are untrackable.
+    # Warned regardless of load_balancing.enabled: it affects planning too.
+    for ev_raw in cast("list[Any]", config.get("ev_chargers", [])):
+        if not isinstance(ev_raw, dict):
+            continue
+        ev = cast("dict[str, Any]", ev_raw)
+        if not ev.get("enabled", True):
+            continue
+        if ev.get("type") == "current" and not ev.get("soc_sensor"):
+            charger_name = str(ev.get("name") or ev.get("id", "unknown"))
+            issues.append(
+                {
+                    "severity": "warning",
+                    "message": (
+                        f"EV charger '{charger_name}' uses dynamic current control but has "
+                        "no soc_sensor configured"
+                    ),
+                    "guidance": (
+                        "Darkstar cannot track this car's charging progress or recover "
+                        "throttling shortfall (plan-time SoC is assumed 0%). Set the "
+                        "charger's SoC sensor in the EV tab."
+                    ),
+                }
+            )
+
+    # excess-pv-priority-dispatch 1.5: validate the priority-ordered sink list
+    excess_pv_cfg = executor_cfg.get("excess_pv", {})
+    priority_list = excess_pv_cfg.get("priority", [])
+    if isinstance(priority_list, list) and priority_list:
+        current_type_ev_ids_for_excess_pv: set[str] = set()
+        for ev_raw in cast("list[Any]", config.get("ev_chargers", [])):
+            if not isinstance(ev_raw, dict):
+                continue
+            ev = cast("dict[str, Any]", ev_raw)
+            if ev.get("type") == "current":
+                current_type_ev_ids_for_excess_pv.add(str(ev.get("id")))
+        base_reward = float(excess_pv_cfg.get("boost_reward_sek_per_kwh", 0.5) or 0.0)
+        effective_rewards: list[float] = []
+        for i, entry_raw in enumerate(cast("list[Any]", priority_list)):
+            if not isinstance(entry_raw, dict):
+                continue
+            entry = cast("dict[str, Any]", entry_raw)
+            entry_type = str(entry.get("type", ""))
+            override = entry.get("reward_sek_per_kwh")
+
+            if entry_type not in ("ev", "water_heater_boost", "custom_entity"):
+                issues.append(
+                    {
+                        "severity": "error",
+                        "message": f"executor.excess_pv.priority[{i}] has unknown type: '{entry_type}'",
+                        "guidance": "type must be 'ev', 'water_heater_boost', or 'custom_entity'.",
+                    }
+                )
+                continue
+
+            if entry_type == "ev":
+                charger_id = entry.get("charger_id")
+                if not charger_id or str(charger_id) not in current_type_ev_ids_for_excess_pv:
+                    issues.append(
+                        {
+                            "severity": "error",
+                            "message": f"executor.excess_pv.priority[{i}] (type: ev) references unknown or non-current charger_id: '{charger_id}'",
+                            "guidance": "charger_id must match an ev_chargers[].id with type: current.",
+                        }
+                    )
+            elif entry_type == "custom_entity" and not entry.get("entity"):
+                issues.append(
+                    {
+                        "severity": "error",
+                        "message": f"executor.excess_pv.priority[{i}] (type: custom_entity) is missing 'entity'",
+                        "guidance": "Set executor.excess_pv.priority[].entity to the Home Assistant entity ID to toggle.",
+                    }
+                )
+
+            try:
+                effective_rewards.append(
+                    float(override) if override is not None else base_reward * (1 - i * 0.15)
+                )
+            except (TypeError, ValueError):
+                effective_rewards.append(base_reward * (1 - i * 0.15))
+
+        # Rank monotonicity: a per-entry override should never exceed an earlier
+        # (higher-priority) entry's effective reward — otherwise the solver would
+        # prefer the lower-priority sink, inverting the user's intended order.
+        for i in range(1, len(effective_rewards)):
+            if effective_rewards[i] > max(effective_rewards[:i]):
+                issues.append(
+                    {
+                        "severity": "warning",
+                        "message": (
+                            f"executor.excess_pv.priority[{i}] has an effective reward "
+                            f"({effective_rewards[i]:.3f} SEK/kWh) higher than a "
+                            "higher-priority entry"
+                        ),
+                        "guidance": (
+                            "A reward_sek_per_kwh override on a lower-priority entry can "
+                            "make the solver prefer it over a higher-priority sink. "
+                            "Remove the override or lower it to preserve priority order."
+                        ),
+                    }
+                )
 
     return issues
 

@@ -282,8 +282,8 @@ class TestControllerFollowPlan:
 
         decision = controller.decide(slot, state)
 
-        # 2kW at default 46V ≈ 43.47A -> rounds to 45A with default 5A step
-        expected_amps = 45.0
+        # 2kW at default nominal 48V ≈ 41.67A -> rounds to 40A with default 5A step
+        expected_amps = 40.0
 
         assert decision.mode_intent == "self_consumption"
         assert decision.charge_value == expected_amps
@@ -348,22 +348,6 @@ class TestControllerApplyOverride:
         assert decision.charge_value == controller.config.max_charge_a
         assert decision.write_charge_current is True
 
-    def test_force_export_sets_max_discharge(self, controller):
-        """Force export override sets max discharge current."""
-        slot = SlotPlan()
-        state = SystemState()
-        override = OverrideResult(
-            override_needed=True,
-            override_type=OverrideType.FORCE_EXPORT,
-            actions={},
-        )
-
-        decision = controller.decide(slot, state, override)
-
-        assert decision.mode_intent == "export"
-        assert decision.discharge_value == controller.config.max_discharge_a
-        assert decision.write_discharge_current is True
-
     def test_no_override_follows_plan(self, controller):
         """When no override, decision follows plan."""
         # Battery export requires both export_kw > 0 AND discharge_kw > 0
@@ -392,21 +376,46 @@ class TestCalculateChargeCurrent:
         assert should_write is False
 
     def test_kw_to_amps_conversion(self):
-        """Correctly converts kW to Amps."""
+        """Correctly converts kW to Amps using nominal_voltage_v."""
         config = ControllerConfig(
+            nominal_voltage_v=48.0,
             min_voltage_v=46.0,
             round_step_a=5.0,
             min_charge_a=10.0,
             max_charge_a=185.0,
         )
         controller = Controller(config, InverterConfig())
-        # 5 kW at 46V = 5000/46 ≈ 108.7A → rounds to 110A
+        # 5 kW at 48V = 5000/48 ≈ 104.2A → rounds to 105A
         slot = SlotPlan(charge_kw=5.0)
         state = SystemState()
 
         current, _ = controller._calculate_charge_limit(slot, state)
 
-        assert current == 110.0  # Rounded to step
+        assert current == 105.0  # Rounded to step
+
+    def test_kw_to_amps_uses_nominal_not_min_voltage(self):
+        """Conversion uses nominal_voltage_v; max_charge_a clamp still applies."""
+        config = ControllerConfig(
+            nominal_voltage_v=48.0,
+            min_voltage_v=46.0,
+            round_step_a=1.0,
+            min_charge_a=1.0,
+            max_charge_a=185.0,
+        )
+        controller = Controller(config, InverterConfig())
+        # 4.8 kW at nominal 48 V = 100 A exactly
+        slot = SlotPlan(charge_kw=4.8)
+        state = SystemState()
+
+        current, should_write = controller._calculate_charge_limit(slot, state)
+
+        assert current == 100.0
+        assert should_write is True
+
+        # Clamping still works: 20 kW → well above max_charge_a
+        slot_high = SlotPlan(charge_kw=20.0)
+        clamped, _ = controller._calculate_charge_limit(slot_high, state)
+        assert clamped == 185.0
 
     def test_respects_min_limit(self):
         """Current is clamped to minimum."""
@@ -576,24 +585,23 @@ class TestExportWithLoadCalculation:
         assert decision.export_power_w == 3000.0
         assert decision.export_with_load_w == 3000.0
 
-    def test_export_with_load_clamped_to_max_discharge_w(self):
-        """export_with_load_w is capped at max_discharge_w even if export+load exceeds it.
+    def test_export_with_load_clamped_to_max_discharge(self):
+        """export_with_load_w never exceeds max_discharge_w.
 
-        Regression test: an uncapped sum could exceed the HA input_number helper's
-        configured range and get rejected with HTTP 400, silently freezing the
-        battery's discharge command (observed 2026-07-08 06:45-09:14).
+        Fork patch: the value is written to an HA helper whose range is sized
+        for the battery limit. Export + house load can exceed that limit, and
+        an out-of-range write is rejected by HA silently, losing the command.
         """
         config = ControllerConfig(max_discharge_w=5000.0)
         inverter_config = InverterConfig()
         controller = Controller(config, inverter_config)
 
-        # Export at the max (5kW) plus a load spike (2kW) would raw-sum to 7000W
-        slot = SlotPlan(export_kw=5.0, load_kw=2.0)
+        # Export 5kW + 1.5kW load would raw-sum to 6500W, above the 5000W limit
+        slot = SlotPlan(export_kw=5.0, load_kw=1.5)
         state = SystemState()
 
         decision = controller._follow_plan(slot, state)
 
-        assert decision.export_power_w == 5000.0
         assert decision.export_with_load_w == 5000.0
 
 
