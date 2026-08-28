@@ -585,6 +585,25 @@ class TestExportWithLoadCalculation:
         assert decision.export_power_w == 3000.0
         assert decision.export_with_load_w == 3000.0
 
+    def test_export_with_load_clamped_to_max_discharge(self):
+        """export_with_load_w never exceeds max_discharge_w.
+
+        Fork patch: the value is written to an HA helper whose range is sized
+        for the battery limit. Export + house load can exceed that limit, and
+        an out-of-range write is rejected by HA silently, losing the command.
+        """
+        config = ControllerConfig(max_discharge_w=5000.0)
+        inverter_config = InverterConfig()
+        controller = Controller(config, inverter_config)
+
+        # Export 5kW + 1.5kW load would raw-sum to 6500W, above the 5000W limit
+        slot = SlotPlan(export_kw=5.0, load_kw=1.5)
+        state = SystemState()
+
+        decision = controller._follow_plan(slot, state)
+
+        assert decision.export_with_load_w == 5000.0
+
 
 class TestMakeDecisionConvenience:
     """Test the make_decision convenience function."""

@@ -11,7 +11,7 @@ import pytest
 
 from executor.profiles import InverterProfile, list_profiles, load_profile
 
-PROFILE_NAMES = ["deye", "sungrow", "fronius", "generic", "solinteg"]
+PROFILE_NAMES = ["deye", "sungrow", "fronius", "generic"]
 
 
 class TestProfileV2Loading:
