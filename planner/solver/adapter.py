@@ -7,13 +7,13 @@ Migrated from backend/kepler/adapter.py during Rev K13 modularization.
 
 import logging
 from datetime import datetime  # noqa: TC003
-from typing import Any
+from typing import Any, cast
 
 import pandas as pd
 
 from .types import (
     EVChargerInput,
-    IncentiveBucket,
+    ExcessPVSinkEntry,
     KeplerConfig,
     KeplerInput,
     KeplerInputSlot,
@@ -100,6 +100,25 @@ def build_water_heater_inputs(
     return result
 
 
+def derive_min_power_kw(ev: dict[str, Any], control_type: str, max_power_kw: float) -> float:
+    """Derive the minimum plannable charging power for a charger.
+
+    `type: binary` chargers have no fractional range, so their minimum equals
+    their maximum (the equality energy link in kepler.py handles them either
+    way). `type: current` chargers derive it from `min_current_a` x phase
+    count x 230V, with a 1% margin so the executor's floor-based kW->amps
+    conversion never rounds a planned minimum below `min_current_a`.
+    """
+    if control_type != "current":
+        return max_power_kw
+
+    min_current_a = float(ev.get("min_current_a") or 6)
+    phases = ev.get("phases") or [1, 2, 3]
+    phase_count = len(phases) if phases else 3
+
+    return min_current_a * 230 * phase_count / 1000 * 1.01
+
+
 def build_ev_charger_inputs(
     ev_chargers_config: list[dict[str, Any]],
     ev_charger_states: list[dict[str, Any]] | None = None,
@@ -138,34 +157,75 @@ def build_ev_charger_inputs(
 
         state = state_by_id.get(charger_id, {})
 
-        soc_percent = float(state.get("soc_percent", 0.0))
+        soc_percent = float(state.get("soc_percent") or 0.0)
         plugged_in = bool(state.get("plugged_in", False))
         deadline = state.get("deadline")  # datetime | None
+        required_kwh = state.get("required_kwh")
+        quota_schedule = state.get("quota_schedule")
+        quota_by_day = {d: float(v) for d, v in quota_schedule.items()} if quota_schedule else None
+        keep_on_after_target = bool(state.get("keep_on_after_target", False))
 
-        # Build incentive buckets from penalty_levels config
-        penalty_levels: list[dict[str, Any]] = ev.get("penalty_levels", [])
-        buckets: list[IncentiveBucket] = [
-            IncentiveBucket(
-                threshold_soc=float(p.get("max_soc", 100.0)),
-                value_sek=float(p.get("penalty_sek", 0.0)),
-            )
-            for p in penalty_levels
-            if "max_soc" in p or "penalty_sek" in p
-        ]
+        control_type = str(ev.get("type", "binary")).lower()
+        max_power_kw = float(ev.get("max_power_kw") or 0.0)
 
         result.append(
             EVChargerInput(
                 id=charger_id,
-                max_power_kw=float(ev.get("max_power_kw") or 0.0),
+                max_power_kw=max_power_kw,
                 battery_capacity_kwh=float(ev.get("battery_capacity_kwh", 0.0)),
                 current_soc_percent=soc_percent,
                 plugged_in=plugged_in,
                 deadline=deadline,
-                incentive_buckets=buckets,
+                required_kwh=float(required_kwh) if required_kwh is not None else None,
+                quota_by_day=quota_by_day,
+                keep_on_after_target=keep_on_after_target,
+                control_type=control_type,
+                min_power_kw=derive_min_power_kw(ev, control_type, max_power_kw),
             )
         )
 
     return result
+
+
+def build_excess_pv_priority(excess_pv_cfg: dict[str, Any]) -> list[ExcessPVSinkEntry]:
+    """Map executor.excess_pv.priority[] config into solver-side ExcessPVSinkEntry list.
+
+    Computes each entry's rank-scaled effective reward in this single place
+    (task 2.2): `override if set, else boost_reward_sek_per_kwh * (1 - rank * 0.15)`,
+    floored at 0. Rank is the entry's position in the priority list (0 = highest).
+    """
+    base_reward = float(excess_pv_cfg.get("boost_reward_sek_per_kwh", 0.5) or 0.0)
+    priority_raw: Any = excess_pv_cfg.get("priority")
+    entries: list[ExcessPVSinkEntry] = []
+    if not isinstance(priority_raw, list):
+        return entries
+    priority_list = cast("list[Any]", priority_raw)
+
+    for rank, entry_raw in enumerate(priority_list):
+        if not isinstance(entry_raw, dict):
+            continue
+        entry = cast("dict[str, Any]", entry_raw)
+        entry_type = str(entry.get("type", "")).lower()
+        if entry_type not in ("ev", "water_heater_boost", "custom_entity"):
+            logger.warning("Ignoring excess_pv.priority[] entry with unknown type: %r", entry_type)
+            continue
+
+        override = entry.get("reward_sek_per_kwh")
+        if override is not None:
+            effective_reward = max(0.0, float(override))
+        else:
+            effective_reward = max(0.0, base_reward * (1 - rank * 0.15))
+
+        entries.append(
+            ExcessPVSinkEntry(
+                type=entry_type,
+                effective_reward_sek_per_kwh=effective_reward,
+                charger_id=cast("str | None", entry.get("charger_id")),
+                power_kw=float(entry.get("power_kw", 1.0)),
+            )
+        )
+
+    return entries
 
 
 def planner_to_kepler_input(
@@ -275,42 +335,45 @@ def _comfort_level_to_penalty(
     #   Smaller values = more frequent heating = more stable temperature.
 
     COMFORT_MAP = {
-        # Level: {reliability, block_start, block, max_block_hours}
+        # Level: {reliability, block_start, block, gap_penalty, max_block_hours}
         1: {
             "water_reliability_penalty_sek": 2.0,
             "water_block_start_penalty_sek": 1.5,
             "water_block_penalty_sek": 0.5,
+            "water_gap_penalty_sek": 0.5,
             "max_block_hours": max_block_hours,
         },  # Economy
         2: {
             "water_reliability_penalty_sek": 7.0,
             "water_block_start_penalty_sek": 2.25,
             "water_block_penalty_sek": 1.0,
+            "water_gap_penalty_sek": 2.0,
             "max_block_hours": max_block_hours,
         },  # Balanced
         3: {
             "water_reliability_penalty_sek": 15.0,
             "water_block_start_penalty_sek": 3.0,
             "water_block_penalty_sek": 2.0,
+            "water_gap_penalty_sek": 5.0,
             "max_block_hours": max_block_hours,
         },  # Neutral
         4: {
             "water_reliability_penalty_sek": 30.0,
             "water_block_start_penalty_sek": 4.5,
             "water_block_penalty_sek": 5.0,
+            "water_gap_penalty_sek": 15.0,
             "max_block_hours": max_block_hours,
         },  # Priority
         5: {
             "water_reliability_penalty_sek": 300.0,
             "water_block_start_penalty_sek": 1.0,
             "water_block_penalty_sek": 10.0,
+            "water_gap_penalty_sek": 50.0,
             "max_block_hours": max_block_hours,
         },  # Maximum
     }
     # Default to Level 3 (Neutral) if invalid
     params = COMFORT_MAP.get(comfort_level, COMFORT_MAP[3]).copy()
-    # Explicitly disable legacy gap penalty
-    params["water_comfort_penalty_sek"] = 0.0
     return params
 
 
@@ -393,6 +456,10 @@ def config_to_kepler_config(
     capacity = float(battery.get("capacity_kwh", 13.5))
     charge_eff = float(battery.get("charge_efficiency", 0.95))
     discharge_eff = float(battery.get("discharge_efficiency", 0.95))
+    battery_cycle_cost_kwh = float(
+        planner_config.get("battery_economics", {}).get("battery_cycle_cost_kwh", 0.0)
+    )
+    resolved_wear_cost = get_val("wear_cost_sek_per_kwh", battery_cycle_cost_kwh)
 
     # Dynamic Power Limits (Rev F17)
     # Hardware limits (Amps or Watts) drive the Optimizer limits (kW)
@@ -416,11 +483,7 @@ def config_to_kepler_config(
         max_discharge_power_kw=max_discharge_kw,
         charge_efficiency=charge_eff,
         discharge_efficiency=discharge_eff,
-        wear_cost_sek_per_kwh=float(
-            planner_config.get("battery_economics", {}).get(
-                "battery_cycle_cost_kwh", get_val("wear_cost_sek_per_kwh", 0.0)
-            )
-        ),
+        wear_cost_sek_per_kwh=max(battery_cycle_cost_kwh, resolved_wear_cost),
         max_export_power_kw=(
             float(system.get("grid", {}).get("max_power_kw"))
             if system.get("grid", {}).get("max_power_kw")
@@ -436,6 +499,7 @@ def config_to_kepler_config(
             if system.get("inverter", {}).get("max_ac_power_kw")
             else None
         ),
+        inverter_topology=str(system.get("inverter", {}).get("topology", "dc_coupled")),
         ramping_cost_sek_per_kw=float(
             planner_config.get("kepler", {}).get(
                 "ramping_cost_sek_per_kw", get_val("ramping_cost_sek_per_kw", 0.05)
@@ -443,6 +507,9 @@ def config_to_kepler_config(
         ),
         curtailment_penalty_sek=float(
             planner_config.get("kepler", {}).get("curtailment_penalty_sek", 0.1)
+        ),
+        ev_shortfall_penalty_sek_per_kwh=float(
+            planner_config.get("kepler", {}).get("ev_shortfall_penalty_sek_per_kwh", 50.0)
         ),
         export_threshold_sek_per_kwh=get_val("export_threshold_sek_per_kwh", 0.0),
         # Per-device water heater inputs
@@ -485,24 +552,13 @@ def config_to_kepler_config(
         ev_chargers=ev_inputs,
         # Excess PV dispatch
         excess_pv_slots=[],  # Populated by pipeline after forecast analysis
-        excess_pv_sink=str(
-            planner_config.get("executor", {}).get("excess_pv", {}).get("sink", "disabled")
-        ),
-        excess_pv_reward_sek_per_kwh=float(
-            planner_config.get("executor", {})
-            .get("excess_pv", {})
-            .get("boost_reward_sek_per_kwh", 0.5)
+        excess_pv_priority=build_excess_pv_priority(
+            planner_config.get("executor", {}).get("excess_pv", {})
         ),
         excess_pv_soc_threshold_percent=float(
             planner_config.get("executor", {})
             .get("excess_pv", {})
             .get("soc_threshold_percent", 95.0)
-        ),
-        excess_pv_custom_entity_power_kw=float(
-            planner_config.get("executor", {})
-            .get("excess_pv", {})
-            .get("custom_entity", {})
-            .get("power_kw", 1.0)
         ),
     )
 
@@ -572,6 +628,8 @@ def kepler_result_to_dataframe(
                 "water_from_battery_kwh": 0.0,
                 "ev_charging_kw": s.ev_charge_kw,  # Aggregate EV charging power (backward compat)
                 "ev_chargers": s.ev_charger_results,  # Per-device: charger_id -> kW
+                "ev_keep_on": s.ev_keep_on,  # Per-charger: charger_id -> switch held on, no planned energy
+                "ev_surplus_kw": s.ev_surplus_kw,  # Per-charger: charger_id -> surplus-eligible kW
                 "projected_battery_cost": 0.0,
             }
         )

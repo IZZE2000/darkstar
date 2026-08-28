@@ -20,10 +20,13 @@ except ImportError:
     # Fallback if ruamel.yaml is not available (should be in requirements.txt)
     YAML = None  # type: ignore[misc,assignment]
 
+from executor.config import DEPRECATED_EV_GOAL_FIELDS
+
 logger = logging.getLogger("darkstar.config_migration")
 
 BACKUP_DIR_ENV = "BACKUP_DIR"
 HOST_BACKUP_DIR = Path("/host_backups")
+CURRENT_CONFIG_VERSION = 2
 
 
 def _get_persistent_backup_dir(config_path: Path) -> Path:
@@ -73,7 +76,7 @@ MigrationStep = Callable[[dict[str, Any]], tuple[dict[str, Any], bool]]
 DEPRECATED_KEYS = {
     "deferrable_loads",  # Replaced by water_heaters[] and ev_chargers[]
     "ev_charger",  # Replaced by ev_chargers[] array (plural)
-    "ev_departure_time",  # Moved into ev_chargers[].departure_time
+    "ev_departure_time",  # Deprecated EV goal field, no longer copied anywhere
     "solar_array",  # Replaced by solar_arrays[] array (plural)
     "version",  # Replaced by config_version
     "schedule_future_only",  # Removed
@@ -81,10 +84,11 @@ DEPRECATED_KEYS = {
 
 # Nested deprecated keys (path.to.key format)
 DEPRECATED_NESTED_KEYS = {
-    "executor.ev_charger": [
-        "switch_entity",  # Moved into ev_chargers[].switch_entity
-        "replan_on_plugin",  # Moved into ev_chargers[].replan_on_plugin
-        "replan_on_unplug",  # Moved into ev_chargers[].replan_on_unplug
+    "executor": [
+        # universal-load-balancing: legacy singular stub, fully replaced by
+        # per-device ev_chargers[] (switch_entity/current_entity/max_current_a/type).
+        # _migrate_ev_charger_fields() copies its values onto ev_chargers[0] first.
+        "ev_charger",
     ],
     "executor.inverter": [
         # Old _entity suffix keys replaced by standardized names
@@ -116,10 +120,22 @@ DEPRECATED_NESTED_KEYS = {
         "temperature_sensor_entity",
         "daily_consumption_entity",
         "max_price_per_kwh",
+        # fix-water-comfort-truthfulness: fictional penalty keys, never read by the
+        # solver — all water penalties are derived from comfort_level via COMFORT_MAP.
+        "reliability_penalty_sek",
+        "block_penalty_sek",
+        "spacing_penalty_sek",
+        "block_start_penalty_sek",
     ],
     "executor.override": [
         "low_soc_export_floor",  # Moved to export.export_floor_soc_percent
         "excess_pv_threshold_kw",  # Removed: excess PV now handled by planner
+    ],
+    "load_balancing": [
+        # load-balancing-completion: replaced (together with loads[].priority)
+        # by the ordered give_way_order[] list. _migrate_give_way_order() reads
+        # it first to build the new order.
+        "charger_priority",
     ],
 }
 
@@ -147,12 +163,12 @@ def remove_deprecated_keys(config: dict[str, Any]) -> tuple[dict[str, Any], bool
     # Nested deprecated keys
     for path, keys in DEPRECATED_NESTED_KEYS.items():
         parts = path.split(".")
-        obj = config
+        obj: Any = config
 
         # Navigate to nested object
         for part in parts:
             if isinstance(obj, dict) and part in obj:
-                obj = obj[part]
+                obj = cast("Any", obj)[part]
             else:
                 break
         else:
@@ -238,7 +254,6 @@ def _migrate_ev_charger_fields(config: dict[str, Any]) -> tuple[dict[str, Any], 
     """Migrate global EV charger settings into the first enabled ev_chargers[] entry.
 
     Copies:
-      - ev_departure_time (root) -> ev_chargers[0].departure_time (if absent/empty)
       - executor.ev_charger.switch_entity -> ev_chargers[0].switch_entity (if absent/empty)
       - executor.ev_charger.replan_on_plugin -> ev_chargers[0].replan_on_plugin (if absent)
       - executor.ev_charger.replan_on_unplug -> ev_chargers[0].replan_on_unplug (if absent)
@@ -264,15 +279,6 @@ def _migrate_ev_charger_fields(config: dict[str, Any]) -> tuple[dict[str, Any], 
 
     if first_enabled is None:
         return config, changed
-
-    # Migrate ev_departure_time -> departure_time
-    old_departure = config.get("ev_departure_time", "")
-    if old_departure and not first_enabled.get("departure_time"):
-        first_enabled["departure_time"] = old_departure
-        logger.info(
-            f"🔄 Migrated ev_departure_time -> ev_chargers[0].departure_time: {old_departure}"
-        )
-        changed = True
 
     # Migrate executor.ev_charger settings
     executor_raw: Any = config.get("executor", {})
@@ -307,6 +313,161 @@ def _migrate_ev_charger_fields(config: dict[str, Any]) -> tuple[dict[str, Any], 
         logger.info(
             f"🔄 Migrated executor.ev_charger.replan_on_unplug -> ev_chargers[0].replan_on_unplug: {first_enabled['replan_on_unplug']}"
         )
+        changed = True
+
+    # control_entity -> current_entity (universal-load-balancing: legacy stub removal)
+    old_control_entity: Any = ev_charger_exec.get("control_entity", "")
+    if old_control_entity and not first_enabled.get("current_entity"):
+        first_enabled["current_entity"] = old_control_entity
+        logger.info(
+            f"🔄 Migrated executor.ev_charger.control_entity -> ev_chargers[0].current_entity: {old_control_entity}"
+        )
+        changed = True
+
+    # max_current_a (only migrate if absent in first_enabled)
+    old_max_current: Any = ev_charger_exec.get("max_current_a")
+    if old_max_current is not None and first_enabled.get("max_current_a") is None:
+        first_enabled["max_current_a"] = old_max_current
+        logger.info(
+            f"🔄 Migrated executor.ev_charger.max_current_a -> ev_chargers[0].max_current_a: {old_max_current}"
+        )
+        changed = True
+
+    # control_mode "current" -> type "current"
+    old_control_mode: Any = ev_charger_exec.get("control_mode", "")
+    if old_control_mode == "current" and first_enabled.get("type") != "current":
+        first_enabled["type"] = "current"
+        logger.info(
+            "🔄 Migrated executor.ev_charger.control_mode 'current' -> ev_chargers[0].type: current"
+        )
+        changed = True
+
+    return config, changed
+
+
+def _migrate_give_way_order(config: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+    """Migrate load_balancing.charger_priority + loads[].priority to give_way_order[].
+
+    Order: type="current" chargers sorted by their old charger_priority value
+    (fallback: position among current-type ev_chargers[] entries — the old
+    runtime default), followed by loads[] entries sorted by their old priority
+    ascending (lower gave way first in both old lists). Both old keys are then
+    dropped. Idempotent: a config without the old keys is left untouched.
+
+    Returns:
+        Tuple of (modified_config, changed_flag)
+    """
+    changed = False
+
+    lb_raw: Any = config.get("load_balancing", {})
+    if not isinstance(lb_raw, dict):
+        return config, changed
+    lb = cast("dict[str, Any]", lb_raw)
+
+    loads_raw: Any = lb.get("loads", [])
+    loads: list[dict[str, Any]] = (
+        [
+            cast("dict[str, Any]", item)
+            for item in cast("list[Any]", loads_raw)
+            if isinstance(item, dict)
+        ]
+        if isinstance(loads_raw, list)
+        else []
+    )
+
+    has_charger_priority = "charger_priority" in lb
+    has_load_priority = any("priority" in load for load in loads)
+    if not has_charger_priority and not has_load_priority:
+        return config, changed
+
+    if "give_way_order" not in lb:
+        charger_priority_raw: Any = lb.get("charger_priority", {})
+        charger_priority: dict[str, int] = {}
+        if isinstance(charger_priority_raw, dict):
+            for cid, pr in cast("dict[str, Any]", charger_priority_raw).items():
+                try:
+                    charger_priority[str(cid)] = int(pr)
+                except (TypeError, ValueError):
+                    logger.warning(
+                        "Migration: ignoring invalid charger_priority %r for %r", pr, cid
+                    )
+
+        ev_chargers_raw: Any = config.get("ev_chargers", [])
+        current_type_ids: list[str] = []
+        if isinstance(ev_chargers_raw, list):
+            for idx, item in enumerate(cast("list[Any]", ev_chargers_raw)):
+                if not isinstance(item, dict):
+                    continue
+                ev = cast("dict[str, Any]", item)
+                if not ev.get("enabled", True):
+                    continue
+                if str(ev.get("type", "binary")).lower() != "current":
+                    continue
+                current_type_ids.append(str(ev.get("id", f"ev_charger_{idx}")))
+
+        # Mirror the old runtime default: explicit priority, else position
+        # among current-type chargers; stable on ties.
+        ordered_chargers = sorted(
+            enumerate(current_type_ids),
+            key=lambda item: (charger_priority.get(item[1], item[0]), item[0]),
+        )
+
+        def load_priority(item: tuple[int, dict[str, Any]]) -> tuple[int, int]:
+            idx, load = item
+            try:
+                pr = int(load.get("priority", 0))
+            except (TypeError, ValueError):
+                pr = 0
+            return (pr, idx)
+
+        ordered_loads = sorted(enumerate(loads), key=load_priority)
+
+        give_way_order: list[dict[str, str]] = [
+            {"kind": "charger", "id": cid} for _, cid in ordered_chargers
+        ] + [{"kind": "shed", "id": str(load.get("device_id", ""))} for _, load in ordered_loads]
+        lb["give_way_order"] = give_way_order
+        logger.info(
+            "🔄 Migrated load_balancing.charger_priority + loads[].priority -> "
+            f"give_way_order ({len(give_way_order)} entries)"
+        )
+        changed = True
+
+    if "charger_priority" in lb:
+        del lb["charger_priority"]
+        logger.info("✂️  Removed deprecated key: 'load_balancing.charger_priority'")
+        changed = True
+
+    for load in loads:
+        if "priority" in load:
+            del load["priority"]
+            logger.info("✂️  Removed deprecated key: 'load_balancing.loads[].priority'")
+            changed = True
+
+    return config, changed
+
+
+def _migrate_inverter_topology(config: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+    """Add inverter.topology = dc_coupled for configs that have max_ac_power_kw but no topology.
+
+    Configs written before this field was added have an implicit dc_coupled topology.
+
+    Returns:
+        Tuple of (modified_config, changed_flag)
+    """
+    changed = False
+    system_raw: Any = config.get("system", {})
+    if not isinstance(system_raw, dict):
+        return config, changed
+    system = cast("dict[str, Any]", system_raw)
+
+    inverter_raw: Any = system.get("inverter", {})
+    if not isinstance(inverter_raw, dict):
+        return config, changed
+    inverter = cast("dict[str, Any]", inverter_raw)
+
+    if inverter.get("max_ac_power_kw") is not None and "topology" not in inverter:
+        inverter["topology"] = "dc_coupled"
+        logger.info("🔄 Added system.inverter.topology = dc_coupled (default for existing configs)")
         changed = True
 
     return config, changed
@@ -366,6 +527,29 @@ def _remove_energy_sensor_fields(config: dict[str, Any]) -> tuple[dict[str, Any]
     return config, changed
 
 
+def _remove_ev_goal_fields(config: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+    """Remove deprecated EV goal fields from ev_chargers[] items.
+
+    Charging goals live in data/ev_multi_day_state.json (dashboard/API), never in
+    config.yaml. Old values have no runtime effect since the goal-based EV charging
+    model landed; the executor's deprecation warning covers configs that skip
+    migration, but migrated configs should be clean.
+
+    Returns:
+        Tuple of (modified_config, changed_flag)
+    """
+    changed = False
+    for item in config.get("ev_chargers", []):
+        if not isinstance(item, dict):
+            continue
+        for goal_field in DEPRECATED_EV_GOAL_FIELDS:
+            if goal_field in item:
+                del item[goal_field]
+                logger.info(f"✂️  Removed deprecated key: 'ev_chargers[].{goal_field}'")
+                changed = True
+    return config, changed
+
+
 def _migrate_export_floor(config: dict[str, Any]) -> tuple[dict[str, Any], bool]:
     """Migrate executor.override.low_soc_export_floor to export.export_floor_soc_percent.
 
@@ -406,6 +590,76 @@ def _migrate_export_floor(config: dict[str, Any]) -> tuple[dict[str, Any], bool]
     if "low_soc_export_floor" in override:
         del override["low_soc_export_floor"]
         logger.info("✂️  Removed deprecated key: 'executor.override.low_soc_export_floor'")
+        changed = True
+
+    return config, changed
+
+
+def _migrate_excess_pv_sink_to_priority(config: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+    """Migrate executor.excess_pv.sink (single sink) to executor.excess_pv.priority[].
+
+    `sink: water_heater_boost` -> `priority: [{type: water_heater_boost}]`
+    `sink: custom_entity` -> one-element array carrying over the legacy custom_entity block
+    `sink: disabled` (or anything else) -> `priority: []`
+
+    Idempotent: once `sink` is gone (already migrated), this is a no-op even if
+    `priority` was never set by the user.
+
+    Returns:
+        Tuple of (modified_config, changed_flag)
+    """
+    changed = False
+
+    executor_raw: Any = config.get("executor", {})
+    if not isinstance(executor_raw, dict):
+        return config, changed
+    executor = cast("dict[str, Any]", executor_raw)
+
+    excess_pv_raw: Any = executor.get("excess_pv", {})
+    if not isinstance(excess_pv_raw, dict):
+        return config, changed
+    excess_pv = cast("dict[str, Any]", excess_pv_raw)
+
+    if "sink" not in excess_pv:
+        return config, changed
+
+    sink = str(excess_pv.get("sink", "disabled")).lower()
+
+    if "priority" not in excess_pv:
+        priority: list[dict[str, Any]] = []
+        if sink == "water_heater_boost":
+            priority = [{"type": "water_heater_boost"}]
+        elif sink == "custom_entity":
+            custom_entity_raw: Any = excess_pv.get("custom_entity", {})
+            custom_entity = (
+                cast("dict[str, Any]", custom_entity_raw)
+                if isinstance(custom_entity_raw, dict)
+                else {}
+            )
+            priority = [
+                {
+                    "type": "custom_entity",
+                    "entity": custom_entity.get("entity", ""),
+                    "on_value": custom_entity.get("on_value", "1"),
+                    "off_value": custom_entity.get("off_value", "0"),
+                    "power_kw": custom_entity.get("power_kw", 1.0),
+                }
+            ]
+        # sink == "disabled" (or unrecognized) -> priority stays []
+        excess_pv["priority"] = priority
+        logger.info(
+            f"🔄 Migrated executor.excess_pv.sink '{sink}' -> "
+            f"executor.excess_pv.priority ({len(priority)} entries)"
+        )
+        changed = True
+
+    del excess_pv["sink"]
+    logger.info("✂️  Removed deprecated key: 'executor.excess_pv.sink'")
+    changed = True
+
+    if "custom_entity" in excess_pv:
+        del excess_pv["custom_entity"]
+        logger.info("✂️  Removed deprecated key: 'executor.excess_pv.custom_entity'")
         changed = True
 
     return config, changed
@@ -481,17 +735,17 @@ def validate_config_for_write(config: dict[str, Any], strict: bool = True) -> bo
         # Check root-level deprecated keys
         for key in DEPRECATED_KEYS:
             if key in config:
-                logger.error(f"❌ Validation failed: Deprecated key '{key}' still present")
+                logger.error(f"Validation failed: Deprecated key '{key}' still present")
                 return False
 
         # Check nested deprecated keys
         for path, keys in DEPRECATED_NESTED_KEYS.items():
             parts = path.split(".")
-            obj = config
+            obj: Any = config
             # Navigate to nested object
             for part in parts:
                 if isinstance(obj, dict) and part in obj:
-                    obj = obj[part]
+                    obj = cast("Any", obj)[part]
                 else:
                     break
             else:
@@ -500,7 +754,7 @@ def validate_config_for_write(config: dict[str, Any], strict: bool = True) -> bo
                     for key in keys:
                         if key in obj:
                             logger.error(
-                                f"❌ Validation failed: Deprecated nested key '{path}.{key}' still present"
+                                f"Validation failed: Deprecated nested key '{path}.{key}' still present"
                             )
                             return False
         return True
@@ -510,13 +764,13 @@ def validate_config_for_write(config: dict[str, Any], strict: bool = True) -> bo
     required_sections = ["system", "battery", "executor", "input_sensors"]
     for section in required_sections:
         if section not in config:
-            logger.error(f"❌ Validation failed: Missing required section '{section}'")
+            logger.error(f"Validation failed: Missing required section '{section}'")
             return False
 
     # 2. Deprecated Keys (MUST be gone)
     for key in DEPRECATED_KEYS:
         if key in config:
-            logger.error(f"❌ Validation failed: Deprecated key '{key}' still present")
+            logger.error(f"Validation failed: Deprecated key '{key}' still present")
             return False
 
     # 3. Version Position
@@ -525,7 +779,7 @@ def validate_config_for_write(config: dict[str, Any], strict: bool = True) -> bo
     if "config_version" in keys:
         idx = keys.index("config_version")
         if idx > 10:
-            logger.error(f"❌ Validation failed: 'config_version' at index {idx} (too deep)")
+            logger.error(f"Validation failed: 'config_version' at index {idx} (too deep)")
             return False
 
     return True
@@ -688,7 +942,7 @@ def _validate_critical_values_preserved(before: dict[str, Any], after: dict[str,
             issues.append(f"{key}: {before_val} -> {after_val}")
 
     if issues:
-        logger.error(f"❌ CRITICAL VALUES LOST DURING MIGRATION: {', '.join(issues)}")
+        logger.error(f"CRITICAL VALUES LOST DURING MIGRATION: {', '.join(issues)}")
         return False
 
     return True
@@ -731,7 +985,7 @@ async def migrate_config(
             user_config_raw = yaml.load(f)  # type: ignore[reportUnknownMemberType]
 
         if user_config_raw is None or not isinstance(user_config_raw, dict):
-            logger.error(f"❌ Config {config_path} is invalid or empty.")
+            logger.error(f"Config {config_path} is invalid or empty.")
             return
         user_config: dict[str, Any] = cast("dict[str, Any]", user_config_raw)
 
@@ -739,12 +993,12 @@ async def migrate_config(
         # This prevents merging an empty/corrupted config with defaults
         if not _validate_config_structure(user_config, strict=strict_validation):
             logger.error(
-                f"❌ Config {config_path} failed structure validation. Aborting migration to prevent data loss."
+                f"Config {config_path} failed structure validation. Aborting migration to prevent data loss."
             )
             return
 
     except Exception as e:
-        logger.error(f"❌ Failed to read user config: {e}")
+        logger.error(f"Failed to read user config: {e}")
         return
 
     # 2. Migrate fields that read deprecated keys BEFORE removing them
@@ -752,9 +1006,25 @@ async def migrate_config(
     user_config, ev_migration_changes = _migrate_ev_charger_fields(user_config)
     pre_merge_changes = ev_migration_changes
 
+    # 2.1a Strip deprecated EV goal fields from ev_chargers[] entries
+    user_config, ev_goal_field_changes = _remove_ev_goal_fields(user_config)
+    if ev_goal_field_changes:
+        pre_merge_changes = True
+
     # 2.1b Migrate inverter config keys (must run before remove_deprecated_keys)
     user_config, inverter_migration_changes = _migrate_inverter_keys(user_config)
     if inverter_migration_changes:
+        pre_merge_changes = True
+
+    # 2.1c Add inverter.topology default for configs that have max_ac_power_kw but no topology
+    user_config, topology_migration_changes = _migrate_inverter_topology(user_config)
+    if topology_migration_changes:
+        pre_merge_changes = True
+
+    # 2.1d Migrate load-balancing priorities to give_way_order (must run before
+    # remove_deprecated_keys, which sweeps load_balancing.charger_priority)
+    user_config, give_way_changes = _migrate_give_way_order(user_config)
+    if give_way_changes:
         pre_merge_changes = True
 
     # 2.2 Sweep deprecated keys from user config
@@ -772,9 +1042,23 @@ async def migrate_config(
     if export_floor_changes:
         pre_merge_changes = True
 
+    # 2.7b Migrate excess_pv.sink (single sink) to excess_pv.priority[] (must run
+    # before remove_deprecated_keys/template merge)
+    user_config, excess_pv_priority_changes = _migrate_excess_pv_sink_to_priority(user_config)
+    if excess_pv_priority_changes:
+        pre_merge_changes = True
+
     # 2.6 Remove energy_sensor from ev_chargers[] and water_heaters[]
     user_config, energy_sensor_changes = _remove_energy_sensor_fields(user_config)
     if energy_sensor_changes:
+        pre_merge_changes = True
+
+    # 2.8 Ensure config_version is at least CURRENT_CONFIG_VERSION.
+    # Runs independently of the template merge so the version is always set.
+    # Never downgrades a version that is already higher.
+    current_version = user_config.get("config_version")
+    if not isinstance(current_version, int) or current_version < CURRENT_CONFIG_VERSION:
+        user_config["config_version"] = CURRENT_CONFIG_VERSION
         pre_merge_changes = True
 
     # 3. Load Default Config (The Template)
@@ -789,13 +1073,13 @@ async def migrate_config(
         with def_path_obj.open("r", encoding="utf-8") as f:
             default_config_raw = yaml.load(f)  # type: ignore[reportUnknownMemberType]
         if default_config_raw is None or not isinstance(default_config_raw, dict):
-            logger.error(f"❌ Default config {default_path} is invalid or empty.")
+            logger.error(f"Default config {default_path} is invalid or empty.")
             if pre_merge_changes:
                 _write_config(path, user_config, yaml, strict_validation=strict_validation)
             return
         default_config: dict[str, Any] = cast("dict[str, Any]", default_config_raw)
     except Exception as e:
-        logger.error(f"❌ Failed to read default config: {e}")
+        logger.error(f"Failed to read default config: {e}")
         if pre_merge_changes:
             _write_config(path, user_config, yaml, strict_validation=strict_validation)
         return
@@ -826,7 +1110,7 @@ async def migrate_config(
         logger.debug(f"Critical values after merge: {critical_after}")
 
         if not _validate_critical_values_preserved(critical_before, critical_after):
-            logger.error("❌ CRITICAL CONFIG VALUES WOULD BE LOST! Aborting migration.")
+            logger.error("CRITICAL CONFIG VALUES WOULD BE LOST! Aborting migration.")
             logger.error("This usually means the user config failed to load properly.")
             logger.error(f"Please check {config_path} for corruption or file locks.")
             return
@@ -840,7 +1124,7 @@ async def migrate_config(
             _write_config(path, final_config, yaml, strict_validation=strict_validation)
 
     except Exception as e:
-        logger.error(f"❌ Template merge failed: {e}", exc_info=True)
+        logger.error(f"Template merge failed: {e}", exc_info=True)
 
 
 def create_timestamped_backup(path: Path, max_backups: int = 30) -> Path | None:
@@ -872,21 +1156,32 @@ def create_timestamped_backup(path: Path, max_backups: int = 30) -> Path | None:
 
         return backup_path
     except Exception as e:
-        logger.error(f"❌ Failed to create backup: {e}")
+        logger.error(f"Failed to create backup: {e}")
         return None
+
+
+def write_config(
+    path: Path, config: Any, yaml_instance: Any, strict_validation: bool = True
+) -> bool:
+    """Public wrapper for the shared config writer."""
+    return _write_config(path, config, yaml_instance, strict_validation=strict_validation)
 
 
 def _write_config(
     path: Path, config: Any, yaml_instance: Any, strict_validation: bool = True
-) -> None:
-    """Validate and atomically write config to disk with timestamped backup."""
+) -> bool:
+    """Validate and atomically write config to disk with timestamped backup.
+
+    Returns True if the write succeeded, False if aborted or failed.
+    """
     if not validate_config_for_write(config, strict=strict_validation):
-        logger.error(f"❌ Aborting write to {path} - validation failed.")
-        return
+        logger.error(f"Aborting write to {path} - validation failed.")
+        return False
 
     temp_path = path.with_name(path.name + ".tmp")
     legacy_backup_path = path.with_name(path.name + ".bak")
     log_prefix = "[CONTAINER]" if Path("/.dockerenv").exists() else "[HOST]"
+    success = False
 
     try:
         if path.exists():
@@ -903,27 +1198,50 @@ def _write_config(
             logger.info(f"✅ {log_prefix} Successfully updated {path} (Atomic)")
 
             # Post-write validation - verify written file is valid
-            _verify_written_config(path, yaml_instance)
+            success = _verify_written_config(path, yaml_instance)
 
         except OSError as e:
-            # Fallback for bind mounts
+            # Fallback for bind mounts (EBUSY/EXDEV/ETXTBSY).
+            # temp_path is already in path's directory (path.with_name), so retry
+            # os.replace within the same mount first — keeps the rename atomic.
             if e.errno in (errno.EBUSY, errno.EXDEV, errno.ETXTBSY):
-                logger.info(f"{log_prefix} Bind mount detected, using direct write.")
-                shutil.copy2(temp_path, path)
-                logger.info(f"✅ {log_prefix} Successfully updated {path} (Direct Copy)")
-                _verify_written_config(path, yaml_instance)
+                logger.info(
+                    f"{log_prefix} Bind mount detected, retrying atomic replace within directory."
+                )
+                try:
+                    temp_path.replace(path)
+                    logger.info(f"✅ {log_prefix} Successfully updated {path} (Atomic retry)")
+                    success = _verify_written_config(path, yaml_instance)
+                except OSError:
+                    # Last resort: fsync before and after the streaming copy so a
+                    # partial copy is at least durable if the process dies mid-copy.
+                    logger.warning(
+                        f"{log_prefix} Atomic replace not possible on this mount, "
+                        f"falling back to direct copy (last resort)."
+                    )
+                    with temp_path.open("rb") as _f:
+                        os.fsync(_f.fileno())
+                    shutil.copy2(temp_path, path)
+                    with path.open("rb") as _f:
+                        os.fsync(_f.fileno())
+                    logger.info(
+                        f"✅ {log_prefix} Successfully updated {path} (Direct Copy, fsynced)"
+                    )
+                    success = _verify_written_config(path, yaml_instance)
             else:
                 raise
 
     except Exception as e:
-        logger.error(f"❌ Write failed: {e}")
+        logger.error(f"Write failed: {e}")
         if legacy_backup_path.exists():
-            logger.warning(f"🔄 Restoring {path} from legacy backup...")
+            logger.warning(f"Restoring {path} from legacy backup...")
             shutil.copy2(legacy_backup_path, path)
     finally:
         with contextlib.suppress(Exception):
             if temp_path.exists():
                 temp_path.unlink()
+
+    return success
 
 
 def _verify_written_config(path: Path, yaml_instance: Any) -> bool:
@@ -933,13 +1251,13 @@ def _verify_written_config(path: Path, yaml_instance: Any) -> bool:
             loaded = yaml_instance.load(f)
 
         if loaded is None or not isinstance(loaded, dict):
-            logger.error("❌ Post-write validation failed: config is empty or not a dict")
+            logger.error("Post-write validation failed: config is empty or not a dict")
             return False
         loaded_dict: dict[str, Any] = cast("dict[str, Any]", loaded)
 
         # Check for basic expected structure
         if "system" not in loaded_dict:
-            logger.error("❌ Post-write validation failed: missing 'system' section")
+            logger.error("Post-write validation failed: missing 'system' section")
             return False
 
         # Check inverter_profile is in correct location
@@ -947,17 +1265,17 @@ def _verify_written_config(path: Path, yaml_instance: Any) -> bool:
         if "inverter_profile" not in system:
             if "inverter_profile" in loaded:
                 logger.warning(
-                    "⚠️  Post-write: 'inverter_profile' found at root level, "
+                    "Post-write: 'inverter_profile' found at root level, "
                     "should be under 'system'. This may cause issues."
                 )
             else:
-                logger.warning("⚠️  Post-write: 'inverter_profile' not found in config")
+                logger.warning("Post-write: 'inverter_profile' not found in config")
 
         logger.debug("✅ Post-write config validation passed")
         return True
 
     except Exception as e:
-        logger.error(f"❌ Post-write validation failed: {e}")
+        logger.error(f"Post-write validation failed: {e}")
         return False
 
 

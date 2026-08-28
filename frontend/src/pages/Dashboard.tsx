@@ -1,18 +1,23 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useEffect, useState, useCallback } from 'react'
-import Card from '../components/Card'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import ChartCard from '../components/ChartCard'
 import { Flame, BatteryCharging } from 'lucide-react'
 import { motion } from 'framer-motion'
-import { Api, type PlannerSIndex, type ExecutorStatusResponse } from '../lib/api'
+import {
+    Api,
+    type PlannerSIndex,
+    type ExecutorStatusResponse,
+    type LearningStatusResponse,
+    type ConfigResponse,
+} from '../lib/api'
 import type { ScheduleSlot } from '../lib/types'
-import { isToday, isTomorrow } from '../lib/time'
+import { isToday, isTomorrow, formatHour } from '../lib/time'
 import SmartAdvisor from '../components/SmartAdvisor'
-import PowerFlowCard from '../components/PowerFlowCard'
+import PowerFlowTabs from '../components/PowerFlowTabs'
 import CommandBar from '../components/CommandBar'
 import BatteryStrategyCard from '../components/BatteryStrategyCard'
 import { GridDomain, ResourcesDomain } from '../components/CommandDomains'
-import { useSocket } from '../lib/hooks'
+import { useSocket, useSocketStatus } from '../lib/hooks'
 import { useToast } from '../lib/useToast'
 
 type PlannerMeta = {
@@ -20,6 +25,65 @@ type PlannerMeta = {
     planner_version?: string
     s_index?: PlannerSIndex
 } | null
+
+/** Merges adjacent same-action slots into a single joined "Charge 00:00-01:00 (...)" string
+ * for today's schedule, e.g. "Charge 00:00-01:00 → Export 06:00-07:00". */
+// eslint-disable-next-line react-refresh/only-export-components -- pure helper, tested directly
+export function computeTodaySummary(slots: ScheduleSlot[], now: Date = new Date()): string | null {
+    if (!slots || slots.length === 0) return null
+    const todayStart = new Date(now)
+    todayStart.setHours(0, 0, 0, 0)
+    const tomorrowStart = new Date(todayStart)
+    tomorrowStart.setDate(tomorrowStart.getDate() + 1)
+    const todaySlots = slots.filter((s) => {
+        const t = new Date(s.start_time)
+        return t >= todayStart && t < tomorrowStart
+    })
+    if (todaySlots.length === 0) return null
+
+    interface Phase {
+        action: string
+        start: string
+        end: string
+        extra?: string
+    }
+    const phases: Phase[] = []
+
+    todaySlots.forEach((s) => {
+        const start = formatHour(s.start_time)
+        const endTime = new Date(new Date(s.start_time).getTime() + 30 * 60 * 1000)
+        const end = formatHour(endTime.toISOString())
+        if ((s.charge_kw || 0) > 0.1) {
+            const price = s.import_price_sek_kwh ? `${s.import_price_sek_kwh.toFixed(2)} kr` : null
+            phases.push({ action: 'Charge', start, end, extra: price ? price : undefined })
+        } else if ((s.discharge_kw || 0) > 0.1) {
+            const price = s.import_price_sek_kwh ? `${s.import_price_sek_kwh.toFixed(2)} kr` : null
+            phases.push({ action: 'Discharge', start, end, extra: price ? price : undefined })
+        } else if ((s.export_kwh || 0) > 0.1) {
+            const price = s.import_price_sek_kwh ? `${s.import_price_sek_kwh.toFixed(2)} kr` : null
+            phases.push({ action: 'Export', start, end, extra: price ? price : undefined })
+        }
+    })
+    if (phases.length === 0) return null
+
+    const merged: Phase[] = []
+    phases.forEach((p) => {
+        const last = merged[merged.length - 1]
+        if (last && last.action === p.action) {
+            last.end = p.end
+            if (p.extra) last.extra = p.extra
+        } else {
+            merged.push({ ...p })
+        }
+    })
+    return merged
+        .map((p) => {
+            let text = `${p.action} ${p.start}-${p.end}`
+            if (p.extra) text += ` (${p.extra})`
+            return text
+        })
+        .join(' → ')
+}
 
 export default function Dashboard() {
     const [soc, setSoc] = useState<number | null>(null)
@@ -66,7 +130,6 @@ export default function Dashboard() {
     } | null>(null)
 
     const [plannerLocalMeta, setPlannerLocalMeta] = useState<PlannerMeta>(null)
-    const [plannerMeta, setPlannerMeta] = useState<PlannerMeta>(null)
     const [batteryCapacity, setBatteryCapacity] = useState<number>(0)
     const [avgLoad, setAvgLoad] = useState<{ kw: number; dailyKwh: number } | null>(null)
     const [currentSlotTarget, setCurrentSlotTarget] = useState<number>(0)
@@ -90,10 +153,11 @@ export default function Dashboard() {
     }>({})
 
     const [executorHealth, setExecutorHealth] = useState<import('../lib/api').ExecutorHealthResponse | null>(null)
-    const [config, setConfig] = useState<any>(null)
+    const [config, setConfig] = useState<ConfigResponse | null>(null)
 
     const [priceOutlook, setPriceOutlook] = useState<import('../lib/api').PriceOutlookResponse | undefined>(undefined)
     const [priceAdvice, setPriceAdvice] = useState<import('../lib/api').AdviceItem[]>([])
+    const [learningStatus, setLearningStatus] = useState<LearningStatusResponse | null>(null)
 
     const { toast } = useToast()
 
@@ -324,6 +388,7 @@ export default function Dashboard() {
                 executorHealthData,
                 priceOutlookData,
                 adviceData,
+                learningStatusData,
             ] = await Promise.allSettled([
                 Api.haAverage(),
                 Api.energyToday(),
@@ -332,6 +397,7 @@ export default function Dashboard() {
                 Api.executor.health(),
                 Api.priceForecast.outlook(),
                 Api.getAdvice(),
+                Api.learningStatus(),
             ])
 
             if (executorHealthData.status === 'fulfilled') {
@@ -348,6 +414,10 @@ export default function Dashboard() {
                     (item: import('../lib/api').AdviceItem) => item.category === 'price',
                 )
                 setPriceAdvice(filteredAdvice)
+            }
+
+            if (learningStatusData.status === 'fulfilled') {
+                setLearningStatus(learningStatusData.value)
             }
 
             if (haAverageData.status === 'fulfilled') {
@@ -414,9 +484,9 @@ export default function Dashboard() {
         setTimeout(() => fetchDeferredData(), 100)
     }, [fetchCriticalData, fetchDeferredData])
 
-    useEffect(() => {
-        setPlannerMeta(plannerLocalMeta)
-    }, [plannerLocalMeta])
+    const pvPersonalization = learningStatus?.pv_personalization
+    const pvPersonalized = (pvPersonalization?.weight ?? 0) > 0
+    const pvSourceLabel = pvPersonalized ? 'Open-Meteo + tuned' : 'Open-Meteo baseline'
 
     const handleSetComfortLevel = async (l: number) => {
         setComfortLevel(l)
@@ -429,8 +499,21 @@ export default function Dashboard() {
     }
 
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- initial IO fetch, also driven by socket-reconnect refetch
         fetchAllData()
     }, [fetchAllData])
+
+    const socketConnected = useSocketStatus()
+    const wasConnectedBefore = useRef(false)
+    useEffect(() => {
+        if (socketConnected === 'connected') {
+            if (wasConnectedBefore.current) {
+                // Reconnect after a drop (not the initial mount connect) — refetch.
+                fetchAllData()
+            }
+            wasConnectedBefore.current = true
+        }
+    }, [socketConnected, fetchAllData])
 
     const toggleAutomationScheduler = async () => {
         if (automationSaving) return
@@ -461,62 +544,7 @@ export default function Dashboard() {
         }
     }
 
-    const todaySummary = (() => {
-        if (!slotsOverride || slotsOverride.length === 0) return null
-        const todayStart = new Date()
-        todayStart.setHours(0, 0, 0, 0)
-        const tomorrowStart = new Date(todayStart)
-        tomorrowStart.setDate(tomorrowStart.getDate() + 1)
-        const todaySlots = slotsOverride.filter((s) => {
-            const t = new Date(s.start_time)
-            return t >= todayStart && t < tomorrowStart
-        })
-        if (todaySlots.length === 0) return null
-
-        interface Phase {
-            action: string
-            start: string
-            end: string
-            extra?: string
-        }
-        const phases: Phase[] = []
-        const fmt = (iso: string) => iso.slice(11, 16)
-
-        todaySlots.forEach((s) => {
-            const start = fmt(s.start_time)
-            const endTime = new Date(new Date(s.start_time).getTime() + 30 * 60 * 1000)
-            const end = endTime.toISOString().slice(11, 16)
-            if ((s.charge_kw || 0) > 0.1) {
-                const price = s.import_price_sek_kwh ? `${s.import_price_sek_kwh.toFixed(2)} kr` : null
-                phases.push({ action: 'Charge', start, end, extra: price ? price : undefined })
-            } else if ((s.discharge_kw || 0) > 0.1) {
-                const price = s.import_price_sek_kwh ? `${s.import_price_sek_kwh.toFixed(2)} kr` : null
-                phases.push({ action: 'Discharge', start, end, extra: price ? price : undefined })
-            } else if ((s.export_kwh || 0) > 0.1) {
-                const price = s.import_price_sek_kwh ? `${s.import_price_sek_kwh.toFixed(2)} kr` : null
-                phases.push({ action: 'Export', start, end, extra: price ? price : undefined })
-            }
-        })
-        if (phases.length === 0) return null
-
-        const merged: Phase[] = []
-        phases.forEach((p) => {
-            const last = merged[merged.length - 1]
-            if (last && last.action === p.action) {
-                last.end = p.end
-                if (p.extra) last.extra = p.extra
-            } else {
-                merged.push({ ...p })
-            }
-        })
-        return merged
-            .map((p) => {
-                let text = `${p.action} ${p.start}-${p.end}`
-                if (p.extra) text += ` (${p.extra})`
-                return text
-            })
-            .join(' → ')
-    })()
+    const todaySummary = computeTodaySummary(slotsOverride ?? [])
 
     return (
         <main className="mx-auto max-w-[1400px] px-4 pb-24 pt-6 sm:px-6 lg:pt-8 space-y-4">
@@ -710,7 +738,7 @@ export default function Dashboard() {
                     vacationModeHA={vacationModeHA}
                     waterBoostActive={waterBoostActive}
                     soc={soc}
-                    plannerMeta={plannerMeta}
+                    plannerMeta={plannerLocalMeta}
                     onSetRiskAppetite={handleSetRiskAppetite}
                     onSetComfortLevel={handleSetComfortLevel}
                     onToggleScheduler={toggleAutomationScheduler}
@@ -725,36 +753,32 @@ export default function Dashboard() {
                     <SmartAdvisor todaySummary={todaySummary} priceAdvice={priceAdvice} />
                 </motion.div>
 
-                {/* Cell 2: PowerFlowCard (row 1, col 2) */}
+                {/* Cell 2: PowerFlowTabs (row 1, col 2) */}
                 <motion.div className="h-full" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-                    <Card className="h-full flex flex-col overflow-hidden">
-                        <div className="flex-1 flex items-center justify-center overflow-hidden">
-                            <PowerFlowCard
-                                systemConfig={config}
-                                data={{
-                                    solar: {
-                                        kw: livePower.pv_kw ?? 0,
-                                        todayKwh: todayStats?.pvProduction ?? undefined,
-                                    },
-                                    battery: { kw: livePower.battery_kw ?? 0, soc: soc ?? 50 },
-                                    grid: {
-                                        kw: livePower.grid_kw ?? 0,
-                                        importKwh: todayStats?.gridImport ?? undefined,
-                                        exportKwh: todayStats?.gridExport ?? undefined,
-                                    },
-                                    house: {
-                                        kw: livePower.load_kw ?? 0,
-                                        todayKwh: todayStats?.loadConsumption ?? undefined,
-                                    },
-                                    water: { kw: livePower.water_kw ?? 0, todayKwh: waterToday?.kwh },
-                                    ev: { kw: livePower.ev_kw ?? 0 },
-                                    evPluggedIn: livePower.ev_plugged_in,
-                                    evSoc: livePower.ev_soc,
-                                    evChargers: livePower.ev_chargers,
-                                }}
-                            />
-                        </div>
-                    </Card>
+                    <PowerFlowTabs
+                        systemConfig={config}
+                        data={{
+                            solar: {
+                                kw: livePower.pv_kw ?? 0,
+                                todayKwh: todayStats?.pvProduction ?? undefined,
+                            },
+                            battery: { kw: livePower.battery_kw ?? 0, soc: soc ?? 50 },
+                            grid: {
+                                kw: livePower.grid_kw ?? 0,
+                                importKwh: todayStats?.gridImport ?? undefined,
+                                exportKwh: todayStats?.gridExport ?? undefined,
+                            },
+                            house: {
+                                kw: livePower.load_kw ?? 0,
+                                todayKwh: todayStats?.loadConsumption ?? undefined,
+                            },
+                            water: { kw: livePower.water_kw ?? 0, todayKwh: waterToday?.kwh },
+                            ev: { kw: livePower.ev_kw ?? 0 },
+                            evPluggedIn: livePower.ev_plugged_in,
+                            evSoc: livePower.ev_soc,
+                            evChargers: livePower.ev_chargers,
+                        }}
+                    />
                 </motion.div>
 
                 {/* Cell 3: BatteryStrategyCard (rows 1-2, col 3) */}
@@ -767,7 +791,7 @@ export default function Dashboard() {
                         soc={soc}
                         socTarget={currentSlotTarget}
                         batteryCapacity={batteryCapacity}
-                        plannerMeta={plannerMeta}
+                        plannerMeta={plannerLocalMeta}
                         batteryCycles={todayStats?.batteryCycles ?? null}
                         priceOutlook={priceOutlook}
                         currentAction={currentAction}
@@ -788,6 +812,8 @@ export default function Dashboard() {
                     <ResourcesDomain
                         pvActual={todayStats?.pvProduction ?? null}
                         pvForecast={todayStats?.pvForecast ?? null}
+                        pvSourceLabel={pvSourceLabel}
+                        pvSourceActive={pvPersonalized}
                         loadActual={todayStats?.loadConsumption ?? null}
                         loadAvg={avgLoad?.dailyKwh ?? null}
                         waterKwh={todayStats?.waterHeating ?? null}
@@ -797,6 +823,7 @@ export default function Dashboard() {
                         hasWaterHeater={systemFlags.hasWaterHeater}
                         hasEvCharger={systemFlags.hasEvCharger}
                         batteryCapacity={batteryCapacity}
+                        config={config}
                     />
                 </motion.div>
             </div>

@@ -70,12 +70,6 @@ export default function EntitySelect({
         return list
     }, [grouped])
 
-    // Reset highlight when filtered list changes
-    useEffect(() => {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        setHighlightIndex(0)
-    }, [filtered.length])
-
     const updatePosition = () => {
         if (triggerRef.current) {
             const rect = triggerRef.current.getBoundingClientRect()
@@ -245,7 +239,10 @@ export default function EntitySelect({
                                     ref={inputRef}
                                     type="text"
                                     value={search}
-                                    onChange={(e) => setSearch(e.target.value)}
+                                    onChange={(e) => {
+                                        setSearch(e.target.value)
+                                        setHighlightIndex(0)
+                                    }}
                                     onKeyDown={handleKeyDown}
                                     placeholder="Search entities..."
                                     className="w-full pl-8 pr-3 py-1.5 rounded-md bg-surface2 border border-line text-sm text-text placeholder:text-muted focus:outline-none focus:ring-1 focus:ring-accent/40"

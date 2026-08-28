@@ -13,22 +13,30 @@ LABEL description="AI-powered home battery optimization"
 WORKDIR /app
 
 # Install system dependencies
-# - nodejs, npm: Frontend build
 # - libgomp1: Required for LightGBM
 # - curl: Health checks
 # - gcc, g++, make: Build dependencies for packages that need compilation
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    nodejs \
-    npm \
     libgomp1 \
     curl \
+    ca-certificates \
+    gnupg \
     gcc \
     g++ \
     make \
     && rm -rf /var/lib/apt/lists/*
 
-# Install pnpm globally
-RUN npm install -g pnpm
+# Install Node 22 from NodeSource (Debian's apt `nodejs` is too old for pnpm 10's
+# `node:sqlite` requirement).
+RUN mkdir -p /etc/apt/keyrings \
+    && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg \
+    && echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main" > /etc/apt/sources.list.d/nodesource.list \
+    && apt-get update && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install pnpm globally. Pinned to v10 to match CI (pnpm/action-setup version: 10)
+# and frontend/pnpm-lock.yaml.
+RUN npm install -g pnpm@10
 
 # Install Python dependencies
 COPY requirements.txt ./

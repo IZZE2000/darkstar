@@ -24,6 +24,27 @@ A config already at `config_version=2` with no deprecated keys SHALL pass throug
 - **THEN** those deprecated nested keys SHALL be removed
 - **AND** all sibling keys that are not deprecated SHALL be preserved
 
+### Requirement: Migration sets config_version explicitly
+`migrate_config()` SHALL set `config_version` to the current schema version (2) as a dedicated migration step, independent of the template merge. This step SHALL run whenever `config_version` is missing or lower than the current version, and SHALL mark the config as changed so the write occurs even if the template merge is skipped (default template missing, or unreadable).
+
+#### Scenario: Missing config_version is set without the template merge
+- **WHEN** `migrate_config()` runs on a config that has no `config_version`
+- **AND** the default template is missing or fails to load (template merge skipped)
+- **THEN** the written config SHALL have `config_version: 2`
+- **AND** the write SHALL occur even though the template merge did not run
+
+#### Scenario: Config version below current is raised
+- **WHEN** `migrate_config()` runs on a config with `config_version: 1`
+- **THEN** the written config SHALL have `config_version: 2`
+
+#### Scenario: Higher config version is not downgraded
+- **WHEN** `migrate_config()` runs on a config with `config_version` greater than the current version
+- **THEN** the `config_version` SHALL NOT be lowered
+
+#### Scenario: Clean current-version config still writes nothing
+- **WHEN** `migrate_config()` runs on a config already at `config_version: 2` with no deprecated keys and no other migration changes
+- **THEN** no file write SHALL occur (idempotency preserved)
+
 ### Requirement: Critical user values are preserved through template merge
 The template merge step SHALL never overwrite user-configured values with template defaults.
 
@@ -51,22 +72,21 @@ The template merge step SHALL never overwrite user-configured values with templa
 - **THEN** the function SHALL return without error
 - **AND** no file SHALL be created
 
-### Requirement: Migrate global EV departure time into first charger
-The migration SHALL copy `ev_departure_time` from root level into the first enabled `ev_chargers[]` entry as `departure_time`, only if that entry does not already have a `departure_time` value set.
+### Requirement: Strip deprecated EV goal fields from chargers
+The migration SHALL remove all deprecated EV goal fields from every `ev_chargers[]` entry: `departure_time`, `penalty_levels`, `target_soc_percent`, `ready_by`, `repeat`, `n_days`, `ready_by_date`, and `keep_on_after_target`. Each removal SHALL be logged. The set of deprecated goal field names SHALL be defined in exactly one module and shared with the executor's deprecation warning (no duplicated hand-maintained lists). Old values are NOT preserved anywhere in the config; the migration's standard automatic backup is the only recovery path.
 
-#### Scenario: Global departure time migrated to first charger
-- **WHEN** `ev_departure_time: "07:00"` exists at root level
-- **AND** the first enabled charger has no `departure_time` field
-- **THEN** the first enabled charger SHALL have `departure_time: "07:00"` after migration
+#### Scenario: Legacy departure_time stripped
+- **WHEN** a charger entry contains `departure_time: 1200` (or any value, valid or malformed)
+- **THEN** after migration the entry SHALL NOT contain a `departure_time` key
+- **AND** a config file write SHALL occur (with the standard automatic backup)
 
-#### Scenario: Existing per-device departure time preserved
-- **WHEN** `ev_departure_time: "07:00"` exists at root level
-- **AND** the first enabled charger already has `departure_time: "08:00"`
-- **THEN** the charger's `departure_time` SHALL remain `"08:00"`
+#### Scenario: Legacy penalty_levels stripped
+- **WHEN** a charger entry contains a `penalty_levels` list
+- **THEN** after migration the entry SHALL NOT contain a `penalty_levels` key
 
-#### Scenario: No enabled chargers skips migration
-- **WHEN** `ev_departure_time` exists but no chargers have `enabled: true`
-- **THEN** the migration SHALL skip this step without error
+#### Scenario: Clean config untouched
+- **WHEN** no charger entry contains any deprecated goal field
+- **THEN** this migration step SHALL report no change (idempotent, no write triggered by this step)
 
 ### Requirement: Migrate executor EV charger settings into first charger
 The migration SHALL copy `executor.ev_charger.switch_entity`, `executor.ev_charger.replan_on_plugin`, and `executor.ev_charger.replan_on_unplug` into the first enabled `ev_chargers[]` entry, only if those fields are not already set on that entry.
@@ -115,9 +135,10 @@ Running the migration multiple times SHALL produce the same result. The migratio
 - **THEN** no config file write SHALL occur
 
 ### Requirement: Config default template updated
-The `config.default.yaml` template SHALL include the new per-device fields in `ev_chargers[]` entries (`departure_time`, `switch_entity`, `replan_on_plugin`, `replan_on_unplug`) with appropriate defaults. The global `ev_departure_time` and `executor.ev_charger` section SHALL be removed from the template.
+The `config.default.yaml` template SHALL include the per-device fields `switch_entity`, `replan_on_plugin`, and `replan_on_unplug` in `ev_chargers[]` entries with appropriate defaults. The template SHALL NOT include any deprecated EV goal field (`departure_time`, `penalty_levels`, etc.). The global `ev_departure_time` and `executor.ev_charger` section SHALL be removed from the template.
 
 #### Scenario: New installation gets per-device defaults
 - **WHEN** a new user starts with `config.default.yaml`
-- **THEN** each `ev_chargers[]` entry SHALL include `departure_time: ""`, `switch_entity: ""`, `replan_on_plugin: true`, `replan_on_unplug: false`
+- **THEN** each `ev_chargers[]` entry SHALL include `switch_entity: ""`, `replan_on_plugin: true`, `replan_on_unplug: false`
+- **AND** no `ev_chargers[]` entry SHALL include `departure_time` or `penalty_levels`
 - **AND** no global `ev_departure_time` or `executor.ev_charger` section SHALL exist

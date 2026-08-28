@@ -15,11 +15,59 @@ from ml.weather import async_get_weather_volatility
 logger = logging.getLogger("darkstar.core.forecasts")
 
 
+def _forecasting_flag(forecasting_cfg: dict[str, Any], key: str) -> bool:
+    return bool(forecasting_cfg.get(key, True))
+
+
 def get_forecast_db_path() -> str:
     """Get the path to the learning/planner database."""
     from pathlib import Path
 
     return str(Path("data/planner_learning.db").resolve())
+
+
+async def _get_stored_openmeteo_pv_for_slots(
+    price_slots: list[dict[str, Any]],
+    config: dict[str, Any],
+) -> tuple[list[float], dict[str, float]] | None:
+    """Return stored Open-Meteo PV baselines aligned to price slots, if fully covered."""
+    if not price_slots:
+        return [], {}
+
+    from backend.learning.store import LearningStore
+
+    timezone = str(config.get("timezone", "Europe/Stockholm"))
+    local_tz = pytz.timezone(timezone)
+    forecasting_cfg: dict[str, Any] = config.get("forecasting", {}) or {}
+    forecast_version = str(forecasting_cfg.get("active_forecast_version", "aurora"))
+    start = price_slots[0]["start_time"].astimezone(local_tz)
+    end = price_slots[-1]["start_time"].astimezone(local_tz) + timedelta(minutes=15)
+    store = LearningStore(get_forecast_db_path(), local_tz)
+    try:
+        rows = await store.get_openmeteo_pv_baselines_range(start, end, forecast_version)
+    finally:
+        await store.close()
+
+    by_slot: dict[datetime, float] = {}
+    for row in rows:
+        ts = row["slot_start"]
+        if isinstance(ts, str):
+            ts = datetime.fromisoformat(ts)
+        if ts.tzinfo is None:
+            ts = pytz.UTC.localize(ts)
+        by_slot[ts.astimezone(local_tz)] = float(row["openmeteo_pv_forecast_kwh"] or 0.0)
+
+    values: list[float] = []
+    daily: dict[str, float] = {}
+    for slot in price_slots:
+        ts = slot["start_time"].astimezone(local_tz)
+        if ts not in by_slot:
+            return None
+        value = by_slot[ts]
+        values.append(value)
+        day = ts.date().isoformat()
+        daily[day] = daily.get(day, 0.0) + value
+    return values, daily
 
 
 async def get_forecast_data(
@@ -30,8 +78,10 @@ async def get_forecast_data(
     """
     forecasting_cfg = cast("dict[str, Any]", config.get("forecasting", {}) or {})
     active_version = str(forecasting_cfg.get("active_forecast_version", "baseline_7_day_avg"))
+    aurora_load_enabled = _forecasting_flag(forecasting_cfg, "aurora_load_enabled")
+    aurora_pv_enabled = _forecasting_flag(forecasting_cfg, "aurora_pv_enabled")
 
-    if active_version == "aurora":
+    if active_version == "aurora" and (aurora_load_enabled or aurora_pv_enabled):
         return await _get_forecast_data_aurora(price_slots, config)
     else:
         return await _get_forecast_data_async(price_slots, config)
@@ -100,7 +150,7 @@ def _interpolate_small_gaps(
                     result[j]["pv_forecast_kwh"] = prev_pv + fraction * (next_pv - prev_pv)
                     result[j]["load_forecast_kwh"] = prev_load + fraction * (next_load - prev_load)
 
-                print(f"Info: Interpolated {gap_size} slot gap at index {gap_start}")
+                logger.info("Interpolated %d slot gap at index %d", gap_size, gap_start)
 
             i = gap_end
         else:
@@ -121,6 +171,8 @@ async def _get_forecast_data_aurora(
     )
 
     active_version = str(forecasting_cfg.get("active_forecast_version", "aurora"))
+    aurora_load_enabled = _forecasting_flag(forecasting_cfg, "aurora_load_enabled")
+    aurora_pv_enabled = _forecasting_flag(forecasting_cfg, "aurora_pv_enabled")
 
     # 1. Build slots strictly for the price horizon (0-48h)
     db_slots = await build_db_forecast_for_slots(price_slots, config)
@@ -137,10 +189,20 @@ async def _get_forecast_data_aurora(
     except Exception:
         ha_profile = [0.0] * 96
 
+    openmeteo_result: dict[str, Any] | None = None
+    if not aurora_pv_enabled:
+        openmeteo_result = await _get_forecast_data_async(price_slots, config)
+    raw_openmeteo_slots = (openmeteo_result or {}).get("slots", [])
+    openmeteo_slots: list[dict[str, Any]] = (
+        cast("list[dict[str, Any]]", raw_openmeteo_slots)
+        if isinstance(raw_openmeteo_slots, list)
+        else []
+    )
+
     forecast_data: list[dict[str, Any]] = []
     if db_slots:
-        print("Info: Using AURORA forecasts from learning DB (aurora).")
-        for slot, db_slot in zip(price_slots, db_slots, strict=False):
+        logger.info("Using AURORA forecasts from learning DB (aurora).")
+        for slot_idx, (slot, db_slot) in enumerate(zip(price_slots, db_slots, strict=False)):
             # Map slot time to 15-min index (0-95)
             # Localize to Stockholm/configured TZ to match profile
             ts = slot["start_time"].astimezone(local_tz)
@@ -150,13 +212,27 @@ async def _get_forecast_data_aurora(
             val_load = float(
                 db_slot.get("base_load_forecast_kwh") or db_slot.get("load_forecast_kwh", 0.0)
             )
-            if val_load <= 0.001:
+            if not aurora_load_enabled or val_load <= 0.001:
                 val_load = ha_profile[idx]
+
+            val_pv = float(db_slot.get("pv_forecast_kwh", 0.0))
+            openmeteo_pv = db_slot.get("openmeteo_pv_forecast_kwh")
+            if not aurora_pv_enabled:
+                om_slot: dict[str, Any] = (
+                    openmeteo_slots[slot_idx] if slot_idx < len(openmeteo_slots) else {}
+                )
+                val_pv = float(
+                    om_slot.get("openmeteo_pv_forecast_kwh")
+                    or om_slot.get("pv_forecast_kwh")
+                    or 0.0
+                )
+                openmeteo_pv = val_pv
 
             forecast_data.append(
                 {
                     "start_time": slot["start_time"],
-                    "pv_forecast_kwh": float(db_slot.get("pv_forecast_kwh", 0.0)),
+                    "pv_forecast_kwh": val_pv,
+                    "openmeteo_pv_forecast_kwh": openmeteo_pv,
                     "load_forecast_kwh": val_load,
                     "pv_p10": db_slot.get("pv_p10"),
                     "pv_p90": db_slot.get("pv_p90"),
@@ -165,9 +241,10 @@ async def _get_forecast_data_aurora(
                 }
             )
     else:
-        print("Warning: AURORA slots missing for price horizon. Returning empty slots.")
+        logger.warning("AURORA slots missing for price horizon. Returning empty slots.")
 
     # 2. Build DAILY totals for the extended horizon required by S-index
+    extended_slots: list[dict[str, Any]] = []
     daily_pv_forecast: dict[str, float] = {}
     daily_load_forecast: dict[str, float] = {}
     daily_pv_p10: dict[str, float] = {}
@@ -196,20 +273,24 @@ async def _get_forecast_data_aurora(
                 ts = datetime.fromisoformat(ts)
             if ts.tzinfo is None:
                 ts = pytz.UTC.localize(ts)
-            date_key = ts.astimezone(local_tz).date().isoformat()
+            ts_local = ts.astimezone(local_tz)
+            date_key = ts_local.date().isoformat()
 
             # Use new nested structure from ml/api.py get_forecast_slots()
             base_pv = float(rec["final"]["pv_kwh"])
             base_load = float(rec["final"]["load_kwh"])
+            openmeteo_base_pv = float(rec.get("base", {}).get("pv_kwh", base_pv))
 
             # Corrector removed - using base forecasts only (recency-weighted training)
-            pv_val = base_pv
+            pv_val = base_pv if aurora_pv_enabled else openmeteo_base_pv
 
             # Fallback for Load if 0.0
-            if base_load <= 0.001:
+            if not aurora_load_enabled:
+                idx = int((ts_local.hour * 60 + ts_local.minute) // 15) % 96
+                load_val = ha_profile[idx]
+            elif base_load <= 0.001:
                 # Calculate 15-min slot index (0-95)
                 # ts is already localized or UTC, let's ensure local time for index match
-                ts_local = ts.astimezone(local_tz)
                 idx = int((ts_local.hour * 60 + ts_local.minute) // 15) % 96
 
                 # Lazy load HA profile if needed (optimization)
@@ -241,25 +322,39 @@ async def _get_forecast_data_aurora(
             daily_pv_forecast[date_key] = daily_pv_forecast.get(date_key, 0.0) + pv_val
             daily_load_forecast[date_key] = daily_load_forecast.get(date_key, 0.0) + load_val
 
-            if rec.get("probabilistic", {}).get("pv_p10") is not None:
+            probabilistic = rec.get("probabilistic", {})
+            extended_slots.append(
+                {
+                    "start_time": ts_local,
+                    "pv_forecast_kwh": pv_val,
+                    "load_forecast_kwh": load_val,
+                    "pv_p10": probabilistic.get("pv_p10"),
+                    "pv_p90": probabilistic.get("pv_p90"),
+                    "load_p10": probabilistic.get("load_p10"),
+                    "load_p90": probabilistic.get("load_p90"),
+                }
+            )
+
+            if probabilistic.get("pv_p10") is not None:
                 daily_pv_p10[date_key] = daily_pv_p10.get(date_key, 0.0) + float(
-                    rec["probabilistic"]["pv_p10"]
+                    probabilistic["pv_p10"]
                 )
-            if rec.get("probabilistic", {}).get("pv_p90") is not None:
+            if probabilistic.get("pv_p90") is not None:
                 daily_pv_p90[date_key] = daily_pv_p90.get(date_key, 0.0) + float(
-                    rec["probabilistic"]["pv_p90"]
+                    probabilistic["pv_p90"]
                 )
-            if rec.get("probabilistic", {}).get("load_p10") is not None:
+            if probabilistic.get("load_p10") is not None:
                 daily_load_p10[date_key] = daily_load_p10.get(date_key, 0.0) + float(
-                    rec["probabilistic"]["load_p10"]
+                    probabilistic["load_p10"]
                 )
-            if rec.get("probabilistic", {}).get("load_p90") is not None:
+            if probabilistic.get("load_p90") is not None:
                 daily_load_p90[date_key] = daily_load_p90.get(date_key, 0.0) + float(
-                    rec["probabilistic"]["load_p90"]
+                    probabilistic["load_p90"]
                 )
 
     return {
         "slots": forecast_data,
+        "extended_slots": extended_slots,
         "daily_pv_forecast": daily_pv_forecast,
         "daily_load_forecast": daily_load_forecast,
         "daily_probabilistic": {
@@ -341,8 +436,7 @@ async def _get_forecast_data_async(
     resolution_hours = 0.25
 
     try:
-        # REV F60 Phase 6: OpenMeteo requires ALL parameters to be lists when ANY array param is a list
-        # Always wrap lat/long in lists when we have any solar arrays configured
+
         async def _fetch_forecast():
             # Filter out invalid arrays (kwp <= 0) - REV F62 fix
             valid_arrays = [
@@ -371,15 +465,22 @@ async def _get_forecast_data_async(
                 if filtered_count > 0:
                     logger.warning("Filtered out %d solar array(s) with kwp <= 0.0", filtered_count)
 
-            async with OpenMeteoSolarForecast(
-                latitude=[latitude] * len(kwp_list_clean) if kwp_list_clean else latitude,
-                longitude=[longitude] * len(kwp_list_clean) if kwp_list_clean else longitude,
-                declination=tilt_list_clean,
-                azimuth=azimuth_list_clean,
-                dc_kwp=kwp_list_clean,
-            ) as forecast:
-                estimate = await forecast.estimate()
-                return estimate.watts
+            summed_watts: dict[datetime, float] = {}
+            for azimuth, tilt, kwp in zip(
+                azimuth_list_clean, tilt_list_clean, kwp_list_clean, strict=True
+            ):
+                async with OpenMeteoSolarForecast(
+                    latitude=latitude,
+                    longitude=longitude,
+                    declination=tilt,
+                    azimuth=azimuth,
+                    dc_kwp=kwp,
+                ) as forecast:
+                    estimate = await forecast.estimate()
+                    for dt, watts in estimate.watts.items():
+                        summed_watts[dt] = summed_watts.get(dt, 0.0) + float(watts or 0.0)
+
+            return summed_watts
 
         solar_data_dict = await _fetch_forecast()
         if solar_data_dict:
@@ -415,23 +516,32 @@ async def _get_forecast_data_async(
         clear_forecast_errors()
 
     except Exception as exc:
-        # REV F60: Removed dangerous dummy fallback. PV forecast failure is critical.
-        # Using fake solar data would cause the planner to make incorrect decisions.
         from backend.health import record_forecast_error
 
-        error = PVForecastError(
-            "Open-Meteo Solar Forecast failed - cannot generate valid PV forecast",
-            original_exception=exc,
-            solar_arrays=len(kwp_list),
-            details={
-                "latitude": latitude,
-                "longitude": longitude,
-                "arrays": len(kwp_list),
-                "total_kwp": sum(kwp_list),
-            },
-        )
-        record_forecast_error(error, context={"arrays": len(kwp_list)})
-        raise error from exc
+        stored = await _get_stored_openmeteo_pv_for_slots(price_slots, config)
+        if stored is not None:
+            pv_kwh_forecast, daily_pv_forecast = stored
+            record_forecast_error(
+                RuntimeError("API unreachable — using last known forecast"),
+                context={"arrays": len(kwp_list), "fallback": "last_known_openmeteo"},
+            )
+            logger.warning("Open-Meteo PV fetch failed; using stored last-known forecast")
+        else:
+            # REV F60: Removed dangerous dummy fallback. PV forecast failure is critical.
+            # Using fake solar data would cause the planner to make incorrect decisions.
+            error = PVForecastError(
+                "Open-Meteo Solar Forecast failed - cannot generate valid PV forecast",
+                original_exception=exc,
+                solar_arrays=len(kwp_list),
+                details={
+                    "latitude": latitude,
+                    "longitude": longitude,
+                    "arrays": len(kwp_list),
+                    "total_kwp": sum(kwp_list),
+                },
+            )
+            record_forecast_error(error, context={"arrays": len(kwp_list)})
+            raise error from exc
     if price_slots:
         first_date = price_slots[0]["start_time"].astimezone(local_tz).date()
         last_value = None
@@ -445,7 +555,7 @@ async def _get_forecast_data_async(
     try:
         load_profile = await ha_client.get_load_profile_from_ha(config)
     except Exception as exc:
-        print(f"Warning: Failed to get HA load profile, using dummy: {exc}")
+        logger.warning("Failed to get HA load profile, using dummy: %s", exc)
         load_profile = ha_client.get_dummy_load_profile(config)
 
     daily_load_total = sum(load_profile)
@@ -476,6 +586,7 @@ async def _get_forecast_data_async(
             {
                 "start_time": slot["start_time"],
                 "pv_forecast_kwh": pv_kwh,
+                "openmeteo_pv_forecast_kwh": pv_kwh,
                 "load_forecast_kwh": load_kwh,
             }
         )
@@ -504,10 +615,17 @@ async def get_all_input_data(
     with Path(config_path).open() as f:
         config = yaml.safe_load(f)
 
-    # --- AUTO-RUN ML INFERENCE IF AURORA IS ACTIVE ---
-    if config.get("forecasting", {}).get("active_forecast_version") == "aurora":
+    # --- AUTO-RUN ML INFERENCE IF ANY AURORA DOMAIN IS ACTIVE ---
+    _forecasting_cfg: Any = config.get("forecasting", {}) or {}
+    forecasting_cfg: dict[str, Any] = (
+        cast("dict[str, Any]", _forecasting_cfg) if isinstance(_forecasting_cfg, dict) else {}
+    )
+    if forecasting_cfg.get("active_forecast_version") == "aurora" and (
+        _forecasting_flag(forecasting_cfg, "aurora_load_enabled")
+        or _forecasting_flag(forecasting_cfg, "aurora_pv_enabled")
+    ):
         try:
-            print("🧠 Running AURORA ML Inference Pipeline (base + correction)...")
+            logger.info("Running AURORA ML Inference Pipeline (base + correction)...")
             from ml.pipeline import run_inference
 
             # Rev 2.4.13: Respect configured horizon (default 2 days / 48h)
@@ -518,7 +636,7 @@ async def get_all_input_data(
 
             await run_inference(horizon_hours=hours, forecast_version="aurora")
         except Exception as e:
-            print(f"⚠️ AURORA Inference Pipeline Failed: {e}")
+            logger.warning("AURORA Inference Pipeline failed: %s", e)
 
     # --- FETCH CONTEXT (New in Rev 19, extended in Rev 58) ---
     sensors = config.get("input_sensors", {})
@@ -548,6 +666,7 @@ async def get_all_input_data(
 
     forecast_result = await get_forecast_data(price_data, config)
     forecast_data = forecast_result.get("slots", [])
+    extended_forecast_data = forecast_result.get("extended_slots", [])
     initial_state = await ha_client.get_initial_state(
         config_path,
         ev_plugged_in_override=ev_plugged_in_override,
@@ -557,6 +676,7 @@ async def get_all_input_data(
     return {
         "price_data": price_data,
         "forecast_data": forecast_data,
+        "extended_forecast_data": extended_forecast_data,
         "initial_state": initial_state,
         "daily_pv_forecast": forecast_result.get("daily_pv_forecast", {}),
         "daily_load_forecast": forecast_result.get("daily_load_forecast", {}),
@@ -649,8 +769,8 @@ async def build_db_forecast_for_slots(
 
             if fallback_ts is not None:
                 rec = indexed[fallback_ts]
-                print(
-                    f"Warning: No exact forecast match for {ts}, using fallback from {fallback_ts}"
+                logger.warning(
+                    "No exact forecast match for %s, using fallback from %s", ts, fallback_ts
                 )
 
         if rec is not None:

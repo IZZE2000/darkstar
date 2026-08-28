@@ -33,10 +33,9 @@ export default function ServiceSelect({
     const listRef = useRef<HTMLDivElement>(null)
     const dropdownRef = useRef<HTMLDivElement>(null)
 
-    // Fetch services when dropdown opens for the first time
-    useEffect(() => {
-        if (open && services.length === 0 && !loading) {
-            // eslint-disable-next-line react-hooks/set-state-in-effect
+    // Fetch services on first open (fetch-once guard), invoked from open triggers
+    const loadServices = () => {
+        if (services.length === 0 && !loading) {
             setLoading(true)
             Api.haServices()
                 .then((res) => {
@@ -49,7 +48,7 @@ export default function ServiceSelect({
                     setLoading(false)
                 })
         }
-    }, [open, services.length, loading])
+    }
 
     // Filter services based on search
     const filtered = useMemo(() => {
@@ -75,12 +74,6 @@ export default function ServiceSelect({
         Object.values(grouped).forEach((group) => list.push(...group))
         return list
     }, [grouped])
-
-    // Reset highlight when filtered list changes
-    useEffect(() => {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        setHighlightIndex(0)
-    }, [filtered.length])
 
     const updatePosition = () => {
         if (triggerRef.current) {
@@ -143,6 +136,7 @@ export default function ServiceSelect({
             if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown') {
                 e.preventDefault()
                 updatePosition()
+                loadServices()
                 setOpen(true)
             }
             return
@@ -189,6 +183,7 @@ export default function ServiceSelect({
                     if (!disabled) {
                         if (!open) {
                             updatePosition()
+                            loadServices()
                         }
                         setOpen(!open)
                         if (!open) {
@@ -251,7 +246,10 @@ export default function ServiceSelect({
                                     ref={inputRef}
                                     type="text"
                                     value={search}
-                                    onChange={(e) => setSearch(e.target.value)}
+                                    onChange={(e) => {
+                                        setSearch(e.target.value)
+                                        setHighlightIndex(0)
+                                    }}
                                     onKeyDown={handleKeyDown}
                                     placeholder="Search services..."
                                     className="w-full pl-8 pr-3 py-1.5 rounded-md bg-surface2 border border-line text-sm text-text placeholder:text-muted focus:outline-none focus:ring-1 focus:ring-accent/40"

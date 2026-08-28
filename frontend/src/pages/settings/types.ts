@@ -9,14 +9,18 @@ export type FieldType =
     | 'azimuth'
     | 'tilt'
     | 'solar_arrays'
-    | 'penalty_levels'
     | 'entity_array'
+    | 'balanced_loads'
+    | 'give_way_list'
+    | 'excess_pv_priority'
     | 'info'
 
 export interface HaEntity {
     entity_id: string
     friendly_name: string
     domain: string
+    unit_of_measurement?: string
+    device_class?: string
 }
 
 export interface BaseField {
@@ -704,6 +708,7 @@ export const uiSections: SettingsSection[] = [
                 helper: 'e.g. notify.mobile_app_iphone',
                 path: ['executor', 'notifications', 'service'],
                 type: 'service',
+                className: 'col-span-2',
             },
             {
                 key: 'executor.notifications.on_charge_start',
@@ -758,6 +763,13 @@ export const uiSections: SettingsSection[] = [
                 label: 'On error',
                 path: ['executor', 'notifications', 'on_error'],
                 type: 'boolean',
+            },
+            {
+                key: 'load_balancing.notify_interventions',
+                label: 'Notify on load balancer interventions',
+                path: ['load_balancing', 'notify_interventions'],
+                type: 'boolean',
+                helper: 'Send a notification when a load is shed, a charger is paused, or the stale-sensor fail-safe engages. Routine throttle adjustments never notify.',
             },
         ],
     },
@@ -1050,7 +1062,7 @@ export const evSections: SettingsSection[] = [
 
 export const waterSections: SettingsSection[] = [
     {
-        title: 'Water Heaters',
+        title: 'Heating Devices',
         description: 'Configure multiple water heaters for optimization and load disaggregation.',
         fields: [
             {
@@ -1076,46 +1088,11 @@ export const waterSections: SettingsSection[] = [
                 isAdvanced: true,
             },
             {
-                key: 'water_heating.spacing_penalty_sek',
-                label: 'Spacing penalty (SEK)',
-                path: ['water_heating', 'spacing_penalty_sek'],
-                type: 'number',
-                isAdvanced: true,
-                helper: 'Penalty applied when heating sessions are too close.',
-            },
-            {
                 key: 'water_heating.enable_top_ups',
                 label: 'Enable spaced top-ups',
                 path: ['water_heating', 'enable_top_ups'],
                 type: 'boolean',
                 helper: 'Enable small top-up heating blocks to maintain temperature. Disable for bulk heating only.',
-            },
-            {
-                key: 'water_heating.block_start_penalty_sek',
-                label: 'Block start penalty (SEK)',
-                helper: 'Penalty per heating start (higher = more consolidated bulk heating).',
-                path: ['water_heating', 'block_start_penalty_sek'],
-                type: 'number',
-                subsection: 'Advanced Tuning',
-                isAdvanced: true,
-            },
-            {
-                key: 'water_heating.reliability_penalty_sek',
-                label: 'Reliability Penalty (SEK)',
-                helper: 'Heavy penalty for failing to meet the daily min kWh quota (higher = stricter quota enforcement).',
-                path: ['water_heating', 'reliability_penalty_sek'],
-                type: 'number',
-                subsection: 'Advanced Tuning',
-                isAdvanced: true,
-            },
-            {
-                key: 'water_heating.block_penalty_sek',
-                label: 'Block Penalty (SEK)',
-                helper: 'Small penalty per active heating slot (higher = encourages shorter, more efficient heat blocks).',
-                path: ['water_heating', 'block_penalty_sek'],
-                type: 'number',
-                subsection: 'Advanced Tuning',
-                isAdvanced: true,
             },
         ],
     },
@@ -1180,6 +1157,136 @@ export const waterSections: SettingsSection[] = [
                 label: 'Safety Cycle Duration (hours)',
                 path: ['water_heating', 'vacation_mode', 'anti_legionella_duration_hours'],
                 type: 'number',
+            },
+        ],
+    },
+]
+
+export const loadBalancingSections: SettingsSection[] = [
+    {
+        title: 'Real-Time Load Balancing',
+        description:
+            'Protects your main fuse in real time by throttling EV charging — and, as a last resort, shedding other loads — based on live per-phase grid current. Stays completely inactive until the fuse rating, all three phase sensors, and at least one balanced load are configured below. This is a best-effort software control loop, not a certified protection device — if your charger has its own load-management/fallback setting, keep that configured too.',
+        fields: [
+            {
+                key: 'load_balancing.enabled',
+                label: 'Enable load balancing',
+                path: ['load_balancing', 'enabled'],
+                type: 'boolean',
+                helper: 'Master switch. No-op until the fuse rating, phase sensors, and at least one balanced load are set.',
+            },
+            {
+                key: 'system.grid.main_fuse_a',
+                label: 'Main fuse rating (A)',
+                path: ['system', 'grid', 'main_fuse_a'],
+                type: 'number',
+                helper: 'Per-phase physical fuse rating in amps (e.g. 20). Independent of the total grid import limit — a balanced total can still overload a single phase.',
+            },
+            {
+                key: 'input_sensors.grid_current_l1',
+                label: 'Grid Current/Power sensor — L1',
+                path: ['input_sensors', 'grid_current_l1'],
+                type: 'entity',
+                helper: 'Home Assistant sensor reporting phase L1 current (A) or power (W/kW) at the grid connection point — the kind is auto-detected from the entity’s unit.',
+            },
+            {
+                key: 'input_sensors.grid_voltage_l1',
+                label: 'Grid voltage sensor — L1',
+                path: ['input_sensors', 'grid_voltage_l1'],
+                type: 'entity',
+                showIf: { configKey: '_computed.any_phase_power_mode', value: true },
+                helper: 'Optional. Used to convert L1 to current when it’s a power sensor. Falls back to the nominal voltage below if left blank.',
+            },
+            {
+                key: 'input_sensors.grid_current_l2',
+                label: 'Grid Current/Power sensor — L2',
+                path: ['input_sensors', 'grid_current_l2'],
+                type: 'entity',
+                helper: 'Home Assistant sensor reporting phase L2 current (A) or power (W/kW) at the grid connection point — the kind is auto-detected from the entity’s unit.',
+            },
+            {
+                key: 'input_sensors.grid_voltage_l2',
+                label: 'Grid voltage sensor — L2',
+                path: ['input_sensors', 'grid_voltage_l2'],
+                type: 'entity',
+                showIf: { configKey: '_computed.any_phase_power_mode', value: true },
+                helper: 'Optional. Used to convert L2 to current when it’s a power sensor. Falls back to the nominal voltage below if left blank.',
+            },
+            {
+                key: 'input_sensors.grid_current_l3',
+                label: 'Grid Current/Power sensor — L3',
+                path: ['input_sensors', 'grid_current_l3'],
+                type: 'entity',
+                helper: 'Home Assistant sensor reporting phase L3 current (A) or power (W/kW) at the grid connection point — the kind is auto-detected from the entity’s unit.',
+            },
+            {
+                key: 'input_sensors.grid_voltage_l3',
+                label: 'Grid voltage sensor — L3',
+                path: ['input_sensors', 'grid_voltage_l3'],
+                type: 'entity',
+                showIf: { configKey: '_computed.any_phase_power_mode', value: true },
+                helper: 'Optional. Used to convert L3 to current when it’s a power sensor. Falls back to the nominal voltage below if left blank.',
+            },
+            {
+                key: 'load_balancing.nominal_voltage_v',
+                label: 'Nominal voltage (V)',
+                path: ['load_balancing', 'nominal_voltage_v'],
+                type: 'number',
+                className: 'col-span-2',
+                showIf: { configKey: '_computed.any_phase_power_mode', value: true },
+                helper: 'Fallback voltage for converting a power sensor to current when that phase has no voltage sensor set above. Deliberately biased below 230V so a fixed value never under-reports current during a sag.',
+            },
+        ],
+    },
+    {
+        title: 'Give-Way Order',
+        description:
+            'Everything the balancer can act on, in one ordered list — the top entry gives way first when a phase overloads, and entries recover in exact reverse order. Drag rows (or use the arrow buttons) to match your household preference, e.g. shed the water heater before slowing the car.',
+        fields: [
+            {
+                key: 'load_balancing.give_way_order',
+                label: 'Give-way order',
+                path: ['load_balancing', 'give_way_order'],
+                type: 'give_way_list',
+                className: 'col-span-2',
+            },
+        ],
+    },
+    {
+        title: 'Anti-Flap Tuning',
+        description:
+            'Advanced timing parameters controlling how cautiously the balancer resumes or ramps back up after throttling.',
+        fields: [
+            {
+                key: 'load_balancing.resume_delay_s',
+                label: 'Resume delay (seconds)',
+                path: ['load_balancing', 'resume_delay_s'],
+                type: 'number',
+                isAdvanced: true,
+                helper: 'How long headroom must stay healthy before resuming a throttled/shed load.',
+            },
+            {
+                key: 'load_balancing.resume_margin_percent',
+                label: 'Resume margin (%)',
+                path: ['load_balancing', 'resume_margin_percent'],
+                type: 'number',
+                isAdvanced: true,
+                helper: 'Only resume/increase current when phase current is below this % of the fuse rating.',
+            },
+            {
+                key: 'load_balancing.increase_step_a',
+                label: 'Ramp-up step (A per tick)',
+                path: ['load_balancing', 'increase_step_a'],
+                type: 'number',
+                isAdvanced: true,
+            },
+            {
+                key: 'load_balancing.sensor_stale_after_s',
+                label: 'Sensor stale after (seconds)',
+                path: ['load_balancing', 'sensor_stale_after_s'],
+                type: 'number',
+                isAdvanced: true,
+                helper: 'Phase sensors older than this are treated as stale: EV is forced to its minimum current, then paused if it stays stale.',
             },
         ],
     },
@@ -1296,101 +1403,29 @@ export const advancedSections: SettingsSection[] = [
     {
         title: 'Excess PV Dispatch',
         description:
-            'Configure how forecast excess PV energy is utilized. The planner schedules excess PV into the chosen sink.',
+            'Configure the ordered priority list of sinks for forecast excess PV energy. The house battery is always implicitly first; the planner schedules surplus into the listed sinks in order, and multiple sinks can be active at once when surplus is large enough.',
         showIf: { configKey: 'system.has_solar', value: true },
         fields: [
             {
-                key: 'executor.excess_pv.sink',
-                label: 'Excess PV Sink',
-                path: ['executor', 'excess_pv', 'sink'],
-                type: 'select',
-                options: [
-                    { label: 'Disabled', value: 'disabled' },
-                    { label: 'Water Heater Boost', value: 'water_heater_boost' },
-                    { label: 'Custom Entity', value: 'custom_entity' },
-                ],
-                helper: 'Choose where excess PV energy goes. Water Heater Boost heats water to max temp. Custom Entity toggles any HA entity.',
-                showIf: { configKey: 'system.has_water_heater', value: true },
+                key: 'executor.excess_pv.priority',
+                label: 'Sink priority list',
+                path: ['executor', 'excess_pv', 'priority'],
+                type: 'excess_pv_priority',
                 className: 'col-span-2',
-            },
-            {
-                key: 'executor.excess_pv.sink',
-                label: 'Excess PV Sink',
-                path: ['executor', 'excess_pv', 'sink'],
-                type: 'select',
-                options: [
-                    { label: 'Disabled', value: 'disabled' },
-                    { label: 'Custom Entity', value: 'custom_entity' },
-                ],
-                helper: 'Choose where excess PV energy goes. Custom Entity toggles any HA entity.',
-                showIf: { configKey: 'system.has_water_heater', value: false },
-                className: 'col-span-2',
-            },
-            {
-                key: 'executor.excess_pv.custom_entity.entity',
-                label: 'Custom Entity',
-                path: ['executor', 'excess_pv', 'custom_entity', 'entity'],
-                type: 'entity',
-                helper: 'Home Assistant entity to toggle (e.g., switch.pool_pump).',
-                showIf: {
-                    configKey: 'executor.excess_pv.sink',
-                    value: 'custom_entity',
-                },
-            },
-            {
-                key: 'executor.excess_pv.custom_entity.on_value',
-                label: 'On Value',
-                path: ['executor', 'excess_pv', 'custom_entity', 'on_value'],
-                type: 'text',
-                helper: 'Value to set when excess PV is available.',
-                showIf: {
-                    configKey: 'executor.excess_pv.sink',
-                    value: 'custom_entity',
-                },
-            },
-            {
-                key: 'executor.excess_pv.custom_entity.off_value',
-                label: 'Off Value',
-                path: ['executor', 'excess_pv', 'custom_entity', 'off_value'],
-                type: 'text',
-                helper: 'Value to set when excess PV is not available.',
-                showIf: {
-                    configKey: 'executor.excess_pv.sink',
-                    value: 'custom_entity',
-                },
-            },
-            {
-                key: 'executor.excess_pv.custom_entity.power_kw',
-                label: 'Power (kW)',
-                path: ['executor', 'excess_pv', 'custom_entity', 'power_kw'],
-                type: 'number',
-                helper: 'Estimated power consumption in kW. Used by the solver to size the reward correctly.',
-                showIf: {
-                    configKey: 'executor.excess_pv.sink',
-                    value: 'custom_entity',
-                },
             },
             {
                 key: 'executor.excess_pv.boost_reward_sek_per_kwh',
-                label: 'Sink Reward (SEK/kWh)',
+                label: 'Base Reward (SEK/kWh)',
                 path: ['executor', 'excess_pv', 'boost_reward_sek_per_kwh'],
                 type: 'number',
-                helper: 'Reward for using excess PV at the sink instead of exporting.',
-                showIf: {
-                    configKey: 'executor.excess_pv.sink',
-                    value: ['water_heater_boost', 'custom_entity'],
-                },
+                helper: 'Base reward for using excess PV at a sink instead of exporting. Each sink below the top gets 15% less by default (override per-entry above).',
             },
             {
                 key: 'executor.excess_pv.soc_threshold_percent',
                 label: 'SoC Threshold (%)',
                 path: ['executor', 'excess_pv', 'soc_threshold_percent'],
                 type: 'number',
-                helper: 'Battery must reach this SoC% before sink activates.',
-                showIf: {
-                    configKey: 'executor.excess_pv.sink',
-                    value: ['water_heater_boost', 'custom_entity'],
-                },
+                helper: 'Battery must reach this SoC% before any sink activates.',
             },
         ],
     },
@@ -1415,6 +1450,20 @@ export const evFieldList = evSections.flatMap((section) => section.fields)
 export const waterFieldList = waterSections.flatMap((section) => section.fields)
 export const uiFieldList = uiSections.flatMap((section) => section.fields)
 export const advancedFieldList = advancedSections.flatMap((section) => section.fields)
+// load_balancing.loads holds the shed-load definitions; it has no section of
+// its own — the give-way list editor renders and edits it alongside the order.
+const loadBalancingHiddenFields: BaseField[] = [
+    {
+        key: 'load_balancing.loads',
+        label: 'Balanced loads',
+        path: ['load_balancing', 'loads'],
+        type: 'balanced_loads',
+    },
+]
+export const loadBalancingFieldList = [
+    ...loadBalancingSections.flatMap((section) => section.fields),
+    ...loadBalancingHiddenFields,
+]
 
 export const allFields = [
     ...systemFieldList,
@@ -1425,6 +1474,7 @@ export const allFields = [
     ...waterFieldList,
     ...uiFieldList,
     ...advancedFieldList,
+    ...loadBalancingFieldList,
     {
         key: 'dashboard.overlay_defaults',
         label: 'Overlay Defaults',

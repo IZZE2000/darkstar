@@ -20,8 +20,15 @@ import {
     Layers,
 } from 'lucide-react'
 import Card from '../components/Card'
+import LoadBalancerStatusCard from '../components/LoadBalancerStatusCard'
 
 import { useSocket } from '../lib/hooks'
+import { Api } from '../lib/api'
+
+// Must match executor/engine.py's EV_KEEP_ON_REASON_MARKER — history rows have
+// no structured keep-on field (KISS, no DB migration), so the standby badge
+// is detected from this substring in the record's reason text.
+const EV_KEEP_ON_REASON_MARKER = 'EV keep-on active'
 
 // Types for notifications
 type NotificationSettings = {
@@ -53,6 +60,7 @@ type ExecutorStatus = {
         water_kw: number
         discharge_kw: number
         ev_charging_kw: number
+        ev_keep_on?: Record<string, boolean>
         soc_target: number
         soc_projected: number
         mode_intent?: string | null
@@ -217,12 +225,7 @@ const executorApi = {
             if (!r.ok) throw new Error(`Notifications update failed: ${r.status}`)
             return r.json()
         },
-        test: async () => {
-            const r = await fetch('api/executor/notifications/test', { method: 'POST' })
-            const data = await r.json()
-            if (!r.ok) throw new Error(data.error || `Test failed: ${r.status}`)
-            return data
-        },
+        test: () => Api.executor.testNotification(),
     },
     config: {
         get: async (): Promise<EntityConfig> => {
@@ -467,6 +470,7 @@ export default function Executor() {
 
     // Initial data load
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- initial-load spinner; must not move into fetchAll or it would flash on every background poll
         setLoading(true)
         fetchAll()
         const interval = setInterval(fetchAll, 30000) // Keep status polling as backup
@@ -836,8 +840,31 @@ export default function Executor() {
                 </Card>
             </div>
 
+            {/* Load Balancer Status */}
+            <LoadBalancerStatusCard />
+
             {/* Execution History */}
             <Card className="p-4 md:p-5 flex-1 flex flex-col overflow-hidden">
+                {/* Recording-policy explainer: a sparse history is a quiet system, not a dead one */}
+                <div
+                    data-testid="history-explainer"
+                    className="mb-3 rounded-lg border border-line/20 bg-surface2/30 px-3 py-2 text-[10px] text-muted"
+                >
+                    {status?.last_run_at ? (
+                        <>
+                            Last executor tick {formatTime(status.last_run_at)} —{' '}
+                            <span className={status.last_run_status === 'success' ? 'text-good' : 'text-bad'}>
+                                {String(status.last_run_status ?? 'unknown')}
+                            </span>
+                            {status.last_action ? `: ${String(status.last_action)}` : ''}
+                            {'. '}
+                        </>
+                    ) : (
+                        'No executor tick recorded yet. '
+                    )}
+                    Only changes (mode, dispatched actions, overrides, load-balancer transitions) plus one heartbeat per
+                    15-minute slot are recorded — most ticks produce no row by design.
+                </div>
                 <div className="flex items-center justify-between mb-4">
                     <div className="flex flex-col md:flex-row md:items-center gap-4">
                         <div className="flex items-center gap-2">
@@ -992,11 +1019,22 @@ export default function Executor() {
                                                 <span>💧 Heating</span>
                                             </div>
                                         )}
-                                        {(status.current_slot_plan.ev_charging_kw ?? 0) > 0 && (
+                                        {(status.current_slot_plan.ev_charging_kw ?? 0) > 0.1 && (
                                             <div className="flex items-center gap-1 text-purple-400 bg-purple-400/20 px-1.5 py-0.5 rounded w-fit">
                                                 <span>🔌 EV</span>
                                             </div>
                                         )}
+                                        {(status.current_slot_plan.ev_charging_kw ?? 0) <= 0.1 &&
+                                            Object.values(status.current_slot_plan.ev_keep_on ?? {}).some(
+                                                (active) => active,
+                                            ) && (
+                                                <div
+                                                    className="flex items-center gap-1 text-purple-400 bg-purple-400/20 px-1.5 py-0.5 rounded w-fit"
+                                                    title="Charger switch held on after target — car draws only what it needs"
+                                                >
+                                                    <span>🔌 EV standby</span>
+                                                </div>
+                                            )}
                                         {status.current_slot_plan.soc_target > 0 && (
                                             <div className="flex items-center gap-1 text-muted">
                                                 <span>SoC→{status.current_slot_plan.soc_target}%</span>
@@ -1055,6 +1093,15 @@ export default function Executor() {
                                                     🔌 EV
                                                 </span>
                                             )}
+                                            {(record.ev_charging_kw ?? 0) === 0 &&
+                                                record.override_reason?.includes(EV_KEEP_ON_REASON_MARKER) && (
+                                                    <span
+                                                        className="text-[9px] text-purple-400 bg-purple-400/20 px-1.5 py-0.5 rounded"
+                                                        title="Charger switch held on after target — car draws only what it needs"
+                                                    >
+                                                        🔌 EV standby
+                                                    </span>
+                                                )}
                                         </div>
                                         <div className="flex items-center gap-2">
                                             {record.override_active ? (

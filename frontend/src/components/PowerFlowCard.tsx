@@ -7,14 +7,13 @@
  */
 
 import { useMemo, useState, useCallback, useEffect } from 'react'
-import { motion } from 'framer-motion'
 import { NODE_REGISTRY, type PowerFlowData } from './PowerFlowRegistry'
+import type { ConfigResponse } from '../lib/api'
 import { Plug } from 'lucide-react'
 
 interface PowerFlowCardProps {
     data: PowerFlowData
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- config is dynamic nested object from backend
-    systemConfig?: any
+    systemConfig?: ConfigResponse | null
 }
 
 interface Entity {
@@ -45,7 +44,7 @@ const TOP_ORDER = ['solar', 'battery', 'grid'] as const
 const BOT_ORDER = ['house', 'water', 'ev'] as const
 
 const W = 400,
-    H = 160
+    H = 180
 const PAD_X = 12
 const SPAN = W - 2 * PAD_X
 const B_W = 40,
@@ -53,7 +52,8 @@ const B_W = 40,
     B_SIZE = 10,
     B_R = 4
 const CORNER_R = 6
-const BUS_Y = H / 2
+// Anchored independently of H so the extra bottom whitespace doesn't shift the bus/rows.
+const BUS_Y = 80
 const TOP_CY = 32,
     BOT_CY = 128
 
@@ -61,48 +61,41 @@ const TOP_CY = 32,
 // PURE HELPERS (module-level — no closure over component state)
 // =============================================================================
 
-function cxFor(idx: number, count: number) {
+// eslint-disable-next-line react-refresh/only-export-components -- pure helper, tested directly
+export function cxFor(idx: number, count: number) {
     return PAD_X + (SPAN * (idx + 0.5)) / count
 }
 
-function exitYFor(row: 'top' | 'bot') {
+// eslint-disable-next-line react-refresh/only-export-components -- pure helper, tested directly
+export function exitYFor(row: 'top' | 'bot') {
     return row === 'top' ? TOP_CY + B_H : BOT_CY - B_H
 }
 
-function toPathD(pts: { x: number; y: number }[]): string {
+// eslint-disable-next-line react-refresh/only-export-components -- pure helper, tested directly
+export function toPathD(pts: { x: number; y: number }[]): string {
     if (!pts.length) return ''
     return pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')
 }
 
-function samplePath(pts: { x: number; y: number }[], n: number) {
-    const segs: number[] = []
-    let total = 0
-    for (let i = 1; i < pts.length; i++) {
-        const d = Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y)
-        segs.push(d)
-        total += d
-    }
-    if (total === 0) return pts.map((p, i) => ({ ...p, t: i / Math.max(pts.length - 1, 1) }))
-    return Array.from({ length: n + 1 }, (_, k) => {
-        const t = k / n
-        const target = t * total
-        let traveled = 0
-        for (let i = 0; i < segs.length; i++) {
-            if (traveled + segs[i] >= target || i === segs.length - 1) {
-                const segT = segs[i] > 0 ? Math.min((target - traveled) / segs[i], 1) : 0
-                return {
-                    x: pts[i].x + (pts[i + 1].x - pts[i].x) * segT,
-                    y: pts[i].y + (pts[i + 1].y - pts[i].y) * segT,
-                    t,
-                }
+// eslint-disable-next-line react-refresh/only-export-components -- pure helper, tested directly
+export function computeEnabledNodes(configMap: Record<string, unknown> | null, data: PowerFlowData) {
+    if (!configMap) return NODE_REGISTRY.filter((n) => !n.configKey || ['solar', 'battery', 'water'].includes(n.id))
+    return NODE_REGISTRY.filter((node) => {
+        if (node.configKey) {
+            const val = configMap[node.configKey]
+            if (val !== undefined) {
+                if (val === false) return false
+            } else {
+                if (!['solar', 'battery', 'water'].includes(node.id)) return false
             }
-            traveled += segs[i]
         }
-        return { ...pts[pts.length - 1], t: 1 }
+        if (node.shouldRender) return node.shouldRender(data, configMap)
+        return true
     })
 }
 
-function partitionFlow(data: PowerFlowData, enabledIds: Set<string>): { sources: Entity[]; loads: Entity[] } {
+// eslint-disable-next-line react-refresh/only-export-components -- pure helper, tested directly
+export function partitionFlow(data: PowerFlowData, enabledIds: Set<string>): { sources: Entity[]; loads: Entity[] } {
     const sources: Entity[] = []
     const loads: Entity[] = []
 
@@ -127,7 +120,7 @@ function partitionFlow(data: PowerFlowData, enabledIds: Set<string>): { sources:
 }
 
 // =============================================================================
-// FLOW DOTS
+// FLOW DOTS — CSS offset-path animation (GPU-composited, no SMIL)
 // =============================================================================
 
 function FlowDots({
@@ -143,27 +136,23 @@ function FlowDots({
 }) {
     const speed = Math.min(power * 0.2, 1.5)
     const duration = Math.max(2.8 - speed, 0.7)
-    const samples = useMemo(() => samplePath(waypoints, 24), [waypoints])
-    const kfCx = samples.map((p) => p.x)
-    const kfCy = samples.map((p) => p.y)
-    const kfTimes = samples.map((p) => p.t)
-    const kfOp = kfTimes.map((t) => (t < 0.07 ? t / 0.07 : t > 0.93 ? (1 - t) / 0.07 : 0.88))
+    const pathD = toPathD(waypoints)
 
     return (
         <>
             {Array.from({ length: dotCount }, (_, i) => (
-                <motion.circle
+                <circle
                     key={i}
                     r={3}
                     fill={color}
-                    animate={{ cx: kfCx, cy: kfCy, opacity: kfOp }}
-                    transition={{
-                        duration,
-                        repeat: Infinity,
-                        delay: (i / dotCount) * duration,
-                        ease: 'linear',
-                        times: kfTimes,
-                    }}
+                    className="flow-dot"
+                    style={
+                        {
+                            offsetPath: `path('${pathD}')`,
+                            '--flow-dur': `${duration}s`,
+                            '--flow-delay': `${-(i / dotCount) * duration}s`,
+                        } as React.CSSProperties
+                    }
                 />
             ))}
         </>
@@ -249,15 +238,15 @@ export default function PowerFlowCard({ data, systemConfig }: PowerFlowCardProps
     // Config-based node visibility
     const configMap = useMemo(() => {
         if (!systemConfig || typeof systemConfig !== 'object') return null
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic config flattening
-        const map: Record<string, any> = {}
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const flatten = (obj: any, prefix = '') => {
+        const map: Record<string, unknown> = {}
+        const flatten = (obj: unknown, prefix = '') => {
             if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
-                for (const k in obj) {
+                const record = obj as Record<string, unknown>
+                for (const k in record) {
                     const path = prefix ? `${prefix}.${k}` : k
-                    if (typeof obj[k] === 'object' && !Array.isArray(obj[k])) flatten(obj[k], path)
-                    else map[path] = obj[k]
+                    const val = record[k]
+                    if (typeof val === 'object' && !Array.isArray(val)) flatten(val, path)
+                    else map[path] = val
                 }
             }
         }
@@ -265,21 +254,7 @@ export default function PowerFlowCard({ data, systemConfig }: PowerFlowCardProps
         return map
     }, [systemConfig])
 
-    const enabledNodes = useMemo(() => {
-        if (!configMap) return NODE_REGISTRY.filter((n) => !n.configKey || ['solar', 'battery', 'water'].includes(n.id))
-        return NODE_REGISTRY.filter((node) => {
-            if (node.configKey) {
-                const val = configMap[node.configKey]
-                if (val !== undefined) {
-                    if (val === false) return false
-                } else {
-                    if (!['solar', 'battery', 'water'].includes(node.id)) return false
-                }
-            }
-            if (node.shouldRender) return node.shouldRender(data, configMap)
-            return true
-        })
-    }, [configMap, data])
+    const enabledNodes = useMemo(() => computeEnabledNodes(configMap, data), [configMap, data])
 
     const enabledIds = useMemo(() => new Set(enabledNodes.map((n) => n.id)), [enabledNodes])
 
@@ -491,13 +466,7 @@ export default function PowerFlowCard({ data, systemConfig }: PowerFlowCardProps
 
     return (
         <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-full block mx-auto" preserveAspectRatio="xMidYMid meet">
-            <defs>
-                <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
-                    <path d="M 20 0 L 0 0 0 20" fill="none" stroke="rgb(var(--color-line))" strokeWidth="1.5" />
-                </pattern>
-            </defs>
             <rect x="-4000" y="-4000" width="10000" height="10000" fill={SURFACE} />
-            <rect x="-4000" y="-4000" width="10000" height="10000" fill="url(#grid)" opacity="0.6" />
             {pairPaths.map((p, i) => (
                 <path
                     key={`trace-${i}`}
@@ -508,9 +477,9 @@ export default function PowerFlowCard({ data, systemConfig }: PowerFlowCardProps
                     fill="none"
                 />
             ))}
-            {pairPaths.map((p, i) => (
+            {pairPaths.map((p) => (
                 <FlowDots
-                    key={`dots-${i}`}
+                    key={`${p.src.id}-${p.load.id}`}
                     waypoints={p.pts}
                     color={p.src.color}
                     power={p.kw}

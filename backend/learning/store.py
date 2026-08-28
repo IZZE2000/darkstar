@@ -1,8 +1,9 @@
+import json
 import logging
 from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, cast as type_cast
 
 import pandas as pd
 from sqlalchemy import Integer, case, cast, desc, func, select, text
@@ -112,15 +113,54 @@ class LearningStore:
                 await session.execute(stmt)
             await session.commit()
 
-    async def store_slot_observations(self, observations_df: pd.DataFrame) -> None:
+    async def store_slot_observations(
+        self, observations_df: pd.DataFrame, authoritative: bool = True
+    ) -> None:
         """Store slot observations in database using Async SQLAlchemy."""
         if observations_df.empty:
             return
 
         async with self.AsyncSession() as session:
-            records = observations_df.to_dict("records")
+            records = type_cast("list[dict[str, Any]]", observations_df.to_dict("records"))
 
             for record in records:
+                source = "recorder" if authoritative else "backfill"
+
+                def has_measurement(key: str, current_record: dict[str, Any] = record) -> bool:
+                    return key in current_record and not pd.isna(current_record.get(key))
+
+                def measured_float(key: str, current_record: dict[str, Any] = record) -> float:
+                    if not has_measurement(key):
+                        return 0.0
+                    return float(current_record[key])
+
+                def quality_flags(
+                    current_record: dict[str, Any] = record, current_source: str = source
+                ) -> str:
+                    # quality_flags is a JSON object; today the recorder only sets
+                    # "source". A separate "exclude": true key (added out-of-band by
+                    # scripts/flag_january_bad_slots.py, never by this writer) marks a
+                    # row as bad for ML training — see ml/train.py's exclusion filter.
+                    # It must be preserved, not overwritten, whenever this key merges in.
+                    raw_flags = current_record.get("quality_flags", "{}")
+                    flags: dict[str, Any]
+                    if isinstance(raw_flags, str):
+                        try:
+                            parsed: Any = json.loads(raw_flags)
+                            flags = (
+                                type_cast("dict[str, Any]", parsed)
+                                if isinstance(parsed, dict)
+                                else {}
+                            )
+                        except json.JSONDecodeError:
+                            flags = {}
+                    elif isinstance(raw_flags, dict):
+                        flags = type_cast("dict[str, Any]", raw_flags)
+                    else:
+                        flags = {}
+                    flags["source"] = current_source
+                    return json.dumps(flags, sort_keys=True)
+
                 slot_start_raw: Any = record.get("slot_start")
                 slot_end_raw: Any = record.get("slot_end")
 
@@ -143,49 +183,49 @@ class LearningStore:
                 stmt = sqlite_insert(SlotObservation).values(
                     slot_start=slot_start,
                     slot_end=slot_end,
-                    import_kwh=float(record.get("import_kwh", 0.0) or 0.0),
-                    export_kwh=float(record.get("export_kwh", 0.0) or 0.0),
-                    pv_kwh=float(record.get("pv_kwh", 0.0) or 0.0),
-                    load_kwh=float(record.get("load_kwh", 0.0) or 0.0),
-                    water_kwh=float(record.get("water_kwh", 0.0) or 0.0),
-                    ev_charging_kwh=float(record.get("ev_charging_kwh", 0.0) or 0.0),
+                    import_kwh=measured_float("import_kwh"),
+                    export_kwh=measured_float("export_kwh"),
+                    pv_kwh=measured_float("pv_kwh"),
+                    load_kwh=measured_float("load_kwh"),
+                    water_kwh=measured_float("water_kwh"),
+                    ev_charging_kwh=measured_float("ev_charging_kwh"),
                     batt_charge_kwh=record.get("batt_charge_kwh"),
                     batt_discharge_kwh=record.get("batt_discharge_kwh"),
                     soc_start_percent=record.get("soc_start_percent"),
                     soc_end_percent=record.get("soc_end_percent"),
                     import_price_sek_kwh=record.get("import_price_sek_kwh"),
                     export_price_sek_kwh=record.get("export_price_sek_kwh"),
-                    quality_flags=record.get("quality_flags", "{}"),
+                    quality_flags=quality_flags(),
+                )
+
+                def energy_update(key: str, column: Any, current_stmt: Any = stmt) -> Any:
+                    incoming = getattr(current_stmt.excluded, column.name)
+                    if not has_measurement(key):
+                        return column
+                    if authoritative:
+                        return incoming
+                    return case(
+                        (SlotObservation.quality_flags.like('%"source": "recorder"%'), column),
+                        else_=incoming,
+                    )
+
+                quality_flags_update = (
+                    stmt.excluded.quality_flags
+                    if authoritative
+                    else func.coalesce(SlotObservation.quality_flags, stmt.excluded.quality_flags)
                 )
 
                 stmt = stmt.on_conflict_do_update(
                     index_elements=["slot_start"],
                     set_={
                         "slot_end": func.coalesce(stmt.excluded.slot_end, SlotObservation.slot_end),
-                        # REV F35: Only overwrite energy if new value > 0 (prevents backfill from wiping data)
-                        "import_kwh": case(
-                            (stmt.excluded.import_kwh > 0, stmt.excluded.import_kwh),
-                            else_=SlotObservation.import_kwh,
-                        ),
-                        "export_kwh": case(
-                            (stmt.excluded.export_kwh > 0, stmt.excluded.export_kwh),
-                            else_=SlotObservation.export_kwh,
-                        ),
-                        "pv_kwh": case(
-                            (stmt.excluded.pv_kwh > 0, stmt.excluded.pv_kwh),
-                            else_=SlotObservation.pv_kwh,
-                        ),
-                        "load_kwh": case(
-                            (stmt.excluded.load_kwh > 0, stmt.excluded.load_kwh),
-                            else_=SlotObservation.load_kwh,
-                        ),
-                        "water_kwh": case(
-                            (stmt.excluded.water_kwh > 0, stmt.excluded.water_kwh),
-                            else_=SlotObservation.water_kwh,
-                        ),
-                        "ev_charging_kwh": case(
-                            (stmt.excluded.ev_charging_kwh > 0, stmt.excluded.ev_charging_kwh),
-                            else_=SlotObservation.ev_charging_kwh,
+                        "import_kwh": energy_update("import_kwh", SlotObservation.import_kwh),
+                        "export_kwh": energy_update("export_kwh", SlotObservation.export_kwh),
+                        "pv_kwh": energy_update("pv_kwh", SlotObservation.pv_kwh),
+                        "load_kwh": energy_update("load_kwh", SlotObservation.load_kwh),
+                        "water_kwh": energy_update("water_kwh", SlotObservation.water_kwh),
+                        "ev_charging_kwh": energy_update(
+                            "ev_charging_kwh", SlotObservation.ev_charging_kwh
                         ),
                         "batt_charge_kwh": func.coalesce(
                             stmt.excluded.batt_charge_kwh, SlotObservation.batt_charge_kwh
@@ -205,7 +245,7 @@ class LearningStore:
                         "export_price_sek_kwh": func.coalesce(
                             stmt.excluded.export_price_sek_kwh, SlotObservation.export_price_sek_kwh
                         ),
-                        "quality_flags": stmt.excluded.quality_flags,
+                        "quality_flags": quality_flags_update,
                     },
                 )
                 await session.execute(stmt)
@@ -218,13 +258,19 @@ class LearningStore:
 
         async with self.AsyncSession() as session:
             for forecast in forecasts:
-                slot_start = forecast.get("slot_start")
-                if slot_start is None:
+                slot_start_value: Any = forecast.get("slot_start") or forecast.get("start_time")
+                if slot_start_value is None:
                     continue
+                if isinstance(slot_start_value, datetime | pd.Timestamp):
+                    slot_start = slot_start_value.astimezone(self.timezone).isoformat()
+                else:
+                    slot_start_ts = type_cast("pd.Timestamp", pd.to_datetime(slot_start_value))
+                    slot_start = slot_start_ts.astimezone(self.timezone).isoformat()
 
                 stmt = sqlite_insert(SlotForecast).values(
                     slot_start=slot_start,
                     pv_forecast_kwh=float(forecast.get("pv_forecast_kwh", 0.0) or 0.0),
+                    openmeteo_pv_forecast_kwh=forecast.get("openmeteo_pv_forecast_kwh"),
                     load_forecast_kwh=float(forecast.get("load_forecast_kwh", 0.0) or 0.0),
                     pv_p10=forecast.get("pv_p10"),
                     pv_p90=forecast.get("pv_p90"),
@@ -245,6 +291,10 @@ class LearningStore:
                     index_elements=["slot_start", "forecast_version"],
                     set_={
                         "pv_forecast_kwh": stmt.excluded.pv_forecast_kwh,
+                        "openmeteo_pv_forecast_kwh": func.coalesce(
+                            stmt.excluded.openmeteo_pv_forecast_kwh,
+                            SlotForecast.openmeteo_pv_forecast_kwh,
+                        ),
                         "load_forecast_kwh": stmt.excluded.load_forecast_kwh,
                         "pv_p10": stmt.excluded.pv_p10,
                         "pv_p90": stmt.excluded.pv_p90,
@@ -272,6 +322,8 @@ class LearningStore:
                 if not slot_start_raw:
                     continue
 
+                # slot_start is local ISO with offset (self.timezone), unlike
+                # created_at below (naive UTC) — compare only after converting to a common tz.
                 slot_start: str
                 if isinstance(slot_start_raw, datetime | pd.Timestamp):
                     slot_start = slot_start_raw.astimezone(self.timezone).isoformat()
@@ -311,6 +363,9 @@ class LearningStore:
                         "planned_export_kwh": stmt.excluded.planned_export_kwh,
                         "planned_water_heating_kwh": stmt.excluded.planned_water_heating_kwh,
                         "planned_cost_sek": stmt.excluded.planned_cost_sek,
+                        # created_at is naive UTC (SQLite CURRENT_TIMESTAMP), unlike
+                        # slot_start above (local ISO with offset) — compare only after
+                        # converting to a common tz.
                         "created_at": func.current_timestamp(),
                     },
                 )
@@ -437,6 +492,130 @@ class LearningStore:
                 return state.value
             return None
 
+    async def count_paired_openmeteo_pv_days(self, days_back: int = 90) -> int:
+        """Count days with both actual PV and a stored Open-Meteo baseline."""
+        cutoff_date = (datetime.now(self.timezone) - timedelta(days=days_back)).date().isoformat()
+
+        async with self.AsyncSession() as session:
+            stmt = (
+                select(func.count(func.distinct(func.date(SlotObservation.slot_start))))
+                .join(
+                    SlotForecast,
+                    (SlotObservation.slot_start == SlotForecast.slot_start)
+                    & (SlotForecast.forecast_version == "aurora"),
+                )
+                .where(
+                    func.date(SlotObservation.slot_start) >= cutoff_date,
+                    SlotObservation.pv_kwh.is_not(None),
+                    SlotObservation.pv_kwh > 0.0,
+                    SlotForecast.openmeteo_pv_forecast_kwh.is_not(None),
+                )
+            )
+            result = await session.execute(stmt)
+            return int(result.scalar() or 0)
+
+    async def get_pv_observation_days(self, days_back: int = 28) -> set[str]:
+        """Return local dates with actual PV production in the recent history window."""
+        cutoff_date = (datetime.now(self.timezone) - timedelta(days=days_back)).date().isoformat()
+
+        async with self.AsyncSession() as session:
+            stmt = (
+                select(func.date(SlotObservation.slot_start))
+                .where(
+                    func.date(SlotObservation.slot_start) >= cutoff_date,
+                    SlotObservation.pv_kwh.is_not(None),
+                    SlotObservation.pv_kwh > 0.0,
+                )
+                .distinct()
+            )
+            result = await session.execute(stmt)
+            return {str(row[0]) for row in result.all() if row[0]}
+
+    async def get_pv_slots_missing_openmeteo_baseline(
+        self,
+        days_back: int = 28,
+        forecast_version: str = "aurora",
+    ) -> set[str]:
+        """Return actual-PV slots missing a stored Open-Meteo baseline."""
+        cutoff_date = (datetime.now(self.timezone) - timedelta(days=days_back)).date().isoformat()
+
+        async with self.AsyncSession() as session:
+            stmt = (
+                select(SlotObservation.slot_start)
+                .outerjoin(
+                    SlotForecast,
+                    (SlotObservation.slot_start == SlotForecast.slot_start)
+                    & (SlotForecast.forecast_version == forecast_version),
+                )
+                .where(
+                    func.date(SlotObservation.slot_start) >= cutoff_date,
+                    SlotObservation.pv_kwh.is_not(None),
+                    SlotObservation.pv_kwh > 0.0,
+                    SlotForecast.openmeteo_pv_forecast_kwh.is_(None),
+                )
+                .distinct()
+            )
+            result = await session.execute(stmt)
+            return {str(row[0]) for row in result.all() if row[0]}
+
+    async def store_openmeteo_pv_baselines(
+        self,
+        baselines: list[dict[str, Any]],
+        forecast_version: str = "aurora",
+    ) -> None:
+        """Store Open-Meteo PV baselines without overwriting final forecast values."""
+        rows = list(baselines or [])
+        if not rows:
+            return
+
+        async with self.AsyncSession() as session:
+            for row in rows:
+                slot_start_value: Any = row.get("slot_start") or row.get("start_time")
+                baseline = row.get("openmeteo_pv_forecast_kwh")
+                if slot_start_value is None or baseline is None:
+                    continue
+                if isinstance(slot_start_value, datetime | pd.Timestamp):
+                    slot_start = slot_start_value.astimezone(self.timezone).isoformat()
+                else:
+                    slot_start_ts = type_cast("pd.Timestamp", pd.to_datetime(slot_start_value))
+                    slot_start = slot_start_ts.astimezone(self.timezone).isoformat()
+
+                stmt = sqlite_insert(SlotForecast).values(
+                    slot_start=slot_start,
+                    forecast_version=forecast_version,
+                    openmeteo_pv_forecast_kwh=float(baseline),
+                )
+                stmt = stmt.on_conflict_do_update(
+                    index_elements=["slot_start", "forecast_version"],
+                    set_={"openmeteo_pv_forecast_kwh": stmt.excluded.openmeteo_pv_forecast_kwh},
+                )
+                await session.execute(stmt)
+            await session.commit()
+
+    async def get_openmeteo_pv_baselines_range(
+        self,
+        start: datetime,
+        end: datetime,
+        forecast_version: str = "aurora",
+    ) -> list[dict[str, Any]]:
+        """Get stored Open-Meteo PV baselines for a time range."""
+        start_iso = start.isoformat()
+        end_iso = end.isoformat()
+
+        async with self.AsyncSession() as session:
+            stmt = (
+                select(SlotForecast.slot_start, SlotForecast.openmeteo_pv_forecast_kwh)
+                .where(
+                    SlotForecast.slot_start >= start_iso,
+                    SlotForecast.slot_start < end_iso,
+                    SlotForecast.forecast_version == forecast_version,
+                    SlotForecast.openmeteo_pv_forecast_kwh.is_not(None),
+                )
+                .order_by(SlotForecast.slot_start.asc())
+            )
+            result = await session.execute(stmt)
+            return [row._asdict() for row in result.all()]  # type: ignore
+
     async def set_system_state(self, key: str, value: str) -> None:
         """
         Set or update a system state value using Async SQLAlchemy.
@@ -519,49 +698,6 @@ class LearningStore:
 
             # Return as DataFrame
             return pd.DataFrame([row._asdict() for row in rows])  # type: ignore
-
-    async def get_arbitrage_stats(self, days_back: int = 30) -> dict[str, Any]:
-        """
-        Calculate arbitrage statistics for ROI analysis using Async SQLAlchemy.
-        """
-        cutoff_date = (datetime.now(self.timezone) - timedelta(days=days_back)).date().isoformat()
-
-        async with self.AsyncSession() as session:
-            stmt = select(
-                func.sum(SlotObservation.export_kwh * SlotObservation.export_price_sek_kwh),
-                func.sum(SlotObservation.import_kwh * SlotObservation.import_price_sek_kwh),
-                func.sum(SlotObservation.batt_charge_kwh),
-                func.sum(SlotObservation.batt_discharge_kwh),
-            ).where(
-                func.date(SlotObservation.slot_start) >= cutoff_date,
-                SlotObservation.export_price_sek_kwh.is_not(None),
-                SlotObservation.import_price_sek_kwh.is_not(None),
-            )
-
-            result = await session.execute(stmt)
-            row = result.fetchone()
-
-            if row is None:
-                return {
-                    "total_export_revenue": 0.0,
-                    "total_import_cost": 0.0,
-                    "total_charge_kwh": 0.0,
-                    "total_discharge_kwh": 0.0,
-                    "net_profit": 0.0,
-                }
-
-            export_revenue = row[0] or 0.0
-            import_cost = row[1] or 0.0
-            total_charge = row[2] or 0.0
-            total_discharge = row[3] or 0.0
-
-            return {
-                "total_export_revenue": round(export_revenue, 2),
-                "total_import_cost": round(import_cost, 2),
-                "total_charge_kwh": round(total_charge, 2),
-                "total_discharge_kwh": round(total_discharge, 2),
-                "net_profit": round(export_revenue - import_cost, 2),
-            }
 
     async def get_capacity_estimate(self, days_back: int = 30) -> float | None:
         """
@@ -844,6 +980,7 @@ class LearningStore:
             stmt = select(
                 SlotForecast.slot_start,
                 SlotForecast.pv_forecast_kwh,
+                SlotForecast.openmeteo_pv_forecast_kwh,
                 SlotForecast.load_forecast_kwh,
                 SlotForecast.pv_p10,
                 SlotForecast.pv_p90,
@@ -936,7 +1073,11 @@ class LearningStore:
                 # Last entry for SoC (representing end of slot state as it progresses)
                 last_entry = entries[-1]
 
-                # Average power for the slot (ExecutionLog records every minute)
+                # Average planned power for the slot. universal-load-balancing 5.3:
+                # ExecutionLog is now throttled (one row per change or 15-min
+                # heartbeat, not one per tick) — averaging still holds because
+                # planned_*_kw is the slot's static schedule value, identical
+                # across every row within a slot regardless of row count.
                 avg_charge_kw = sum((e.planned_charge_kw or 0.0) for e in entries) / len(entries)
                 avg_discharge_kw = sum((e.planned_discharge_kw or 0.0) for e in entries) / len(
                     entries

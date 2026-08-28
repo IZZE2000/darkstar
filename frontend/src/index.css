@@ -669,6 +669,22 @@ body::before {
         }
     }
 
+    @keyframes settings-field-highlight-pulse {
+        0% {
+            background-color: rgb(var(--color-accent) / 0.35);
+        }
+
+        100% {
+            background-color: rgb(var(--color-accent) / 0);
+        }
+    }
+
+    /* Flat color overlay only — no box-shadow/border, so there's nothing that
+       can clip or mismatch against an ancestor's own rounded corner. */
+    .settings-field-highlight {
+        animation: settings-field-highlight-pulse 5s ease-out;
+    }
+
     @keyframes glow-pulse {
         0%,
         100% {
@@ -723,6 +739,33 @@ body::before {
     .power-flow-line {
         stroke-dasharray: 5 5;
         animation: flow 0.5s linear infinite;
+    }
+
+    @keyframes flow-dot {
+        0% {
+            offset-distance: 0%;
+            opacity: 0;
+        }
+
+        8% {
+            offset-distance: 0%;
+            opacity: 0.88;
+        }
+
+        92% {
+            offset-distance: 100%;
+            opacity: 0.88;
+        }
+
+        100% {
+            offset-distance: 100%;
+            opacity: 0;
+        }
+    }
+
+    .flow-dot {
+        offset-distance: 0%;
+        animation: flow-dot var(--flow-dur, 2s) linear var(--flow-delay, 0s) infinite;
     }
 
     /* ========== SYSTEM ALERT (sticky top) ========== */

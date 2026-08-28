@@ -6,6 +6,7 @@ with multiple water heaters and EV chargers.
 """
 
 import pandas as pd
+import pytest
 import pytz
 
 from planner.solver.adapter import (
@@ -193,9 +194,9 @@ class TestBuildEvChargerInputs:
                 "enabled": True,
                 "max_power_kw": 11.0,
                 "battery_capacity_kwh": 82.0,
-                "penalty_levels": [
-                    {"max_soc": 80.0, "penalty_sek": 0.5},
-                ],
+                "target_soc_percent": 80,
+                "ready_by": "07:00",
+                "repeat": "daily",
             }
         ]
         result = build_ev_charger_inputs(chargers)
@@ -204,8 +205,7 @@ class TestBuildEvChargerInputs:
         assert ev.id == "tesla"
         assert ev.max_power_kw == 11.0
         assert ev.battery_capacity_kwh == 82.0
-        assert len(ev.incentive_buckets) == 1
-        assert ev.incentive_buckets[0].threshold_soc == 80.0
+        assert ev.control_type == "binary"
 
     def test_unplugged_charger_included_in_config(self):
         """Unplugged chargers are included but flagged as not plugged in."""
@@ -249,6 +249,68 @@ class TestBuildEvChargerInputs:
         result = build_ev_charger_inputs(chargers)
         assert len(result) == 1
         assert result[0].id == "charger_b"
+
+    def test_min_power_kw_derived_for_3_phase_current_charger(self):
+        """3-phase 6A current charger derives ~4.18 kW (with 1% margin)."""
+        chargers = [
+            {
+                "id": "tesla",
+                "enabled": True,
+                "type": "current",
+                "max_power_kw": 11.0,
+                "min_current_a": 6,
+                "phases": [1, 2, 3],
+            }
+        ]
+        result = build_ev_charger_inputs(chargers)
+        expected = 6 * 230 * 3 / 1000 * 1.01
+        assert result[0].min_power_kw == pytest.approx(expected)
+        assert result[0].min_power_kw == pytest.approx(4.1814)
+
+    def test_min_power_kw_derived_for_1_phase_current_charger(self):
+        """1-phase 6A current charger derives ~1.39 kW (with 1% margin)."""
+        chargers = [
+            {
+                "id": "fiat",
+                "enabled": True,
+                "type": "current",
+                "max_power_kw": 7.4,
+                "min_current_a": 6,
+                "phases": [2],
+            }
+        ]
+        result = build_ev_charger_inputs(chargers)
+        expected = 6 * 230 * 1 / 1000 * 1.01
+        assert result[0].min_power_kw == pytest.approx(expected)
+        assert result[0].min_power_kw == pytest.approx(1.3938)
+
+    def test_min_power_kw_equals_max_power_kw_for_binary_charger(self):
+        """Binary chargers have no fractional range: min equals max."""
+        chargers = [
+            {
+                "id": "wallbox",
+                "enabled": True,
+                "type": "binary",
+                "max_power_kw": 11.0,
+            }
+        ]
+        result = build_ev_charger_inputs(chargers)
+        assert result[0].min_power_kw == 11.0
+
+    def test_min_power_kw_defaults_min_current_a_to_6(self):
+        """Missing min_current_a on a current charger defaults to 6A."""
+        chargers = [
+            {
+                "id": "tesla",
+                "enabled": True,
+                "type": "current",
+                "max_power_kw": 11.0,
+                "phases": [1, 2, 3],
+            }
+        ]
+        result = build_ev_charger_inputs(chargers)
+        expected = 6 * 230 * 3 / 1000 * 1.01
+        assert result[0].min_power_kw == pytest.approx(expected)
 
 
 class TestKeplerConfigWithARC15:
@@ -442,6 +504,64 @@ class TestKeplerConfigWithARC15:
         assert kepler_cfg.max_inverter_ac_kw is None, (
             f"max_inverter_ac_kw should be None when not configured, got {kepler_cfg.max_inverter_ac_kw}"
         )
+
+    def test_wear_cost_override_is_clamped_to_cycle_cost_floor(self):
+        config = {
+            "config_version": 2,
+            "system": {},
+            "battery": {
+                "capacity_kwh": 10.0,
+                "max_charge_a": 100.0,
+                "max_discharge_a": 100.0,
+                "nominal_voltage_v": 48.0,
+            },
+            "battery_economics": {"battery_cycle_cost_kwh": 0.2},
+        }
+
+        kepler_cfg = config_to_kepler_config(
+            config,
+            overrides={"kepler": {"wear_cost_sek_per_kwh": 0.0}},
+        )
+
+        assert kepler_cfg.wear_cost_sek_per_kwh == 0.2
+
+    def test_wear_cost_override_above_cycle_cost_floor_is_preserved(self):
+        config = {
+            "config_version": 2,
+            "system": {},
+            "battery": {
+                "capacity_kwh": 10.0,
+                "max_charge_a": 100.0,
+                "max_discharge_a": 100.0,
+                "nominal_voltage_v": 48.0,
+            },
+            "battery_economics": {"battery_cycle_cost_kwh": 0.2},
+        }
+
+        kepler_cfg = config_to_kepler_config(
+            config,
+            overrides={"kepler": {"wear_cost_sek_per_kwh": 1.0}},
+        )
+
+        assert kepler_cfg.wear_cost_sek_per_kwh == 1.0
+
+    def test_wear_cost_floor_applies_to_root_level_config_value(self):
+        config = {
+            "config_version": 2,
+            "system": {},
+            "battery": {
+                "capacity_kwh": 10.0,
+                "max_charge_a": 100.0,
+                "max_discharge_a": 100.0,
+                "nominal_voltage_v": 48.0,
+            },
+            "battery_economics": {"battery_cycle_cost_kwh": 0.2},
+            "wear_cost_sek_per_kwh": 0.05,
+        }
+
+        kepler_cfg = config_to_kepler_config(config)
+
+        assert kepler_cfg.wear_cost_sek_per_kwh >= config["battery_economics"]["battery_cycle_cost_kwh"]
 
 
 class TestKeplerInputConversion:

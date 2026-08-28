@@ -1,8 +1,5 @@
 # AGENTS.md - Darkstar Energy Manager
 
-> **IMPORTANT**: AGENTS.md and GEMINI.md must ALWAYS be kept 100% identical.
-> If updating one, you MUST update the other with the exact same content.
-
 ---
 
 ## Core Philosophy
@@ -25,8 +22,10 @@
 |------|---------|
 | Install dependencies | `uv pip install -r requirements.txt` |
 | Run dev environment | `pnpm run dev` |
-| Run single test | `uv run python -m pytest tests/test_file.py::test_name -v` |
+| Run single test | `UV_NO_SYNC=1 uv run python -m pytest tests/test_file.py::test_name -v` |
 | Run all checks | `./scripts/lint.sh` |
+
+Always prefix ad-hoc `uv run ...` commands with `UV_NO_SYNC=1` — without it, uv regenerates a meaningless `uv.lock` stub on every call (deps are pinned via `requirements*.txt`, not uv's lockfile; see `pyproject.toml` `[tool.uv] package = false`).
 
 ---
 
@@ -55,18 +54,13 @@ All UI changes must follow the design system:
 
 ## Boundaries
 
-### ✅ Always
-
-- Run `./scripts/lint.sh` before committing — fix any failures immediately
-- Update relevant documentation when making code changes
-- Commit after completing each task using the format below
-
 ### ⚠️ Ask First
 
 - Modifying files in `docs/` directory
 - Database schema changes
 - Adding new dependencies
 - Major architectural changes
+- Staging or committing git changes
 
 ### 🚫 Never
 
@@ -74,6 +68,7 @@ All UI changes must follow the design system:
 - Commit `config.yaml` — defaults go in `config.default.yaml`
 - Commit secrets or API keys
 - Modify `docs/RELEASE_NOTES.md` unless explicitly instructed
+- Push git changes unless explicitly instructed
 
 ---
 

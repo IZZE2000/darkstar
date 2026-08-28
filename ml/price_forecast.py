@@ -20,7 +20,7 @@ import lightgbm as lgb
 import numpy as np
 import pandas as pd
 import pytz
-from sqlalchemy import create_engine, func
+from sqlalchemy import create_engine, func, tuple_
 from sqlalchemy.orm import sessionmaker
 
 from backend.core.prices import calculate_import_export_prices
@@ -105,8 +105,10 @@ async def generate_price_forecasts(
     has_model = True
     for quantile, path in [("p10", model_p10_path), ("p50", model_path), ("p90", model_p90_path)]:
         if not path.exists():
-            print(
-                f"Price model for {quantile} not found at {path}, will continue with weather-only rows"
+            logger.warning(
+                "Price model for %s not found at %s, will continue with weather-only rows",
+                quantile,
+                path,
             )
             has_model = False
             break
@@ -118,9 +120,9 @@ async def generate_price_forecasts(
                 ("p90", model_p90_path),
             ]:
                 models[quantile_load] = lgb.Booster(model_file=str(path_load))
-                print(f"Loaded price model {quantile_load} from {path_load}")
+                logger.info("Loaded price model %s from %s", quantile_load, path_load)
         except Exception as exc:
-            print(f"Failed to load price model: {exc}")
+            logger.warning("Failed to load price model: %s", exc)
             has_model = False
 
     # Get timezone
@@ -132,140 +134,157 @@ async def generate_price_forecasts(
     all_forecasts: list[dict[str, Any]] = []
     issue_timestamp = now.isoformat()
 
-    for days_ahead in range(1, 8):  # D+1 to D+7
-        forecast_date = now.date() + timedelta(days=days_ahead)
-        start_time = datetime.combine(forecast_date, datetime.min.time())
-        start_time = tz.localize(start_time)
-        end_time = start_time + timedelta(days=1)
+    engine = create_engine(f"sqlite:///{db_path}")
+    SessionLocal = sessionmaker(bind=engine)
+    lag_session = SessionLocal()
 
-        # Get regional weather for this day
-        price_area = config.get("nordpool", {}).get("price_area", "SE4")
+    try:
+        for days_ahead in range(1, 8):  # D+1 to D+7
+            forecast_date = now.date() + timedelta(days=days_ahead)
+            start_time = datetime.combine(forecast_date, datetime.min.time())
+            start_time = tz.localize(start_time)
+            end_time = start_time + timedelta(days=1)
 
-        try:
-            regional_weather: dict[str, pd.DataFrame] = get_regional_weather(
-                start_time=start_time,
-                end_time=end_time,
-                price_area=price_area,
-                config=config,
-            )
+            # Get regional weather for this day
+            price_area = config.get("nordpool", {}).get("price_area", "SE4")
 
-            if not regional_weather:
-                print(f"Warning: No regional weather data for {forecast_date}")
-                continue
+            try:
+                regional_weather: dict[str, pd.DataFrame] = get_regional_weather(
+                    start_time=start_time,
+                    end_time=end_time,
+                    price_area=price_area,
+                    config=config,
+                )
 
-            # Compute wind index
-            wind_index = compute_regional_wind_index(regional_weather)
+                if not regional_weather:
+                    logger.warning("No regional weather data for %s", forecast_date)
+                    continue
 
-            if wind_index.empty:
-                print(f"Warning: Could not compute wind index for {forecast_date}")
-                continue
+                # Compute wind index
+                wind_index = compute_regional_wind_index(regional_weather)
 
-            # Build weather DataFrame with all features
-            weather_df = pd.DataFrame(index=wind_index.index)
-            weather_df["wind_index"] = wind_index
+                if wind_index.empty:
+                    logger.warning("Could not compute wind index for %s", forecast_date)
+                    continue
 
-            # Get temperature from first coordinate's weather data
-            for _coord_key, df in regional_weather.items():
-                df = df  # type: ignore[assignment]
-                if not df.empty and "temp_c" in df.columns:
-                    weather_df["temperature_c"] = df["temp_c"]
-                if not df.empty and "cloud_cover_pct" in df.columns:
-                    weather_df["cloud_cover"] = df["cloud_cover_pct"]
-                if not df.empty and "shortwave_radiation_w_m2" in df.columns:
-                    weather_df["radiation_wm2"] = df["shortwave_radiation_w_m2"]
-                break  # Use first coordinate's weather data
+                # Build weather DataFrame with all features
+                weather_df = pd.DataFrame(index=wind_index.index)
+                weather_df["wind_index"] = wind_index
 
-            # Build features for all slots
-            feature_df = build_price_features_batch(
-                start_time=start_time,
-                end_time=end_time,
-                days_ahead=days_ahead,
-                weather_df=weather_df,
-            )
+                # Get temperature from first coordinate's weather data
+                for _coord_key, df in regional_weather.items():
+                    df = df  # type: ignore[assignment]
+                    if not df.empty and "temp_c" in df.columns:
+                        weather_df["temperature_c"] = df["temp_c"]
+                    if not df.empty and "cloud_cover_pct" in df.columns:
+                        weather_df["cloud_cover"] = df["cloud_cover_pct"]
+                    if not df.empty and "shortwave_radiation_w_m2" in df.columns:
+                        weather_df["radiation_wm2"] = df["shortwave_radiation_w_m2"]
+                    break  # Use first coordinate's weather data
 
-            if feature_df.empty:
-                print(f"Warning: No features generated for {forecast_date}")
-                continue
+                # Build features for all slots
+                feature_df = build_price_features_batch(
+                    start_time=start_time,
+                    end_time=end_time,
+                    days_ahead=days_ahead,
+                    db_session=lag_session,
+                    weather_df=weather_df,
+                )
 
-            # Run inference (only if we have models)
-            if has_model:
-                feature_cols = [
-                    "hour",
-                    "day_of_week",
-                    "month",
-                    "is_weekend",
-                    "is_holiday",
-                    "days_ahead",
-                    "price_lag_1d",
-                    "price_lag_7d",
-                    "price_lag_24h_avg",
-                    "wind_index",
-                    "temperature_c",
-                    "cloud_cover",
-                    "radiation_wm2",
-                ]
+                if feature_df.empty:
+                    logger.warning("No features generated for %s", forecast_date)
+                    continue
 
-                X = feature_df[feature_cols]
-
-                # Predict with all three quantile models
-                pred_p10_raw = models["p10"].predict(X)  # type: ignore[assignment]
-                pred_p50_raw = models["p50"].predict(X)  # type: ignore[assignment]
-                pred_p90_raw = models["p90"].predict(X)  # type: ignore[assignment]
-
-                predictions_p10: np.ndarray = np.asarray(pred_p10_raw).flatten()
-                predictions_p50: np.ndarray = np.asarray(pred_p50_raw).flatten()
-                predictions_p90: np.ndarray = np.asarray(pred_p90_raw).flatten()
-            else:
-                predictions_p10 = np.array([])
-                predictions_p50 = np.array([])
-                predictions_p90 = np.array([])
-
-            # Create forecast records
-            for i, (idx, row) in enumerate(feature_df.iterrows()):
-                slot_start = pd.to_datetime(str(idx))
-
+                # Run inference (only if we have models)
                 if has_model:
-                    spot_p10 = float(predictions_p10[i])
-                    spot_p50 = float(predictions_p50[i])
-                    spot_p90 = float(predictions_p90[i])
+                    feature_cols = [
+                        "hour",
+                        "day_of_week",
+                        "month",
+                        "is_weekend",
+                        "is_holiday",
+                        "days_ahead",
+                        "price_lag_1d",
+                        "price_lag_7d",
+                        "price_lag_24h_avg",
+                        "wind_index",
+                        "temperature_c",
+                        "cloud_cover",
+                        "radiation_wm2",
+                    ]
+
+                    X = feature_df[feature_cols]
+
+                    # Predict with all three quantile models
+                    pred_p10_raw = models["p10"].predict(X)  # type: ignore[assignment]
+                    pred_p50_raw = models["p50"].predict(X)  # type: ignore[assignment]
+                    pred_p90_raw = models["p90"].predict(X)  # type: ignore[assignment]
+
+                    predictions_p10: np.ndarray = np.asarray(pred_p10_raw).flatten()
+                    predictions_p50: np.ndarray = np.asarray(pred_p50_raw).flatten()
+                    predictions_p90: np.ndarray = np.asarray(pred_p90_raw).flatten()
                 else:
-                    spot_p10 = None
-                    spot_p50 = None
-                    spot_p90 = None
+                    predictions_p10 = np.array([])
+                    predictions_p50 = np.array([])
+                    predictions_p90 = np.array([])
 
-                forecast_record: dict[str, Any] = {
-                    "slot_start": slot_start.isoformat(),
-                    "issue_timestamp": issue_timestamp,
-                    "days_ahead": days_ahead,
-                    "spot_p10": spot_p10,
-                    "spot_p50": spot_p50,
-                    "spot_p90": spot_p90,
-                    "wind_index": row.get("wind_index"),
-                    "temperature_c": row.get("temperature_c"),
-                    "cloud_cover": row.get("cloud_cover"),
-                    "radiation_wm2": row.get("radiation_wm2"),
-                }
+                # Create forecast records
+                for i, (idx, row) in enumerate(feature_df.iterrows()):
+                    slot_start = pd.to_datetime(str(idx))
 
-                all_forecasts.append(forecast_record)
+                    if has_model:
+                        spot_p10 = float(predictions_p10[i])
+                        spot_p50 = float(predictions_p50[i])
+                        spot_p90 = float(predictions_p90[i])
+                    else:
+                        spot_p10 = None
+                        spot_p50 = None
+                        spot_p90 = None
 
-        except Exception as exc:
-            print(f"Error generating forecast for {forecast_date}: {exc}")
-            continue
+                    forecast_record: dict[str, Any] = {
+                        "slot_start": slot_start.isoformat(),
+                        "issue_timestamp": issue_timestamp,
+                        "days_ahead": days_ahead,
+                        "spot_p10": spot_p10,
+                        "spot_p50": spot_p50,
+                        "spot_p90": spot_p90,
+                        "wind_index": row.get("wind_index"),
+                        "temperature_c": row.get("temperature_c"),
+                        "cloud_cover": row.get("cloud_cover"),
+                        "radiation_wm2": row.get("radiation_wm2"),
+                    }
+
+                    all_forecasts.append(forecast_record)
+
+            except Exception as exc:
+                logger.error("Error generating forecast for %s: %s", forecast_date, exc)
+                continue
+    finally:
+        lag_session.close()
 
     # Persist forecasts to database
     if all_forecasts:
         _persist_forecasts(all_forecasts, db_path)
-        print(f"Generated and persisted {len(all_forecasts)} price forecasts")
+        logger.info("Generated and persisted %d price forecasts", len(all_forecasts))
 
     return all_forecasts
 
 
 def _persist_forecasts(forecasts: list[dict[str, Any]], db_path: str) -> None:
     """Persist forecast records to the database."""
+    session = None
     try:
         engine = create_engine(f"sqlite:///{db_path}")
         SessionLocal = sessionmaker(bind=engine)
         session = SessionLocal()
+
+        forecast_pairs = {
+            (forecast["slot_start"], forecast["days_ahead"]) for forecast in forecasts
+        }
+        if forecast_pairs:
+            session.query(PriceForecast).filter(
+                tuple_(PriceForecast.slot_start, PriceForecast.days_ahead).in_(forecast_pairs)
+            ).delete(synchronize_session=False)
 
         for forecast in forecasts:
             pf = PriceForecast(
@@ -283,10 +302,14 @@ def _persist_forecasts(forecasts: list[dict[str, Any]], db_path: str) -> None:
             session.add(pf)
 
         session.commit()
-        session.close()
 
     except Exception as exc:
-        print(f"Error persisting forecasts: {exc}")
+        if session is not None:
+            session.rollback()
+        logger.error("Error persisting forecasts: %s", exc)
+    finally:
+        if session is not None:
+            session.close()
 
 
 def cleanup_price_forecast_duplicates(
@@ -415,7 +438,7 @@ async def get_price_forecasts_from_db(
         return list(best_by_slot.values())
 
     except Exception as exc:
-        print(f"Error retrieving forecasts: {exc}")
+        logger.error("Error retrieving forecasts: %s", exc)
         return []
 
 
@@ -490,5 +513,5 @@ async def get_d1_price_forecast_fallback(
         return valid_forecasts
 
     except Exception as exc:
-        print(f"Error getting D+1 fallback: {exc}")
+        logger.error("Error getting D+1 fallback: %s", exc)
         return None

@@ -3,45 +3,44 @@
 ## Purpose
 
 TBD - Defines how the system handles multiple EV chargers with independent per-device scheduling, MILP decision variables, deadline constraints, SoC tracking, and executor control.
-
 ## Requirements
-
 ### Requirement: Per-device EV config structure
-Each entry in `ev_chargers[]` SHALL support the following per-device fields: `departure_time` (string, HH:MM 24h format), `switch_entity` (string, HA entity ID), `replan_on_plugin` (boolean, default true), `replan_on_unplug` (boolean, default false). These fields replace the global `ev_departure_time` and `executor.ev_charger.*` settings.
+Each entry in `ev_chargers[]` SHALL support the following per-device fields: `switch_entity` (string, HA entity ID), `replan_on_plugin` (boolean, default true), `replan_on_unplug` (boolean, default false), plus hardware facts (`sensor`, `soc_sensor`, `plug_sensor`, `battery_capacity_kwh`, `max_power_kw`, `type`, current/phase entities) and the optional HA goal entities (`ha_ready_by_entity`, `ha_target_soc_entity`).
 
-The config loader SHALL use a YAML 1.2 parser (ruamel.yaml) to read `config.yaml`, ensuring that unquoted `HH:MM` values are read as strings, not as YAML 1.1 sexagesimal integers.
+**Goal fields do NOT live in config.** `target_soc_percent`, `ready_by`, `repeat`, `n_days`, `ready_by_date`, and `keep_on_after_target` SHALL NOT be read from `config.yaml`; goals are owned by `data/ev_multi_day_state.json` via the dashboard/API/HA sync (see `ev-schedule-api`). If any goal field (or the legacy `departure_time` / `penalty_levels`) is present in config, the loader SHALL log a deprecation warning naming the dashboard as the place to set goals, and SHALL ignore the value for scheduling. Malformed values in these ignored fields SHALL NOT crash config loading, and config validation (the settings save/validate path) SHALL NOT report errors or warnings for them — deprecated goal fields MUST never block a settings save, regardless of their value. Config migration strips these fields (see `config-migration`); the loader tolerance exists for configs that have not (yet) been migrated.
 
-The config loader SHALL accept `departure_time` as either a string in `"HH:MM"` format or an integer representing minutes since midnight (0–1439). If an integer is provided, it SHALL be converted to `"HH:MM"` format (e.g., `960` → `"16:00"`). Values outside 0–1439 SHALL be treated as invalid and result in `None`.
+**No `charge_priority` field.** Surplus-PV routing is owned by the existing `excess_pv.priority[]` list (see `excess-pv-priority-dispatch`).
 
-#### Scenario: Two chargers with different departure times
-- **WHEN** `ev_chargers` contains charger "tesla" with `departure_time: "07:00"` and charger "leaf" with `departure_time: "08:30"`
-- **THEN** the planner SHALL use 07:00 as the deadline for tesla and 08:30 as the deadline for leaf
+#### Scenario: Config with goal fields is tolerated but ignored
+- **WHEN** a charger config still contains `target_soc_percent: 90` or `departure_time: "07:00"`
+- **THEN** the loader SHALL emit a deprecation warning pointing to the dashboard
+- **AND** the value SHALL NOT influence scheduling (the state-file goal, or absence of one, governs)
 
-#### Scenario: Charger with no departure time
-- **WHEN** an enabled charger has `departure_time: ""` or the field is absent
-- **THEN** the planner SHALL not apply a deadline constraint for that charger (charge whenever cheapest)
+#### Scenario: Malformed legacy goal value does not crash
+- **WHEN** a charger config contains `target_soc_percent: "80%"`
+- **THEN** config loading SHALL succeed with a warning (no ValueError propagation)
+
+#### Scenario: Malformed legacy goal value does not block settings save
+- **WHEN** the stored config contains `departure_time: 1200` on a charger entry (invalid HH:MM)
+- **AND** the user saves any change from the settings page
+- **THEN** config validation SHALL NOT report an error or warning for `departure_time`
+- **AND** the save SHALL succeed
 
 #### Scenario: Charger with no switch entity
 - **WHEN** an enabled charger has `switch_entity: ""` or the field is absent
 - **THEN** the executor SHALL skip switch control for that charger (planning-only mode)
 
-#### Scenario: Departure time stored as YAML 1.1 sexagesimal integer
-- **WHEN** `departure_time` is read from config as the integer `960` (due to prior YAML 1.1 parsing of `16:00`)
-- **THEN** the config loader SHALL convert it to the string `"16:00"`
-- **AND** the planner SHALL use 16:00 as the deadline for that charger
-
-#### Scenario: Departure time stored as out-of-range integer
-- **WHEN** `departure_time` is read from config as an integer outside 0–1439 (e.g., `9999`)
-- **THEN** the config loader SHALL treat it as invalid and return `None`
-- **AND** the planner SHALL not apply a deadline constraint for that charger
-
-#### Scenario: Unquoted HH:MM in config.yaml read correctly
-- **WHEN** config.yaml contains `departure_time: 16:00` (unquoted)
-- **THEN** the YAML 1.2 parser SHALL read it as the string `"16:00"` (not the integer `960`)
-- **AND** the planner SHALL use 16:00 as the deadline
-
 ### Requirement: Per-device MILP decision variables
 The Kepler solver SHALL create separate decision variables for each plugged-in, enabled EV charger: a binary `ev_charge[d][t]` (charging on/off) and continuous `ev_energy[d][t]` (energy in kWh) indexed by device `d` and time slot `t`.
+
+The energy link SHALL depend on the charger's control type:
+
+- For `type: binary` chargers: `ev_energy[d][t] == ev_charge[d][t] × max_power_kw × slot_h` (full power or off, unchanged).
+- For `type: current` chargers: `min_power_kw × slot_h × ev_charge[d][t] <= ev_energy[d][t] <= max_power_kw × slot_h × ev_charge[d][t]` (semi-continuous: when on, any power between the charger's minimum and maximum; when off, zero).
+
+`min_power_kw` SHALL be derived from the charger's configured `min_current_a` and phase count (`min_current_a × 230 V × phases / 1000`), never hardcoded, and SHALL include a small upward margin (~1%) so the executor's floor-based kW→amps conversion never rounds a planned minimum below `min_current_a`. Fractional planning SHALL always apply to `type: current` chargers — there is no opt-out setting.
+
+The binary `ev_charge[d][t]` SHALL continue to drive discharge blocking (`any_ev_charging`), surplus-charging exclusivity, and all other on/off-gated constraints for both charger types.
 
 #### Scenario: Two plugged-in chargers get independent variables
 - **WHEN** two enabled chargers are both plugged in
@@ -54,8 +53,37 @@ The Kepler solver SHALL create separate decision variables for each plugged-in, 
 - **AND** no energy demand from that charger SHALL appear in the energy balance
 
 #### Scenario: Single charger behaves identically to current system
-- **WHEN** only one enabled charger is plugged in
+- **WHEN** only one enabled `type: binary` charger is plugged in
 - **THEN** the solver output SHALL be equivalent to the current single-EV model
+
+#### Scenario: Current-type charger is planned at fractional power
+- **WHEN** a `type: current` charger (max 11 kW, min_current_a 6, 3 phases) needs 2.6 kWh before a deadline spanning many cheap slots
+- **THEN** the solver MAY schedule slots at less than full power (e.g. ~4.2 kW), each at or above the derived `min_power_kw`
+- **AND** the total scheduled energy SHALL meet the requirement without full-power-or-nothing rounding
+
+#### Scenario: Current-type charger never planned below its minimum amps
+- **WHEN** the solver schedules any nonzero energy for a `type: current` charger in a slot
+- **THEN** the implied power SHALL be at least the derived `min_power_kw`
+- **AND** the executor's `planned_kw_to_amps` conversion of that power SHALL yield an amp setpoint `>= min_current_a` (no pause caused by planner rounding)
+
+#### Scenario: Binary charger keeps full-power-or-off planning
+- **WHEN** a `type: binary` charger is scheduled in a slot
+- **THEN** the planned energy for that slot SHALL equal exactly `max_power_kw × slot_h`
+
+#### Scenario: Fractional charging still blocks battery discharge
+- **WHEN** a `type: current` charger is planned at partial power in slot t
+- **THEN** `any_ev_charging[t]` SHALL be 1 and battery discharge SHALL be blocked in slot t (source isolation unchanged)
+
+### Requirement: Active goal that yields zero scheduled energy logs a warning
+When a charger has an active goal (`required_kwh > 0` with a resolved deadline) and the solver returns a schedule with zero total planned energy for that charger, the pipeline SHALL log a WARNING that names the charger, the required kWh, the per-day quota split, and the minimum schedulable chunk — an active goal SHALL never silently convert entirely to shortfall.
+
+#### Scenario: Infeasible goal is loudly reported
+- **WHEN** a charger's goal cannot be scheduled at all (e.g. quota/feasibility interaction) and the solve completes
+- **THEN** a WARNING SHALL be logged containing the charger ID, required kWh, quota-by-day values, and min chunk kWh
+
+#### Scenario: Scheduled goal logs no warning
+- **WHEN** a charger's goal results in any nonzero scheduled energy
+- **THEN** no zero-scheduled WARNING SHALL be logged for that charger
 
 ### Requirement: Per-device deadline constraints
 The solver SHALL enforce a per-device deadline constraint: for each charger with a deadline, `ev_energy[d][t] == 0` for all slots where the slot end time exceeds that charger's deadline.
@@ -64,17 +92,6 @@ The solver SHALL enforce a per-device deadline constraint: for each charger with
 - **WHEN** charger A has deadline 07:00 and charger B has deadline 09:00
 - **THEN** charger A SHALL have zero charging in all slots ending after 07:00
 - **AND** charger B MAY still charge in slots between 07:00 and 09:00
-
-### Requirement: Per-device SoC and incentive bucket constraints
-The solver SHALL track per-device incentive buckets based on each charger's `battery_capacity_kwh`, current `soc_percent`, and `penalty_levels`. Each charger's total energy charged SHALL equal the sum of its bucket allocations.
-
-#### Scenario: Two chargers with different SoC levels
-- **WHEN** charger A is at 20% SoC (high incentive to charge) and charger B is at 80% SoC (low incentive)
-- **THEN** the solver SHALL prioritize charging charger A over charger B when grid import is constrained
-
-#### Scenario: Charger with no penalty levels uses default bucket
-- **WHEN** a charger has empty `penalty_levels`
-- **THEN** the solver SHALL create a single bucket covering 0-100% SoC with zero penalty (charge whenever cost-effective)
 
 ### Requirement: Per-device discharge blocking
 The solver SHALL enforce discharge blocking when ANY charger is charging: `discharge[t] <= (1 - any_ev_charging[t]) * M` where `any_ev_charging[t]` is 1 if any charger is active in slot t.
@@ -110,16 +127,20 @@ The schedule output SHALL include a per-device `ev_chargers` dict in each slot, 
 - **AND** `ev_charging_kw` SHALL be `0.0`
 
 ### Requirement: Per-device executor control loop
-The executor SHALL iterate over all enabled chargers with a `switch_entity` configured. For each charger, the executor SHALL independently decide whether to turn the switch on or off based on that charger's entry in the schedule's `ev_chargers` dict.
+The executor SHALL iterate over all enabled chargers with a control entity configured (`switch_entity` for `type: binary`, `current_entity` for `type: current`). For each binary charger, the executor SHALL independently decide whether to turn the switch on or off based on that charger's entry in the schedule's `ev_chargers` dict. For each current-type charger, the executor SHALL compute an ampere setpoint from that charger's planned kW (subject to load-balancer capping when enabled) and write it to the `current_entity`.
 
 #### Scenario: Two chargers controlled independently
 - **WHEN** the schedule has charger A at 11 kW and charger B at 0 kW in the current slot
-- **THEN** the executor SHALL turn ON charger A's switch entity
-- **AND** the executor SHALL turn OFF (or leave off) charger B's switch entity
+- **THEN** the executor SHALL turn ON charger A's switch entity (binary) or write its ampere setpoint (current)
+- **AND** the executor SHALL turn OFF (or leave off) charger B
 
 #### Scenario: Charger not in schedule is left off
-- **WHEN** a charger has a switch entity but no entry in the current slot's `ev_chargers` dict
-- **THEN** the executor SHALL leave that charger's switch in its current state (default: off)
+- **WHEN** a charger has a control entity but no entry in the current slot's `ev_chargers` dict
+- **THEN** the executor SHALL leave that charger in its current state (default: off)
+
+#### Scenario: Binary and current chargers coexist
+- **WHEN** one enabled charger is `type: binary` and another is `type: current`, both scheduled
+- **THEN** each SHALL be actuated via its own mechanism in the same tick
 
 ### Requirement: Per-device executor state tracking
 The executor SHALL maintain independent state per charger: charging active flag, start time, slot end time, zero-power tick count, and failure notification flag. Each charger's safety timeout (30-minute max overrun) SHALL operate independently.
@@ -189,3 +210,44 @@ This requirement SHALL apply equally when `max_power_kw` is entirely absent from
 - **THEN** the charger is re-registered without a `disabled_reason`
 - **AND** the corresponding `EV_MISSING_POWER` HealthIssue is cleared
 - **AND** the next planner run includes the charger in `KeplerConfig.ev_chargers`
+
+### Requirement: Per-device ready-by resolution
+The pipeline SHALL resolve each charger's next ready-by datetime independently from its state-file goal (`ready_by` + `repeat`, `n_days` when `repeat: every_n_days`, or `ready_by_date` when `repeat: none`). Resolution SHALL use **one shared resolver function** used identically by the planner pipeline, the schedule API, and the HA sync — divergent duplicate implementations are a defect. The shared resolver SHALL default `n_days` to 1 and SHALL anchor the `every_n_days` cycle to the goal's `last_updated` date (deterministic and user-controllable by re-saving), not a hard-coded epoch. A missing/null `repeat` SHALL be treated as `daily` (never string-matched against `"none"`). This resolved datetime SHALL be used as the Kepler deadline for that charger. A charger past a non-repeating ready-by datetime SHALL have no deadline (inert).
+
+#### Scenario: Daily repeat resolves to the next occurrence
+- **WHEN** `ready_by: "07:00"`, `repeat: daily`, and the current time is 22:00
+- **THEN** the resolved deadline SHALL be tomorrow 07:00
+
+#### Scenario: Every-N-days repeat
+- **WHEN** `repeat: every_n_days`, `n_days: 3`, and the goal was last saved today
+- **THEN** the resolved deadline SHALL be the `ready_by` time 3 days from the save date, and every 3 days thereafter
+- **AND** the API, planner, and HA sync SHALL all resolve the same datetime
+
+#### Scenario: One-off date in the future
+- **WHEN** `repeat: none`, `ready_by_date: "2026-06-12"`, `ready_by: "07:00"`, and today is 2026-06-08
+- **THEN** the resolved deadline SHALL be 2026-06-12 07:00
+
+#### Scenario: One-off date already passed
+- **WHEN** `repeat: none` and the `ready_by_date`/`ready_by` datetime is in the past
+- **THEN** the charger SHALL have no deadline and SHALL NOT be scheduled
+
+#### Scenario: Null repeat from a legacy state file
+- **WHEN** a state-file goal has `repeat: null`
+- **THEN** the resolver SHALL treat it as `daily` (not as the one-off `"none"` mode)
+
+### Requirement: Per-device EV config supports optional HA goal entities
+Each entry in `ev_chargers[]` SHALL support two optional fields: `ha_ready_by_entity` (string, HA `input_datetime` entity ID) and `ha_target_soc_entity` (string, HA `input_number` entity ID). When configured, the backend SHALL sync the charger's ready-by time and target SoC bidirectionally with those entities, and HA values SHALL take priority over the dashboard value when set. (The core goal fields — `target_soc_percent`, `ready_by`, `repeat`, `keep_on_after_target` — are defined by the `per-device-ev-scheduling` change in Module 4. **No `charge_priority`** — surplus ordering is owned by `excess_pv.priority[]`.)
+
+#### Scenario: Charger with HA goal entities configured
+- **WHEN** a charger has `ha_ready_by_entity: "input_datetime.ev_ready_by"` and `ha_target_soc_entity: "input_number.ev_target_soc"`
+- **THEN** the config loader SHALL store both entity IDs
+- **AND** the backend SHALL subscribe to state changes for both
+
+#### Scenario: Charger without HA goal entities
+- **WHEN** a charger has neither field (or they are empty/null)
+- **THEN** no HA subscription SHALL be created for the goal
+- **AND** the charger SHALL operate using the dashboard-managed goal only
+
+#### Scenario: HA value overrides the dashboard value
+- **WHEN** both an HA goal entity and a dashboard-set value exist for the same field
+- **THEN** the HA value SHALL take precedence (mirroring the vacation-mode override)

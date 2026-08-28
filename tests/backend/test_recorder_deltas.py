@@ -122,6 +122,110 @@ class TestRecorderStateStore:
             result = store.get_last_timestamp("nonexistent")
             assert result is None
 
+    def test_single_live_recorder_prevents_second_zero_delta_from_becoming_stored(self):
+        """Spec: Single Live Recorder Instance - duplicate shared-state cycles zero real data."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_file = Path(tmpdir) / "recorder_state.json"
+            previous = datetime(2026, 6, 16, 10, 15, 0)
+            slot_time = datetime(2026, 6, 16, 10, 30, 0)
+
+            first_recorder = RecorderStateStore(state_file)
+            first_recorder._state = {
+                "pv_total": {"value": 100.0, "timestamp": previous.isoformat()}
+            }
+            first_recorder.save()
+
+            first_delta, first_valid = first_recorder.get_delta("pv_total", 100.45, slot_time)
+
+            second_recorder = RecorderStateStore(state_file)
+            second_recorder.load()
+            second_delta, second_valid = second_recorder.get_delta("pv_total", 100.45, slot_time)
+
+            # A duplicate process sharing data/recorder_state.json computes zero for the same slot.
+            assert first_delta == pytest.approx(0.45)
+            assert first_valid is True
+            assert second_delta == pytest.approx(0.0)
+            assert second_valid is True
+
+            stored_pv_kwh = first_delta
+            assert stored_pv_kwh != second_delta
+
+
+class TestRecorderMeterDeltaCeiling:
+    """Test suite for the plausibility ceiling on cumulative meter deltas."""
+
+    def test_implausible_spike_rejected(self):
+        """A delta above the ceiling is rejected, not recorded."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_file = Path(tmpdir) / "state.json"
+            store = RecorderStateStore(state_file, max_meter_delta_kwh=50.0)
+            store.load()
+
+            now = datetime(2024, 1, 1, 12, 0, 0)
+            store.get_delta("pv_total", 100.0, now)
+
+            later = datetime(2024, 1, 1, 12, 15, 0)
+            delta, is_valid = store.get_delta("pv_total", 600.0, later)  # +500 kWh spike
+
+            assert delta is None
+            assert is_valid is False
+            # Baseline still advances to the current reading
+            assert store._state["pv_total"]["value"] == 600.0
+
+    def test_spike_then_normal_reading_no_double_count(self):
+        """After a rejected spike, the next normal reading computes a correct delta."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_file = Path(tmpdir) / "state.json"
+            store = RecorderStateStore(state_file, max_meter_delta_kwh=50.0)
+            store.load()
+
+            t0 = datetime(2024, 1, 1, 12, 0, 0)
+            store.get_delta("pv_total", 100.0, t0)
+
+            t1 = datetime(2024, 1, 1, 12, 15, 0)
+            spike_delta, spike_valid = store.get_delta("pv_total", 600.0, t1)
+            assert spike_delta is None
+            assert spike_valid is False
+
+            t2 = datetime(2024, 1, 1, 12, 30, 0)
+            next_delta, next_valid = store.get_delta("pv_total", 601.5, t2)
+
+            # Delta computed from the advanced baseline (600.0), not the pre-spike value
+            assert next_delta == pytest.approx(1.5)
+            assert next_valid is True
+
+    def test_delta_within_ceiling_unaffected(self):
+        """A normal delta within the ceiling is returned unchanged."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_file = Path(tmpdir) / "state.json"
+            store = RecorderStateStore(state_file, max_meter_delta_kwh=50.0)
+            store.load()
+
+            now = datetime(2024, 1, 1, 12, 0, 0)
+            store.get_delta("pv_total", 100.0, now)
+
+            later = datetime(2024, 1, 1, 12, 15, 0)
+            delta, is_valid = store.get_delta("pv_total", 140.0, later)
+
+            assert delta == 40.0
+            assert is_valid is True
+
+    def test_default_ceiling_is_50_kwh(self):
+        """Default ceiling applies when not explicitly configured."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_file = Path(tmpdir) / "state.json"
+            store = RecorderStateStore(state_file)
+            store.load()
+
+            now = datetime(2024, 1, 1, 12, 0, 0)
+            store.get_delta("pv_total", 100.0, now)
+
+            later = datetime(2024, 1, 1, 12, 15, 0)
+            delta, is_valid = store.get_delta("pv_total", 151.0, later)  # +51 kWh, over default
+
+            assert delta is None
+            assert is_valid is False
+
 
 class TestRecorderDeltaLogic:
     """Test suite for recorder delta-based calculation logic."""
@@ -147,6 +251,72 @@ class TestRecorderDeltaLogic:
             "water_heaters": [{"enabled": True, "sensor": "sensor.water_power"}],
             "ev_chargers": [],
         }
+
+    @pytest.mark.asyncio
+    async def test_records_just_finished_slot_and_aligns_history_window(self):
+        tz = pytz.timezone("Europe/Stockholm")
+        fixed_now = tz.localize(datetime(2024, 1, 1, 12, 33, 4))
+        expected_slot_start = tz.localize(datetime(2024, 1, 1, 12, 15, 0))
+        expected_slot_end = tz.localize(datetime(2024, 1, 1, 12, 30, 0))
+
+        class FixedDateTime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                if tz is None:
+                    return fixed_now.replace(tzinfo=None)
+                return fixed_now.astimezone(tz)
+
+        config = {
+            "timezone": "Europe/Stockholm",
+            "learning": {"sqlite_path": ":memory:"},
+            "input_sensors": {
+                "pv_power": "sensor.pv_power",
+                "load_power": "sensor.load_power",
+                "grid_power": "sensor.grid_power",
+                "battery_power": "sensor.battery_power",
+            },
+            "system": {"grid_meter_type": "net", "has_water_heater": True},
+            "water_heaters": [{"id": "wh1", "enabled": True, "sensor": "sensor.water_power"}],
+            "ev_chargers": [],
+        }
+
+        async def mock_sensor_kw(entity):
+            return {
+                "sensor.pv_power": 4.0,
+                "sensor.load_power": 6.0,
+                "sensor.grid_power": 2.0,
+                "sensor.battery_power": 0.0,
+                "sensor.water_power": 1.0,
+            }.get(entity, 0.0)
+
+        history_windows = []
+
+        async def mock_history(entity_id, start, end):
+            history_windows.append((entity_id, start, end))
+            return 0.25
+
+        with (
+            patch("backend.recorder.datetime", FixedDateTime),
+            patch("backend.recorder.get_ha_sensor_kw_normalized", side_effect=mock_sensor_kw),
+            patch("backend.recorder.get_ha_sensor_float", return_value=None),
+            patch("backend.recorder.get_ha_entity_state", return_value=None),
+            patch("backend.recorder.get_current_slot_prices", return_value=None),
+            patch("backend.recorder.get_energy_from_power_history", side_effect=mock_history),
+        ):
+            mock_store = MagicMock()
+            mock_store.get_system_state = AsyncMock(return_value=None)
+            mock_store.set_system_state = AsyncMock()
+            mock_store.store_slot_observations = AsyncMock()
+            mock_store.close = AsyncMock()
+
+            with patch("backend.recorder.LearningStore", return_value=mock_store):
+                await record_observation_from_current_state(config=config, state_store=RecorderStateStore())
+
+        df = mock_store.store_slot_observations.call_args[0][0]
+        record = df.iloc[0].to_dict()
+        assert record["slot_start"] == expected_slot_start
+        assert record["slot_end"] == expected_slot_end
+        assert history_windows == [("sensor.water_power", expected_slot_start, expected_slot_end)]
 
     @pytest.mark.asyncio
     async def test_uses_cumulative_sensors_when_available(self, mock_config):
@@ -418,6 +588,240 @@ class TestRecorderDeltaLogic:
                     # Should use cumulative deltas
                     assert record["import_kwh"] == pytest.approx(0.5, abs=0.01)
                     assert record["export_kwh"] == pytest.approx(0.25, abs=0.01)
+
+
+class TestBatteryCumulativeDelta:
+    """Spec: Delta-based Energy Calculation - battery charge/discharge cumulative sensors."""
+
+    @pytest.mark.asyncio
+    async def test_battery_cumulative_charge_and_discharge(self):
+        """Both battery cumulative sensors are used independently for their own delta."""
+        config = {
+            "timezone": "Europe/Stockholm",
+            "learning": {"sqlite_path": ":memory:"},
+            "input_sensors": {
+                "battery_power": "sensor.battery_power",
+                "battery_soc": "sensor.battery_soc",
+                "total_battery_charge": "sensor.battery_charge_total",
+                "total_battery_discharge": "sensor.battery_discharge_total",
+            },
+            "system": {"grid_meter_type": "net", "has_battery": True},
+            "water_heaters": [],
+            "ev_chargers": [],
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_file = Path(tmpdir) / "recorder_state.json"
+
+            state_store = RecorderStateStore(state_file)
+            state_store.load()
+            now = datetime.now(pytz.timezone("Europe/Stockholm"))
+            prev_time = now - timedelta(minutes=15)
+            state_store._state = {
+                "battery_charge_total": {"value": 200.0, "timestamp": prev_time.isoformat()},
+                "battery_discharge_total": {"value": 300.0, "timestamp": prev_time.isoformat()},
+            }
+            state_store.save()
+
+            async def mock_get_ha_sensor_kw_normalized(entity):
+                return 0.1  # irrelevant: cumulative sensors take precedence
+
+            async def mock_get_ha_sensor_float(entity):
+                if entity == "sensor.battery_soc":
+                    return 50.0
+                return None
+
+            async def mock_get_ha_entity_state(entity):
+                state_values = {
+                    "sensor.battery_charge_total": {
+                        "state": "201.5",  # +1.5 kWh
+                        "attributes": {"unit_of_measurement": "kWh"},
+                    },
+                    "sensor.battery_discharge_total": {
+                        "state": "300.75",  # +0.75 kWh
+                        "attributes": {"unit_of_measurement": "kWh"},
+                    },
+                }
+                return state_values.get(entity)
+
+            with (
+                patch(
+                    "backend.recorder.get_ha_sensor_kw_normalized",
+                    side_effect=mock_get_ha_sensor_kw_normalized,
+                ),
+                patch("backend.recorder.get_ha_sensor_float", side_effect=mock_get_ha_sensor_float),
+                patch("backend.recorder.get_ha_entity_state", side_effect=mock_get_ha_entity_state),
+                patch("backend.recorder.get_current_slot_prices", return_value=None),
+            ):
+                mock_store = MagicMock()
+                mock_store.get_system_state = AsyncMock(return_value=None)
+                mock_store.set_system_state = AsyncMock()
+                mock_store.store_slot_observations = AsyncMock()
+                mock_store.close = AsyncMock()
+
+                with patch("backend.recorder.LearningStore", return_value=mock_store):
+                    await record_observation_from_current_state(
+                        config=config, state_store=state_store
+                    )
+
+                    df = mock_store.store_slot_observations.call_args[0][0]
+                    record = df.iloc[0].to_dict()
+
+                    assert record["batt_charge_kwh"] == pytest.approx(1.5, abs=0.01)
+                    assert record["batt_discharge_kwh"] == pytest.approx(0.75, abs=0.01)
+
+    @pytest.mark.asyncio
+    async def test_battery_independent_fallback_when_one_side_unconfigured(self):
+        """Spec: Snapshot Fallback - one battery side missing does not force the other to snapshot."""
+        config = {
+            "timezone": "Europe/Stockholm",
+            "learning": {"sqlite_path": ":memory:"},
+            "input_sensors": {
+                "battery_power": "sensor.battery_power",
+                "battery_soc": "sensor.battery_soc",
+                "total_battery_charge": "sensor.battery_charge_total",
+                # total_battery_discharge intentionally not configured
+            },
+            "system": {"grid_meter_type": "net", "has_battery": True},
+            "water_heaters": [],
+            "ev_chargers": [],
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_file = Path(tmpdir) / "recorder_state.json"
+
+            state_store = RecorderStateStore(state_file)
+            state_store.load()
+            now = datetime.now(pytz.timezone("Europe/Stockholm"))
+            prev_time = now - timedelta(minutes=15)
+            state_store._state = {
+                "battery_charge_total": {"value": 200.0, "timestamp": prev_time.isoformat()},
+            }
+            state_store.save()
+
+            async def mock_get_ha_sensor_kw_normalized(entity):
+                if entity == "sensor.battery_power":
+                    return 2.0  # discharging at 2kW
+                return 0.0
+
+            async def mock_get_ha_sensor_float(entity):
+                if entity == "sensor.battery_soc":
+                    return 50.0
+                return None
+
+            async def mock_get_ha_entity_state(entity):
+                if entity == "sensor.battery_charge_total":
+                    return {"state": "200.3", "attributes": {"unit_of_measurement": "kWh"}}
+                return None
+
+            with (
+                patch(
+                    "backend.recorder.get_ha_sensor_kw_normalized",
+                    side_effect=mock_get_ha_sensor_kw_normalized,
+                ),
+                patch("backend.recorder.get_ha_sensor_float", side_effect=mock_get_ha_sensor_float),
+                patch("backend.recorder.get_ha_entity_state", side_effect=mock_get_ha_entity_state),
+                patch("backend.recorder.get_current_slot_prices", return_value=None),
+            ):
+                mock_store = MagicMock()
+                mock_store.get_system_state = AsyncMock(return_value=None)
+                mock_store.set_system_state = AsyncMock()
+                mock_store.store_slot_observations = AsyncMock()
+                mock_store.close = AsyncMock()
+
+                with patch("backend.recorder.LearningStore", return_value=mock_store):
+                    await record_observation_from_current_state(
+                        config=config, state_store=state_store
+                    )
+
+                    df = mock_store.store_slot_observations.call_args[0][0]
+                    record = df.iloc[0].to_dict()
+
+                    # Charge side: cumulative delta (0.3), even though snapshot would say 0.0
+                    assert record["batt_charge_kwh"] == pytest.approx(0.3, abs=0.01)
+                    # Discharge side: no cumulative sensor configured -> snapshot fallback
+                    assert record["batt_discharge_kwh"] == pytest.approx(0.5, abs=0.01)
+
+    @pytest.mark.asyncio
+    async def test_battery_meter_reset_falls_back_for_that_side_only(self):
+        """Design Decision 3: a meter reset on one battery side does not affect the other."""
+        config = {
+            "timezone": "Europe/Stockholm",
+            "learning": {"sqlite_path": ":memory:"},
+            "input_sensors": {
+                "battery_power": "sensor.battery_power",
+                "battery_soc": "sensor.battery_soc",
+                "total_battery_charge": "sensor.battery_charge_total",
+                "total_battery_discharge": "sensor.battery_discharge_total",
+            },
+            "system": {"grid_meter_type": "net", "has_battery": True},
+            "water_heaters": [],
+            "ev_chargers": [],
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_file = Path(tmpdir) / "recorder_state.json"
+
+            state_store = RecorderStateStore(state_file)
+            state_store.load()
+            now = datetime.now(pytz.timezone("Europe/Stockholm"))
+            prev_time = now - timedelta(minutes=15)
+            state_store._state = {
+                "battery_charge_total": {"value": 200.0, "timestamp": prev_time.isoformat()},
+                "battery_discharge_total": {"value": 500.0, "timestamp": prev_time.isoformat()},
+            }
+            state_store.save()
+
+            async def mock_get_ha_sensor_kw_normalized(entity):
+                if entity == "sensor.battery_power":
+                    return 1.0  # discharging at 1kW
+                return 0.0
+
+            async def mock_get_ha_sensor_float(entity):
+                if entity == "sensor.battery_soc":
+                    return 50.0
+                return None
+
+            async def mock_get_ha_entity_state(entity):
+                state_values = {
+                    "sensor.battery_charge_total": {
+                        "state": "200.2",  # +0.2 kWh, normal
+                        "attributes": {"unit_of_measurement": "kWh"},
+                    },
+                    "sensor.battery_discharge_total": {
+                        "state": "10.0",  # Reset from 500.0 to 10.0
+                        "attributes": {"unit_of_measurement": "kWh"},
+                    },
+                }
+                return state_values.get(entity)
+
+            with (
+                patch(
+                    "backend.recorder.get_ha_sensor_kw_normalized",
+                    side_effect=mock_get_ha_sensor_kw_normalized,
+                ),
+                patch("backend.recorder.get_ha_sensor_float", side_effect=mock_get_ha_sensor_float),
+                patch("backend.recorder.get_ha_entity_state", side_effect=mock_get_ha_entity_state),
+                patch("backend.recorder.get_current_slot_prices", return_value=None),
+            ):
+                mock_store = MagicMock()
+                mock_store.get_system_state = AsyncMock(return_value=None)
+                mock_store.set_system_state = AsyncMock()
+                mock_store.store_slot_observations = AsyncMock()
+                mock_store.close = AsyncMock()
+
+                with patch("backend.recorder.LearningStore", return_value=mock_store):
+                    await record_observation_from_current_state(
+                        config=config, state_store=state_store
+                    )
+
+                    df = mock_store.store_slot_observations.call_args[0][0]
+                    record = df.iloc[0].to_dict()
+
+                    # Charge side unaffected by discharge's reset
+                    assert record["batt_charge_kwh"] == pytest.approx(0.2, abs=0.01)
+                    # Discharge side falls back to power snapshot (1.0kW * 0.25h)
+                    assert record["batt_discharge_kwh"] == pytest.approx(0.25, abs=0.01)
 
 
 class TestStatePersistence:
@@ -1533,7 +1937,7 @@ class TestLoadIsolationFromDeferrableLoads:
                 }.get(entity)
 
             async def mock_history(entity_id, start, end):
-                return 0.7
+                return 0.75
 
             with (
                 patch(
@@ -1559,9 +1963,135 @@ class TestLoadIsolationFromDeferrableLoads:
                     df = mock_store.store_slot_observations.call_args[0][0]
                     record = df.iloc[0].to_dict()
 
-                    assert record["water_kwh"] == pytest.approx(0.7, abs=0.01)
-                    # Load 2.0 - water 0.7 = 1.3
-                    assert record["load_kwh"] == pytest.approx(1.3, abs=0.01)
+                    assert record["water_kwh"] == pytest.approx(0.75, abs=0.01)
+                    # Load 2.0 - water 0.75 = 1.25
+                    assert record["load_kwh"] == pytest.approx(1.25, abs=0.01)
+
+    @pytest.mark.asyncio
+    async def test_water_power_history_w_series_end_to_end(self, base_config):
+        """End-to-end: a raw-watt sensor series (unit only on the first state) flows
+        through the *real* get_energy_from_power_history and is recorded at the correct
+        magnitude (~0.78 kWh), not the ~780 kWh spike that the validation guard zeroes.
+
+        Unlike test_water_power_history_recording (which mocks the conversion result),
+        this exercises the recorder -> real conversion -> HTTP path so the first-state
+        W-unit propagation is verified through the recorder, closing that seam.
+        """
+        config = base_config.copy()
+        config["water_heaters"] = [{"id": "wh1", "sensor": "sensor.water_power", "enabled": True}]
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_file = Path(tmpdir) / "recorder_state.json"
+            state_store = RecorderStateStore(state_file)
+            state_store.load()
+            now = datetime.now(pytz.timezone("Europe/Stockholm"))
+            prev_time = now - timedelta(minutes=15)
+            state_store._state = {
+                "pv_total": {"value": 100.0, "timestamp": prev_time.isoformat()},
+                "load_total": {"value": 50.0, "timestamp": prev_time.isoformat()},
+            }
+            state_store.save()
+
+            async def mock_get_ha_sensor_kw_normalized(entity):
+                return {
+                    "sensor.pv_power": 5.0,
+                    "sensor.load_power": 5.0,
+                    "sensor.grid_power": 2.0,
+                    "sensor.battery_power": 0.0,
+                    "sensor.water_power": 3.0,
+                }.get(entity, 0.0)
+
+            async def mock_get_ha_sensor_float(entity):
+                if entity == "sensor.battery_soc":
+                    return 50.0
+                return None
+
+            async def mock_get_ha_entity_state(entity):
+                return {
+                    "sensor.total_pv_production": {
+                        "state": "101.25",
+                        "attributes": {"unit_of_measurement": "kWh"},
+                        "last_updated": now.isoformat(),
+                    },
+                    "sensor.total_load_consumption": {
+                        "state": "52.0",
+                        "attributes": {"unit_of_measurement": "kWh"},
+                        "last_updated": now.isoformat(),
+                    },
+                }.get(entity)
+
+            # Build the HA history response dynamically, anchored to the slot_start the
+            # recorder actually requests (embedded in the api_url), so the result is
+            # independent of wall-clock slot boundaries. Reproduces the real
+            # sensor.vvb_power series: unit "W" only on the first state, {} thereafter.
+            async def mock_http_get(api_url, headers=None, params=None, **kwargs):
+                slot_start = datetime.fromisoformat(api_url.rsplit("/", 1)[1])
+                states = [
+                    {
+                        "state": "3164",
+                        "last_changed": slot_start.isoformat(),
+                        "attributes": {"unit_of_measurement": "W"},
+                    },
+                    {
+                        "state": "3124",
+                        "last_changed": (slot_start + timedelta(minutes=5)).isoformat(),
+                        "attributes": {},
+                    },
+                    {
+                        "state": "3147",
+                        "last_changed": (slot_start + timedelta(minutes=10)).isoformat(),
+                        "attributes": {},
+                    },
+                    {
+                        "state": "0",
+                        "last_changed": (slot_start + timedelta(minutes=15)).isoformat(),
+                        "attributes": {},
+                    },
+                ]
+                response = MagicMock()
+                response.raise_for_status = MagicMock()
+                response.json.return_value = [states]
+                return response
+
+            with (
+                patch(
+                    "backend.recorder.get_ha_sensor_kw_normalized",
+                    side_effect=mock_get_ha_sensor_kw_normalized,
+                ),
+                patch("backend.recorder.get_ha_sensor_float", side_effect=mock_get_ha_sensor_float),
+                patch("backend.recorder.get_ha_entity_state", side_effect=mock_get_ha_entity_state),
+                patch("backend.recorder.get_current_slot_prices", return_value=None),
+                # NOTE: get_energy_from_power_history is intentionally NOT patched — the
+                # real conversion runs against the mocked HTTP layer below.
+                patch(
+                    "backend.core.ha_client.secrets.load_home_assistant_config",
+                    return_value={"url": "http://ha.local", "token": "tok"},
+                ),
+                patch("backend.core.ha_client.httpx.AsyncClient") as mock_client_cls,
+            ):
+                mock_client = AsyncMock()
+                mock_client.get = AsyncMock(side_effect=mock_http_get)
+                mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_client.__aexit__ = AsyncMock(return_value=False)
+                mock_client_cls.return_value = mock_client
+
+                mock_store = MagicMock()
+                mock_store.get_system_state = AsyncMock(return_value=None)
+                mock_store.set_system_state = AsyncMock()
+                mock_store.store_slot_observations = AsyncMock()
+                mock_store.close = AsyncMock()
+
+                with patch("backend.recorder.LearningStore", return_value=mock_store):
+                    await record_observation_from_current_state(
+                        config=config, state_store=state_store
+                    )
+
+                    df = mock_store.store_slot_observations.call_args[0][0]
+                    record = df.iloc[0].to_dict()
+
+                    # 3164/3124/3147 W held 5 min each -> ~0.786 kWh, NOT ~786 kWh.
+                    assert record["water_kwh"] == pytest.approx(0.786, abs=0.01)
+                    assert record["water_kwh"] < 4.0  # below the spike guard, not zeroed
 
     @pytest.mark.asyncio
     async def test_snapshot_fallback_when_history_returns_none(self, base_config):

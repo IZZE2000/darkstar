@@ -21,6 +21,7 @@ from backend.api.routers import (
     config,
     dashboard,
     energy,
+    ev,
     executor,
     forecast,
     ha,
@@ -60,7 +61,7 @@ async def lifespan(app: FastAPI):
 
         ensure_active_models()
     except Exception as e:
-        logger.error(f"❌ Model bootstrap failed: {e}")
+        logger.error(f"Model bootstrap failed: {e}")
 
     # 1. Container/Environment Debugging (Task 4)
     import os
@@ -89,11 +90,11 @@ async def lifespan(app: FastAPI):
     try:
         db_path = os.getenv("DB_PATH", "data/planner_learning.db")
         if not Path(db_path).exists():
-            logger.warning(f"⚠️  Database file not found at {db_path}. Migration may have skipped.")
+            logger.warning(f"Database file not found at {db_path}. Migration may have skipped.")
         else:
             logger.info(f"✅ Database found at {db_path}")
     except Exception as e:
-        logger.error(f"❌ Error during startup check: {e}")
+        logger.error(f"Error during startup check: {e}")
 
     loop = asyncio.get_running_loop()
     ws_manager.set_loop(loop)
@@ -108,10 +109,23 @@ async def lifespan(app: FastAPI):
 
     await recorder_service.start()
 
+    # Start runtime invariant monitors (stabilization-review-2, read-only)
+    try:
+        from backend.monitors import invariant_monitors
+
+        await invariant_monitors.start()
+    except Exception as e:
+        # fail-open: monitors must never block startup (design D4)
+        logger.error("Failed to start invariant monitors: %s", e)
+
     executor_instance = None
     try:
         executor_instance = get_executor_instance()
         if executor_instance:
+            from executor.config import check_mock_entities
+
+            check_mock_entities(executor_instance.config)
+
             if executor_instance.config.enabled:
                 executor_instance.start()
                 logger.info(
@@ -122,9 +136,9 @@ async def lifespan(app: FastAPI):
             else:
                 logger.info("⏸️  Executor initialized but disabled in config")
         else:
-            logger.warning("⚠️  Executor could not be initialized (check logs)")
+            logger.warning("Executor could not be initialized (check logs)")
     except Exception as e:
-        logger.error("❌ Failed to initialize executor: %s", e, exc_info=True)
+        logger.error("Failed to initialize executor: %s", e, exc_info=True)
         # Don't crash the app if executor fails - other services can still run
         executor_instance = None
 
@@ -144,6 +158,7 @@ async def lifespan(app: FastAPI):
         import pytz
 
         store = LearningStore(db_path, pytz.timezone(tz_name))
+        await store.ensure_wal_mode()
         app.state.learning_store = store
         logger.info(f"✅ LearningStore initialized (Async) at {db_path}")
 
@@ -153,7 +168,7 @@ async def lifespan(app: FastAPI):
         if deleted > 0:
             logger.info(f"🧹 Cleaned up {deleted} duplicate price forecast rows")
     except Exception as e:
-        logger.error(f"❌ Failed to initialize LearningStore: {e}")
+        logger.error(f"Failed to initialize LearningStore: {e}")
         # We can't easily fail here without breaking the app, but partial functionality might work?
         # For now, let's allow it but semantic routes will 500.
         app.state.learning_store = None
@@ -162,6 +177,22 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     logger.info("👋 Darkstar ASGI Server Shutting Down...")
+
+    # Close shared HA HTTP client
+    try:
+        from backend.core.ha_client import close_ha_http_client
+
+        await close_ha_http_client()
+    except Exception as e:
+        logger.error("Failed to close HA HTTP client: %s", e)
+
+    # Close backend-owned HA action clients (goal sync writes)
+    try:
+        from backend.core.ha_client import close_ha_action_clients
+
+        await close_ha_action_clients()
+    except Exception as e:
+        logger.error("Failed to close HA action clients: %s", e)
 
     # Close LearningStore
     if hasattr(app.state, "learning_store") and app.state.learning_store:
@@ -181,6 +212,13 @@ async def lifespan(app: FastAPI):
     from backend.services.recorder_service import recorder_service
 
     await recorder_service.stop()
+
+    try:
+        from backend.monitors import invariant_monitors
+
+        await invariant_monitors.stop()
+    except Exception as e:
+        logger.error("Failed to stop invariant monitors: %s", e)
 
     from backend.ha_socket import stop_ha_socket_client
 
@@ -273,6 +311,7 @@ def create_app() -> socketio.ASGIApp:
     app.include_router(ha.router_misc)
     app.include_router(energy.router)
     app.include_router(water.router)
+    app.include_router(ev.router)
     app.include_router(legacy.router)
     app.include_router(learning.router)
     app.include_router(loads.router)

@@ -100,6 +100,14 @@ export type ConfigResponse = {
         enable_llm?: boolean
         auto_fetch?: boolean
     }
+    forecasting?: {
+        active_forecast_version?: 'aurora' | 'baseline_7_day_avg' | string
+        aurora_load_enabled?: boolean
+        aurora_pv_enabled?: boolean
+        pv_residual_bound_fraction?: number
+        pv_ceiling_efficiency?: number
+        pv_personalization_ramp_days?: number
+    }
     ui?: {
         theme_accent_index?: number
         theme_mode?: 'light' | 'dark' | 'system'
@@ -127,8 +135,15 @@ export type ConfigResponse = {
         sensor: string
         type: 'variable' | 'constant'
         nominal_power_kw: number
-        penalty_levels?: { max_soc: number; penalty_sek: number }[]
     }[]
+    executor?: {
+        excess_pv?: {
+            priority?: { type: string; charger_id?: string }[]
+            custom_entity?: { power_kw?: number; [key: string]: unknown }
+            [key: string]: unknown
+        }
+        [key: string]: unknown
+    }
     [key: string]: unknown
 }
 export type ConfigSaveError = { field?: string; message: string }
@@ -149,6 +164,13 @@ export type HaAverageResponse = {
 export type LearningStatusResponse = {
     enabled?: boolean
     last_updated?: string
+    pv_personalization?: {
+        source?: string
+        paired_days?: number
+        ramp_days?: number
+        weight?: number
+        mode?: 'baseline' | 'personalized'
+    }
     metrics?: {
         completed_learning_runs?: number
         days_with_data?: number
@@ -321,6 +343,50 @@ export type ExecutorStatusResponse = {
     [key: string]: unknown
 }
 
+export type LoadBalancerEvStatus = {
+    charger_id: string
+    charger_name: string
+    setpoint_a: number | null
+    planned_target_a: number | null
+    state: string
+    reason: string
+    /** excess-pv-priority-dispatch 4.1: additive surplus-mode fields */
+    surplus_mode?: boolean
+    surplus_state?: string | null
+    surplus_reason?: string | null
+    phase_mode?: number | null
+    paused?: boolean
+}
+
+export type LoadBalancerShedStatus = {
+    load_id: string
+    device_type: string
+    shed: boolean
+    reason: string
+}
+
+export type LoadBalancerStatusResponse = {
+    enabled: boolean
+    state: 'disabled' | 'idle' | 'throttling' | 'shedding' | 'paused' | 'stale_fallback' | string
+    reason: string
+    main_fuse_a: number | null
+    phase_current_a: Record<string, number>
+    phase_headroom_a: Record<string, number>
+    resume_margin_percent?: number
+    /** Executor tick interval (s) — the balancer reacts and reports once per tick. */
+    tick_interval_s?: number
+    /** excess-pv-priority-dispatch 4.1: whole-house measured surplus (export - import), kW */
+    measured_surplus_kw?: number | null
+    ev: LoadBalancerEvStatus[]
+    shed: LoadBalancerShedStatus[]
+}
+
+/** One entry in load_balancing.give_way_order (top gives way first). */
+export type GiveWayOrderEntry = {
+    kind: 'charger' | 'shed'
+    id: string
+}
+
 export type ExecutorHealthResponse = {
     status: 'healthy' | 'error' | 'warning'
     is_running: boolean
@@ -376,6 +442,8 @@ export type EnergyRangeResponse = {
     grid_charge_cost_sek: number
     self_consumption_savings_sek: number
     net_cost_sek: number
+    battery_wear_cost_sek: number
+    net_cost_incl_wear_sek: number
     slot_count: number
     error?: string
 }
@@ -540,6 +608,23 @@ export type SystemHealthResponse = {
     }
 }
 
+export type MonitorStatus = {
+    running: boolean
+    healthy: boolean
+    last_cycle_at: string | null
+    last_error: string | null
+    invariants: Record<
+        string,
+        {
+            name: string
+            status: 'pass' | 'violation' | 'skipped'
+            detail: string
+            evaluated_at: string
+        }
+    >
+    active_violations: { invariant: string; first_detected_at: string; detail: string }[]
+}
+
 export type TrainingStatusResponse = {
     is_training: boolean
     lock_age_seconds: number | null
@@ -575,6 +660,36 @@ export type TrainingHistoryResponse = {
     }[]
     count: number
 }
+
+export type EVChargerState = {
+    id: string
+    name: string
+    plugged_in: boolean
+    soc_percent: number | null
+    power_kw: number | null
+    target_soc_percent: number | null
+    ready_by: string | null
+    repeat: string | null
+    ready_by_date: string | null
+    deadline: string | null
+    required_kwh: number | null
+    delivered_kwh: number | null
+    remaining_kwh: number | null
+    daily_quota_kwh: number | null
+    quota_schedule: Record<string, number> | null
+    keep_on_after_target: boolean
+    ha_ready_by_entity: string | null
+    ha_target_soc_entity: string | null
+    type: 'current' | 'binary'
+    n_days: number | null
+    status: 'on_track' | 'behind' | 'complete' | 'idle'
+    source: 'api' | 'ha' | null
+    externally_controlled: boolean
+    last_updated: string | null
+    last_planned_at: string | null
+}
+
+export type EVChargersResponse = EVChargerState[]
 
 async function getJSON<T>(path: string, method: 'GET' | 'POST' | 'DELETE' = 'GET', body?: unknown): Promise<T> {
     // Strip leading slash to make paths relative - works with base href for HA Ingress
@@ -633,7 +748,15 @@ export const Api = {
     haTest: (payload: { url: string; token: string }) =>
         getJSON<{ status?: string; success?: boolean; message: string }>('/api/ha/test', 'POST', payload),
     haEntities: () =>
-        getJSON<{ entities: { entity_id: string; friendly_name: string; domain: string }[] }>('/api/ha/entities'),
+        getJSON<{
+            entities: {
+                entity_id: string
+                friendly_name: string
+                domain: string
+                unit_of_measurement?: string
+                device_class?: string
+            }[]
+        }>('/api/ha/entities'),
     haServices: () => getJSON<{ services: string[] }>('/api/ha/services'),
     haEntityState: (entityId: string) =>
         getJSON<{ entity_id: string; state: string; attributes: Record<string, unknown> }>(
@@ -651,15 +774,6 @@ export const Api = {
     theme: () => getJSON<ThemeResponse>('/api/themes'),
     runPlanner: () => getJSON<{ status: string; message?: string }>('/api/run_planner', 'POST'),
     resetToOptimal: () => getJSON<{ status: string }>('/api/schedule/save', 'POST'),
-    simulate: async (payload: unknown): Promise<ScheduleResponse> => {
-        const response = await fetch('api/simulate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-        })
-        if (!response.ok) throw new Error('Simulation failed')
-        return response.json() as Promise<ScheduleResponse>
-    },
     getAdvice: async (): Promise<AdviceResponse> => {
         const response = await fetch('api/analyst/advice')
         if (!response.ok) throw new Error('Failed to fetch advice')
@@ -713,6 +827,9 @@ export const Api = {
             clear: () => getJSON<unknown>('/api/executor/quick-action', 'DELETE'),
         },
         health: () => getJSON<ExecutorHealthResponse>('/api/executor/health'),
+        loadBalancerStatus: () => getJSON<LoadBalancerStatusResponse>('/api/executor/load-balancer/status'),
+        testNotification: () =>
+            getJSON<{ status: string; message: string }>('/api/executor/notifications/test', 'POST'),
     },
     waterBoost: {
         status: () =>
@@ -743,6 +860,7 @@ export const Api = {
     // Log management
     logInfo: () => getJSON<LogInfoResponse>('/api/system/log-info'),
     systemHealth: () => getJSON<SystemHealthResponse>('/api/system/health'),
+    monitors: () => getJSON<MonitorStatus>('/api/system/monitors'),
     clearLogs: () => getJSON<{ status: string }>('/api/system/logs', 'DELETE'),
     // Load Disaggregation Debug (Rev ARC12)
     loadsDebug: () => getJSON<LoadsDebugResponse>('/api/loads/debug'),
@@ -757,6 +875,21 @@ export const Api = {
                 '/api/price-forecast' + (includeActuals ? '?include_actuals=true' : ''),
             ),
         priceForecastStatus: () => getJSON<PriceForecastStatusResponse>('/api/price-forecast/status'),
+    },
+    // EV Chargers (Module 5)
+    ev: {
+        chargers: () => getJSON<EVChargersResponse>('/api/ev/chargers'),
+        setSchedule: (
+            id: string,
+            body: {
+                target_soc_percent: number | null
+                ready_by?: string | null
+                repeat?: string | null
+                ready_by_date?: string | null
+                n_days?: number | null
+                keep_on_after_target?: boolean | null
+            },
+        ) => getJSON<EVChargerState>(`/api/ev/chargers/${id}/schedule`, 'POST', body),
     },
 }
 

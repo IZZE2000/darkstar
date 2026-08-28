@@ -3,6 +3,13 @@ name = "darkstar"
 version = "2.5.11-beta"
 requires-python = ">=3.12"
 
+[tool.uv]
+# Not a buildable/lockable package — deps are managed via requirements*.txt
+# (see design.md D1 in the dependency-upgrade-pass change). Without this, `uv
+# run`/`uv pip install` treat this as a uv project and keep regenerating a
+# meaningless single-package uv.lock stub.
+package = false
+
 [tool.ruff]
 # Same line length as previous Black config
 line-length = 100
@@ -20,6 +27,7 @@ exclude = [
     "reference",
     "backend/static",  # Built frontend assets
     "tests",  # Test files use pytest patterns not compatible with strict pyright
+    "typings",  # Hand-written .pyi stubs for untyped deps; pyright stubPath, not source
 ]
 
 [tool.ruff.lint]
@@ -33,6 +41,7 @@ select = [
     "C4",     # flake8-comprehensions
     "UP",     # pyupgrade
     "SIM",    # flake8-simplify
+    "T201",   # flake8-print
     "TCH",    # flake8-type-checking
     "PTH",    # flake8-use-pathlib
     "RUF",    # Ruff-specific rules
@@ -47,6 +56,18 @@ ignore = [
 # Allow autofix for all enabled rules
 fixable = ["ALL"]
 unfixable = []
+
+[tool.ruff.lint.per-file-ignores]
+"bin/**/*.py" = ["T201"]
+"backend/learning/reflex.py" = ["T201"]
+"ml/data_activator.py" = ["T201"]
+"ml/evaluate.py" = ["T201"]
+"ml/forward.py" = ["T201"]
+"ml/pipeline.py" = ["T201"]
+"ml/price_train.py" = ["T201"]
+"ml/train.py" = ["T201"]
+"ml/training_orchestrator.py" = ["T201"]
+"scripts/**/*.py" = ["T201"]
 
 [tool.ruff.lint.isort]
 # Import sorting compatible with previous conventions

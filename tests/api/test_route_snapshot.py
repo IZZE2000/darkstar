@@ -17,7 +17,10 @@ def app_client():
     app = create_app()
     fastapi_app = app.other_asgi_app if hasattr(app, "other_asgi_app") else app
     with (
-        patch("backend.main.LearningStore", return_value=MagicMock(close=AsyncMock())),
+        patch(
+            "backend.main.LearningStore",
+            return_value=MagicMock(ensure_wal_mode=AsyncMock(), close=AsyncMock()),
+        ),
         TestClient(fastapi_app),
     ):
         yield fastapi_app
@@ -38,14 +41,20 @@ def test_route_snapshot(app_client):
         "GET /api/energy/range",
         "GET /api/performance/data",
         "GET /api/ha-socket",
-        "POST /api/simulate",
     }
 
+    def collect(routes):
+        for route in routes:
+            if hasattr(route, "methods") and hasattr(route, "path"):
+                for method in route.methods:
+                    registered.add(f"{method} {route.path}")
+            elif hasattr(route, "original_router"):
+                # fastapi>=0.137 wraps some included routers instead of
+                # flattening their routes into the parent's route list.
+                collect(route.original_router.routes)
+
     registered = set()
-    for route in app_client.routes:
-        if hasattr(route, "methods") and hasattr(route, "path"):
-            for method in route.methods:
-                registered.add(f"{method} {route.path}")
+    collect(app_client.routes)
 
     for expected in expected_routes:
         assert expected in registered, f"Missing route: {expected}"

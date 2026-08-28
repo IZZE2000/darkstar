@@ -1,11 +1,8 @@
 import logging
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Any
 
-import httpx
 import pytz
-import yaml
 
 from backend.learning import get_learning_engine
 
@@ -31,18 +28,14 @@ class BackfillEngine:
         self.secrets = self._load_secrets()
 
     def _load_config(self, path: str) -> dict[str, Any]:
-        try:
-            with Path(path).open(encoding="utf-8") as f:
-                return yaml.safe_load(f) or {}
-        except FileNotFoundError:
-            return {}
+        from backend.core.secrets import load_yaml
+
+        return load_yaml(path) or {}
 
     def _load_secrets(self) -> dict[str, Any]:
-        try:
-            with Path("secrets.yaml").open(encoding="utf-8") as f:
-                return yaml.safe_load(f) or {}
-        except FileNotFoundError:
-            return {}
+        from backend.core.secrets import load_yaml
+
+        return load_yaml("secrets.yaml") or {}
 
     def _load_ha_config(self) -> dict[str, Any]:
         """Load HA config from secrets.yaml"""
@@ -75,10 +68,14 @@ class BackfillEngine:
         }
 
         try:
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                response = await client.get(api_url, headers=self._make_ha_headers(), params=params)
-                response.raise_for_status()
-                data = response.json()
+            from backend.core.ha_client import get_ha_http_client
+
+            client = get_ha_http_client()
+            response = await client.get(
+                api_url, headers=self._make_ha_headers(), params=params, timeout=60.0
+            )
+            response.raise_for_status()
+            data = response.json()
 
             if not data or not data[0]:
                 return []
@@ -148,6 +145,15 @@ class BackfillEngine:
                     if entity_id:
                         raw_map[entity_id] = canonical
 
+                for ev_charger in self.config.get("ev_chargers", []):
+                    if ev_charger.get("enabled", True) and ev_charger.get("sensor"):
+                        raw_map[str(ev_charger["sensor"])] = "ev_charging"
+
+                if self.config.get("system", {}).get("has_water_heater", True):
+                    for water_heater in self.config.get("water_heaters", []):
+                        if water_heater.get("enabled", True) and water_heater.get("sensor"):
+                            raw_map[str(water_heater["sensor"])] = "water"
+
             if not raw_map:
                 logger.warning(
                     "No sensors identified for backfill (sensor_map and input_sensors empty)."
@@ -155,15 +161,20 @@ class BackfillEngine:
                 return
 
             cumulative_data: dict[str, list[tuple[datetime, float]]] = {}
+            controllable_power_data: dict[str, list[tuple[datetime, float]]] = {}
             count = 0
             for entity_id_str, canonical_str in raw_map.items():
                 logger.info(f"Backfilling {canonical_str} ({entity_id_str})...")
                 history = await self._fetch_history(entity_id_str, start_time, now)
                 if history:
-                    cumulative_data[entity_id_str] = history
+                    self.engine.sensor_map[str(entity_id_str).lower()] = canonical_str
+                    if canonical_str in {"ev_charging", "water"}:
+                        controllable_power_data[entity_id_str] = history
+                    else:
+                        cumulative_data[entity_id_str] = history
                     count += len(history)
 
-            if not cumulative_data:
+            if not cumulative_data and not controllable_power_data:
                 logger.warning("No history data found for any sensors.")
                 return
 
@@ -172,7 +183,9 @@ class BackfillEngine:
             # 3. ETL to slots (CPU-bound, wrap in to_thread for 100% production grade)
             import asyncio
 
-            df = await asyncio.to_thread(self.engine.etl_cumulative_to_slots, cumulative_data)
+            df = await asyncio.to_thread(
+                self.engine.etl_cumulative_to_slots, cumulative_data, controllable_power_data
+            )
 
             if df.empty:
                 logger.warning("ETL produced empty DataFrame.")
@@ -181,7 +194,7 @@ class BackfillEngine:
             logger.info(f"Generated {len(df)} slots. Storing to DB...")
 
             # 4. Store
-            await self.engine.store_slot_observations(df)
+            await self.engine.store_slot_observations(df, authoritative=False)
             logger.info("Backfill complete.")
 
         except Exception as e:

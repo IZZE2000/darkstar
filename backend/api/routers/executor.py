@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import threading
 from pathlib import Path
@@ -90,6 +91,17 @@ async def get_status(executor: ExecutorDep) -> dict[str, Any]:
     Uses FastAPI Depends() for clean dependency injection (Rev ARC4).
     """
     return executor.get_status()
+
+
+@router.get(
+    "/api/executor/load-balancer/status",
+    summary="Get Load Balancer Status",
+    description="Returns the real-time per-phase load balancer status (universal-load-balancing 6.2).",
+)
+async def get_load_balancer_status(executor: ExecutorDep) -> dict[str, Any]:
+    """Return the latest load-balancer tick result (same shape as the
+    `load_balancing` key in the live-metrics WebSocket payload)."""
+    return executor.get_load_balancer_status()
 
 
 @router.post(
@@ -245,7 +257,8 @@ async def get_history(
         if success_only is not None:
             success = success_only.lower() in ("true", "1", "yes")
 
-        records = executor.history.get_history(
+        records = await asyncio.to_thread(
+            executor.history.get_history,
             limit=limit,
             offset=offset,
             slot_start=slot_start,
@@ -280,7 +293,8 @@ async def download_history(
         if success_only is not None:
             success = success_only.lower() in ("true", "1", "yes")
 
-        csv_data = executor.history.get_history_csv(
+        csv_data = await asyncio.to_thread(
+            executor.history.get_history_csv,
             start_date=start_date,
             end_date=end_date,
             success_only=success,
@@ -309,7 +323,7 @@ async def get_stats(days: int = 7) -> dict[str, Any]:
     executor = get_executor_instance()
     if not executor:
         return {}
-    return executor.get_stats(days=days)
+    return await asyncio.to_thread(executor.get_stats, days=days)
 
 
 @router.get(

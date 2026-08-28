@@ -27,6 +27,7 @@ def client():
 
     mock_store = MagicMock()
     mock_store.AsyncSession.return_value = mock_session_ctx
+    mock_store.ensure_wal_mode = AsyncMock()
     mock_store.close = AsyncMock()
 
     app = create_app()
@@ -164,10 +165,3 @@ def test_smoke_ha_socket(client):
     ):
         resp = client.get("/api/ha-socket")
     assert resp.status_code != 500
-
-
-def test_smoke_simulate(client):
-    resp = client.post("/api/simulate")
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data.get("status") in ("error", "success")

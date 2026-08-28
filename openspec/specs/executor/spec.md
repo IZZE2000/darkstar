@@ -22,12 +22,22 @@ The executor SHALL NOT crash when Home Assistant service calls fail or time out.
 ### Requirement: call_service uses retry-with-backoff
 `HAClient.call_service` SHALL use the same `_retry_with_backoff` mechanism as `get_state`, with 3 attempts and a 1-second base delay, treating `TimeoutError` and `aiohttp.ClientError` as retryable.
 
+#### Scenario: call_service retries a transient network error
+- **WHEN** `call_service` posts to the Home Assistant API and the session raises a retryable error (`TimeoutError` or `aiohttp.ClientError`)
+- **THEN** `_retry_with_backoff` retries the call up to 3 times with a 1-second base delay before giving up
+- **AND** if all attempts fail, `HACallError` is raised to the caller
+
 ### Requirement: Timeout handling is tested
 A unit test SHALL exist verifying that a `TimeoutError` raised by the HTTP session during `call_service` results in an `HACallError` being raised by the client.
 
+#### Scenario: Unit test verifies timeout raises HACallError
+- **WHEN** `tests/executor/test_executor_actions.py::test_call_service_timeout_raises_ha_call_error` runs with a mocked session that raises `TimeoutError` from `call_service`
+- **THEN** the test asserts `HACallError` is raised
+- **AND** the test asserts `exception_type` on the raised error is `"TimeoutError"`
+
 ### Requirement: Status API current_slot_plan includes mode_intent
 
-The `get_status()` method SHALL include a `mode_intent` field in the `current_slot_plan` object. This field SHALL be computed by running the Controller's `decide()` method with the current slot plan and current system state. The `current_slot_plan` object SHALL also include `ev_charging_kw` (aggregate across all chargers), `ev_charger_plans` (per-device dict), `discharge_kw`, and `water_heater_plans` from the slot plan.
+The `get_status()` method SHALL include a `mode_intent` field in the `current_slot_plan` object. This field SHALL be computed by running the Controller's `decide()` method with the current slot plan and current system state. The `current_slot_plan` object SHALL also include `ev_charging_kw` (aggregate across all chargers), `ev_charger_plans` (per-device dict), `ev_keep_on` (per-device keep-on flag dict, empty when no charger is in keep-on state), `discharge_kw`, and `water_heater_plans` from the slot plan.
 
 If the controller cannot produce a decision (e.g., system state unavailable, profile not loaded), `mode_intent` SHALL be `null`.
 
@@ -35,6 +45,10 @@ If the controller cannot produce a decision (e.g., system state unavailable, pro
 - **WHEN** the executor status is requested and the current slot has per-device EV plans
 - **THEN** `current_slot_plan.ev_charger_plans` SHALL contain a dict mapping charger ID to planned kW
 - **AND** `current_slot_plan.ev_charging_kw` SHALL be the sum across all chargers
+
+#### Scenario: Status API returns keep-on flags
+- **WHEN** the executor status is requested and the current slot has charger `ev1` in keep-on state
+- **THEN** `current_slot_plan.ev_keep_on` SHALL contain `{"ev1": true}`
 
 #### Scenario: Status API returns mode_intent for current slot
 - **WHEN** the executor status is requested and a current slot exists
@@ -49,6 +63,48 @@ If the controller cannot produce a decision (e.g., system state unavailable, pro
 #### Scenario: Status API includes per-device water heater plans
 - **WHEN** the executor status is requested and the current slot has per-device water heater plans
 - **THEN** `current_slot_plan.water_heater_plans` SHALL contain the per-device dict (e.g., `{"main_tank": 3.0, "upstairs_tank": 0.0}`)
+
+### Requirement: Keep-on flag drives charger-on decisions
+
+The executor SHALL treat a slot's per-charger keep-on flag (`ev_keep_on[charger_id] == true`) as an instruction to keep that charger's switch/relay ON even when the slot's planned power for the charger is 0. A single shared predicate (planned kW > 0.1 OR keep-on flag set) SHALL be used at every decision site that derives "this charger should be on" from the slot plan — the switch-close decision, the load balancer's planner-target derivation, and the phase-mode target selection — so the decision rule cannot diverge between sites.
+
+For current-type chargers in keep-on state with 0 planned kW, the load balancer's planner target SHALL be the charger's configured minimum current (the per-charger `min_current_a` config value, not a hardcoded constant), not a power-derived target, so the relay is held closed without misrepresenting demand; the load balancer MAY throttle or shed this target under fuse stress like any other EV demand.
+
+`SlotPlan` SHALL carry the per-charger keep-on flags parsed from the schedule's `ev_keep_on` field; schedules without the field SHALL parse as no-keep-on (empty flags) and behave exactly as before this change.
+
+#### Scenario: Binary charger switch closes on keep-on with zero planned power
+- **WHEN** the current slot has `ev_keep_on = {"ev1": true}` and `ev_charger_plans["ev1"] == 0`
+- **THEN** the executor SHALL command charger `ev1`'s switch ON
+
+#### Scenario: Current-type charger held at minimum current on keep-on
+- **WHEN** a current-type charger with `min_current_a: 8` is in keep-on state with 0 planned kW in the current slot
+- **THEN** the load balancer input SHALL carry 8 A (the configured `min_current_a`) as planner target
+- **AND** the charger's relay SHALL be commanded closed
+
+#### Scenario: Keep-on charger remains sheddable
+- **WHEN** a keep-on charger is held at minimum current and a phase overload occurs
+- **THEN** the load balancer MAY throttle or pause that charger following its normal rules
+
+#### Scenario: Schedule without keep-on field is unaffected
+- **WHEN** the executor parses a schedule slot with no `ev_keep_on` key
+- **THEN** the parsed `SlotPlan` SHALL carry empty keep-on flags
+- **AND** all charging decisions SHALL depend solely on planned power, as before
+
+### Requirement: Battery source isolation covers keep-on slots
+
+The executor's EV source-isolation rule (battery discharge blocked while EV charging is scheduled) SHALL also activate when any charger has the keep-on flag set in the current slot, even before any actual EV power draw is measured, so the house battery can never discharge into a keep-on vehicle during the window between switch-close and first measured draw.
+
+#### Scenario: Discharge blocked during keep-on before any measured draw
+- **WHEN** the current slot has a keep-on flag set for a charger and measured EV power is 0
+- **THEN** the executor SHALL apply the same discharge-blocking source isolation as for a slot with planned EV charging
+
+### Requirement: Keep-on is visible in tick reason text
+
+When the keep-on flag (rather than planned power) is what keeps a charger on, the executor's tick reason/log text SHALL mention keep-on and the affected charger ID(s), so execution history remains auditable without a schema change.
+
+#### Scenario: Reason text names keep-on
+- **WHEN** a tick executes a slot where charger `ev1` is on solely due to `ev_keep_on`
+- **THEN** the recorded reason text SHALL contain a keep-on indication naming `ev1`
 
 ### Requirement: Execution records include ev_charging_kw
 
@@ -283,3 +339,127 @@ This ensures that even when the planner schedules no explicit charging action, P
 - **WHEN** the controller evaluates a slot with the default self_consumption fallback
 - **AND** the profile's `control_unit` is `"W"`
 - **THEN** `charge_value` SHALL equal the user's configured `max_charge_w`
+
+### Requirement: Manual override does not write inverter settings
+
+When the configured `manual_override_entity` is active (`state.manual_override_active` is true), the executor SHALL NOT write any inverter, EV-charger, or water-heater settings for that tick. This mirrors the pause short-circuit and honors the manual-override contract ("executor will not change settings"). State recording (execution history, slot observations) MAY still run so the UI reflects actual conditions.
+
+#### Scenario: Manual override active skips inverter writes
+
+- **WHEN** `state.manual_override_active` is true during a tick
+- **THEN** the executor SHALL NOT push any battery mode, `soc_target`, charge/discharge, or export setting to the inverter
+- **AND** the executor SHALL NOT write the EV charger switch or water heater setpoint
+
+#### Scenario: Manual override inactive behaves normally
+
+- **WHEN** `state.manual_override_active` is false
+- **THEN** the executor SHALL evaluate and apply the plan as usual
+
+#### Scenario: Manual override still records telemetry
+
+- **WHEN** `state.manual_override_active` is true during a tick
+- **THEN** execution-history and slot-observation recording SHALL still run for that tick
+
+### Requirement: EV charger control obeys manual override and force_stop
+
+EV charger switching SHALL consult manual-override and quick-action state, not only `ev_charger_plans`. Under manual override the executor SHALL NOT write the EV charger switch. Under the `force_stop` quick action the executor SHALL command the EV charger off, even if the slot plan schedules charging.
+
+#### Scenario: force_stop stops a planned EV charge
+
+- **WHEN** a `force_stop` quick action is active
+- **AND** the current slot's `ev_charger_plans` schedules charging for a charger
+- **THEN** the executor SHALL command that EV charger switch off
+
+#### Scenario: Manual override leaves the EV charger untouched
+
+- **WHEN** `state.manual_override_active` is true
+- **THEN** the executor SHALL NOT write the EV charger switch state
+
+#### Scenario: Normal operation follows the EV plan
+
+- **WHEN** no manual override and no `force_stop` quick action are active
+- **THEN** the executor SHALL control the EV charger per the slot's `ev_charger_plans`, as before
+
+### Requirement: Executor rejects a stale schedule and holds
+
+Before acting on the loaded schedule, the executor SHALL compare the schedule's generation time to the current time. If the schedule is older than `executor.max_schedule_age_hours` (optional config, default 6), the executor SHALL NOT execute it: it SHALL emit a warning via the existing system-alert path and fall back to the slot-failure hold behavior (`grid_charging=False`, `soc_target` = current SoC).
+
+#### Scenario: Stale schedule triggers hold and alert
+
+- **WHEN** the loaded schedule's generation time is older than `max_schedule_age_hours`
+- **THEN** the executor SHALL emit a warning via the system-alert path
+- **AND** the executor SHALL apply the hold fallback (`grid_charging=False`, `soc_target` = current SoC)
+- **AND** the executor SHALL NOT apply the stale schedule's planned actions
+
+#### Scenario: Fresh schedule executes normally
+
+- **WHEN** the loaded schedule's generation time is within `max_schedule_age_hours`
+- **THEN** the executor SHALL execute the schedule as planned
+
+#### Scenario: Threshold is configurable with a default
+
+- **WHEN** `executor.max_schedule_age_hours` is not set in config
+- **THEN** the executor SHALL use a default of 6 hours for the freshness check
+
+### Requirement: EV charge current is derived from nominal battery voltage
+
+When the charger is controlled in Amps, the executor SHALL convert a planned charge power (kW) to an Ampere setpoint using the configured `nominal_voltage_v`, not the worst-case `min_voltage_v`. `min_voltage_v` SHALL be used only for safety limits, not for the kW→A conversion.
+
+#### Scenario: kW→A conversion uses nominal voltage
+
+- **WHEN** the charger is in Ampere-control mode and a slot plans `P` kW
+- **THEN** the commanded current equals `(P × 1000) / nominal_voltage_v`
+- **AND** `min_voltage_v` is not used in the conversion
+
+#### Scenario: Safety limits still use the configured current bounds
+
+- **WHEN** the converted current exceeds the configured charge-current limit
+- **THEN** it is clamped to that limit, unchanged from current behavior
+
+### Requirement: Boost-cancellation notification is delivered
+
+When a water boost is cancelled because SoC dropped below the configured floor, the executor SHALL deliver the cancellation notification (awaiting the async send), not create and discard the coroutine.
+
+#### Scenario: Low-SoC boost cancellation notifies the user
+
+- **WHEN** a water boost is cancelled because SoC fell below `min_soc + 10%`
+- **THEN** the cancellation notification is sent to the configured notifier
+- **AND** no "coroutine was never awaited" runtime warning is produced
+
+### Requirement: WebSocket broadcast failures are logged, not swallowed
+
+The executor SHALL log (at debug or warning level) when a real-time error/status WebSocket broadcast fails, instead of silently passing. The underlying record SHALL still be persisted before the broadcast is attempted.
+
+#### Scenario: WS emit failure is logged
+
+- **WHEN** the WebSocket manager raises during a real-time error/status broadcast
+- **THEN** the failure is logged
+- **AND** the error/status record remains persisted (e.g. in `recent_errors`)
+
+### Requirement: The dead force_export quick action is removed
+
+The executor SHALL NOT expose the `force_export` quick action. Its override type, controller branch, and engine handler are removed because it had no UI caller and hardcoded the grid-export limit to 0 W (exporting nothing). Other quick actions are unaffected.
+
+#### Scenario: force_export is not a supported quick action
+
+- **WHEN** a `force_export` quick action is requested
+- **THEN** the executor does not treat it as a known quick action
+
+#### Scenario: force_charge remains available
+
+- **WHEN** a `force_charge` quick action is requested
+- **THEN** it is handled exactly as before
+
+### Requirement: Null inverter profile falls back to generic without error
+
+When `system.inverter_profile` is null, empty, or missing (the shipped default in `config.default.yaml`), inverter profile loading SHALL resolve directly to the `generic` profile with at most an INFO-level log line, and SHALL NOT attempt to load a profile file named after the null value (e.g. `profiles/None.yaml`) or emit an ERROR-level log. An explicitly configured profile name that cannot be found SHALL keep the existing behavior: WARNING-level log and fallback to `generic`.
+
+#### Scenario: Fresh install boots clean
+
+- **WHEN** the application starts with the shipped default configuration (`inverter_profile: null`)
+- **THEN** the `generic` profile is loaded, no attempt is made to open `profiles/None.yaml`, and no ERROR-level log line is produced by profile loading
+
+#### Scenario: Misspelled profile still warns
+
+- **WHEN** `system.inverter_profile` is set to a non-empty name with no matching profile file
+- **THEN** a WARNING is logged and the `generic` profile is used (unchanged behavior)

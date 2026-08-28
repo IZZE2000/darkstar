@@ -18,6 +18,7 @@ import httpx
 import pytz
 import yaml
 
+from backend.core.secrets import load_yaml
 from backend.exceptions import PVForecastError
 
 logger = logging.getLogger(__name__)
@@ -31,6 +32,7 @@ _forecast_lock: threading.Lock = threading.Lock()
 # REV F65 Phase 5b: Load forecast status tracking
 _load_forecast_status: str = "ok"  # "ok", "degraded"
 _load_forecast_reason: str = ""  # "ml", "baseline", "demo", ""
+_load_forecast_detail: str = ""  # e.g. which sensor's data was discarded, and why
 _load_forecast_lock: threading.Lock = threading.Lock()
 
 
@@ -85,21 +87,25 @@ def get_forecast_status() -> dict[str, Any]:
         }
 
 
-def set_load_forecast_status(status: str, reason: str = "") -> None:
+def set_load_forecast_status(status: str, reason: str = "", detail: str = "") -> None:
     """Set load forecast status for health monitoring.
 
     Args:
         status: "ok" or "degraded"
         reason: "ml" (ML models working), "baseline" (using baseline avg),
                 "demo" (using demo data), "no_ml" (ML unavailable but data exists)
+        detail: optional specifics, e.g. which sensor's data was discarded and why
+                (distinguishes "sensor not configured" from "sensor configured but
+                data discarded as implausible")
     """
-    global _load_forecast_status, _load_forecast_reason
+    global _load_forecast_status, _load_forecast_reason, _load_forecast_detail
     with _load_forecast_lock:
         _load_forecast_status = status
         _load_forecast_reason = reason
+        _load_forecast_detail = detail
 
     if status == "degraded":
-        logger.warning(f"⚠️ Load forecast degraded: {reason}")
+        logger.warning(f"Load forecast degraded: {reason}" + (f" ({detail})" if detail else ""))
 
 
 def get_load_forecast_status() -> dict[str, Any]:
@@ -108,15 +114,17 @@ def get_load_forecast_status() -> dict[str, Any]:
         return {
             "status": _load_forecast_status,
             "reason": _load_forecast_reason,
+            "detail": _load_forecast_detail,
         }
 
 
 def clear_load_forecast_status() -> None:
     """Clear load forecast degraded status (called after successful ML forecast)."""
-    global _load_forecast_status, _load_forecast_reason
+    global _load_forecast_status, _load_forecast_reason, _load_forecast_detail
     with _load_forecast_lock:
         _load_forecast_status = "ok"
         _load_forecast_reason = ""
+        _load_forecast_detail = ""
 
 
 @dataclass
@@ -253,21 +261,42 @@ class HealthChecker:
         # Check planner health (error codes + retry policy)
         issues.extend(self.check_planner())
 
+        # Runtime invariant monitors (stabilization-review-2) — fail-open
+        issues.extend(self.check_monitors())
+
         # Determine overall health
         has_critical = any(i.severity == "critical" for i in issues)
         healthy = not has_critical
 
         return HealthStatus(healthy=healthy, issues=issues)
 
+    def check_monitors(self) -> list[HealthIssue]:
+        """Surface active invariant violations from the runtime monitors."""
+        issues: list[HealthIssue] = []
+        try:
+            from backend.monitors import invariant_monitors
+
+            for d in invariant_monitors.health_issues():
+                issues.append(
+                    HealthIssue(
+                        category=d["category"],
+                        severity=d["severity"],
+                        message=d["message"],
+                        guidance=d["guidance"],
+                        code=d.get("code"),
+                        details=d.get("details"),
+                    )
+                )
+        except Exception as e:
+            logger.debug("Could not check invariant monitors: %s", e)
+        return issues
+
     def check_config_validity(self) -> list[HealthIssue]:
         """Validate config.yaml exists and has required structure."""
         issues: list[HealthIssue] = []
 
         # Load config
-        try:
-            with self.config_path.open(encoding="utf-8") as f:
-                self._config = yaml.safe_load(f) or {}
-        except FileNotFoundError:
+        if not self.config_path.exists():
             issues.append(
                 HealthIssue(
                     category="config",
@@ -280,6 +309,9 @@ class HealthChecker:
                 )
             )
             return issues
+
+        try:
+            self._config = load_yaml(str(self.config_path)) or {}
         except yaml.YAMLError as e:
             issues.append(
                 HealthIssue(
@@ -295,10 +327,8 @@ class HealthChecker:
             return issues
 
         # Load secrets
-        try:
-            with Path("secrets.yaml").open(encoding="utf-8") as f:
-                self._secrets = yaml.safe_load(f) or {}
-        except FileNotFoundError:
+        secrets_path = Path("secrets.yaml")
+        if not secrets_path.exists():
             issues.append(
                 HealthIssue(
                     category="config",
@@ -310,15 +340,18 @@ class HealthChecker:
                     ),
                 )
             )
-        except yaml.YAMLError as e:
-            issues.append(
-                HealthIssue(
-                    category="config",
-                    severity="critical",
-                    message=f"Invalid YAML syntax in secrets file: {e}",
-                    guidance="Fix the YAML syntax error in secrets.yaml.",
+        else:
+            try:
+                self._secrets = load_yaml("secrets.yaml") or {}
+            except yaml.YAMLError as e:
+                issues.append(
+                    HealthIssue(
+                        category="config",
+                        severity="critical",
+                        message=f"Invalid YAML syntax in secrets file: {e}",
+                        guidance="Fix the YAML syntax error in secrets.yaml.",
+                    )
                 )
-            )
 
         # Validate required config sections
         issues.extend(self._validate_config_structure())
@@ -485,11 +518,14 @@ class HealthChecker:
             return issues  # Already reported in config check
 
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.get(
-                    f"{url}/api/",
-                    headers={"Authorization": f"Bearer {token}"},
-                )
+            from backend.core.ha_client import get_ha_http_client
+
+            client = get_ha_http_client()
+            response = await client.get(
+                f"{url}/api/",
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=10.0,
+            )
 
             if response.status_code == 401:
                 issues.append(
@@ -723,11 +759,14 @@ class HealthChecker:
             """Check a single entity and return a HealthIssue if there's a problem."""
             entity_id, config_key, is_required = entity_data
             try:
-                async with httpx.AsyncClient(timeout=5.0) as client:
-                    response = await client.get(
-                        f"{url}/api/states/{entity_id}",
-                        headers=headers,
-                    )
+                from backend.core.ha_client import get_ha_http_client
+
+                client = get_ha_http_client()
+                response = await client.get(
+                    f"{url}/api/states/{entity_id}",
+                    headers=headers,
+                    timeout=5.0,
+                )
 
                 if response.status_code == 404:
                     # Downgrade severity if not a hard requirement
@@ -913,20 +952,35 @@ class HealthChecker:
         load_info = get_load_forecast_status()
         status = load_info.get("status", "ok")
         reason = load_info.get("reason", "")
+        detail = load_info.get("detail", "")
 
         if status == "degraded":
             if reason == "demo":
-                issues.append(
-                    HealthIssue(
-                        category="forecast",
-                        severity="warning",
-                        message="Load forecast using demo data (0.5 kWh flat)",
-                        guidance=(
-                            "No historical load data available. The system is using a flat demo profile. "
-                            "Configure 'total_load_consumption' sensor in input_sensors to enable accurate load forecasting."
-                        ),
+                if detail:
+                    issues.append(
+                        HealthIssue(
+                            category="forecast",
+                            severity="warning",
+                            message="Load forecast using demo data (0.5 kWh flat)",
+                            guidance=(
+                                f"{detail}. The data was discarded as implausible, not because "
+                                "the sensor is unconfigured. This resolves automatically once the "
+                                "sensor reports plausible readings again."
+                            ),
+                        )
                     )
-                )
+                else:
+                    issues.append(
+                        HealthIssue(
+                            category="forecast",
+                            severity="warning",
+                            message="Load forecast using demo data (0.5 kWh flat)",
+                            guidance=(
+                                "No historical load data available. The system is using a flat demo profile. "
+                                "Configure 'total_load_consumption' sensor in input_sensors to enable accurate load forecasting."
+                            ),
+                        )
+                    )
             elif reason == "baseline":
                 issues.append(
                     HealthIssue(
