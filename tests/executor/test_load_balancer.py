@@ -256,6 +256,42 @@ class TestStaleSensorFailSafe:
         assert status.ev_outputs[0].target_a == 6
         assert status.ev_outputs[0].state == "stale_fallback"
 
+    def test_idle_charger_is_never_raised_to_the_floor(self):
+        """A charger that is neither charging nor planned to charge must stay
+        idle when a phase goes stale. Forcing min_current_a there would make a
+        shed-only guard *start* a charge (and, with an unplugged car, produce
+        a phantom 'commanded but 0 kW' failure every tick).
+        """
+        lb = make_lb()
+        idle_ev = EVBalancerInput("goe", [1], None, None, min_current_a=6, max_current_a=16)
+        status = lb.tick(BASE, {}, {}, [idle_ev])
+        out = status.ev_outputs[0]
+        assert out.state == "idle"
+        assert out.target_a is None
+
+    def test_idle_charger_stays_idle_across_repeated_stale_ticks(self):
+        """The escalation clock must not run for an idle charger either, so it
+        can never flap idle -> stale_fallback -> paused -> idle.
+        """
+        lb = make_lb()
+        idle_ev = EVBalancerInput("goe", [1], None, None, min_current_a=6, max_current_a=16)
+        stale_ts = {1: BASE - timedelta(seconds=40)}
+        for offset in (0, 125, 250):
+            status = lb.tick(BASE + timedelta(seconds=offset), {1: 2.0}, stale_ts, [idle_ev])
+            assert status.ev_outputs[0].state == "idle"
+            assert status.ev_outputs[0].target_a is None
+
+    def test_stale_fallback_never_raises_a_charger_below_the_floor(self):
+        """The fail-safe caps downward only: a charger already running below
+        min_current_a keeps its lower setpoint instead of being pushed up.
+        """
+        lb = make_lb()
+        ev = EVBalancerInput("goe", [1], 4, 16, min_current_a=6, max_current_a=16)
+        status = lb.tick(BASE, {1: 10.0}, {1: BASE - timedelta(seconds=40)}, [ev])
+        out = status.ev_outputs[0]
+        assert out.state == "stale_fallback"
+        assert out.target_a == 4
+
     def test_escalated_stale_pause_honors_resume_delay_after_recovery(self):
         """9.3: once stale_fallback escalates to a full pause, a flapping
         sensor that comes back fresh must not resume charging immediately —

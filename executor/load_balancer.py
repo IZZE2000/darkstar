@@ -210,6 +210,16 @@ class LoadBalancer:
         flags feed the tick-level `any_*` aggregates that drive the overall
         balancer state.
         """
+        if ev.current_setpoint_a is None and ev.planner_target_a is None:
+            # Nothing is charging and nothing wants to: the charger is idle.
+            # Short-circuit *before* the stale check — the stale fail-safe
+            # forces min_current_a, which on an idle charger raises the draw
+            # from 0 A to the floor instead of lowering it. A guard that only
+            # ever sheds load must never be the thing that starts a charge.
+            self._ev_stale_since.pop(ev.charger_id, None)
+            self._ev_paused_at.pop(ev.charger_id, None)
+            return EVBalancerOutput(ev.charger_id, None, "idle"), False, False, False
+
         stale_phases = [
             p for p in binding_phases if self._is_stale(p, phase_current, updated_at, now)
         ]
@@ -237,12 +247,18 @@ class LoadBalancer:
                     True,
                     False,
                 )
+            # The fail-safe is monotonically downward: it may cap a running
+            # charge at the floor, never raise one that is already below it
+            # (e.g. a charger still ramping up from a previous pause).
+            fallback_a = ev.min_current_a
+            if ev.current_setpoint_a is not None:
+                fallback_a = min(fallback_a, ev.current_setpoint_a)
             return (
                 EVBalancerOutput(
                     ev.charger_id,
-                    ev.min_current_a,
+                    fallback_a,
                     "stale_fallback",
-                    f"Phase sensor(s) {stale_phases} stale — forcing {ev.min_current_a}A",
+                    f"Phase sensor(s) {stale_phases} stale — forcing {fallback_a}A",
                 ),
                 True,
                 False,
