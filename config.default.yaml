@@ -402,6 +402,7 @@ executor:
   # Notifications (via Home Assistant notify service)
   notifications:
     service: ""  # HA notify service to use
+    error_service: ""  # Optional target for errors/overrides, e.g. notify.persistent_notification (empty = use service)
     on_charge_start: true              # Notify when grid charging starts
     on_charge_stop: false              # Notify when grid charging stops
     on_export_start: true              # Notify when export/discharge starts

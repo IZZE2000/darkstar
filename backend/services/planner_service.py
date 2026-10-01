@@ -8,7 +8,7 @@ for running inside the FastAPI process without blocking the event loop.
 import asyncio
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -85,11 +85,14 @@ class PlannerService:
             return None
         if self._next_retry_at is None:
             return None
-        remaining = (self._next_retry_at - datetime.now()).total_seconds()
+        remaining = (self._next_retry_at - datetime.now(UTC)).total_seconds()
         return max(0, int(remaining))
 
     def _apply_retry_policy(self, code: PlannerErrorCode) -> None:
-        now = datetime.now()
+        # Must be tz-aware UTC: SchedulerService compares next_retry_at against
+        # datetime.now(UTC) and would read a naive local time as UTC, delaying
+        # the retry by the local UTC offset (2h in CEST).
+        now = datetime.now(UTC)
         if is_warning_only(code):
             # Warning-only: treat as success for retry purposes
             return
@@ -107,7 +110,7 @@ class PlannerService:
     def clear_retry_suspension(self) -> None:
         """Clear retry suspension and schedule an immediate retry."""
         self._retry_suspended = False
-        self._next_retry_at = datetime.now()
+        self._next_retry_at = datetime.now(UTC)
 
     async def _emit_progress(self, phase: str) -> None:
         """Emit progress event via WebSocket."""

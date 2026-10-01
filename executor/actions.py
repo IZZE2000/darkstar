@@ -1371,17 +1371,20 @@ class ActionDispatcher:
         }.get(action_type, False)
 
         if should_notify:
-            await self._send_notification(message)
+            alert = action_type in ("override", "error")
+            await self._send_notification(message, service=notif.error_service if alert else None)
 
-    async def _send_notification(self, message: str, title: str = "Darkstar Executor") -> None:
-        """Send a notification via the configured service."""
+    async def _send_notification(
+        self, message: str, title: str = "Darkstar Executor", service: str | None = None
+    ) -> None:
+        """Send a notification via `service`, defaulting to the configured service."""
         if self.shadow_mode:
             logger.info("[SHADOW] Would send notification: %s", message)
             return
 
         try:
             await self.ha.send_notification(
-                self.config.notifications.service,
+                service or self.config.notifications.service,
                 title,
                 message,
             )
@@ -1436,6 +1439,7 @@ class ActionDispatcher:
             await self._send_notification(
                 f"Override: {override_type}\n{reason}",
                 title="Darkstar Override Active",
+                service=self.config.notifications.error_service,
             )
 
     async def notify_error(self, error: str) -> None:
@@ -1444,4 +1448,5 @@ class ActionDispatcher:
             await self._send_notification(
                 f"Error: {error}",
                 title="Darkstar Executor Error",
+                service=self.config.notifications.error_service,
             )

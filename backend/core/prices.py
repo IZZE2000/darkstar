@@ -11,6 +11,33 @@ from backend.core.cache import cache_sync
 
 logger = logging.getLogger("darkstar.core.prices")
 
+_LAST_GOOD_CACHE_KEY = "nordpool_data_last_good"
+_LAST_GOOD_TTL_SECONDS = 48 * 3600.0
+
+
+def _last_good_fallback(now: datetime, reason: str) -> list[dict[str, Any]]:
+    """Serve previously fetched prices when a Nordpool fetch fails.
+
+    Day-ahead prices are published once a day (~13:00 CET), so yesterday's
+    "tomorrow" prices are today's prices. A brief Nordpool outage (e.g. 502s
+    around midnight) must not leave the planner without prices it already had.
+    Returns slots from today onward, only if one of them covers ``now``;
+    otherwise ``[]`` so the planner still fails loudly on genuinely missing data.
+    """
+    last_good = cache_sync.get(_LAST_GOOD_CACHE_KEY)
+    if not last_good:
+        return []
+    slots = [s for s in last_good if s["start_time"].date() >= now.date()]
+    if not any(s["start_time"] <= now < s["end_time"] for s in slots):
+        return []
+    logger.warning(
+        "Nordpool unavailable (%s) - using %d cached price slots until %s",
+        reason,
+        len(slots),
+        slots[-1]["end_time"].isoformat(),
+    )
+    return slots
+
 
 async def get_nordpool_data(config_path: str = "config.yaml") -> list[dict[str, Any]]:
     # --- Smart Cache Check ---
@@ -123,17 +150,18 @@ async def get_nordpool_data(config_path: str = "config.yaml") -> list[dict[str, 
                 logger.warning("Failed to get D+1 price forecast fallback: %s", exc)
 
         if not all_entries:
-            return []
+            return _last_good_fallback(now, "empty response")
 
         processed = _process_nordpool_data(all_entries, config)
         cache_sync.set(cache_key, processed, ttl_seconds=3600.0)
+        cache_sync.set(_LAST_GOOD_CACHE_KEY, processed, ttl_seconds=_LAST_GOOD_TTL_SECONDS)
         return processed
     except TimeoutError:
-        logger.warning("Nordpool price fetch timed out after 10 seconds, returning empty data")
-        return []
+        logger.warning("Nordpool price fetch timed out after 10 seconds")
+        return _last_good_fallback(now, "timeout")
     except Exception as exc:
         logger.warning("Failed to fetch Nordpool prices: %s", exc, exc_info=True)
-        return []
+        return _last_good_fallback(now, type(exc).__name__)
 
 
 def calculate_import_export_prices(
