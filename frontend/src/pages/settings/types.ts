@@ -711,6 +711,14 @@ export const uiSections: SettingsSection[] = [
                 className: 'col-span-2',
             },
             {
+                key: 'executor.notifications.error_service',
+                label: 'HA Notify Service (errors & overrides)',
+                helper: 'Optional, e.g. notify.persistent_notification. Empty = use the service above',
+                path: ['executor', 'notifications', 'error_service'],
+                type: 'service',
+                className: 'col-span-2',
+            },
+            {
                 key: 'executor.notifications.on_charge_start',
                 label: 'On charge start',
                 path: ['executor', 'notifications', 'on_charge_start'],

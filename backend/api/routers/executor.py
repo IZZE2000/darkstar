@@ -365,6 +365,7 @@ async def get_executor_config() -> dict[str, Any]:
         },
         "notifications": {
             "service": cfg.notifications.service,
+            "error_service": cfg.notifications.error_service,
             "on_charge_start": getattr(cfg.notifications, "on_charge_start", False),
             "on_charge_stop": getattr(cfg.notifications, "on_charge_stop", False),
             "on_export_start": getattr(cfg.notifications, "on_export_start", False),
