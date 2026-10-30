@@ -3223,6 +3223,25 @@ class ExecutorEngine:
         if active:
             dev_state.active_phases = active
 
+    async def _read_ev_current_setpoint(self, entity_id: str) -> float | None:
+        """Current ampere setpoint held by HA, or None if unknown/unreadable."""
+        if not self.ha_client:
+            return None
+        try:
+            raw_state = await self.ha_client.get_state(entity_id)
+        except Exception as e:
+            logger.debug("Could not read EV setpoint %s: %s", entity_id, e)
+            return None
+        if not isinstance(raw_state, dict):
+            return None
+        value_str = raw_state.get("state")
+        if value_str in (None, "unknown", "unavailable"):
+            return None
+        try:
+            return float(value_str)
+        except (TypeError, ValueError):
+            return None
+
     async def _control_ev_charger_current(
         self,
         charger_cfg: EVChargerDeviceConfig,
@@ -3283,9 +3302,32 @@ class ExecutorEngine:
                     int(elapsed),
                 )
 
+        # Compare against what HA actually holds, not only our in-memory cache:
+        # the setpoint entity survives Darkstar restarts and is restored by HA
+        # on its own restarts, so the cache alone can miss a stale non-zero
+        # setpoint (charger then starts the moment the car is plugged in) or a
+        # setpoint HA reset under an active session.
+        ha_setpoint_a = await self._read_ev_current_setpoint(current_entity)
+
         try:
             if target_a is None:
-                if not is_currently_active:
+                if ha_setpoint_a is not None:
+                    if ha_setpoint_a <= 0:
+                        if is_currently_active:
+                            dev_state.charging_active = False
+                            dev_state.charging_started_at = None
+                            dev_state.charging_slot_end = None
+                            dev_state.current_setpoint_a = None
+                            dev_state.active_phases = None
+                        return
+                    if not is_currently_active:
+                        logger.warning(
+                            "EV charger %s: %s holds %.0f A with no charging planned - resetting to 0 A",
+                            charger_id,
+                            current_entity,
+                            ha_setpoint_a,
+                        )
+                elif not is_currently_active:
                     return
                 result = await self.dispatcher.set_ev_charger_current(current_entity, 0)
                 if result.success:
@@ -3322,7 +3364,16 @@ class ExecutorEngine:
                     )
                 return
 
-            if target_a == dev_state.current_setpoint_a:
+            already_applied = (
+                ha_setpoint_a == target_a
+                if ha_setpoint_a is not None
+                else target_a == dev_state.current_setpoint_a
+            )
+            if already_applied:
+                if not is_currently_active:
+                    dev_state.current_setpoint_a = target_a
+                    dev_state.charging_active = True
+                    dev_state.charging_started_at = now
                 dev_state.charging_slot_end = now + timedelta(minutes=15)
                 return
 
