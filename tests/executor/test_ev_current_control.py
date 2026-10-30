@@ -162,6 +162,85 @@ class TestControlEvChargerCurrentType:
 
         engine.dispatcher.set_ev_charger_current.assert_not_called()
 
+    @staticmethod
+    def _ha_setpoint(value: str):
+        async def fake_get_state(entity):
+            if entity == "number.goe_current":
+                return {"state": value, "attributes": {}}
+            return None
+
+        return AsyncMock(side_effect=fake_get_state)
+
+    @staticmethod
+    def _ok_result(new_value: int) -> MagicMock:
+        return MagicMock(
+            success=True, skipped=False, duration_ms=5, action_type="ev_charge_current",
+            message="ok", entity_id="number.goe_current", previous_value="15",
+            new_value=new_value, verified_value=str(new_value), verification_success=True,
+            error_details=None,
+        )
+
+    @pytest.mark.asyncio
+    async def test_stale_ha_setpoint_reset_on_cold_start_without_plan(self, engine):
+        """HA restored 15 A, Darkstar never started a session: must still write 0 A,
+        otherwise the charger starts the moment the car is plugged in."""
+        engine.ha_client = AsyncMock()
+        engine.ha_client.get_state = self._ha_setpoint("15.0")
+        engine.dispatcher = AsyncMock()
+        engine.dispatcher.set_ev_charger_current = AsyncMock(return_value=self._ok_result(0))
+
+        now = datetime.now(pytz.timezone("Europe/Stockholm"))
+        await engine._control_ev_charger(make_slot(0.0), now)
+
+        engine.dispatcher.set_ev_charger_current.assert_called_once_with(
+            "number.goe_current", 0
+        )
+
+    @pytest.mark.asyncio
+    async def test_no_write_when_ha_setpoint_already_zero(self, engine):
+        engine.ha_client = AsyncMock()
+        engine.ha_client.get_state = self._ha_setpoint("0.0")
+        engine.dispatcher = AsyncMock()
+
+        now = datetime.now(pytz.timezone("Europe/Stockholm"))
+        await engine._control_ev_charger(make_slot(0.0), now)
+
+        engine.dispatcher.set_ev_charger_current.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_rewrites_target_when_ha_drifted_from_cache(self, engine):
+        """Cache says 15 A is applied but HA holds 6 A (e.g. restored after an HA
+        restart): the planned 15 A must be written again."""
+        engine.ha_client = AsyncMock()
+        engine.ha_client.get_state = self._ha_setpoint("6.0")
+        engine._ev_charger_states["goe"] = EVChargerState(
+            charging_active=True,
+            current_setpoint_a=15,
+            charging_started_at=datetime.now(pytz.timezone("Europe/Stockholm")),
+        )
+        engine.dispatcher = AsyncMock()
+        engine.dispatcher.set_ev_charger_current = AsyncMock(return_value=self._ok_result(15))
+
+        now = datetime.now(pytz.timezone("Europe/Stockholm"))
+        await engine._control_ev_charger(make_slot(11.0), now)
+
+        engine.dispatcher.set_ev_charger_current.assert_called_once_with(
+            "number.goe_current", 15
+        )
+
+    @pytest.mark.asyncio
+    async def test_adopts_matching_ha_setpoint_without_write(self, engine):
+        engine.ha_client = AsyncMock()
+        engine.ha_client.get_state = self._ha_setpoint("15.0")
+        engine.dispatcher = AsyncMock()
+
+        now = datetime.now(pytz.timezone("Europe/Stockholm"))
+        await engine._control_ev_charger(make_slot(11.0), now)
+
+        engine.dispatcher.set_ev_charger_current.assert_not_called()
+        assert engine._ev_charger_states["goe"].current_setpoint_a == 15
+        assert engine._ev_charger_states["goe"].charging_active is True
+
     @pytest.mark.asyncio
     async def test_charger_without_current_entity_skipped(self, temp_schedule, temp_db):
         charger = EVChargerDeviceConfig(id="goe", type="current", current_entity=None)
